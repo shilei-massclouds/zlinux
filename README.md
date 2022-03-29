@@ -1,2 +1,2 @@
 # zlinux
-Simplified linux kernel
+Simplified linux kernel: just for study purpose.
