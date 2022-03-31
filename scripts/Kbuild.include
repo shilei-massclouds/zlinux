@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: GPL-2.0
+####
+# kbuild: Generic definitions
+
+# Convenient variables
+comma := ,
+
+# Name of target with a '.' as filename prefix. foo/bar.o => foo/.bar.o
+dot-target = $(dir $@).$(notdir $@)
+
+###
+# The temporary file to save gcc -MMD generated dependencies must not
+# contain a comma
+depfile = $(subst $(comma),_,$(dot-target).d)
+
+# echo command.
+# Short version is used, if $(quiet) equals `quiet_', otherwise full one.
+echo-cmd = $(if $($(quiet)cmd_$(1)),\
+    echo '  $(call escsq,$($(quiet)cmd_$(1)))$(echo-why)';)
+
+redirect :=
+
+# Shorthand for $(Q)$(MAKE) -f scripts/Makefile.build obj=
+build := -f $(srctree)/scripts/Makefile.build obj
+
+# printing commands
+cmd = @set -e; $(echo-cmd) $($(quiet)redirect) $(cmd_$(1))
+
+# Find any prerequisites that are newer than target or that do not exist.
+# (This is not true for now; $? should contain any non-existent prerequisites,
+# but it does not work as expected when .SECONDARY is present. This seems a bug
+# of GNU Make.)
+# PHONY targets skipped in both cases.
+newer-prereqs = $(filter-out $(PHONY),$?)
+
+cmd-check = $(if $(strip $(cmd_$@)),,1)
+
+# It is a typical mistake to forget the FORCE prerequisite. Check it here so
+# no more breakage will slip in.
+check-FORCE = $(if $(filter FORCE, $^),,$(warning FORCE prerequisite is missing))
+
+if-changed-cond = $(newer-prereqs)$(cmd-check)$(check-FORCE)
+
+# Execute command if command has changed or prerequisite(s) are updated.
+if_changed = $(if $(if-changed-cond), \
+	$(cmd); \
+	printf '%s\n' 'cmd_$@ := $(make-cmd)' > $(dot-target).cmd, @:)
+
+# Execute the command and also postprocess generated .d dependencies
+if_changed_dep = $(if $(if-changed-cond),$(cmd_and_fixdep),@:)
+
+cmd_and_fixdep = \
+	$(cmd); \
+	scripts/basic/fixdep $(depfile) $@ '$(make-cmd)' > $(dot-target).cmd; \
+	rm -f $(depfile)

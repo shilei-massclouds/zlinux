@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: GPL-2.0
+# Building
+
+src := $(obj)
+
+PHONY := __build
+
+always-y :=
+
+# The filename Kbuild has precedence over Makefile
+kbuild-dir := $(if $(filter /%,$(src)),$(src),$(srctree)/$(src))
+kbuild-file := $(if $(wildcard $(kbuild-dir)/Kbuild),\
+	$(kbuild-dir)/Kbuild,\
+	$(kbuild-dir)/Makefile)
+
+include $(kbuild-file)
+
+include scripts/Makefile.lib
+
+# Do not include hostprogs rules unless needed.
+hostprogs := $(sort $(hostprogs))
+ifneq ($(hostprogs),)
+include scripts/Makefile.host
+endif
+
+__build: $(always-y)
+	@echo "$@: [$^] [$(always-y)]"
+	@:
+
+PHONY += FORCE
+FORCE:
