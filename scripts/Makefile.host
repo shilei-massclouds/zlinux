@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: GPL-2.0
 
+_hostc_flags = $(KBUILD_HOSTCFLAGS) $(HOST_EXTRACFLAGS)
+
+hostc_flags = -Wp,-MMD,$(depfile) $(_hostc_flags)
+
 host-csingle := $(foreach m,$(hostprogs),$(if $($(m)-objs),,$(m)))
 host-csingle := $(addprefix $(obj)/,$(host-csingle))
 
-cmd_host-csingle = $(HOSTCC) $(hostc_flags) $(KBUILD_HOSTLDFLAGS) \
-	-o $@ $< $(KBUILD_HOSTLDLIBS) $(HOSTLDLIBS_$(target-stem))
+quiet_cmd_host-csingle = HOSTCC  $@
+cmd_host-csingle = $(HOSTCC) $(hostc_flags) -o $@ $<
 
 $(host-csingle): $(obj)/%: $(src)/%.c FORCE
-	@echo "single: [$^]"
 	$(call if_changed_dep,host-csingle)

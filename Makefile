@@ -1,5 +1,15 @@
 # SPDX-License-Identifier: GPL-2.0
 
+HOSTCC = gcc
+KBUILD_USERCFLAGS := -Wall -Wmissing-prototypes -Wstrict-prototypes \
+	-O2 -fomit-frame-pointer -std=gnu89
+KBUILD_HOSTCFLAGS := $(KBUILD_USERCFLAGS)
+export HOSTCC KBUILD_HOSTCFLAGS 
+
+quiet = quiet_
+Q = @
+export quiet Q
+
 # SHELL used by kbuild
 CONFIG_SHELL := sh
 KBUILD_LDFLAGS :=
@@ -121,7 +131,7 @@ scripts: scripts_basic
 # (11) scripts_basic
 PHONY += scripts_basic
 scripts_basic:
-	@echo "###[$@] [$^]###"
+	$(Q)$(MAKE) $(build)=scripts/basic
 
 ARCH_POSTLINK := $(wildcard $(srctree)/arch/$(SRCARCH)/Makefile.postlink)
 # Final link of vmlinux with optional arch pass after final link

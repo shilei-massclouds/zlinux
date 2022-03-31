@@ -16,15 +16,13 @@ depfile = $(subst $(comma),_,$(dot-target).d)
 # echo command.
 # Short version is used, if $(quiet) equals `quiet_', otherwise full one.
 echo-cmd = $(if $($(quiet)cmd_$(1)),\
-    echo '  $(call escsq,$($(quiet)cmd_$(1)))$(echo-why)';)
-
-redirect :=
+	echo '  $(call escsq,$($(quiet)cmd_$(1)))$(echo-why)';)
 
 # Shorthand for $(Q)$(MAKE) -f scripts/Makefile.build obj=
 build := -f $(srctree)/scripts/Makefile.build obj
 
 # printing commands
-cmd = @set -e; $(echo-cmd) $($(quiet)redirect) $(cmd_$(1))
+cmd = @set -e; $(echo-cmd) $(cmd_$(1))
 
 # Find any prerequisites that are newer than target or that do not exist.
 # (This is not true for now; $? should contain any non-existent prerequisites,

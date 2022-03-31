@@ -3,9 +3,7 @@
 
 src := $(obj)
 
-PHONY := __build
-
-always-y :=
+include scripts/Kbuild.include
 
 # The filename Kbuild has precedence over Makefile
 kbuild-dir := $(if $(filter /%,$(src)),$(src),$(srctree)/$(src))
@@ -13,6 +11,12 @@ kbuild-file := $(if $(wildcard $(kbuild-dir)/Kbuild),\
 	$(kbuild-dir)/Kbuild,\
 	$(kbuild-dir)/Makefile)
 
+PHONY := __build
+__build:
+
+always-y :=
+
+# Include target source directory
 include $(kbuild-file)
 
 include scripts/Makefile.lib
@@ -24,7 +28,6 @@ include scripts/Makefile.host
 endif
 
 __build: $(always-y)
-	@echo "$@: [$^] [$(always-y)]"
 	@:
 
 PHONY += FORCE
