@@ -4,6 +4,12 @@
 
 # Convenient variables
 comma := ,
+pound := \#
+squote := '
+
+###
+# Escape single quote for use in echo statements
+escsq = $(subst $(squote),'\$(squote)',$1)
 
 # Name of target with a '.' as filename prefix. foo/bar.o => foo/.bar.o
 dot-target = $(dir $@).$(notdir $@)
@@ -32,6 +38,8 @@ cmd = @set -e; $(echo-cmd) $(cmd_$(1))
 newer-prereqs = $(filter-out $(PHONY),$?)
 
 cmd-check = $(if $(strip $(cmd_$@)),,1)
+
+make-cmd = $(call escsq,$(subst $(pound),$$(pound),$(subst $$,$$$$,$(cmd_$(1)))))
 
 # It is a typical mistake to forget the FORCE prerequisite. Check it here so
 # no more breakage will slip in.
