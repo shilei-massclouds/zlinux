@@ -274,7 +274,6 @@ int main(int argc, char *argv[])
 	target = argv[2];
 	cmdline = argv[3];
 
-    fprintf(stderr, "%s %s %s\n", depfile, target, cmdline);
 	xprintf("cmd_%s := %s\n\n", target, cmdline);
 
 	buf = read_file(depfile);
