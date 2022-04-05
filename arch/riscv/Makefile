@@ -3,6 +3,13 @@
 # actions for "archclean" and "archdep" for cleaning up and making
 # dependencies for this architecture.
 
+riscv-march-$(CONFIG_ARCH_RV64I)	:= rv64ima
+riscv-march-$(CONFIG_FPU)			:= $(riscv-march-y)fd
+riscv-march-$(CONFIG_RISCV_ISA_C)   := $(riscv-march-y)c
+
+KBUILD_AFLAGS += -mabi=lp64
+KBUILD_AFLAGS += -march=$(riscv-march-y)
+
 head-y := arch/riscv/kernel/head.o
 
 core-y += arch/riscv/

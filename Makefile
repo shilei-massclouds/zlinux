@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0
 
 HOSTCC = gcc
+
 KBUILD_USERCFLAGS := -Wall -Wmissing-prototypes -Wstrict-prototypes \
 	-O2 -fomit-frame-pointer -std=gnu89
 KBUILD_HOSTCFLAGS := $(KBUILD_USERCFLAGS)
@@ -21,13 +22,16 @@ CROSS_COMPILE := riscv64-linux-gnu-
 
 ARCH ?= $(SUBARCH)
 
+# Make variables (CC, etc...)
 CC = $(CROSS_COMPILE)gcc
 LD = $(CROSS_COMPILE)ld
 AR = $(CROSS_COMPILE)ar
 OBJCOPY = $(CROSS_COMPILE)objcopy
 STRIP = $(CROSS_COMPILE)strip
 
-export CROSS_COMPILE LD CC
+CPP	= $(CC) -E
+
+export CROSS_COMPILE LD CC CPP
 
 LDFLAGS_vmlinux =
 LDFLAGS_vmlinux += --build-id=sha1
@@ -35,9 +39,13 @@ LDFLAGS_vmlinux += --build-id=sha1
 # Architecture as present in compile.h
 SRCARCH := $(ARCH)
 
+export ARCH SRCARCH
+
 export KBUILD_LDS := arch/$(SRCARCH)/kernel/vmlinux.lds
 
 abs_objtree := $(CURDIR)
+
+need-config := 1
 
 ifeq ($(abs_objtree),$(CURDIR))
 # Suppress "Entering directory ..." unless we are changing the work directory.
@@ -65,8 +73,36 @@ objtree := .
 
 export srctree objtree
 
+ifdef need-config
+include include/config/auto.conf
+endif
+
 KBUILD_BUILTIN := 1
 export KBUILD_BUILTIN
+
+# Use USERINCLUDE when you must reference the UAPI directories only.
+USERINCLUDE := \
+	-I$(srctree)/arch/$(SRCARCH)/include/uapi \
+	-I$(objtree)/arch/$(SRCARCH)/include/generated/uapi \
+	-I$(srctree)/include/uapi \
+	-I$(objtree)/include/generated/uapi \
+	-include $(srctree)/include/linux/kconfig.h
+
+# Use LINUXINCLUDE when you must reference the include/ directory.
+# Needed to be compatible with the O= option
+LINUXINCLUDE := \
+	-I$(srctree)/arch/$(SRCARCH)/include \
+	-I$(objtree)/arch/$(SRCARCH)/include/generated \
+	-I$(objtree)/include \
+	$(USERINCLUDE)
+
+NOSTDINC_FLAGS	:= -nostdinc \
+	-isystem $(shell $(CC) -print-file-name=include)
+
+KBUILD_AFLAGS   := -D__ASSEMBLY__ -fno-PIE
+KBUILD_CPPFLAGS := -D__KERNEL__
+
+export NOSTDINC_FLAGS LINUXINCLUDE KBUILD_CPPFLAGS KBUILD_AFLAGS
 
 #
 # (1) Entry: all
@@ -174,6 +210,7 @@ scripts: scripts_basic
 
 # (11) scripts_basic
 PHONY += scripts_basic
+$(warning r: scripts_basic)
 scripts_basic:
 	$(warning e: scripts_basic)
 	$(Q)$(MAKE) $(build)=scripts/basic

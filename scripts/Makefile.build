@@ -72,11 +72,24 @@ cmd_cpp_s_S = $(CPP) $(a_flags) -o $@ $<
 $(obj)/%.s: $(src)/%.S FORCE
 	$(call if_changed_dep,cpp_s_S)
 
-quiet_cmd_as_o_S = AS $(quiet_modtag)  $@
+quiet_cmd_as_o_S = AS $(quiet_modtag) $@
 cmd_as_o_S = $(CC) $(a_flags) -c -o $@ $<
 
+define rule_as_o_S
+	$(call cmd_and_fixdep,as_o_S)
+endef
+
 $(obj)/%.o: $(src)/%.S $(objtool_dep) FORCE
+	$(warning e: $(cmd_as_o_S))
 	$(call if_changed_rule,as_o_S)
+
+# Linker scripts preprocessor (.lds.S -> .lds)
+quiet_cmd_cpp_lds_S = LDS $@
+cmd_cpp_lds_S = $(CPP) $(cpp_flags) -P -U$(ARCH) \
+				-D__ASSEMBLY__ -DLINKER_SCRIPT -o $@ $<
+
+$(obj)/%.lds: $(src)/%.lds.S FORCE
+	$(call if_changed_dep,cpp_lds_S)
 
 # Descending
 # ---------------------------------------------------------------------------
