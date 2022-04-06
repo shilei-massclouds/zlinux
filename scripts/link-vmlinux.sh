@@ -39,6 +39,30 @@ info()
 	fi
 }
 
+# Delete output files in case of error
+cleanup()
+{
+    rm -f .btf.*
+    rm -f .tmp_System.map
+    rm -f .tmp_vmlinux*
+    rm -f System.map
+    rm -f vmlinux
+    rm -f vmlinux.o
+}
+
+on_exit()
+{
+    if [ $? -ne 0 ]; then
+        cleanup
+    fi
+}
+trap on_exit EXIT
+
+if [ "$1" = "clean" ]; then
+    cleanup
+    exit 0
+fi
+
 # Link of vmlinux
 # ${1} - output file
 # ${2}, ${3}, ... - optional extra .o files
@@ -61,3 +85,13 @@ vmlinux_link()
 }
 
 vmlinux_link vmlinux "${kallsymso}" ${btf_vmlinux_bin_o}
+
+# Create map file with all symbols from ${1}
+# See mksymap for additional details
+mksysmap()
+{
+    ${CONFIG_SHELL} "${srctree}/scripts/mksysmap" ${1} ${2}
+}
+
+info SYSMAP System.map
+mksysmap vmlinux System.map

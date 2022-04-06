@@ -11,6 +11,9 @@ squote := '
 # Escape single quote for use in echo statements
 escsq = $(subst $(squote),'\$(squote)',$1)
 
+# real prerequisites without phony targets
+real-prereqs = $(filter-out $(PHONY), $^)
+
 # Name of target with a '.' as filename prefix. foo/bar.o => foo/.bar.o
 dot-target = $(dir $@).$(notdir $@)
 
@@ -33,6 +36,12 @@ kecho := $($(quiet)kecho)
 
 # Shorthand for $(Q)$(MAKE) -f scripts/Makefile.build obj=
 build := -f $(srctree)/scripts/Makefile.build obj
+
+###
+# Shorthand for $(Q)$(MAKE) -f scripts/Makefile.clean obj=
+# Usage:
+# $(Q)$(MAKE) $(clean)=dir
+clean := -f $(srctree)/scripts/Makefile.clean obj
 
 # printing commands
 cmd = @set -e; $(echo-cmd) $(cmd_$(1))

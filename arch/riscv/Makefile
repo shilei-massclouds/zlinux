@@ -3,6 +3,8 @@
 # actions for "archclean" and "archdep" for cleaning up and making
 # dependencies for this architecture.
 
+OBJCOPYFLAGS := -O binary
+
 riscv-march-$(CONFIG_ARCH_RV64I)	:= rv64ima
 riscv-march-$(CONFIG_FPU)			:= $(riscv-march-y)fd
 riscv-march-$(CONFIG_RISCV_ISA_C)   := $(riscv-march-y)c
@@ -18,7 +20,7 @@ libs-y += arch/riscv/lib/
 
 # Default target when executing plain make
 boot := arch/riscv/boot
-KBUILD_IMAGE := #$(boot)/Image.gz
+KBUILD_IMAGE := $(boot)/Image.gz
 
 BOOT_TARGETS := Image Image.gz loader loader.bin
 
@@ -27,3 +29,6 @@ all: $(notdir $(KBUILD_IMAGE))
 $(BOOT_TARGETS): vmlinux
 	$(Q)$(MAKE) $(build)=$(boot) $(boot)/$@
 	@$(kecho) '  Kernel: $(boot)/$@ is ready'
+
+install:
+	$(Q)$(MAKE) $(build)=$(boot) $@

@@ -1,0 +1,9 @@
+#!/bin/sh -x
+# Based on the vmlinux file create the System.map file
+# System.map is used by module-init tools and some debugging
+# tools to retrieve the actual addresses of symbols in the kernel.
+#
+# Usage
+# mksysmap vmlinux System.map
+
+$NM -n $1 | grep -v '\( [aNUw] \)\|\(__crc_\)\|\( \$[adt]\)\|\( \.L\)' > $2

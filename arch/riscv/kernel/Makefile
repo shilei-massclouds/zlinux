@@ -5,3 +5,5 @@
 
 extra-y += head.o
 extra-y += vmlinux.lds
+
+clean:
