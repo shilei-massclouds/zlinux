@@ -6,4 +6,7 @@
 extra-y += head.o
 extra-y += vmlinux.lds
 
+obj-y   += soc.o
+obj-y   += setup.o
+
 clean:

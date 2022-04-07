@@ -9,6 +9,15 @@ riscv-march-$(CONFIG_ARCH_RV64I)	:= rv64ima
 riscv-march-$(CONFIG_FPU)			:= $(riscv-march-y)fd
 riscv-march-$(CONFIG_RISCV_ISA_C)   := $(riscv-march-y)c
 
+KBUILD_CFLAGS += -mabi=lp64
+KBUILD_CFLAGS += -march=$(subst fd,,$(riscv-march-y))
+KBUILD_CFLAGS += -mno-save-restore
+KBUILD_CFLAGS += -DCONFIG_PAGE_OFFSET=$(CONFIG_PAGE_OFFSET)
+
+ifeq ($(CONFIG_CMODEL_MEDANY),y)
+	KBUILD_CFLAGS += -mcmodel=medany
+endif
+
 KBUILD_AFLAGS += -mabi=lp64
 KBUILD_AFLAGS += -march=$(riscv-march-y)
 

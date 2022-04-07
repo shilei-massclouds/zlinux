@@ -10,6 +10,19 @@
 #define ASM_NL       ;
 #endif
 
+#ifdef __cplusplus
+#define CPP_ASMLINKAGE extern "C"
+#else
+#define CPP_ASMLINKAGE
+#endif
+
+#ifndef asmlinkage
+#define asmlinkage CPP_ASMLINKAGE
+#endif
+
+#define __page_aligned_bss \
+    __section(.bss..page_aligned) __aligned(PAGE_SIZE)
+
 #define ALIGN __ALIGN
 #define ALIGN_STR __ALIGN_STR
 
@@ -45,6 +58,11 @@
     linkage(name) ASM_NL    \
     align ASM_NL            \
     name:
+#endif
+
+#ifndef END
+/* deprecated, use SYM_FUNC_END, SYM_DATA_END, or SYM_END */
+#define END(name) .size name, .-name
 #endif
 
 #endif /* _LINUX_LINKAGE_H */

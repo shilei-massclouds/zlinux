@@ -112,9 +112,25 @@ NOSTDINC_FLAGS	:= -nostdinc \
 	-isystem $(shell $(CC) -print-file-name=include)
 
 KBUILD_AFLAGS   := -D__ASSEMBLY__ -fno-PIE
+KBUILD_CFLAGS   := -Wall -Wundef -Werror=strict-prototypes -Wno-trigraphs \
+	-fno-strict-aliasing -fno-common -fshort-wchar -fno-PIE \
+	-Werror=implicit-function-declaration -Werror=implicit-int \
+	-Wno-format-security \
+	-std=gnu89
 KBUILD_CPPFLAGS := -D__KERNEL__
 
-export NOSTDINC_FLAGS LINUXINCLUDE KBUILD_CPPFLAGS KBUILD_AFLAGS
+export NOSTDINC_FLAGS LINUXINCLUDE KBUILD_CPPFLAGS KBUILD_AFLAGS KBUILD_CFLAGS
+
+KBUILD_CFLAGS += -fno-omit-frame-pointer -fno-optimize-sibling-calls
+
+# warn about C99 declaration after statement
+KBUILD_CFLAGS += -Wdeclaration-after-statement
+
+# Variable Length Arrays (VLAs) should not be used anywhere in the kernel
+KBUILD_CFLAGS += -Wvla
+
+# disable pointer signed / unsigned warnings in gcc 4.0
+KBUILD_CFLAGS += -Wno-pointer-sign
 
 #
 # (1) Entry: all

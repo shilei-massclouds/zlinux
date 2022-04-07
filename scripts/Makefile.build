@@ -63,8 +63,8 @@ cmd_cc_o_c = $(CC) $(c_flags) -c -o $@ $<
 
 # Built-in and composite module parts
 $(obj)/%.o: $(src)/%.c $(recordmcount_source) $(objtool_dep) FORCE
+	$(warning e: cc_o_c: $(c_flags))
 	$(call if_changed_rule,cc_o_c)
-	$(call cmd,force_checksrc)
 
 quiet_cmd_cpp_s_S = CPP $(quiet_modtag) $@
 cmd_cpp_s_S = $(CPP) $(a_flags) -o $@ $<
@@ -74,6 +74,10 @@ $(obj)/%.s: $(src)/%.S FORCE
 
 quiet_cmd_as_o_S = AS $(quiet_modtag) $@
 cmd_as_o_S = $(CC) $(a_flags) -c -o $@ $<
+
+define rule_cc_o_c
+    $(call cmd_and_fixdep,cc_o_c)
+endef
 
 define rule_as_o_S
 	$(call cmd_and_fixdep,as_o_S)

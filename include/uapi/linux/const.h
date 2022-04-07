@@ -11,4 +11,7 @@
 #define _AC(X,Y)    __AC(X,Y)
 #endif
 
+#define _UL(x)  (_AC(x, UL))
+#define _ULL(x) (_AC(x, ULL))
+
 #endif /* _UAPI_LINUX_CONST_H */
