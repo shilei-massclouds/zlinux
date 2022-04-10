@@ -46,11 +46,9 @@ relocate:
     csrw CSR_TVEC, a2
 
     /* Compute satp for kernel page tables, but don't load it yet */
-    /*
-    srl a2, a0, PAGE_SHIFT
+    //srl a2, a0, PAGE_SHIFT
     li a1, SATP_MODE
-    or a2, a2, a1
-    */
+    //or a2, a2, a1
 
     /*
      * Load trampoline page directory, which will cause us to trap to

@@ -13,6 +13,10 @@
 
 #define SR_FS   _AC(0x00006000, UL) /* Floating-point Status */
 
+/* SATP flags */
+#define SATP_MODE_39    _AC(0x8000000000000000, UL)
+#define SATP_MODE       SATP_MODE_39
+
 /* Interrupt causes (minus the high bit) */
 #define IRQ_S_SOFT      1
 #define IRQ_S_TIMER     5
