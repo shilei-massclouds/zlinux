@@ -12,8 +12,10 @@
 #define __ASM_STR(x)    #x
 #endif
 
-#define REG_L __ASM_STR(ld)
-#define REG_S __ASM_STR(sd)
+#define REG_L   __ASM_STR(ld)
+#define REG_S   __ASM_STR(sd)
+#define SZREG   __ASM_STR(8)
+#define LGREG   __ASM_STR(3)
 
 #ifdef __ASSEMBLY__
 #define RISCV_PTR       .dword

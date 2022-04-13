@@ -27,7 +27,8 @@
 #define ALIGN_STR __ALIGN_STR
 
 /* SYM_L_* -- linkage of symbols */
-#define SYM_L_GLOBAL(name) .globl name
+#define SYM_L_GLOBAL(name)  .globl name
+#define SYM_L_WEAK(name)    .weak name
 
 /* SYM_A_* -- align the symbol? */
 #define SYM_A_ALIGN	ALIGN
@@ -58,6 +59,18 @@
     linkage(name) ASM_NL    \
     align ASM_NL            \
     name:
+#endif
+
+/* SYM_FUNC_START_WEAK -- use for weak functions */
+#ifndef SYM_FUNC_START_WEAK
+#define SYM_FUNC_START_WEAK(name)   \
+    SYM_START(name, SYM_L_WEAK, SYM_A_ALIGN)
+#endif
+
+#ifndef WEAK
+/* deprecated, use SYM_FUNC_START_WEAK* */
+#define WEAK(name)     \
+    SYM_FUNC_START_WEAK(name)
 #endif
 
 #ifndef END

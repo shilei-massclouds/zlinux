@@ -7,6 +7,17 @@
 
 #ifndef __ASSEMBLY__
 
+typedef _Bool           bool;
+
+/*
+ * The following typedefs are also protected by individual ifdefs for
+ * historical reasons:
+ */
+#ifndef _SIZE_T
+#define _SIZE_T
+typedef __kernel_size_t     size_t;
+#endif
+
 #if defined(__GNUC__)
 typedef u64         uint64_t;
 typedef u64         u_int64_t;
@@ -20,6 +31,8 @@ typedef unsigned long   uintptr_t;
 typedef struct {
     int counter;
 } atomic_t;
+
+#define ATOMIC_INIT(i) { (i) }
 
 #endif /*  __ASSEMBLY__ */
 

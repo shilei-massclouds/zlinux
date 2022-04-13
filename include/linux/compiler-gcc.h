@@ -22,3 +22,5 @@
         barrier_before_unreachable();   \
         __builtin_unreachable();        \
     } while (0)
+
+#define __no_sanitize_address __attribute__((no_sanitize_address))

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
 #include <asm/thread_info.h>
+#include <asm/asm-offsets.h>
 #include <asm/asm.h>
 #include <asm/csr.h>
 #include <linux/init.h>
@@ -46,9 +47,9 @@ relocate:
     csrw CSR_TVEC, a2
 
     /* Compute satp for kernel page tables, but don't load it yet */
-    //srl a2, a0, PAGE_SHIFT
+    srl a2, a0, PAGE_SHIFT
     li a1, SATP_MODE
-    //or a2, a2, a1
+    or a2, a2, a1
 
     /*
      * Load trampoline page directory, which will cause us to trap to
@@ -74,25 +75,31 @@ relocate:
 .option pop
 
     /*
-     * Switch to kernel page tables.  A full fence is necessary in order to
-     * avoid using the trampoline translations, which are only correct for
-     * the first superpage.  Fetching the fence is guarnteed to work
+     * Switch to kernel page tables.
+     * A full fence is necessary in order to
+     * avoid using the trampoline translations,
+     * which are only correct for the first superpage.
+     * Fetching the fence is guarnteed to work
      * because that first superpage is translated the same way.
      */
-    /*
     csrw CSR_SATP, a2
     sfence.vma
-    */
 
     ret
+
+.global secondary_start_common
+secondary_start_common:
+    /* Enable virtual memory and relocate to virtual address */
+    la a0, swapper_pg_dir
+    call relocate
+    call setup_trap_vector
+    tail smp_callin
 
 .align 2
 setup_trap_vector:
     /* Set trap vector to exception handler */
-/*
     la a0, handle_exception
     csrw CSR_TVEC, a0
-    */
 
     /*
      * Set sup0 scratch register to 0, indicating to exception vector that
@@ -161,22 +168,43 @@ clear_bss_done:
     mv a0, s1
     call setup_vm
 
-    //la a0, early_pg_dir
+    la a0, early_pg_dir
     call relocate
 
     call setup_trap_vector
     /* Restore C environment */
-    /*
     la tp, init_task
     sw zero, TASK_TI_CPU(tp)
-    */
     la sp, init_thread_union + THREAD_SIZE
 
     /* Start the kernel */
     call soc_early_init
-
-    sbreak
+    call parse_dtb
+    tail start_kernel
 
 .Lsecondary_start:
+    /* Set trap vector to spin forever to help debug */
+    la a3, .Lsecondary_park
+    csrw CSR_TVEC, a3
+
+    slli a3, a0, LGREG
+    la a1, __cpu_up_stack_pointer
+    la a2, __cpu_up_task_pointer
+    add a1, a3, a1
+    add a2, a3, a2
+
+    /*
+     * This hart didn't win the lottery, so we wait for the winning hart to
+     * get far enough along the boot process that it should continue.
+     */
+.Lwait_for_cpu_up:
+    /* FIXME: We should WFI to save some energy here. */
+    REG_L sp, (a1)
+    REG_L tp, (a2)
+    beqz sp, .Lwait_for_cpu_up
+    beqz tp, .Lwait_for_cpu_up
+    fence
+
+    tail secondary_start_common
 
 END(_start_kernel)

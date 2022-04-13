@@ -20,6 +20,12 @@
 
 #define _PAGE_TABLE     _PAGE_PRESENT
 
+/*
+ * _PAGE_PROT_NONE is set on not-present pages (and ignored by the hardware) to
+ * distinguish them from swapped out pages
+ */
+#define _PAGE_PROT_NONE _PAGE_READ
+
 #define _PAGE_PFN_SHIFT 10
 
 #endif /* _ASM_RISCV_PGTABLE_BITS_H */

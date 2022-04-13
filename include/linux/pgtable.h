@@ -5,6 +5,11 @@
 #include <linux/pfn.h>
 #include <asm/pgtable.h>
 
+static inline unsigned long pte_index(unsigned long address)
+{
+    return (address >> PAGE_SHIFT) & (PTRS_PER_PTE - 1);
+}
+
 #ifndef pmd_index
 static inline unsigned long pmd_index(unsigned long address)
 {

@@ -121,6 +121,14 @@ KBUILD_CPPFLAGS := -D__KERNEL__
 
 export NOSTDINC_FLAGS LINUXINCLUDE KBUILD_CPPFLAGS KBUILD_AFLAGS KBUILD_CFLAGS
 
+ifdef CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE
+KBUILD_CFLAGS += -O2
+else ifdef CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3
+KBUILD_CFLAGS += -O3
+else ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
+KBUILD_CFLAGS += -Os
+endif
+
 KBUILD_CFLAGS += -fno-omit-frame-pointer -fno-optimize-sibling-calls
 
 # warn about C99 declaration after statement
@@ -138,19 +146,18 @@ KBUILD_CFLAGS += -Wno-pointer-sign
 PHONY := all
 all:
 
-# Objects we will link into vmlinux / subdirs we need to visit
-core-y := #init/ usr/
-
 include $(srctree)/scripts/Kbuild.include
 
-include arch/$(SRCARCH)/Makefile
+# Objects we will link into vmlinux / subdirs we need to visit
+core-y := init/ #usr/
+core-y += kernel/ #certs/ mm/ fs/ ipc/ security/ crypto/ block/
 
-core-y += #kernel/ certs/ mm/ fs/ ipc/ security/ crypto/ block/
-
-drivers-y := #drivers/ sound/
+drivers-y := drivers/ #sound/
 drivers-y += #net/ virt/
 
 libs-y := #lib/
+
+include arch/$(SRCARCH)/Makefile
 
 # (2) all -> vmlinux
 $(warning r: all -> vmlinux)
@@ -165,6 +172,7 @@ KBUILD_VMLINUX_OBJS += $(patsubst %/, %/lib.a, $(filter %/, $(libs-y)))
 
 KBUILD_VMLINUX_LIBS := $(filter-out %/, $(libs-y))
 
+$(warning r: ####### libs-y: [$(libs-y)] #####)
 export KBUILD_VMLINUX_OBJS KBUILD_VMLINUX_LIBS
 
 vmlinux-deps := $(KBUILD_LDS) $(KBUILD_VMLINUX_OBJS) $(KBUILD_VMLINUX_LIBS)
@@ -225,6 +233,7 @@ prepare: prepare0
 # (8) prepare0 -> archprepare
 $(warning r: prepare0 -> archprepare)
 prepare0: archprepare
+	$(Q)$(MAKE) $(build)=.
 
 # (9) archprepare -> scripts
 $(warning r: archprepare -> scripts)

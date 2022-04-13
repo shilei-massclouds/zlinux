@@ -3,6 +3,7 @@
 #define _LINUX_BUG_H
 
 #include <asm/bug.h>
+#include <linux/build_bug.h>
 
 #ifdef CONFIG_GENERIC_BUG
 #include <asm-generic/bug.h>

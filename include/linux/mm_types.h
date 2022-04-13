@@ -14,4 +14,9 @@ struct page {
  */
 #define STRUCT_PAGE_MAX_SHIFT   (order_base_2(sizeof(struct page)))
 
+struct mm_struct {
+};
+
+extern struct mm_struct init_mm;
+
 #endif /* _LINUX_MM_TYPES_H */

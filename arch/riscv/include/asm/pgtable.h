@@ -45,6 +45,7 @@
 #define _PAGE_KERNEL    (_PAGE_READ | _PAGE_WRITE | _PAGE_PRESENT | \
                          _PAGE_ACCESSED | _PAGE_DIRTY)
 
+#define PAGE_KERNEL         __pgprot(_PAGE_KERNEL)
 #define PAGE_KERNEL_EXEC    __pgprot(_PAGE_KERNEL | _PAGE_EXEC)
 
 #define PAGE_TABLE          __pgprot(_PAGE_TABLE)
@@ -58,6 +59,67 @@ static inline pgd_t pfn_pgd(unsigned long pfn, pgprot_t prot)
 {
     return __pgd((pfn << _PAGE_PFN_SHIFT) | pgprot_val(prot));
 }
+
+static inline unsigned long _pgd_pfn(pgd_t pgd)
+{
+    return pgd_val(pgd) >> _PAGE_PFN_SHIFT;
+}
+
+/* Constructs a page table entry */
+static inline pte_t pfn_pte(unsigned long pfn, pgprot_t prot)
+{
+    return __pte((pfn << _PAGE_PFN_SHIFT) | pgprot_val(prot));
+}
+
+static inline int pte_present(pte_t pte)
+{
+    return (pte_val(pte) & (_PAGE_PRESENT | _PAGE_PROT_NONE));
+}
+
+static inline int pte_none(pte_t pte)
+{
+    return (pte_val(pte) == 0);
+}
+
+static inline int pte_write(pte_t pte)
+{
+    return pte_val(pte) & _PAGE_WRITE;
+}
+
+static inline int pte_exec(pte_t pte)
+{
+    return pte_val(pte) & _PAGE_EXEC;
+}
+
+/*
+ * Certain architectures need to do special things when PTEs within
+ * a page table are directly modified.  Thus, the following hook is
+ * made available.
+ */
+static inline void set_pte(pte_t *ptep, pte_t pteval)
+{
+    *ptep = pteval;
+}
+
+void flush_icache_pte(pte_t pte);
+
+static inline void
+set_pte_at(struct mm_struct *mm, unsigned long addr, pte_t *ptep, pte_t pteval)
+{
+    if (pte_present(pteval) && pte_exec(pteval))
+        flush_icache_pte(pteval);
+
+    set_pte(ptep, pteval);
+}
+
+static inline void
+pte_clear(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
+{
+    set_pte_at(mm, addr, ptep, __pte(0));
+}
+
+extern void *dtb_early_va;
+extern pgd_t swapper_pg_dir[];
 
 #endif /* !__ASSEMBLY__ */
 
