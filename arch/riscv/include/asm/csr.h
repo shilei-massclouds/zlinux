@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-
 #ifndef _ASM_RISCV_CSR_H
 #define _ASM_RISCV_CSR_H
 
+#include <asm/asm.h>
 #include <linux/const.h>
 
 /* Status register flags */
@@ -49,5 +49,18 @@
 # define RV_IRQ_SOFT    IRQ_S_SOFT
 # define RV_IRQ_TIMER   IRQ_S_TIMER
 # define RV_IRQ_EXT     IRQ_S_EXT
+
+#ifndef __ASSEMBLY__
+
+#define csr_read(csr)                                   \
+({                                                      \
+    register unsigned long __v;                         \
+    __asm__ __volatile__ ("csrr %0, " __ASM_STR(csr)    \
+                          : "=r" (__v) :                \
+                          : "memory");                  \
+                          __v;                          \
+})
+
+#endif /* __ASSEMBLY__ */
 
 #endif /* _ASM_RISCV_CSR_H */

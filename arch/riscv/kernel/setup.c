@@ -20,3 +20,8 @@ void __init parse_dtb(void)
 
     //pr_err("No DTB passed to the kernel\n");
 }
+
+void __init setup_arch(char **cmdline_p)
+{
+    parse_early_param();
+}

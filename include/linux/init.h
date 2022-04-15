@@ -20,7 +20,20 @@
 
 #ifndef __ASSEMBLY__
 
+struct obs_kernel_param {
+    const char *str;
+    int (*setup_func)(char *);
+    int early;
+};
+
 extern char __initdata boot_command_line[];
+
+/* used by init/main.c */
+void setup_arch(char **);
+
+/* Relies on boot_command_line being set */
+void __init parse_early_param(void);
+void __init parse_early_options(char *cmdline);
 
 #endif /* !__ASSEMBLY__ */
 

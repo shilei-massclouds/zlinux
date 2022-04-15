@@ -3,8 +3,10 @@
  *  linux/lib/string.c
  *
  */
+
 #include <linux/types.h>
 #include <linux/string.h>
+#include <linux/ctype.h>
 #include <linux/kernel.h>
 #include <linux/export.h>
 
@@ -160,3 +162,17 @@ void *memchr(const void *s, int c, size_t n)
 }
 EXPORT_SYMBOL(memchr);
 #endif
+
+/**
+ * skip_spaces - Removes leading whitespace from @str.
+ * @str: The string to be stripped.
+ *
+ * Returns a pointer to the first non-whitespace character in @str.
+ */
+char *skip_spaces(const char *str)
+{
+    while (isspace(*str))
+        ++str;
+    return (char *)str;
+}
+EXPORT_SYMBOL(skip_spaces);

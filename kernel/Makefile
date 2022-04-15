@@ -3,4 +3,5 @@
 # Makefile for the linux kernel.
 #
 
-obj-y	= panic.o
+obj-y = panic.o params.o
+obj-y += printk/

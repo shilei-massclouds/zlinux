@@ -8,7 +8,7 @@
 # "optimize" them into calls to themselves.
 CFLAGS_string.o := -ffreestanding
 
-lib-y := string.o
+lib-y := ctype.o string.o cmdline.o
 
 libfdt_files = fdt.o fdt_ro.o
 

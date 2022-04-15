@@ -67,4 +67,6 @@
 #define compiletime_assert(condition, msg) \
     _compiletime_assert(condition, msg, __compiletime_assert_, __COUNTER__)
 
+#define __must_check    __attribute__((__warn_unused_result__))
+
 #endif /* __LINUX_COMPILER_TYPES_H */

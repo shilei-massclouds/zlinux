@@ -46,10 +46,26 @@
     *(.init.rodata .init.rodata.*)      \
     MEM_DISCARD(init.rodata)
 
-#define INIT_DATA_SECTION(initsetup_align)  \
+#define INIT_SETUP(initsetup_align) \
+        . = ALIGN(initsetup_align); \
+        __setup_start = .;          \
+        KEEP(*(.init.setup))        \
+        __setup_end = .;
+
+#define INIT_DATA_SECTION(initsetup_align) \
     .init.data : AT(ADDR(.init.data) - LOAD_OFFSET) { \
-        INIT_DATA   \
+        INIT_DATA \
+        INIT_SETUP(initsetup_align) \
     }
+
+/*
+ * Non-instrumentable text section
+ */
+#define NOINSTR_TEXT                \
+        ALIGN_FUNCTION();           \
+        __noinstr_text_start = .;   \
+        *(.noinstr.text)            \
+        __noinstr_text_end = .;
 
 /*
  * .text section. Map to function alignment to avoid address changes
@@ -62,6 +78,7 @@
 #define TEXT_TEXT       \
     ALIGN_FUNCTION();   \
     *(.text.hot TEXT_MAIN .text.fixup .text.unlikely) \
+    NOINSTR_TEXT        \
     *(.text..refcount)  \
     *(.ref.text)        \
     MEM_KEEP(init.text*)\

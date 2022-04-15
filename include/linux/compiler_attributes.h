@@ -19,4 +19,6 @@
 
 #define noinline    __attribute__((__noinline__))
 
+#define __printf(a, b)  __attribute__((__format__(printf, a, b)))
+
 #endif /* __LINUX_COMPILER_ATTRIBUTES_H */

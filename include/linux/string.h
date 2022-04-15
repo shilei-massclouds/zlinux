@@ -2,6 +2,10 @@
 #ifndef _LINUX_STRING_H_
 #define _LINUX_STRING_H_
 
+#include <linux/compiler.h> /* for inline */
+#include <linux/types.h>    /* for size_t */
+#include <linux/stddef.h>   /* for NULL */
+#include <stdarg.h>
 #include <uapi/linux/string.h>
 
 #ifndef __HAVE_ARCH_STRCMP
@@ -31,5 +35,7 @@ size_t strlcpy(char *, const char *, size_t);
 #ifndef __HAVE_ARCH_MEMCHR
 extern void * memchr(const void *,int,__kernel_size_t);
 #endif
+
+extern char * __must_check skip_spaces(const char *);
 
 #endif /* _LINUX_STRING_H_ */

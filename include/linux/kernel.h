@@ -3,6 +3,7 @@
 #define _LINUX_KERNEL_H
 
 #include <linux/compiler.h>
+#include <linux/printk.h>
 
 /*
  * min()/max()/clamp() macros must accomplish three things:
@@ -52,6 +53,9 @@
  */
 #define min(x, y)   __careful_cmp(x, y, <)
 
+__printf(1, 2)
 void panic(const char *fmt, ...) __noreturn __cold;
+
+extern char *next_arg(char *args, char **param, char **val);
 
 #endif /* _LINUX_KERNEL_H */
