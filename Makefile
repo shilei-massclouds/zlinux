@@ -129,6 +129,12 @@ else ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
 KBUILD_CFLAGS += -Os
 endif
 
+stackp-flags-y                                  := -fno-stack-protector
+stackp-flags-$(CONFIG_STACKPROTECTOR)           := -fstack-protector
+stackp-flags-$(CONFIG_STACKPROTECTOR_STRONG)	:= -fstack-protector-strong
+
+KBUILD_CFLAGS += $(stackp-flags-y)
+
 KBUILD_CFLAGS += -fno-omit-frame-pointer -fno-optimize-sibling-calls
 
 # warn about C99 declaration after statement
@@ -155,7 +161,7 @@ core-y += kernel/ #certs/ mm/ fs/ ipc/ security/ crypto/ block/
 drivers-y := drivers/ #sound/
 drivers-y += #net/ virt/
 
-libs-y := #lib/
+libs-y := lib/
 
 include arch/$(SRCARCH)/Makefile
 

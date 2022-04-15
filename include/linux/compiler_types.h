@@ -4,6 +4,12 @@
 
 #ifndef __ASSEMBLY__
 
+#define __force
+
+/* Indirect macros required for expanded argument pasting, eg. __LINE__. */
+#define ___PASTE(a,b) a##b
+#define __PASTE(a,b) ___PASTE(a,b)
+
 #ifdef __KERNEL__
 
 /* Attributes */
@@ -14,6 +20,14 @@
 #else
 #error "Unknown compiler"
 #endif
+
+#define notrace     __attribute__((__no_instrument_function__))
+#define __no_kcsan  __no_sanitize_thread
+
+/* Section for code which can't be instrumented at all */
+#define noinstr \
+    noinline notrace __attribute((__section__(".noinstr.text"))) \
+    __no_kcsan __no_sanitize_address
 
 #endif /* __KERNEL__ */
 

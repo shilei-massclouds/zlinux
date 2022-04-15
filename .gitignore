@@ -58,3 +58,4 @@ scripts/basic/fixdep
 Image
 Image.gz
 tags
+*.s

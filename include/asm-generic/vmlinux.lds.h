@@ -133,6 +133,25 @@
         DATA_DATA \
     }
 
+#define JUMP_TABLE_DATA         \
+    . = ALIGN(8);               \
+    __start___jump_table = .;   \
+    KEEP(*(__jump_table))       \
+    __stop___jump_table = .;
+
+/*
+ * Allow architectures to handle ro_after_init data on their
+ * own by defining an empty RO_AFTER_INIT_DATA.
+ */
+#ifndef RO_AFTER_INIT_DATA
+#define RO_AFTER_INIT_DATA      \
+    . = ALIGN(8);               \
+    __start_ro_after_init = .;  \
+    *(.data..ro_after_init)     \
+    JUMP_TABLE_DATA             \
+    __end_ro_after_init = .;
+#endif
+
 /*
  * Read only Data
  */
@@ -141,6 +160,7 @@
     .rodata : AT(ADDR(.rodata) - LOAD_OFFSET) { \
         __start_rodata = .;     \
         *(.rodata) *(.rodata.*) \
+        RO_AFTER_INIT_DATA  /* Read only after init */  \
         . = ALIGN(8); \
     }   \
         \

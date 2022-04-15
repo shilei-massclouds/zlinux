@@ -17,4 +17,6 @@
 # define __visible
 #endif
 
+#define noinline    __attribute__((__noinline__))
+
 #endif /* __LINUX_COMPILER_ATTRIBUTES_H */

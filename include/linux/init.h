@@ -18,4 +18,10 @@
 #define __HEAD  .section ".head.text","ax"
 #define __INIT  .section ".init.text","ax"
 
+#ifndef __ASSEMBLY__
+
+extern char __initdata boot_command_line[];
+
+#endif /* !__ASSEMBLY__ */
+
 #endif /* _LINUX_INIT_H */

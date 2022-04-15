@@ -11,5 +11,6 @@ obj-y   += entry.o
 obj-y   += setup.o
 obj-y   += smpboot.o
 obj-y   += cpu_ops.o
+obj-y   += process.o
 
 clean:

@@ -18,6 +18,22 @@ typedef _Bool           bool;
 typedef __kernel_size_t     size_t;
 #endif
 
+#ifndef __BIT_TYPES_DEFINED__
+#define __BIT_TYPES_DEFINED__
+
+typedef u8          u_int8_t;
+typedef s8          int8_t;
+typedef u16         u_int16_t;
+typedef s16         int16_t;
+typedef u32         u_int32_t;
+typedef s32         int32_t;
+
+#endif /* !(__BIT_TYPES_DEFINED__) */
+
+typedef u8          uint8_t;
+typedef u16         uint16_t;
+typedef u32         uint32_t;
+
 #if defined(__GNUC__)
 typedef u64         uint64_t;
 typedef u64         u_int64_t;
