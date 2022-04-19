@@ -3,6 +3,7 @@
 #define _LINUX_LIMITS_H
 
 #include <linux/types.h>
+#include <vdso/limits.h>
 
 #define U32_MAX     ((u32)~0U)
 #define U32_MIN     ((u32)0)

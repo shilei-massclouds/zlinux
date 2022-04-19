@@ -20,7 +20,24 @@ extern const unsigned char _ctype[];
 
 #define __ismask(x) (_ctype[(int)(unsigned char)(x)])
 
+#define isalnum(c)  ((__ismask(c)&(_U|_L|_D)) != 0)
+
+static inline int isdigit(int c)
+{
+    return '0' <= c && c <= '9';
+}
+
 /* Note: isspace() must return false for %NUL-terminator */
 #define isspace(c)  ((__ismask(c)&(_S)) != 0)
+#define isxdigit(c) ((__ismask(c)&(_D|_X)) != 0)
+
+/*
+ * Fast implementation of tolower() for internal usage.
+ * Do not use in your code.
+ */
+static inline char _tolower(const char c)
+{
+    return c | 0x20;
+}
 
 #endif /* _LINUX_CTYPE_H */

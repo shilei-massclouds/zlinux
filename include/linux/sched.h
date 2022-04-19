@@ -6,6 +6,13 @@
 #include <linux/refcount.h>
 #include <asm/thread_info.h>
 
+static inline int _cond_resched(void) { return 0; }
+
+#define cond_resched() ({           \
+    ___might_sleep(__FILE__, __LINE__, 0);  \
+    _cond_resched();            \
+})
+
 struct task_struct {
     /*
      * For reasons of header soup (see current_thread_info()), this

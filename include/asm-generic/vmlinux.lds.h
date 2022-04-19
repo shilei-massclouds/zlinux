@@ -39,12 +39,18 @@
         _einittext = .; \
     }
 
+#define EARLYCON_TABLE() . = ALIGN(8);  \
+    __earlycon_table = .;               \
+    KEEP(*(__earlycon_table))           \
+    __earlycon_table_end = .;
+
 /* init and exit section handling */
 #define INIT_DATA                       \
     *(.init.data init.data.*)           \
     MEM_DISCARD(init.data*)             \
     *(.init.rodata .init.rodata.*)      \
-    MEM_DISCARD(init.rodata)
+    MEM_DISCARD(init.rodata)            \
+    EARLYCON_TABLE()
 
 #define INIT_SETUP(initsetup_align) \
         . = ALIGN(initsetup_align); \
@@ -128,8 +134,11 @@
 /*
  * .data section
  */
-#define DATA_DATA \
-    *(DATA_MAIN)
+#define DATA_DATA       \
+    *(DATA_MAIN)        \
+    __start_once = .;   \
+    *(.data.once)       \
+    __end_once = .;     \
 
 /*
  * Writeable data.

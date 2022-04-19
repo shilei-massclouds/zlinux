@@ -71,7 +71,7 @@ char *strrchr(const char *s, int c)
 EXPORT_SYMBOL(strrchr);
 #endif
 
-#ifndef __HAVE_ARCH_MEMCPY
+#ifndef __HAVE_ARCH_MEMCMP
 /**
  * memcmp - Compare two areas of memory
  * @cs: One area of memory
@@ -176,3 +176,60 @@ char *skip_spaces(const char *str)
     return (char *)str;
 }
 EXPORT_SYMBOL(skip_spaces);
+
+#ifndef __HAVE_ARCH_STRNCMP
+/**
+ * strncmp - Compare two length-limited strings
+ * @cs: One string
+ * @ct: Another string
+ * @count: The maximum number of bytes to compare
+ */
+int strncmp(const char *cs, const char *ct, size_t count)
+{
+    unsigned char c1, c2;
+
+    while (count) {
+        c1 = *cs++;
+        c2 = *ct++;
+        if (c1 != c2)
+            return c1 < c2 ? -1 : 1;
+        if (!c1)
+            break;
+        count--;
+    }
+    return 0;
+}
+EXPORT_SYMBOL(strncmp);
+#endif
+
+#ifndef __HAVE_ARCH_MEMMOVE
+/**
+ * memmove - Copy one area of memory to another
+ * @dest: Where to copy to
+ * @src: Where to copy from
+ * @count: The size of the area.
+ *
+ * Unlike memcpy(), memmove() copes with overlapping areas.
+ */
+void *memmove(void *dest, const void *src, size_t count)
+{
+    char *tmp;
+    const char *s;
+
+    if (dest <= src) {
+        tmp = dest;
+        s = src;
+        while (count--)
+            *tmp++ = *s++;
+    } else {
+        tmp = dest;
+        tmp += count;
+        s = src;
+        s += count;
+        while (count--)
+            *--tmp = *--s;
+    }
+    return dest;
+}
+EXPORT_SYMBOL(memmove);
+#endif

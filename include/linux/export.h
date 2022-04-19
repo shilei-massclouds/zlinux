@@ -45,6 +45,8 @@ struct kernel_symbol {
 #define _EXPORT_SYMBOL(sym, sec) __EXPORT_SYMBOL(sym, sec, "")
 #define EXPORT_SYMBOL(sym) _EXPORT_SYMBOL(sym, "")
 
+#define EXPORT_SYMBOL_GPL(sym)  _EXPORT_SYMBOL(sym, "_gpl")
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* _LINUX_EXPORT_H */

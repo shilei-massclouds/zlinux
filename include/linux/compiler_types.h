@@ -29,6 +29,12 @@
     noinline notrace __attribute((__section__(".noinstr.text"))) \
     __no_kcsan __no_sanitize_address
 
+/*
+ * Rather then using noinline to prevent stack consumption, use
+ * noinline_for_stack instead.  For documentation reasons.
+ */
+#define noinline_for_stack noinline
+
 #endif /* __KERNEL__ */
 
 #endif /* __ASSEMBLY__ */

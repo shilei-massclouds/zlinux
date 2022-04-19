@@ -7,7 +7,7 @@
 
 #ifdef CONFIG_GENERIC_BUG
 #include <asm-generic/bug.h>
-#else   /* !CONFIG_GENERIC_BUG */
-#endif  /* CONFIG_GENERIC_BUG */
+#else   /* CONFIG_GENERIC_BUG */
+#endif  /* !CONFIG_GENERIC_BUG */
 
 #endif  /* _LINUX_BUG_H */

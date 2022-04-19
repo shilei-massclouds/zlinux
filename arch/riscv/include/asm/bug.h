@@ -34,6 +34,8 @@ do {                        \
     unreachable();  \
 } while (0)
 
+#define __WARN_FLAGS(flags) __BUG_FLAGS(BUGFLAG_WARNING|(flags))
+
 #define HAVE_ARCH_BUG
 
 #include <asm-generic/bug.h>

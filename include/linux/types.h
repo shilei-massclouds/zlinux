@@ -18,6 +18,16 @@ typedef _Bool           bool;
 typedef __kernel_size_t     size_t;
 #endif
 
+#ifndef _SSIZE_T
+#define _SSIZE_T
+typedef __kernel_ssize_t    ssize_t;
+#endif
+
+#ifndef _PTRDIFF_T
+#define _PTRDIFF_T
+typedef __kernel_ptrdiff_t  ptrdiff_t;
+#endif
+
 #ifndef __BIT_TYPES_DEFINED__
 #define __BIT_TYPES_DEFINED__
 
@@ -43,6 +53,8 @@ typedef s64         int64_t;
 typedef u64 phys_addr_t;
 
 typedef unsigned long   uintptr_t;
+
+typedef phys_addr_t resource_size_t;
 
 typedef struct {
     int counter;

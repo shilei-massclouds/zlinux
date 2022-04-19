@@ -5,6 +5,7 @@
 #define __cold          __attribute__((__cold__))
 #define __section(S)    __attribute__((__section__(#S)))
 #define __noreturn      __attribute__((__noreturn__))
+#define __packed        __attribute__((__packed__))
 #define __aligned(x)    __attribute__((__aligned__(x)))
 
 #define __always_inline inline __attribute__((__always_inline__))
@@ -16,6 +17,8 @@
 #else
 # define __visible
 #endif
+
+#define __used __attribute__((__used__))
 
 #define noinline    __attribute__((__noinline__))
 

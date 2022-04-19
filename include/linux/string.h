@@ -8,6 +8,11 @@
 #include <stdarg.h>
 #include <uapi/linux/string.h>
 
+/*
+ * Include machine specific inline routines
+ */
+#include <asm/string.h>
+
 #ifndef __HAVE_ARCH_STRCMP
 extern int strcmp(const char *,const char *);
 #endif
@@ -34,6 +39,14 @@ size_t strlcpy(char *, const char *, size_t);
 
 #ifndef __HAVE_ARCH_MEMCHR
 extern void * memchr(const void *,int,__kernel_size_t);
+#endif
+
+#ifndef __HAVE_ARCH_STRNCMP
+extern int strncmp(const char *,const char *,__kernel_size_t);
+#endif
+
+#ifndef __HAVE_ARCH_MEMMOVE
+extern void * memmove(void *,const void *,__kernel_size_t);
 #endif
 
 extern char * __must_check skip_spaces(const char *);

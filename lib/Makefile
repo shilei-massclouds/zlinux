@@ -8,7 +8,9 @@
 # "optimize" them into calls to themselves.
 CFLAGS_string.o := -ffreestanding
 
-lib-y := ctype.o string.o cmdline.o
+lib-y := ctype.o string.o vsprintf.o cmdline.o siphash.o
+obj-y += kstrtox.o
+obj-y += hexdump.o
 
 libfdt_files = fdt.o fdt_ro.o
 

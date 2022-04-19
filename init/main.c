@@ -39,8 +39,7 @@ do_early_param(char *param, char *val, const char *unused, void *arg)
              strcmp(p->str, "earlycon") == 0)
         ) {
             if (p->setup_func(val) != 0)
-                panic("Malformed early option '%s'\n", param);
-                //pr_warn("Malformed early option '%s'\n", param);
+                pr_warn("Malformed early option '%s'\n", param);
         }
     }
     /* We accept everything at this stage. */
