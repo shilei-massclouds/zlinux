@@ -305,7 +305,7 @@ static int have_callable_console(void)
  */
 static inline int can_use_console(void)
 {
-    return have_callable_console();
+    return 1;
     //return cpu_online(raw_smp_processor_id()) || have_callable_console();
 }
 

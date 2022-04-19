@@ -63,4 +63,8 @@ extern const struct earlycon_id *__earlycon_table_end[];
 
 int setup_earlycon(char *buf);
 
+void uart_console_write(struct uart_port *port,
+                        const char *s, unsigned int count,
+                        void (*putchar)(struct uart_port *, int));
+
 #endif /* LINUX_SERIAL_CORE_H */

@@ -49,6 +49,10 @@
 # define __latent_entropy
 #endif
 
+#ifndef __randomize_layout
+# define __randomize_layout __designated_init
+#endif
+
 #ifdef __OPTIMIZE__
 # define __compiletime_assert(condition, msg, prefix, suffix) \
     do {                                    \

@@ -24,4 +24,10 @@
 
 #define __printf(a, b)  __attribute__((__format__(printf, a, b)))
 
+#if __has_attribute(__designated_init__)
+# define __designated_init  __attribute__((__designated_init__))
+#else
+# define __designated_init
+#endif
+
 #endif /* __LINUX_COMPILER_ATTRIBUTES_H */

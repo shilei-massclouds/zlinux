@@ -22,6 +22,7 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 {
     char *command_line;
 
+    printk("%s: 1\n", __func__);
     setup_arch(&command_line);
 
     panic("%s: NOT implemented!", __func__);
