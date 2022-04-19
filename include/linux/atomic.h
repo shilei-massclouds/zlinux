@@ -5,8 +5,12 @@
 
 #include <linux/types.h>
 
-//#include <linux/atomic-fallback.h>
+#include <asm/atomic.h>
+//#include <asm/barrier.h>
 
-//#include <asm-generic/atomic-long.h>
+/* End */
+
+#include <linux/atomic-fallback.h>
+#include <asm-generic/atomic-long.h>
 
 #endif /* _LINUX_ATOMIC_H */

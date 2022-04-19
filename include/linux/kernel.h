@@ -138,4 +138,6 @@ extern const char hex_asc_upper[];
 #define hex_asc_upper_lo(x) hex_asc_upper[((x) & 0x0f)]
 #define hex_asc_upper_hi(x) hex_asc_upper[((x) & 0xf0) >> 4]
 
+#define DIV_ROUND_UP __KERNEL_DIV_ROUND_UP
+
 #endif /* _LINUX_KERNEL_H */

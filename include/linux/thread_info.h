@@ -10,8 +10,12 @@
 
 #include <linux/types.h>
 #include <linux/bug.h>
+#include <linux/bitops.h>
 
 #include <asm/thread_info.h>
+#include <asm/current.h>
+
+#define current_thread_info() ((struct thread_info *)current)
 
 #ifdef __KERNEL__
 

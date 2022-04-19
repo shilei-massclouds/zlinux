@@ -8,6 +8,7 @@
 #include <linux/errno.h>
 #include <linux/sched.h>
 #include <linux/string.h>
+#include <linux/smp.h>
 
 #include "console_cmdline.h"
 #include "internal.h"
@@ -249,11 +250,9 @@ static void call_console_drivers(const char *ext_text, size_t ext_len,
             continue;
         if (!con->write)
             continue;
-#if 0
         if (!cpu_online(smp_processor_id()) &&
             !(con->flags & CON_ANYTIME))
             continue;
-#endif
         if (con->flags & CON_EXTENDED)
             con->write(con, ext_text, ext_len);
         else
@@ -305,8 +304,7 @@ static int have_callable_console(void)
  */
 static inline int can_use_console(void)
 {
-    return 1;
-    //return cpu_online(raw_smp_processor_id()) || have_callable_console();
+    return cpu_online(raw_smp_processor_id()) || have_callable_console();
 }
 
 static size_t

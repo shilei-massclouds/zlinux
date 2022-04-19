@@ -10,6 +10,7 @@
 #include <linux/ctype.h>
 #include <linux/string.h>
 #include <linux/moduleparam.h>
+#include <linux/cpu.h>
 
 #include <asm/setup.h>
 
@@ -22,7 +23,12 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 {
     char *command_line;
 
-    printk("%s: 1\n", __func__);
+    /*
+     * Interrupts are still disabled. Do necessary setups, then
+     * enable them.
+     */
+    boot_cpu_init();
+
     setup_arch(&command_line);
 
     panic("%s: NOT implemented!", __func__);

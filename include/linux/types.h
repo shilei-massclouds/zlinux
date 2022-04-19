@@ -7,6 +7,9 @@
 
 #ifndef __ASSEMBLY__
 
+#define DECLARE_BITMAP(name,bits) \
+    unsigned long name[BITS_TO_LONGS(bits)]
+
 typedef _Bool           bool;
 
 /*
@@ -59,6 +62,10 @@ typedef phys_addr_t resource_size_t;
 typedef struct {
     int counter;
 } atomic_t;
+
+typedef struct {
+    s64 counter;
+} atomic64_t;
 
 #define ATOMIC_INIT(i) { (i) }
 
