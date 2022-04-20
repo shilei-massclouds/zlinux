@@ -7,4 +7,14 @@
 #define likely(x)   __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
+#ifndef __ASSEMBLY__
+
+#ifdef __KERNEL__
+
+#endif /* __KERNEL__ */
+
+#endif /* __ASSEMBLY__ */
+
+#include <asm/rwonce.h>
+
 #endif /* __LINUX_COMPILER_H */

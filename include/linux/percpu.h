@@ -10,6 +10,8 @@
 #include <linux/pfn.h>
 #include <linux/init.h>
 
-//#include <asm/percpu.h>
+#include <asm/percpu.h>
+
+extern void __init setup_per_cpu_areas(void);
 
 #endif /* __LINUX_PERCPU_H */

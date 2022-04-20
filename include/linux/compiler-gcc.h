@@ -15,6 +15,9 @@
  */
 #define barrier_before_unreachable() asm volatile("")
 
+/* The "volatile" is due to gcc bugs */
+#define barrier() __asm__ __volatile__("": : :"memory")
+
 /*
  * Mark a position in code as unreachable.  This can be used to
  * suppress control flow warnings after asm blocks that transfer
@@ -31,3 +34,10 @@
 #define __no_sanitize_thread
 
 #define __UNIQUE_ID(prefix) __PASTE(__PASTE(__UNIQUE_ID_, prefix), __COUNTER__)
+
+#define RELOC_HIDE(ptr, off)                        \
+({                                  \
+    unsigned long __ptr;                        \
+    __asm__ ("" : "=r"(__ptr) : "0"(ptr));              \
+    (typeof(ptr)) (__ptr + (off));                  \
+})

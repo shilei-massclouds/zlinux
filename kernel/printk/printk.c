@@ -9,6 +9,7 @@
 #include <linux/sched.h>
 #include <linux/string.h>
 #include <linux/smp.h>
+#include <linux/semaphore.h>
 
 #include "console_cmdline.h"
 #include "internal.h"
@@ -25,6 +26,13 @@ int console_printk[4] = {
     CONSOLE_LOGLEVEL_DEFAULT,   /* default_console_loglevel */
 };
 EXPORT_SYMBOL_GPL(console_printk);
+
+/*
+ * console_sem protects the console_drivers list, and also
+ * provides serialisation for access to the entire console
+ * driver system.
+ */
+static DEFINE_SEMAPHORE(console_sem);
 
 struct console *console_drivers;
 EXPORT_SYMBOL_GPL(console_drivers);
@@ -55,6 +63,22 @@ enum log_flags {
 
 /* Number of registered extended console drivers. */
 static int nr_ext_console_drivers;
+
+/*
+ * Helper macros to handle lockdep when locking/unlocking console_sem. We use
+ * macros instead of functions so that _RET_IP_ contains useful information.
+ */
+#define down_console_sem() do { down(&console_sem); } while (0)
+
+static void __up_console_sem(unsigned long ip)
+{
+    unsigned long flags;
+
+    printk_safe_enter_irqsave(flags);
+    up(&console_sem);
+    printk_safe_exit_irqrestore(flags);
+}
+#define up_console_sem() __up_console_sem(_RET_IP_)
 
 /*
  * This is used for debugging the mess that is the VT code by
@@ -272,7 +296,7 @@ void console_lock(void)
 {
     might_sleep();
 
-    //down_console_sem();
+    down_console_sem();
     if (console_suspended)
         return;
     console_locked = 1;
@@ -395,7 +419,7 @@ void console_unlock(void)
     bool do_cond_resched;
 
     if (console_suspended) {
-        //up_console_sem();
+        up_console_sem();
         return;
     }
 

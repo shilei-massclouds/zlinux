@@ -3,6 +3,7 @@
 #define _ASM_GENERIC_ERRNO_BASE_H
 
 #define ENOENT      2   /* No such file or directory */
+#define EINTR       4   /* Interrupted system call */
 #define ENOMEM      12  /* Out of memory */
 #define EFAULT      14  /* Bad address */
 #define ENODEV      19  /* No such device */

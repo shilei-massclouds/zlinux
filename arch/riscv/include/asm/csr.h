@@ -61,6 +61,31 @@
                           __v;                          \
 })
 
+#define csr_set(csr, val)                   \
+({                              \
+    unsigned long __v = (unsigned long)(val);       \
+    __asm__ __volatile__ ("csrs " __ASM_STR(csr) ", %0" \
+                  : : "rK" (__v)            \
+                  : "memory");          \
+})
+
+#define csr_read_clear(csr, val)                \
+({                              \
+    unsigned long __v = (unsigned long)(val);       \
+    __asm__ __volatile__ ("csrrc %0, " __ASM_STR(csr) ", %1"\
+                  : "=r" (__v) : "rK" (__v)     \
+                  : "memory");          \
+    __v;                            \
+})
+
+#define csr_clear(csr, val)                 \
+({                              \
+    unsigned long __v = (unsigned long)(val);       \
+    __asm__ __volatile__ ("csrc " __ASM_STR(csr) ", %0" \
+                  : : "rK" (__v)            \
+                  : "memory");          \
+})
+
 #endif /* __ASSEMBLY__ */
 
 #endif /* _ASM_RISCV_CSR_H */

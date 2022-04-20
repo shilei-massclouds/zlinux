@@ -4,4 +4,8 @@
 #
 
 obj-y = panic.o params.o cpu.o
+
+obj-y += sched/
+obj-y += locking/
 obj-y += printk/
+obj-y += time/

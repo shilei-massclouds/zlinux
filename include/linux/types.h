@@ -67,6 +67,10 @@ typedef struct {
     s64 counter;
 } atomic64_t;
 
+struct list_head {
+    struct list_head *next, *prev;
+};
+
 #define ATOMIC_INIT(i) { (i) }
 
 #endif /*  __ASSEMBLY__ */

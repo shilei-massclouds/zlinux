@@ -3,19 +3,21 @@
  * printk_safe.c - Safe printk for printk-deadlock-prone contexts
  */
 
-/*
 #include <linux/preempt.h>
 #include <linux/spinlock.h>
-#include <linux/debug_locks.h>
-#include <linux/kdb.h>
+//#include <linux/kdb.h>
 #include <linux/smp.h>
 #include <linux/cpumask.h>
+/*
 #include <linux/irq_work.h>
 #include <linux/kprobes.h>
 */
 #include <linux/printk.h>
+#include <linux/percpu.h>
 
 #include "internal.h"
+
+static DEFINE_PER_CPU(int, printk_context);
 
 __printf(1, 0) int vprintk_func(const char *fmt, va_list args)
 {
@@ -45,4 +47,16 @@ __printf(1, 0) int vprintk_func(const char *fmt, va_list args)
 
     /* No obstacles. */
     return vprintk_default(fmt, args);
+}
+
+/* Can be preempted by NMI. */
+void __printk_safe_enter(void)
+{
+    this_cpu_inc(printk_context);
+}
+
+/* Can be preempted by NMI. */
+void __printk_safe_exit(void)
+{
+    this_cpu_dec(printk_context);
 }

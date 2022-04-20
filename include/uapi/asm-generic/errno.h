@@ -4,6 +4,7 @@
 
 #include <asm-generic/errno-base.h>
 
+#define ETIME       62  /* Timer expired */
 #define EALREADY    114 /* Operation already in progress */
 
 #endif /* _ASM_GENERIC_ERRNO_H */

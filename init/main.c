@@ -11,6 +11,7 @@
 #include <linux/string.h>
 #include <linux/moduleparam.h>
 #include <linux/cpu.h>
+#include <linux/percpu.h>
 
 #include <asm/setup.h>
 
@@ -30,6 +31,7 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
     boot_cpu_init();
 
     setup_arch(&command_line);
+    setup_per_cpu_areas();
 
     panic("%s: NOT implemented!", __func__);
 }
