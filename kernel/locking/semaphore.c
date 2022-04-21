@@ -142,3 +142,31 @@ static noinline void __sched __up(struct semaphore *sem)
     waiter->up = true;
     wake_up_process(waiter->task);
 }
+
+/**
+ * down_trylock - try to acquire the semaphore, without waiting
+ * @sem: the semaphore to be acquired
+ *
+ * Try to acquire the semaphore atomically.  Returns 0 if the semaphore has
+ * been acquired successfully or 1 if it it cannot be acquired.
+ *
+ * NOTE: This return value is inverted from both spin_trylock and
+ * mutex_trylock!  Be careful about this when converting code.
+ *
+ * Unlike mutex_trylock, this function can be used from interrupt context,
+ * and the semaphore can be released by any task or interrupt.
+ */
+int down_trylock(struct semaphore *sem)
+{
+    unsigned long flags;
+    int count;
+
+    raw_spin_lock_irqsave(&sem->lock, flags);
+    count = sem->count - 1;
+    if (likely(count >= 0))
+        sem->count = count;
+    raw_spin_unlock_irqrestore(&sem->lock, flags);
+
+    return (count < 0);
+}
+EXPORT_SYMBOL(down_trylock);

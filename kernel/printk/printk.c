@@ -17,6 +17,18 @@
 #define PREFIX_MAX      32
 #define LOG_LINE_MAX    (1024 - PREFIX_MAX)
 
+#define logbuf_lock_irqsave(flags)          \
+    do {                        \
+        printk_safe_enter_irqsave(flags);   \
+        raw_spin_lock(&logbuf_lock);        \
+    } while (0)
+
+#define logbuf_unlock_irqrestore(flags)     \
+    do {                        \
+        raw_spin_unlock(&logbuf_lock);      \
+        printk_safe_exit_irqrestore(flags); \
+    } while (0)
+
 static bool printk_time = true;
 
 int console_printk[4] = {
@@ -33,6 +45,13 @@ EXPORT_SYMBOL_GPL(console_printk);
  * driver system.
  */
 static DEFINE_SEMAPHORE(console_sem);
+
+/*
+ * The logbuf_lock protects kmsg buffer, indices, counters.  This can be taken
+ * within the scheduler's rq lock. It must be released before calling
+ * console_unlock() or anything else that might wake up a process.
+ */
+DEFINE_RAW_SPINLOCK(logbuf_lock);
 
 struct console *console_drivers;
 EXPORT_SYMBOL_GPL(console_drivers);
@@ -64,11 +83,85 @@ enum log_flags {
 /* Number of registered extended console drivers. */
 static int nr_ext_console_drivers;
 
+static DEFINE_RAW_SPINLOCK(console_owner_lock);
+static struct task_struct *console_owner;
+static bool console_waiter;
+
 /*
  * Helper macros to handle lockdep when locking/unlocking console_sem. We use
  * macros instead of functions so that _RET_IP_ contains useful information.
  */
 #define down_console_sem() do { down(&console_sem); } while (0)
+
+static int __down_trylock_console_sem(unsigned long ip)
+{
+    int lock_failed;
+    unsigned long flags;
+
+    /*
+     * Here and in __up_console_sem() we need to be in safe mode,
+     * because spindump/WARN/etc from under console ->lock will
+     * deadlock in printk()->down_trylock_console_sem() otherwise.
+     */
+    printk_safe_enter_irqsave(flags);
+    lock_failed = down_trylock(&console_sem);
+    printk_safe_exit_irqrestore(flags);
+
+    if (lock_failed)
+        return 1;
+    return 0;
+}
+#define down_trylock_console_sem() __down_trylock_console_sem(_RET_IP_)
+
+/**
+ * console_lock_spinning_enable - mark beginning of code where another
+ *  thread might safely busy wait
+ *
+ * This basically converts console_lock into a spinlock. This marks
+ * the section where the console_lock owner can not sleep, because
+ * there may be a waiter spinning (like a spinlock). Also it must be
+ * ready to hand over the lock at the end of the section.
+ */
+static void console_lock_spinning_enable(void)
+{
+    raw_spin_lock(&console_owner_lock);
+    console_owner = current;
+    raw_spin_unlock(&console_owner_lock);
+}
+
+/**
+ * console_lock_spinning_disable_and_check - mark end of code where another
+ *  thread was able to busy wait and check if there is a waiter
+ *
+ * This is called at the end of the section where spinning is allowed.
+ * It has two functions. First, it is a signal that it is no longer
+ * safe to start busy waiting for the lock. Second, it checks if
+ * there is a busy waiter and passes the lock rights to her.
+ *
+ * Important: Callers lose the lock if there was a busy waiter.
+ *  They must not touch items synchronized by console_lock
+ *  in this case.
+ *
+ * Return: 1 if the lock rights were passed, 0 otherwise.
+ */
+static int console_lock_spinning_disable_and_check(void)
+{
+    int waiter;
+
+    raw_spin_lock(&console_owner_lock);
+    waiter = READ_ONCE(console_waiter);
+    console_owner = NULL;
+    raw_spin_unlock(&console_owner_lock);
+
+    if (!waiter) {
+        return 0;
+    }
+
+    /* The waiter is now free to continue */
+    WRITE_ONCE(console_waiter, false);
+
+    return 1;
+}
 
 static void __up_console_sem(unsigned long ip)
 {
@@ -285,6 +378,28 @@ static void call_console_drivers(const char *ext_text, size_t ext_len,
 }
 
 /**
+ * console_trylock - try to lock the console system for exclusive use.
+ *
+ * Try to acquire a lock which guarantees that the caller has exclusive
+ * access to the console system and the console_drivers list.
+ *
+ * returns 1 on success, and 0 on failure to acquire the lock.
+ */
+int console_trylock(void)
+{
+    if (down_trylock_console_sem())
+        return 0;
+    if (console_suspended) {
+        up_console_sem();
+        return 0;
+    }
+    console_locked = 1;
+    console_may_schedule = 0;
+    return 1;
+}
+EXPORT_SYMBOL(console_trylock);
+
+/**
  * console_lock - lock the console system for exclusive use.
  *
  * Acquires a lock which guarantees that the caller has
@@ -414,9 +529,8 @@ void console_unlock(void)
 {
     static char ext_text[CONSOLE_EXT_LOG_MAX];
     static char text[LOG_LINE_MAX + PREFIX_MAX];
-    //unsigned long flags;
-    //bool do_cond_resched, retry;
-    bool do_cond_resched;
+    unsigned long flags;
+    bool do_cond_resched, retry;
 
     if (console_suspended) {
         up_console_sem();
@@ -439,7 +553,7 @@ void console_unlock(void)
      */
     do_cond_resched = console_may_schedule;
 
-//again:
+ again:
     console_may_schedule = 0;
 
     /*
@@ -449,7 +563,7 @@ void console_unlock(void)
      */
     if (!can_use_console()) {
         console_locked = 0;
-        //up_console_sem();
+        up_console_sem();
         return;
     }
 
@@ -458,10 +572,8 @@ void console_unlock(void)
         size_t ext_len = 0;
         size_t len;
 
-#if 0
         printk_safe_enter_irqsave(flags);
         raw_spin_lock(&logbuf_lock);
-#endif
         if (console_seq < log_first_seq) {
             len = snprintf(text, sizeof(text),
                            "** %llu printk messages dropped **\n",
@@ -473,7 +585,7 @@ void console_unlock(void)
         } else {
             len = 0;
         }
-//skip:
+// skip:
         if (console_seq == log_next_seq)
             break;
 
@@ -512,9 +624,8 @@ void console_unlock(void)
 #endif
         console_idx = log_next(console_idx);
         console_seq++;
-#if 0
+
         raw_spin_unlock(&logbuf_lock);
-#endif
 
         /*
          * While actively printing out messages, if another printk()
@@ -522,18 +633,16 @@ void console_unlock(void)
          * finish. This task can not be preempted if there is a
          * waiter waiting to take over.
          */
-        //console_lock_spinning_enable();
+        console_lock_spinning_enable();
 
         call_console_drivers(ext_text, ext_len, text, len);
 
-        /*
         if (console_lock_spinning_disable_and_check()) {
             printk_safe_exit_irqrestore(flags);
             return;
         }
 
         printk_safe_exit_irqrestore(flags);
-        */
 
         if (do_cond_resched)
             cond_resched();
@@ -541,7 +650,6 @@ void console_unlock(void)
 
     console_locked = 0;
 
-#if 0
     raw_spin_unlock(&logbuf_lock);
 
     up_console_sem();
@@ -559,7 +667,6 @@ void console_unlock(void)
 
     if (retry && console_trylock())
         goto again;
-#endif
 }
 
 /*
@@ -786,7 +893,6 @@ out_disable_unlock:
  */
 static int console_trylock_spinning(void)
 {
-#if 0
     struct task_struct *owner = NULL;
     bool waiter;
     bool spin = false;
@@ -821,22 +927,11 @@ static int console_trylock_spinning(void)
     }
 
     /* We spin waiting for the owner to release us */
-    spin_acquire(&console_owner_dep_map, 0, 0, _THIS_IP_);
     /* Owner will clear console_waiter on hand off */
     while (READ_ONCE(console_waiter))
         cpu_relax();
-    spin_release(&console_owner_dep_map, _THIS_IP_);
 
     printk_safe_exit_irqrestore(flags);
-    /*
-     * The owner passed the console lock to us.
-     * Since we did not spin on console lock, annotate
-     * this as a trylock. Otherwise lockdep will
-     * complain.
-     */
-    mutex_acquire(&console_lock_dep_map, 0, 1, _THIS_IP_);
-#endif
-
     return 1;
 }
 
@@ -1085,7 +1180,7 @@ vprintk_emit(int facility, int level,
 {
     int printed_len;
     bool in_sched = false, pending_output;
-    //unsigned long flags;
+    unsigned long flags;
     u64 curr_log_seq;
 
     /* Suppress unimportant messages after panic happens */
@@ -1100,11 +1195,11 @@ vprintk_emit(int facility, int level,
     //printk_delay();
 
     /* This stops the holder of console_sem just where we want him */
-    //logbuf_lock_irqsave(flags);
+    logbuf_lock_irqsave(flags);
     curr_log_seq = log_next_seq;
     printed_len = vprintk_store(facility, level, dict, dictlen, fmt, args);
     pending_output = (curr_log_seq != log_next_seq);
-    //logbuf_unlock_irqrestore(flags);
+    logbuf_unlock_irqrestore(flags);
 
     /* If called from the scheduler, we can not call up(). */
     if (!in_sched && pending_output) {
@@ -1113,7 +1208,7 @@ vprintk_emit(int facility, int level,
          * console_sem which would prevent anyone from printing to
          * console
          */
-        //preempt_disable();
+        preempt_disable();
         /*
          * Try to acquire and then immediately release the console
          * semaphore.  The release will print out buffers and wake up
@@ -1121,7 +1216,7 @@ vprintk_emit(int facility, int level,
          */
         if (console_trylock_spinning())
             console_unlock();
-        //preempt_enable();
+        preempt_enable();
     }
 
     /*

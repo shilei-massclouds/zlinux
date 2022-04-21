@@ -38,6 +38,17 @@
 #define raw_spin_lock_irq(lock)     _raw_spin_lock_irq(lock)
 #define raw_spin_unlock_irq(lock)   _raw_spin_unlock_irq(lock)
 
+/*
+ * Define the various spin_lock methods.  Note we define these
+ * regardless of whether CONFIG_SMP or CONFIG_PREEMPTION are set. The
+ * various methods are defined as nops in the case they are not
+ * required.
+ */
+#define raw_spin_trylock(lock) __cond_lock(lock, _raw_spin_trylock(lock))
+
+#define raw_spin_lock(lock)     _raw_spin_lock(lock)
+#define raw_spin_unlock(lock)   _raw_spin_unlock(lock)
+
 static inline void
 do_raw_spin_lock_flags(raw_spinlock_t *lock, unsigned long *flags)
     __acquires(lock)

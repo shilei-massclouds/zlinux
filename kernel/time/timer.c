@@ -43,6 +43,6 @@
 
 signed long __sched schedule_timeout(signed long timeout)
 {
-    panic("%s: NOT-implemented!\n");
+    panic("%s: NOT-implemented!\n", __func__);
     return 0;
 }

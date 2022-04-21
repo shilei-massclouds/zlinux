@@ -33,6 +33,7 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
     setup_arch(&command_line);
     setup_per_cpu_areas();
 
+    printk("%s: step1\n", __func__);
     panic("%s: NOT implemented!", __func__);
 }
 

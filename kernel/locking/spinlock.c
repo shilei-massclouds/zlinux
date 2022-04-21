@@ -58,3 +58,19 @@ void __lockfunc _raw_spin_unlock_irq(raw_spinlock_t *lock)
 }
 EXPORT_SYMBOL(_raw_spin_unlock_irq);
 #endif
+
+#ifndef CONFIG_INLINE_SPIN_LOCK
+void __lockfunc _raw_spin_lock(raw_spinlock_t *lock)
+{
+    __raw_spin_lock(lock);
+}
+EXPORT_SYMBOL(_raw_spin_lock);
+#endif
+
+#ifdef CONFIG_UNINLINE_SPIN_UNLOCK
+void __lockfunc _raw_spin_unlock(raw_spinlock_t *lock)
+{
+    __raw_spin_unlock(lock);
+}
+EXPORT_SYMBOL(_raw_spin_unlock);
+#endif
