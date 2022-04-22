@@ -251,3 +251,11 @@
         __per_cpu_load = .;                 \
         PERCPU_INPUT(cacheline)                 \
     }
+
+/* sched.text is aling to function alignment to secure we have same
+ * address even at second ld pass when generating System.map */
+#define SCHED_TEXT                  \
+        ALIGN_FUNCTION();           \
+        __sched_text_start = .;     \
+        *(.sched.text)              \
+        __sched_text_end = .;

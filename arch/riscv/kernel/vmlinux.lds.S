@@ -30,6 +30,7 @@ SECTIONS
     .text : {
         _text = .;
         TEXT_TEXT
+        SCHED_TEXT
         _etext = .;
     }
 
