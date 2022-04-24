@@ -12,7 +12,7 @@
 # error "64-bit atomics require XLEN to be at least 64"
 #endif
 
-//#include <asm/cmpxchg.h>
+#include <asm/cmpxchg.h>
 //#include <asm/barrier.h>
 
 /*
@@ -104,5 +104,34 @@ ATOMIC_OPS(sub, add, +, -i)
 #define atomic_add_return       atomic_add_return
 
 #undef ATOMIC_OPS
+
+/*
+ * atomic_{cmp,}xchg is required to have exactly the same ordering semantics as
+ * {cmp,}xchg and the operations that return, so they need a full barrier.
+ */
+#define ATOMIC_OP(c_t, prefix, size)                    \
+static __always_inline                          \
+c_t atomic##prefix##_cmpxchg(atomic##prefix##_t *v, c_t o, c_t n)   \
+{                                   \
+    return __cmpxchg(&(v->counter), o, n, size);            \
+}
+
+#define ATOMIC_OPS()                            \
+    ATOMIC_OP(int,   , 4)                       \
+    ATOMIC_OP(s64, 64, 8)
+
+ATOMIC_OPS()
+
+#define atomic_xchg_relaxed atomic_xchg_relaxed
+#define atomic_xchg_acquire atomic_xchg_acquire
+#define atomic_xchg_release atomic_xchg_release
+#define atomic_xchg atomic_xchg
+#define atomic_cmpxchg_relaxed atomic_cmpxchg_relaxed
+#define atomic_cmpxchg_acquire atomic_cmpxchg_acquire
+#define atomic_cmpxchg_release atomic_cmpxchg_release
+#define atomic_cmpxchg atomic_cmpxchg
+
+#undef ATOMIC_OPS
+#undef ATOMIC_OP
 
 #endif /* _ASM_RISCV_ATOMIC_H */

@@ -121,6 +121,9 @@ pte_clear(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 extern void *dtb_early_va;
 extern pgd_t swapper_pg_dir[];
 
+void setup_bootmem(void);
+void paging_init(void);
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* _ASM_RISCV_PGTABLE_H */

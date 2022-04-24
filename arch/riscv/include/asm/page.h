@@ -35,6 +35,9 @@ typedef struct {
 
 typedef struct page *pgtable_t;
 
+extern unsigned long va_pa_offset;
+extern unsigned long pfn_base;
+
 #define pte_val(x)  ((x).pte)
 #define pgd_val(x)  ((x).pgd)
 #define pgprot_val(x)   ((x).pgprot)
@@ -42,6 +45,15 @@ typedef struct page *pgtable_t;
 #define __pte(x)    ((pte_t) { (x) })
 #define __pgd(x)    ((pgd_t) { (x) })
 #define __pgprot(x) ((pgprot_t) { (x) })
+
+#define __va_to_pa_nodebug(x) ((unsigned long)(x) - va_pa_offset)
+#define __pa_to_va_nodebug(x) \
+    ((void *)((unsigned long) (x) + va_pa_offset))
+
+#define __phys_addr_symbol(x) __va_to_pa_nodebug(x)
+
+#define __pa_symbol(x) \
+    __phys_addr_symbol(RELOC_HIDE((unsigned long)(x), 0))
 
 #endif /* __ASSEMBLY__ */
 

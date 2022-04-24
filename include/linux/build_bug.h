@@ -25,6 +25,15 @@
     BUILD_BUG_ON_MSG(condition, "BUILD_BUG_ON failed: " #condition)
 
 /**
+ * BUILD_BUG - break compile if used.
+ *
+ * If you have some code that you expect the compiler to eliminate at
+ * build time, you should use BUILD_BUG to detect if it is
+ * unexpectedly used.
+ */
+#define BUILD_BUG() BUILD_BUG_ON_MSG(1, "BUILD_BUG failed")
+
+/**
  * static_assert - check integer constant expression at build time
  *
  * static_assert() is a wrapper for the C11 _Static_assert, with a

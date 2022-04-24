@@ -24,4 +24,9 @@ void __init parse_dtb(void)
 void __init setup_arch(char **cmdline_p)
 {
     parse_early_param();
+
+    setup_bootmem();
+    //paging_init();
+
+    unflatten_device_tree();
 }

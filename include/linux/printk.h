@@ -20,8 +20,10 @@
 #define CONSOLE_LOGLEVEL_DEFAULT CONFIG_CONSOLE_LOGLEVEL_DEFAULT
 #define CONSOLE_LOGLEVEL_QUIET   CONFIG_CONSOLE_LOGLEVEL_QUIET
 
+extern int suppress_printk;
 extern int console_printk[];
 
+#define console_loglevel (console_printk[0])
 #define default_message_loglevel (console_printk[1])
 
 static inline int printk_get_level(const char *buffer)
@@ -52,6 +54,17 @@ static inline int printk_get_level(const char *buffer)
 #ifndef pr_fmt
 #define pr_fmt(fmt) fmt
 #endif
+
+/**
+ * pr_emerg - Print an emergency-level message
+ * @fmt: format string
+ * @...: arguments for the format string
+ *
+ * This macro expands to a printk with KERN_EMERG loglevel. It uses pr_fmt() to
+ * generate the format string.
+ */
+#define pr_emerg(fmt, ...) \
+    printk(KERN_EMERG pr_fmt(fmt), ##__VA_ARGS__)
 
 /*
  * Dummy printk for disabled debugging statements to use whilst maintaining
@@ -108,5 +121,13 @@ asmlinkage __printf(1, 2) __cold
 int printk(const char *fmt, ...);
 
 #define CONSOLE_EXT_LOG_MAX 8192
+
+#define CONSOLE_LOGLEVEL_MOTORMOUTH 15  /* You can't shut this one up */
+
+static inline void console_verbose(void)
+{
+    if (console_loglevel)
+        console_loglevel = CONSOLE_LOGLEVEL_MOTORMOUTH;
+}
 
 #endif /* __KERNEL_PRINTK__ */

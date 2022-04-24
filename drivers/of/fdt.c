@@ -126,3 +126,24 @@ bool __init early_init_dt_scan(void *params)
     early_init_dt_scan_nodes();
     return true;
 }
+
+/**
+ * unflatten_device_tree - create tree of device_nodes from flat blob
+ *
+ * unflattens the device-tree passed by the firmware, creating the
+ * tree of struct device_node. It also fills the "name" and "type"
+ * pointers of the nodes so the normal device-tree walking functions
+ * can be used.
+ */
+void __init unflatten_device_tree(void)
+{
+#if 0
+    __unflatten_device_tree(initial_boot_params, NULL, &of_root,
+                            early_init_dt_alloc_memory_arch, false);
+
+    /* Get pointer to "/chosen" and "/aliases" nodes for use everywhere */
+    of_alias_scan(early_init_dt_alloc_memory_arch);
+
+    unittest_unflatten_overlay_base();
+#endif
+}

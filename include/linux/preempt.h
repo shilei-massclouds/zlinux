@@ -27,6 +27,9 @@
 #define preempt_count_add(val)  __preempt_count_add(val)
 #define preempt_count_sub(val)  __preempt_count_sub(val)
 
+#define __preempt_count_inc() __preempt_count_add(1)
+#define __preempt_count_dec() __preempt_count_sub(1)
+
 #define preempt_count_inc() preempt_count_add(1)
 #define preempt_count_dec() preempt_count_sub(1)
 
@@ -39,6 +42,12 @@ do { \
 #define preempt_disable() \
 do { \
     preempt_count_inc(); \
+    barrier(); \
+} while (0)
+
+#define preempt_disable_notrace() \
+do { \
+    __preempt_count_inc(); \
     barrier(); \
 } while (0)
 

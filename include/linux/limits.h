@@ -5,6 +5,8 @@
 #include <linux/types.h>
 #include <vdso/limits.h>
 
+#define PHYS_ADDR_MAX   (~(phys_addr_t)0)
+
 #define U32_MAX     ((u32)~0U)
 #define U32_MIN     ((u32)0)
 #define S32_MAX     ((s32)(U32_MAX >> 1))

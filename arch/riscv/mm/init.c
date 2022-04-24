@@ -2,6 +2,7 @@
 
 #include <linux/init.h>
 #include <linux/mm.h>
+#include <linux/memblock.h>
 #include <linux/sizes.h>
 #include <linux/export.h>
 
@@ -236,4 +237,36 @@ asmlinkage void __init setup_vm(uintptr_t dtb_pa)
     dtb_early_va = (void *)fix_to_virt(FIX_FDT) + (dtb_pa & ~PAGE_MASK);
     /* Save physical address for memblock reservation */
     dtb_early_pa = dtb_pa;
+}
+
+void __init setup_bootmem(void)
+{
+    struct memblock_region *reg;
+    phys_addr_t mem_size = 0;
+    phys_addr_t total_mem = 0;
+    phys_addr_t mem_start, end = 0;
+    phys_addr_t vmlinux_end = __pa_symbol(&_end);
+    phys_addr_t vmlinux_start = __pa_symbol(&_start);
+
+    panic("step1\n");
+
+    /* Find the memory region containing the kernel */
+    for_each_memblock(memory, reg) {
+        end = reg->base + reg->size;
+        if (!total_mem)
+            mem_start = reg->base;
+        if (reg->base <= vmlinux_start && vmlinux_end <= end)
+            BUG_ON(reg->size == 0);
+        total_mem = total_mem + reg->size;
+    }
+
+    /*
+     * Remove memblock from the end of usable area to the
+     * end of region
+     */
+    mem_size = min(total_mem, (phys_addr_t)-PAGE_OFFSET);
+    if (mem_start + mem_size < end)
+        memblock_remove(mem_start + mem_size,
+                        end - mem_start - mem_size);
+
 }

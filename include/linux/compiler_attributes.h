@@ -30,4 +30,6 @@
 # define __designated_init
 #endif
 
+#define __weak  __attribute__((__weak__))
+
 #endif /* __LINUX_COMPILER_ATTRIBUTES_H */

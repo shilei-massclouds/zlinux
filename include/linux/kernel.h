@@ -156,4 +156,12 @@ extern const char hex_asc_upper[];
              "pointer type mismatch in container_of()");            \
     ((type *)(__mptr - offsetof(type, member))); })
 
+/*
+ * panic_cpu is used for synchronizing panic() and crash_kexec() execution. It
+ * holds a CPU number which is executing panic() currently. A value of
+ * PANIC_CPU_INVALID means no CPU has entered panic() or crash_kexec().
+ */
+extern atomic_t panic_cpu;
+#define PANIC_CPU_INVALID   -1
+
 #endif /* _LINUX_KERNEL_H */
