@@ -55,6 +55,8 @@ typedef s64         int64_t;
 
 typedef u64 phys_addr_t;
 
+typedef u64 dma_addr_t;
+
 typedef unsigned long   uintptr_t;
 
 typedef phys_addr_t resource_size_t;

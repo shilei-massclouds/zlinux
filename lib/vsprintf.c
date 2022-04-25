@@ -984,6 +984,31 @@ ptr_to_id(char *buf, char *end, const void *ptr, struct printf_spec spec)
 }
 
 static noinline_for_stack
+char *address_val(char *buf, char *end, const void *addr,
+                  struct printf_spec spec, const char *fmt)
+{
+    int size;
+    unsigned long long num;
+
+    if (check_pointer(&buf, end, addr, spec))
+        return buf;
+
+    switch (fmt[1]) {
+    case 'd':
+        num = *(const dma_addr_t *)addr;
+        size = sizeof(dma_addr_t);
+        break;
+    case 'p':
+    default:
+        num = *(const phys_addr_t *)addr;
+        size = sizeof(phys_addr_t);
+        break;
+    }
+
+    return special_hex_number(buf, end, num, size);
+}
+
+static noinline_for_stack
 char *pointer(const char *fmt, char *buf, char *end, void *ptr,
               struct printf_spec spec)
 {
@@ -998,6 +1023,8 @@ char *pointer(const char *fmt, char *buf, char *end, void *ptr,
         return resource_string(buf, end, ptr, spec, fmt);
     case 'h':
         return hex_string(buf, end, ptr, spec, fmt);
+    case 'a':
+        return address_val(buf, end, ptr, spec, fmt);
 
     /* Todo: */
     }

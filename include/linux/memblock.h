@@ -14,6 +14,11 @@
 #include <linux/mm.h>
 //#include <asm/dma.h>
 
+/* Flags for memblock allocation APIs */
+#define MEMBLOCK_ALLOC_ANYWHERE (~(phys_addr_t)0)
+#define MEMBLOCK_ALLOC_ACCESSIBLE   0
+#define MEMBLOCK_ALLOC_KASAN        1
+
 /**
  * enum memblock_flags - definition of memory region attributes
  * @MEMBLOCK_NONE: no special request
@@ -90,8 +95,43 @@ extern int memblock_debug;
          i < memblock_type->cnt;                    \
          i++, rgn = &memblock_type->regions[i])
 
-/* Flags for memblock allocation APIs */
-#define MEMBLOCK_ALLOC_ANYWHERE (~(phys_addr_t)0)
+/**
+ * for_each_mem_range_rev - reverse iterate through memblock areas from
+ * type_a and not included in type_b. Or just type_a if type_b is NULL.
+ * @i: u64 used as loop variable
+ * @type_a: ptr to memblock_type to iterate
+ * @type_b: ptr to memblock_type which excludes from the iteration
+ * @nid: node selector, %NUMA_NO_NODE for all nodes
+ * @flags: pick from blocks based on memory attributes
+ * @p_start: ptr to phys_addr_t for start address of the range, can be %NULL
+ * @p_end: ptr to phys_addr_t for end address of the range, can be %NULL
+ * @p_nid: ptr to int for nid of the range, can be %NULL
+ */
+#define for_each_mem_range_rev(i, type_a, type_b, nid, flags,   \
+                               p_start, p_end, p_nid)           \
+    for (i = (u64)ULLONG_MAX,                                   \
+         __next_mem_range_rev(&i, nid, flags, type_a, type_b,   \
+                              p_start, p_end, p_nid);           \
+         i != (u64)ULLONG_MAX;                                  \
+         __next_mem_range_rev(&i, nid, flags, type_a, type_b,   \
+                              p_start, p_end, p_nid))
+
+/**
+ * for_each_free_mem_range_reverse - rev-iterate through free memblock areas
+ * @i: u64 used as loop variable
+ * @nid: node selector, %NUMA_NO_NODE for all nodes
+ * @flags: pick from blocks based on memory attributes
+ * @p_start: ptr to phys_addr_t for start address of the range, can be %NULL
+ * @p_end: ptr to phys_addr_t for end address of the range, can be %NULL
+ * @p_nid: ptr to int for nid of the range, can be %NULL
+ *
+ * Walks over free (memory && !reserved) areas of memblock in reverse
+ * order.  Available as soon as memblock is initialized.
+ */
+#define for_each_free_mem_range_reverse(i, nid, flags,          \
+                                        p_start, p_end, p_nid)  \
+    for_each_mem_range_rev(i, &memblock.memory, &memblock.reserved, \
+                           nid, flags, p_start, p_end, p_nid)
 
 void memblock_allow_resize(void);
 int memblock_remove(phys_addr_t base, phys_addr_t size);
@@ -105,6 +145,44 @@ static inline void memblock_dump_all(void)
     if (memblock_debug)
         __memblock_dump_all();
 }
+
+static inline bool memblock_is_nomap(struct memblock_region *m)
+{
+    return m->flags & MEMBLOCK_NOMAP;
+}
+
+phys_addr_t
+memblock_phys_alloc_range(phys_addr_t size, phys_addr_t align,
+                          phys_addr_t start, phys_addr_t end);
+
+static inline phys_addr_t memblock_phys_alloc(phys_addr_t size,
+                          phys_addr_t align)
+{
+    return memblock_phys_alloc_range(size, align, 0,
+                                     MEMBLOCK_ALLOC_ACCESSIBLE);
+}
+
+/*
+ * Check if the allocation direction is bottom-up or not.
+ * if this is true, that said, memblock will allocate memory
+ * in bottom-up direction.
+ */
+static inline bool memblock_bottom_up(void)
+{
+    return memblock.bottom_up;
+}
+
+static inline int
+memblock_get_region_node(const struct memblock_region *r)
+{
+    return 0;
+}
+
+void __next_mem_range_rev(u64 *idx, int nid, enum memblock_flags flags,
+                          struct memblock_type *type_a,
+                          struct memblock_type *type_b,
+                          phys_addr_t *out_start, phys_addr_t *out_end,
+                          int *out_nid);
 
 #endif /* __KERNEL__ */
 

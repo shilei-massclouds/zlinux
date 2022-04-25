@@ -61,6 +61,13 @@ int memblock_debug __initdata_memblock;
 
 static int memblock_can_resize __initdata_memblock;
 
+static bool system_has_some_mirror __initdata_memblock = false;
+
+static enum memblock_flags __init_memblock choose_memblock_flags(void)
+{
+    return system_has_some_mirror ? MEMBLOCK_MIRROR : MEMBLOCK_NONE;
+}
+
 /* adjust *@size so that (@base + *@size) doesn't overflow, return new size */
 static inline phys_addr_t
 memblock_cap_size(phys_addr_t base, phys_addr_t *size)
@@ -394,6 +401,28 @@ void __init memblock_allow_resize(void)
     memblock_can_resize = 1;
 }
 
+static void __init_memblock memblock_dump(struct memblock_type *type)
+{
+    int idx;
+    enum memblock_flags flags;
+    phys_addr_t base, end, size;
+    struct memblock_region *rgn;
+
+    pr_info(" %s.cnt  = 0x%lx\n", type->name, type->cnt);
+
+    for_each_memblock_type(idx, type, rgn) {
+        char nid_buf[32] = "";
+
+        base = rgn->base;
+        size = rgn->size;
+        end = base + size - 1;
+        flags = rgn->flags;
+
+        pr_info(" %s[%#x]\t[%pa-%pa], %pa bytes%s flags: %#x\n",
+                type->name, idx, &base, &end, &size, nid_buf, flags);
+    }
+}
+
 void __init_memblock __memblock_dump_all(void)
 {
     pr_info("MEMBLOCK configuration:\n");
@@ -401,10 +430,235 @@ void __init_memblock __memblock_dump_all(void)
             &memblock.memory.total_size,
             &memblock.reserved.total_size);
 
-    /*
     memblock_dump(&memblock.memory);
     memblock_dump(&memblock.reserved);
-    */
+}
+
+static phys_addr_t __init_memblock
+__memblock_find_range_top_down(phys_addr_t start, phys_addr_t end,
+                               phys_addr_t size, phys_addr_t align,
+                               int nid, enum memblock_flags flags)
+{
+    u64 i;
+    phys_addr_t this_start, this_end, cand;
+
+    for_each_free_mem_range_reverse(i, nid, flags,
+                                    &this_start, &this_end, NULL) {
+
+        this_start = clamp(this_start, start, end);
+        this_end = clamp(this_end, start, end);
+
+        if (this_end < size)
+            continue;
+
+        cand = round_down(this_end - size, align);
+        if (cand >= this_start)
+            return cand;
+    }
+
+    return 0;
+}
+
+static phys_addr_t __init_memblock
+memblock_find_in_range_node(phys_addr_t size, phys_addr_t align,
+                            phys_addr_t start, phys_addr_t end,
+                            int nid, enum memblock_flags flags)
+{
+    phys_addr_t kernel_end;
+
+    /* pump up @end */
+    if (end == MEMBLOCK_ALLOC_ACCESSIBLE ||
+        end == MEMBLOCK_ALLOC_KASAN)
+        end = memblock.current_limit;
+
+    /* avoid allocating the first page */
+    start = max_t(phys_addr_t, start, PAGE_SIZE);
+    end = max(start, end);
+    kernel_end = __pa_symbol(_end);
+
+    /*
+     * try bottom-up allocation only when bottom-up mode
+     * is set and @end is above the kernel image.
+     */
+    if (memblock_bottom_up() && end > kernel_end) {
+        panic("%s: NOT-implemented!\n", __func__);
+    }
+
+    return __memblock_find_range_top_down(start, end, size, align,
+                                          nid, flags);
+}
+
+phys_addr_t __init
+memblock_alloc_range_nid(phys_addr_t size, phys_addr_t align,
+                         phys_addr_t start, phys_addr_t end,
+                         int nid, bool exact_nid)
+{
+    phys_addr_t found;
+    enum memblock_flags flags = choose_memblock_flags();
+
+    if (WARN_ONCE(nid == MAX_NUMNODES,"Usage of MAX_NUMNODES is deprecated. Use NUMA_NO_NODE instead\n"))
+        nid = NUMA_NO_NODE;
+
+    if (!align) {
+        /* Can't use WARNs this early in boot on powerpc */
+        //dump_stack();
+        align = SMP_CACHE_BYTES;
+    }
+
+again:
+    found = memblock_find_in_range_node(size, align, start, end,
+                                        nid, flags);
+    if (found && !memblock_reserve(found, size))
+        goto done;
+
+    if (nid != NUMA_NO_NODE && !exact_nid) {
+        found = memblock_find_in_range_node(size, align, start, end,
+                                            NUMA_NO_NODE, flags);
+        if (found && !memblock_reserve(found, size))
+            goto done;
+    }
+
+    if (flags & MEMBLOCK_MIRROR) {
+        flags &= ~MEMBLOCK_MIRROR;
+        pr_warn("Could not allocate %pap bytes of mirrored memory\n",
+                &size);
+        goto again;
+    }
+
+    return 0;
+
+done:
+    return found;
+}
+
+/**
+ * memblock_phys_alloc_range - allocate a memory block inside specified range
+ * @size: size of memory block to be allocated in bytes
+ * @align: alignment of the region and block's size
+ * @start: the lower bound of the memory region to allocate (physical address)
+ * @end: the upper bound of the memory region to allocate (physical address)
+ *
+ * Allocate @size bytes in the between @start and @end.
+ *
+ * Return: physical address of the allocated memory block on success,
+ * %0 on failure.
+ */
+phys_addr_t __init
+memblock_phys_alloc_range(phys_addr_t size,
+                          phys_addr_t align,
+                          phys_addr_t start,
+                          phys_addr_t end)
+{
+    return memblock_alloc_range_nid(size, align, start, end,
+                                    NUMA_NO_NODE, false);
+}
+
+static bool
+should_skip_region(struct memblock_region *m, int nid, int flags)
+{
+    /* skip nomap memory unless we were asked for it explicitly */
+    if (!(flags & MEMBLOCK_NOMAP) && memblock_is_nomap(m))
+        return true;
+
+    return false;
+}
+
+/**
+ * __next_mem_range_rev - generic next function for for_each_*_range_rev()
+ *
+ * @idx: pointer to u64 loop variable
+ * @nid: node selector, %NUMA_NO_NODE for all nodes
+ * @flags: pick from blocks based on memory attributes
+ * @type_a: pointer to memblock_type from where the range is taken
+ * @type_b: pointer to memblock_type which excludes memory from being taken
+ * @out_start: ptr to phys_addr_t for start address of the range, can be %NULL
+ * @out_end: ptr to phys_addr_t for end address of the range, can be %NULL
+ * @out_nid: ptr to int for nid of the range, can be %NULL
+ *
+ * Finds the next range from type_a which is not marked as unsuitable
+ * in type_b.
+ *
+ * Reverse of __next_mem_range().
+ */
+void __init_memblock
+__next_mem_range_rev(u64 *idx, int nid,
+                     enum memblock_flags flags,
+                     struct memblock_type *type_a,
+                     struct memblock_type *type_b,
+                     phys_addr_t *out_start, phys_addr_t *out_end,
+                     int *out_nid)
+{
+    int idx_a = *idx & 0xffffffff;
+    int idx_b = *idx >> 32;
+
+    if (WARN_ONCE(nid == MAX_NUMNODES, "Usage of MAX_NUMNODES is deprecated. Use NUMA_NO_NODE instead\n"))
+        nid = NUMA_NO_NODE;
+
+    if (*idx == (u64)ULLONG_MAX) {
+        idx_a = type_a->cnt - 1;
+        if (type_b != NULL)
+            idx_b = type_b->cnt;
+        else
+            idx_b = 0;
+    }
+
+    for (; idx_a >= 0; idx_a--) {
+        struct memblock_region *m = &type_a->regions[idx_a];
+
+        phys_addr_t m_start = m->base;
+        phys_addr_t m_end = m->base + m->size;
+        int m_nid = memblock_get_region_node(m);
+
+        if (should_skip_region(m, nid, flags))
+            continue;
+
+        if (!type_b) {
+            if (out_start)
+                *out_start = m_start;
+            if (out_end)
+                *out_end = m_end;
+            if (out_nid)
+                *out_nid = m_nid;
+            idx_a--;
+            *idx = (u32)idx_a | (u64)idx_b << 32;
+            return;
+        }
+
+        /* scan areas before each reservation */
+        for (; idx_b >= 0; idx_b--) {
+            struct memblock_region *r;
+            phys_addr_t r_start;
+            phys_addr_t r_end;
+
+            r = &type_b->regions[idx_b];
+            r_start = idx_b ? r[-1].base + r[-1].size : 0;
+            r_end = idx_b < type_b->cnt ? r->base : PHYS_ADDR_MAX;
+            /*
+             * if idx_b advanced past idx_a,
+             * break out to advance idx_a
+             */
+
+            if (r_end <= m_start)
+                break;
+            /* if the two regions intersect, we're done */
+            if (m_end > r_start) {
+                if (out_start)
+                    *out_start = max(m_start, r_start);
+                if (out_end)
+                    *out_end = min(m_end, r_end);
+                if (out_nid)
+                    *out_nid = m_nid;
+                if (m_start >= r_start)
+                    idx_a--;
+                else
+                    idx_b--;
+                *idx = (u32)idx_a | (u64)idx_b << 32;
+                return;
+            }
+        }
+    }
+    /* signal end of iteration */
+    *idx = ULLONG_MAX;
 }
 
 static int __init early_memblock(char *p)

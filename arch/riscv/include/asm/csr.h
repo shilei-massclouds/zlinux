@@ -61,6 +61,14 @@
                           __v;                          \
 })
 
+#define csr_write(csr, val)     \
+({                              \
+    unsigned long __v = (unsigned long)(val);   \
+    __asm__ __volatile__ ("csrw " __ASM_STR(csr) ", %0" \
+                          : : "rK" (__v)    \
+                          : "memory");      \
+})
+
 #define csr_set(csr, val)                   \
 ({                              \
     unsigned long __v = (unsigned long)(val);       \

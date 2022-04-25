@@ -15,6 +15,7 @@
 #include <asm/sections.h>
 #include <asm/page.h>
 #include <asm/string.h>
+#include <asm/csr.h>
 
 #include "../kernel/head.h"
 
@@ -82,8 +83,7 @@ static phys_addr_t __init alloc_pte(void)
      */
     BUG_ON(!mmu_enabled);
 
-    panic("memblock_phys_alloc");
-    //return memblock_phys_alloc(PAGE_SIZE, PAGE_SIZE);
+    return memblock_phys_alloc(PAGE_SIZE, PAGE_SIZE);
 }
 
 static void __init
@@ -111,8 +111,7 @@ static pmd_t *__init get_pmd_virt(phys_addr_t pa)
 static phys_addr_t __init alloc_pmd(void)
 {
     if (mmu_enabled)
-        panic("memblock_phys_alloc");
-        //return memblock_phys_alloc(PAGE_SIZE, PAGE_SIZE);
+        return memblock_phys_alloc(PAGE_SIZE, PAGE_SIZE);
 
     return (uintptr_t)early_pmd;
 }
@@ -302,4 +301,58 @@ void __init setup_bootmem(void)
 
     memblock_allow_resize();
     memblock_dump_all();
+}
+
+static void __init setup_vm_final(void)
+{
+    uintptr_t va, map_size;
+    phys_addr_t pa, start, end;
+    struct memblock_region *reg;
+
+    /* Set mmu_enabled flag */
+    mmu_enabled = true;
+
+    /* Setup swapper PGD for fixmap */
+    create_pgd_mapping(swapper_pg_dir, FIXADDR_START,
+                       __pa_symbol(fixmap_pgd_next),
+                       PGDIR_SIZE, PAGE_TABLE);
+
+    /* Map all memory banks */
+    for_each_memblock(memory, reg) {
+        start = reg->base;
+        end = start + reg->size;
+
+        if (start >= end)
+            break;
+        if (memblock_is_nomap(reg))
+            continue;
+        if (start <= __pa(PAGE_OFFSET) && __pa(PAGE_OFFSET) < end)
+            start = __pa(PAGE_OFFSET);
+
+        map_size = best_map_size(start, end - start);
+        for (pa = start; pa < end; pa += map_size) {
+            va = (uintptr_t)__va(pa);
+            create_pgd_mapping(swapper_pg_dir, va, pa,
+                               map_size, PAGE_KERNEL_EXEC);
+        }
+    }
+
+    /* Clear fixmap PTE and PMD mappings */
+    clear_fixmap(FIX_PTE);
+    clear_fixmap(FIX_PMD);
+
+    /* Move to swapper page table */
+    csr_write(CSR_SATP, PFN_DOWN(__pa_symbol(swapper_pg_dir)) | SATP_MODE);
+    local_flush_tlb_all();
+}
+
+void __init paging_init(void)
+{
+    setup_vm_final();
+    /*
+    sparse_init();
+    setup_zero_page();
+    zone_sizes_init();
+    resource_init();
+    */
 }
