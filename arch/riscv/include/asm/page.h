@@ -52,8 +52,14 @@ extern unsigned long pfn_base;
 
 #define __phys_addr_symbol(x) __va_to_pa_nodebug(x)
 
+#define __virt_to_phys(x)       __va_to_pa_nodebug(x)
+#define __phys_addr_symbol(x)   __va_to_pa_nodebug(x)
+
 #define __pa_symbol(x) \
     __phys_addr_symbol(RELOC_HIDE((unsigned long)(x), 0))
+
+#define __pa(x) __virt_to_phys((unsigned long)(x))
+#define __va(x) ((void *)__pa_to_va_nodebug((phys_addr_t)(x)))
 
 #endif /* __ASSEMBLY__ */
 

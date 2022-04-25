@@ -30,6 +30,9 @@
 
 #include <linux/irqflags.h>
 
+#define PANIC_TIMER_STEP 100
+#define PANIC_BLINK_SPD 18
+
 bool crash_kexec_post_notifiers;
 
 atomic_t panic_cpu = ATOMIC_INIT(PANIC_CPU_INVALID);
@@ -53,9 +56,9 @@ void __weak panic_smp_self_stop(void)
  */
 void panic(const char *fmt, ...)
 {
+    long i, i_next = 0, len;
     va_list args;
     int old_cpu, this_cpu;
-    long i, i_next = 0, len;
     static char buf[1024];
 #if 0
     int state = 0;
@@ -108,6 +111,16 @@ void panic(const char *fmt, ...)
     /* Do not scroll important messages printed above */
     suppress_printk = 1;
     local_irq_enable();
+    for (i = 0; ; i += PANIC_TIMER_STEP) {
+#if 0
+        touch_softlockup_watchdog();
+        if (i >= i_next) {
+            i += panic_blink(state ^= 1);
+            i_next = i + 3600 / PANIC_BLINK_SPD;
+        }
+        mdelay(PANIC_TIMER_STEP);
+#endif
+    }
 }
 EXPORT_SYMBOL(panic);
 

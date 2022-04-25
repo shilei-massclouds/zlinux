@@ -16,4 +16,9 @@
 
 #define __be32_to_cpu(x) __swab32((__force __u32)(__be32)(x))
 
+static __always_inline __u32 __be32_to_cpup(const __be32 *p)
+{
+    return __swab32p((__u32 *)p);
+}
+
 #endif /* _UAPI_LINUX_BYTEORDER_LITTLE_ENDIAN_H */

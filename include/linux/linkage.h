@@ -26,6 +26,8 @@
 #define __page_aligned_bss \
     __section(.bss..page_aligned) __aligned(PAGE_SIZE)
 
+#ifdef __ASSEMBLY__
+
 #define ALIGN __ALIGN
 #define ALIGN_STR __ALIGN_STR
 
@@ -80,5 +82,7 @@
 /* deprecated, use SYM_FUNC_END, SYM_DATA_END, or SYM_END */
 #define END(name) .size name, .-name
 #endif
+
+#endif /* __ASSEMBLY__ */
 
 #endif /* _LINUX_LINKAGE_H */

@@ -7,6 +7,7 @@
 
 #include <fdt.h>
 #include <libfdt.h>
+#include <linux/printk.h>
 
 #include "libfdt_internal.h"
 
@@ -231,4 +232,34 @@ fdt_getprop(const void *fdt, int nodeoffset,
             const char *name, int *lenp)
 {
     return fdt_getprop_namelen(fdt, nodeoffset, name, strlen(name), lenp);
+}
+
+static const struct fdt_reserve_entry *
+fdt_mem_rsv(const void *fdt, int n)
+{
+    int offset = n * sizeof(struct fdt_reserve_entry);
+    int absoffset = fdt_off_mem_rsvmap(fdt) + offset;
+
+    if (absoffset < fdt_off_mem_rsvmap(fdt))
+        return NULL;
+    if (absoffset > fdt_totalsize(fdt) -
+        sizeof(struct fdt_reserve_entry))
+        return NULL;
+
+    return fdt_mem_rsv_(fdt, n);
+}
+
+int fdt_get_mem_rsv(const void *fdt, int n,
+                    uint64_t *address, uint64_t *size)
+{
+    const struct fdt_reserve_entry *re;
+
+    FDT_RO_PROBE(fdt);
+    re = fdt_mem_rsv(fdt, n);
+    if (!re)
+        return -FDT_ERR_BADOFFSET;
+
+    *address = fdt64_ld(&re->address);
+    *size = fdt64_ld(&re->size);
+    return 0;
 }

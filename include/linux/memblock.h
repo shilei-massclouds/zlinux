@@ -85,10 +85,26 @@ extern int memblock_debug;
          region < (memblock.memblock_type.regions + memblock.memblock_type.cnt);    \
          region++)
 
+#define for_each_memblock_type(i, memblock_type, rgn)           \
+    for (i = 0, rgn = &memblock_type->regions[0];           \
+         i < memblock_type->cnt;                    \
+         i++, rgn = &memblock_type->regions[i])
+
 /* Flags for memblock allocation APIs */
 #define MEMBLOCK_ALLOC_ANYWHERE (~(phys_addr_t)0)
 
+void memblock_allow_resize(void);
 int memblock_remove(phys_addr_t base, phys_addr_t size);
+int memblock_add(phys_addr_t base, phys_addr_t size);
+int memblock_reserve(phys_addr_t base, phys_addr_t size);
+
+extern void __memblock_dump_all(void);
+
+static inline void memblock_dump_all(void)
+{
+    if (memblock_debug)
+        __memblock_dump_all();
+}
 
 #endif /* __KERNEL__ */
 

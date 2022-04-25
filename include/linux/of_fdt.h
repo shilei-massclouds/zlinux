@@ -5,6 +5,7 @@
 #ifndef __ASSEMBLY__
 
 extern bool early_init_dt_scan(void *params);
+extern void early_init_fdt_scan_reserved_mem(void);
 
 extern void unflatten_device_tree(void);
 

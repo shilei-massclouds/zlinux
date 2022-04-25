@@ -25,6 +25,17 @@ struct bug_entry {
     do { if (unlikely(condition)) BUG(); } while (0)
 #endif
 
+#define __WARN()    __WARN_FLAGS(BUGFLAG_TAINT(TAINT_WARN))
+
+#ifndef WARN_ON
+#define WARN_ON(condition) ({                       \
+    int __ret_warn_on = !!(condition);              \
+    if (unlikely(__ret_warn_on))                    \
+        __WARN();                       \
+    unlikely(__ret_warn_on);                    \
+})
+#endif
+
 #ifndef WARN
 #define WARN(condition, format...) ({   \
     int __ret_warn_on = !!(condition);  \

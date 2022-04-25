@@ -40,6 +40,11 @@ struct fdt_property {
     char data[0];
 };
 
+struct fdt_reserve_entry {
+    fdt64_t address;
+    fdt64_t size;
+};
+
 #endif /* !__ASSEMBLY */
 
 #define FDT_MAGIC   0xd00dfeed  /* 4: version, 4: total size */

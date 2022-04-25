@@ -49,6 +49,10 @@ extern int strncmp(const char *,const char *,__kernel_size_t);
 extern void * memmove(void *,const void *,__kernel_size_t);
 #endif
 
+#ifndef __HAVE_ARCH_STRSTR
+extern char * strstr(const char *, const char *);
+#endif
+
 extern char * __must_check skip_spaces(const char *);
 
 #endif /* _LINUX_STRING_H_ */

@@ -22,4 +22,13 @@ static inline __attribute_const__ __u32 __fswab32(__u32 val)
     ___constant_swab32(x) :             \
     __fswab32(x))
 
+/**
+ * __swab32p - return a byteswapped 32-bit value from a pointer
+ * @p: pointer to a naturally-aligned 32-bit value
+ */
+static __always_inline __u32 __swab32p(const __u32 *p)
+{
+    return __swab32(*p);
+}
+
 #endif /* _UAPI_LINUX_SWAB_H */

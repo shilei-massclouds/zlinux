@@ -49,6 +49,7 @@ static inline uint32_t fdt32_ld(const fdt32_t *p)
 #define fdt_totalsize(fdt)      (fdt_get_header(fdt, totalsize))
 #define fdt_off_dt_struct(fdt)  (fdt_get_header(fdt, off_dt_struct))
 #define fdt_off_dt_strings(fdt) (fdt_get_header(fdt, off_dt_strings))
+#define fdt_off_mem_rsvmap(fdt) (fdt_get_header(fdt, off_mem_rsvmap))
 #define fdt_version(fdt)        (fdt_get_header(fdt, version))
 #define fdt_last_comp_version(fdt)  (fdt_get_header(fdt, last_comp_version))
 #define fdt_size_dt_strings(fdt)    (fdt_get_header(fdt, size_dt_strings))
@@ -77,6 +78,23 @@ const char *fdt_get_name(const void *fdt, int nodeoffset, int *lenp);
 
 const void *fdt_getprop(const void *fdt, int nodeoffset,
                         const char *name, int *lenp);
+
+int fdt_get_mem_rsv(const void *fdt, int n,
+                    uint64_t *address, uint64_t *size);
+
+static inline uint64_t fdt64_ld(const fdt64_t *p)
+{
+    const uint8_t *bp = (const uint8_t *)p;
+
+    return ((uint64_t)bp[0] << 56)
+        | ((uint64_t)bp[1] << 48)
+        | ((uint64_t)bp[2] << 40)
+        | ((uint64_t)bp[3] << 32)
+        | ((uint64_t)bp[4] << 24)
+        | ((uint64_t)bp[5] << 16)
+        | ((uint64_t)bp[6] << 8)
+        | bp[7];
+}
 
 /***********************
  * Traversal functions
