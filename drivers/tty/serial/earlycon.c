@@ -8,6 +8,8 @@
  *  Bjorn Helgaas <bjorn.helgaas@hp.com>
  */
 
+#define pr_fmt(fmt)     KBUILD_MODNAME ": " fmt
+
 #include <linux/console.h>
 #include <linux/kernel.h>
 #include <linux/init.h>

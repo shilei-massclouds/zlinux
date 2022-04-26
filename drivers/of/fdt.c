@@ -3,6 +3,8 @@
  * Functions for working with the Flattened Device Tree data format
  */
 
+#define pr_fmt(fmt)  "OF: fdt: " fmt
+
 //#include <linux/crc32.h>
 #include <linux/kernel.h>
 //#include <linux/initrd.h>

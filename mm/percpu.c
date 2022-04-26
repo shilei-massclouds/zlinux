@@ -66,10 +66,12 @@
  *   setup the first chunk containing the kernel static percpu area
  */
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #if 0
 #include <linux/bitmap.h>
-#include <linux/memblock.h>
 #endif
+#include <linux/memblock.h>
 #include <linux/err.h>
 //#include <linux/lcm.h>
 #include <linux/list.h>
@@ -95,9 +97,9 @@
 #endif
 #include <asm/sections.h>
 #include <asm/tlbflush.h>
-#if 0
 #include <asm/io.h>
 
+#if 0
 #include "percpu-internal.h"
 #endif
 

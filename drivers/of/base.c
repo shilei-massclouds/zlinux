@@ -14,6 +14,8 @@
  *  Grant Likely.
  */
 
+#define pr_fmt(fmt) "OF: " fmt
+
 //#include <linux/bitmap.h>
 #include <linux/console.h>
 #include <linux/ctype.h>
