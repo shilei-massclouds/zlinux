@@ -18,7 +18,8 @@
 #include <uapi/linux/kernel.h>
 
 /* @a is a power of 2 value */
-#define ALIGN(x, a) __ALIGN_KERNEL((x), (a))
+#define ALIGN(x, a)         __ALIGN_KERNEL((x), (a))
+#define PTR_ALIGN(p, a)     ((typeof(p))ALIGN((unsigned long)(p), (a)))
 
 #define IS_ALIGNED(x, a)    (((x) & ((typeof(x))(a) - 1)) == 0)
 

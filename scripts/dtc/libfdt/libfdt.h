@@ -101,4 +101,11 @@ static inline uint64_t fdt64_ld(const fdt64_t *p)
  ***********************/
 int fdt_next_node(const void *fdt, int offset, int *depth);
 
+int fdt_first_property_offset(const void *fdt, int nodeoffset);
+int fdt_next_property_offset(const void *fdt, int offset);
+
+const void *fdt_getprop_by_offset(const void *fdt, int offset,
+                                  const char **namep, int *lenp);
+
+
 #endif /* LIBFDT_H */

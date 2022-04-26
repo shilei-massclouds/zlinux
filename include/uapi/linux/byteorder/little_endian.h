@@ -14,6 +14,8 @@
 
 #define __cpu_to_le16(x) ((__force __le16)(__u16)(x))
 
+#define __cpu_to_be32(x) ((__force __be32)__swab32((x)))
+
 #define __be32_to_cpu(x) __swab32((__force __u32)(__be32)(x))
 
 static __always_inline __u32 __be32_to_cpup(const __be32 *p)

@@ -258,3 +258,81 @@ char *strstr(const char *s1, const char *s2)
 }
 EXPORT_SYMBOL(strstr);
 #endif
+
+#ifndef __HAVE_ARCH_STRCHR
+/**
+ * strchr - Find the first occurrence of a character in a string
+ * @s: The string to be searched
+ * @c: The character to search for
+ *
+ * Note that the %NUL-terminator is considered part of the string, and can
+ * be searched for.
+ */
+char *strchr(const char *s, int c)
+{
+    for (; *s != (char)c; ++s)
+        if (*s == '\0')
+            return NULL;
+    return (char *)s;
+}
+EXPORT_SYMBOL(strchr);
+#endif
+
+#ifndef __HAVE_ARCH_STRCHRNUL
+/**
+ * strchrnul - Find and return a character in a string, or end of string
+ * @s: The string to be searched
+ * @c: The character to search for
+ *
+ * Returns pointer to first occurrence of 'c' in s. If c is not found, then
+ * return a pointer to the null byte at the end of s.
+ */
+char *strchrnul(const char *s, int c)
+{
+    while (*s && *s != (char)c)
+        s++;
+    return (char *)s;
+}
+EXPORT_SYMBOL(strchrnul);
+#endif
+
+#ifndef __HAVE_ARCH_STRCSPN
+/**
+ * strcspn - Calculate the length of the initial substring of @s which does not contain letters in @reject
+ * @s: The string to be searched
+ * @reject: The string to avoid
+ */
+size_t strcspn(const char *s, const char *reject)
+{
+    const char *p;
+    const char *r;
+    size_t count = 0;
+
+    for (p = s; *p != '\0'; ++p) {
+        for (r = reject; *r != '\0'; ++r) {
+            if (*p == *r)
+                return count;
+        }
+        ++count;
+    }
+    return count;
+}
+EXPORT_SYMBOL(strcspn);
+#endif
+
+#ifndef __HAVE_ARCH_STRNLEN
+/**
+ * strnlen - Find the length of a length-limited string
+ * @s: The string to be sized
+ * @count: The maximum number of bytes to search
+ */
+size_t strnlen(const char *s, size_t count)
+{
+    const char *sc;
+
+    for (sc = s; count-- && *sc != '\0'; ++sc)
+        /* nothing */;
+    return sc - s;
+}
+EXPORT_SYMBOL(strnlen);
+#endif

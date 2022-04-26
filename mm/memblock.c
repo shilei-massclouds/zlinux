@@ -21,7 +21,7 @@
 #include <linux/numa.h>
 
 #include <asm/sections.h>
-//#include <linux/io.h>
+#include <linux/io.h>
 #include <linux/errno.h>
 #include <linux/string.h>
 
@@ -659,6 +659,76 @@ __next_mem_range_rev(u64 *idx, int nid,
     }
     /* signal end of iteration */
     *idx = ULLONG_MAX;
+}
+
+static void * __init
+memblock_alloc_internal(phys_addr_t size, phys_addr_t align,
+                        phys_addr_t min_addr, phys_addr_t max_addr,
+                        int nid, bool exact_nid)
+{
+    phys_addr_t alloc;
+
+    /*
+     * Detect any accidental use of these APIs after slab is ready, as at
+     * this moment memblock may be deinitialized already and its
+     * internal data may be destroyed (after execution of memblock_free_all)
+     */
+#if 0
+    if (WARN_ON_ONCE(slab_is_available()))
+        return kzalloc_node(size, GFP_NOWAIT, nid);
+#endif
+
+    if (max_addr > memblock.current_limit)
+        max_addr = memblock.current_limit;
+
+    alloc = memblock_alloc_range_nid(size, align, min_addr, max_addr,
+                                     nid, exact_nid);
+
+    /* retry allocation without lower limit */
+    if (!alloc && min_addr)
+        alloc = memblock_alloc_range_nid(size, align, 0, max_addr,
+                                         nid, exact_nid);
+
+    if (!alloc)
+        return NULL;
+
+    return phys_to_virt(alloc);
+}
+
+/**
+ * memblock_alloc_try_nid - allocate boot memory block
+ * @size: size of memory block to be allocated in bytes
+ * @align: alignment of the region and block's size
+ * @min_addr: the lower bound of the memory region from where the allocation
+ *    is preferred (phys address)
+ * @max_addr: the upper bound of the memory region from where the allocation
+ *        is preferred (phys address), or %MEMBLOCK_ALLOC_ACCESSIBLE to
+ *        allocate only from memory limited by memblock.current_limit value
+ * @nid: nid of the free area to find, %NUMA_NO_NODE for any node
+ *
+ * Public function, provides additional debug information (including caller
+ * info), if enabled. This function zeroes the allocated memory.
+ *
+ * Return:
+ * Virtual address of allocated memory block on success, NULL on failure.
+ */
+void * __init
+memblock_alloc_try_nid(phys_addr_t size, phys_addr_t align,
+                       phys_addr_t min_addr, phys_addr_t max_addr,
+                       int nid)
+{
+    void *ptr;
+
+    memblock_dbg("%s: %llu bytes align=0x%llx nid=%d from=%pa max_addr=%pa %pS\n",
+                 __func__, (u64)size, (u64)align, nid, &min_addr,
+                 &max_addr, (void *)_RET_IP_);
+
+    ptr = memblock_alloc_internal(size, align,
+                                  min_addr, max_addr, nid, false);
+    if (ptr)
+        memset(ptr, 0, size);
+
+    return ptr;
 }
 
 static int __init early_memblock(char *p)

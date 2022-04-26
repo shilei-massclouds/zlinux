@@ -12,12 +12,16 @@
 
 #include <linux/init.h>
 #include <linux/mm.h>
+#include <linux/numa.h>
 //#include <asm/dma.h>
 
 /* Flags for memblock allocation APIs */
 #define MEMBLOCK_ALLOC_ANYWHERE (~(phys_addr_t)0)
 #define MEMBLOCK_ALLOC_ACCESSIBLE   0
 #define MEMBLOCK_ALLOC_KASAN        1
+
+/* We are using top down, so it is safe to use 0 here */
+#define MEMBLOCK_LOW_LIMIT 0
 
 /**
  * enum memblock_flags - definition of memory region attributes
@@ -176,6 +180,17 @@ static inline int
 memblock_get_region_node(const struct memblock_region *r)
 {
     return 0;
+}
+
+void *memblock_alloc_try_nid(phys_addr_t size, phys_addr_t align,
+                             phys_addr_t min_addr, phys_addr_t max_addr,
+                             int nid);
+
+static inline void * __init
+memblock_alloc(phys_addr_t size,  phys_addr_t align)
+{
+    return memblock_alloc_try_nid(size, align, MEMBLOCK_LOW_LIMIT,
+                                  MEMBLOCK_ALLOC_ACCESSIBLE, NUMA_NO_NODE);
 }
 
 void __next_mem_range_rev(u64 *idx, int nid, enum memblock_flags flags,

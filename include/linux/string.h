@@ -53,6 +53,33 @@ extern void * memmove(void *,const void *,__kernel_size_t);
 extern char * strstr(const char *, const char *);
 #endif
 
+#ifndef __HAVE_ARCH_STRCHR
+extern char * strchr(const char *,int);
+#endif
+
+#ifndef __HAVE_ARCH_STRCHRNUL
+extern char * strchrnul(const char *,int);
+#endif
+
+#ifndef __HAVE_ARCH_STRCSPN
+extern __kernel_size_t strcspn(const char *,const char *);
+#endif
+
+#ifndef __HAVE_ARCH_STRNLEN
+extern __kernel_size_t strnlen(const char *,__kernel_size_t);
+#endif
+
 extern char * __must_check skip_spaces(const char *);
+
+/**
+ * kbasename - return the last part of a pathname.
+ *
+ * @path: path to extract the filename from.
+ */
+static inline const char *kbasename(const char *path)
+{
+    const char *tail = strrchr(path, '/');
+    return tail ? tail + 1 : path;
+}
 
 #endif /* _LINUX_STRING_H_ */

@@ -4,7 +4,9 @@
 
 #include <asm-generic/errno-base.h>
 
+#define ENODATA     61  /* No data available */
 #define ETIME       62  /* Timer expired */
+#define EILSEQ      84  /* Illegal byte sequence */
 #define EALREADY    114 /* Operation already in progress */
 
 #endif /* _ASM_GENERIC_ERRNO_H */

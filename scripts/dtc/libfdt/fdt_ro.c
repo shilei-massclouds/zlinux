@@ -263,3 +263,32 @@ int fdt_get_mem_rsv(const void *fdt, int n,
     *size = fdt64_ld(&re->size);
     return 0;
 }
+
+const void *
+fdt_getprop_by_offset(const void *fdt, int offset,
+                      const char **namep, int *lenp)
+{
+    const struct fdt_property *prop;
+
+    prop = fdt_get_property_by_offset_(fdt, offset, lenp);
+    if (!prop)
+        return NULL;
+    if (namep) {
+        const char *name;
+        int namelen;
+
+        name = fdt_get_string(fdt, fdt32_ld(&prop->nameoff), &namelen);
+        if (!name) {
+            if (lenp)
+                *lenp = namelen;
+            return NULL;
+        }
+        *namep = name;
+    }
+
+    /* Handle realignment */
+    if (fdt_version(fdt) < 0x10 &&
+        (offset + sizeof(*prop)) % 8 && fdt32_ld(&prop->len) >= 8)
+        return prop->data + 4;
+    return prop->data;
+}

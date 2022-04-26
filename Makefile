@@ -116,7 +116,7 @@ KBUILD_CFLAGS   := -Wall -Wundef -Werror=strict-prototypes -Wno-trigraphs \
 	-fno-strict-aliasing -fno-common -fshort-wchar -fno-PIE \
 	-Werror=implicit-function-declaration -Werror=implicit-int \
 	-Wno-format-security \
-	-std=gnu89
+	-std=gnu89 -DDEBUG
 KBUILD_CPPFLAGS := -D__KERNEL__
 
 export NOSTDINC_FLAGS LINUXINCLUDE KBUILD_CPPFLAGS KBUILD_AFLAGS KBUILD_CFLAGS
@@ -166,9 +166,7 @@ libs-y := lib/
 include arch/$(SRCARCH)/Makefile
 
 # (2) all -> vmlinux
-$(warning r: all -> vmlinux)
 all: vmlinux
-	$(warning e: all -> $^)
 
 # Externally visible symbols (used by link-vmlinux.sh)
 KBUILD_VMLINUX_OBJS := $(head-y) $(patsubst %/,%/built-in.a, $(core-y))
@@ -178,7 +176,6 @@ KBUILD_VMLINUX_OBJS += $(patsubst %/, %/lib.a, $(filter %/, $(libs-y)))
 
 KBUILD_VMLINUX_LIBS := $(filter-out %/, $(libs-y))
 
-$(warning r: ####### libs-y: [$(libs-y)] #####)
 export KBUILD_VMLINUX_OBJS KBUILD_VMLINUX_LIBS
 
 vmlinux-deps := $(KBUILD_LDS) $(KBUILD_VMLINUX_OBJS) $(KBUILD_VMLINUX_LIBS)
@@ -191,17 +188,13 @@ cmd_link-vmlinux = \
 	$(if $(ARCH_POSTLINK), $(MAKE) -f $(ARCH_POSTLINK) $@, true)
 
 # (3) vmlinux -> vmlinux-deps
-$(warning r: vmlinux -> vmlinux-deps ($(vmlinux-deps)))
 vmlinux: scripts/link-vmlinux.sh $(vmlinux-deps) FORCE
-	$(warning e: vmlinux -> vmlinux-deps)
 	+$(call if_changed,link-vmlinux)
 
 # (4) vmlinux-deps -> descend
 # The actual objects are generated when descending,
 # make sure no implicit rule kicks in
-$(warning r: vmlinux-deps descend)
 $(sort $(vmlinux-deps)): descend ;
-	$(warning e: vmlinux-deps($@) -> descend)
 
 vmlinux-dirs := $(patsubst %/,%,$(filter %/, \
 	$(core-y) $(core-m) $(drivers-y) $(drivers-m) \
@@ -218,47 +211,37 @@ clean-dirs := $(vmlinux-alldirs)
 # tweaks to this spot to avoid wrong language settings when running
 # make menuconfig etc.
 # Error messages still appears in the original language
-$(warning r: descend -> $(build-dirs))
 PHONY += descend $(build-dirs)
 descend: $(build-dirs)
-	$(warning e: descend -> build-dirs)
 
 # (6) build-dirs -> prepare
-$(warning r: build-dirs ($(build-dirs)) -> prepare)
 $(build-dirs): prepare
-	$(warning e: build-dirs ($@) -> prepare)
 	$(Q)$(MAKE) $(build)=$@ need-builtin=1 need-modorder=1
 
 # All the preparing..
 PHONY += prepare archprepare
 
 # (7) prepare -> prepare0
-$(warning r: prepare -> prepare0)
 prepare: prepare0
 
 # (8) prepare0 -> archprepare
-$(warning r: prepare0 -> archprepare)
 prepare0: archprepare
 	$(Q)$(MAKE) $(build)=.
 
 # (9) archprepare -> scripts
-$(warning r: archprepare -> scripts)
 archprepare: scripts
 
 # Additional helpers built in scripts/
 PHONY += scripts
 
 # (10) scripts -> scripts_basic
-$(warning r: scripts -> scripts_basic)
 scripts: scripts_basic
 
 # Basic helpers built in scripts/basic/
 
 # (11) scripts_basic
 PHONY += scripts_basic
-$(warning r: scripts_basic)
 scripts_basic:
-	$(warning e: scripts_basic)
 	$(Q)$(MAKE) $(build)=scripts/basic
 
 # INSTALL_PATH specifies where to place the updated kernel and
