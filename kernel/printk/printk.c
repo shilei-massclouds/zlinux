@@ -204,6 +204,10 @@ static int __read_mostly keep_bootcon;
  */
 int __read_mostly suppress_printk;
 
+/* the next printk record to read by syslog(READ) or /proc/kmsg */
+static u64 syslog_seq;
+static u32 syslog_idx;
+
 /* index and sequence number of the first record stored in the buffer */
 static u64 log_first_seq;
 static u32 log_first_idx;
@@ -698,7 +702,7 @@ void console_unlock(void)
  */
 void register_console(struct console *newcon)
 {
-    //unsigned long flags;
+    unsigned long flags;
     struct console *bcon = NULL;
     int err;
 
@@ -786,7 +790,6 @@ void register_console(struct console *newcon)
     if (newcon->flags & CON_EXTENDED)
         nr_ext_console_drivers++;
 
-#if 0
     if (newcon->flags & CON_PRINTBUFFER) {
         /*
          * console_unlock(); will print out the buffered messages
@@ -808,7 +811,6 @@ void register_console(struct console *newcon)
         console_idx = syslog_idx;
         logbuf_unlock_irqrestore(flags);
     }
-#endif
 
     console_unlock();
     //console_sysfs_notify();

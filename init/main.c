@@ -30,6 +30,7 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
      */
     boot_cpu_init();
 
+    pr_notice("%s", linux_banner);
     setup_arch(&command_line);
     setup_per_cpu_areas();
 

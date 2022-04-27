@@ -105,6 +105,16 @@ static inline int printk_get_level(const char *buffer)
  */
 #define pr_warn(fmt, ...) \
     printk(KERN_WARNING pr_fmt(fmt), ##__VA_ARGS__)
+/**
+ * pr_notice - Print a notice-level message
+ * @fmt: format string
+ * @...: arguments for the format string
+ *
+ * This macro expands to a printk with KERN_NOTICE loglevel. It uses pr_fmt() to
+ * generate the format string.
+ */
+#define pr_notice(fmt, ...) \
+    printk(KERN_NOTICE pr_fmt(fmt), ##__VA_ARGS__)
 
 /**
  * pr_info - Print an info-level message
@@ -129,5 +139,7 @@ static inline void console_verbose(void)
     if (console_loglevel)
         console_loglevel = CONSOLE_LOGLEVEL_MOTORMOUTH;
 }
+
+extern const char linux_banner[];
 
 #endif /* __KERNEL_PRINTK__ */

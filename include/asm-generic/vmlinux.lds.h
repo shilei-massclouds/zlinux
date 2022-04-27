@@ -178,6 +178,13 @@
     __end_ro_after_init = .;
 #endif
 
+#define NOTES                               \
+    .notes : AT(ADDR(.notes) - LOAD_OFFSET) {           \
+        __start_notes = .;                  \
+        KEEP(*(.note.*))                    \
+        __stop_notes = .;                   \
+    }
+
 /*
  * Read only Data
  */
@@ -207,7 +214,10 @@
     /* Kernel symbol table: strings */  \
     __ksymtab_strings : AT(ADDR(__ksymtab_strings) - LOAD_OFFSET) { \
         *(__ksymtab_strings)                    \
-    } \
+    }       \
+            \
+    NOTES   \
+            \
     . = ALIGN((align)); \
     __end_rodata = .;
 
