@@ -4,14 +4,19 @@
 
 # Convenient variables
 comma := ,
-pound := \#
+quote := "
 squote := '
 empty :=
 space := $(empty) $(empty)
+pound := \#
 
 ###
 # Escape single quote for use in echo statements
 escsq = $(subst $(squote),'\$(squote)',$1)
+
+###
+# Quote a string to pass it to C files. foo => '"foo"'
+stringify = $(squote)$(quote)$1$(quote)$(squote)
 
 # real prerequisites without phony targets
 real-prereqs = $(filter-out $(PHONY), $^)
