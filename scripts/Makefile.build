@@ -48,6 +48,8 @@ ifdef need-builtin
 targets-for-builtin += $(obj)/built-in.a
 endif
 
+targets += $(targets-for-builtin) $(targets-for-modules)
+
 __build: $(if $(KBUILD_BUILTIN), $(targets-for-builtin)) \
 	$(subdir-ym) $(always-y)
 	@:
@@ -108,6 +110,13 @@ cmd_cpp_lds_S = $(CPP) $(cpp_flags) -P -U$(ARCH) \
 $(obj)/%.lds: $(src)/%.lds.S FORCE
 	$(call if_changed_dep,cpp_lds_S)
 
+targets += $(filter-out $(subdir-builtin), $(real-obj-y))
+targets += $(filter-out $(subdir-modorder), $(real-obj-m))
+targets += $(lib-y) $(always-y) $(MAKECMDGOALS)
+
+targets += $(multi-used-m)
+targets := $(filter-out $(PHONY), $(targets))
+
 # Descending
 # ---------------------------------------------------------------------------
 PHONY += $(subdir-ym)
@@ -117,5 +126,14 @@ $(subdir-ym):
 
 PHONY += FORCE
 FORCE:
+
+# Read all saved command lines and dependencies for the $(targets) we
+# may be building above, using $(if_changed{,_dep}). As an
+# optimization, we don't need to read them if the target does not
+# exist, we will rebuild anyway in that case.
+
+existing-targets := $(wildcard $(sort $(targets)))
+
+-include $(foreach f,$(existing-targets),$(dir $(f)).$(notdir $(f)).cmd)
 
 .PHONY: $(PHONY)
