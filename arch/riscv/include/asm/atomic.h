@@ -4,7 +4,6 @@
  * Copyright (C) 2012 Regents of the University of California
  * Copyright (C) 2017 SiFive
  */
-
 #ifndef _ASM_RISCV_ATOMIC_H
 #define _ASM_RISCV_ATOMIC_H
 
@@ -14,6 +13,15 @@
 
 #include <asm/cmpxchg.h>
 //#include <asm/barrier.h>
+
+static __always_inline int atomic_read(const atomic_t *v)
+{
+    return READ_ONCE(v->counter);
+}
+static __always_inline void atomic_set(atomic_t *v, int i)
+{
+    WRITE_ONCE(v->counter, i);
+}
 
 /*
  * First, the atomic ops that have no ordering constraints and therefor don't

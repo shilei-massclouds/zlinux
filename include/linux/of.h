@@ -14,8 +14,8 @@
 #include <linux/types.h>
 #include <linux/bitops.h>
 #include <linux/errno.h>
-/*
 #include <linux/kobject.h>
+/*
 #include <linux/mod_devicetable.h>
 */
 #include <linux/spinlock.h>
@@ -67,7 +67,7 @@ struct device_node {
     struct  device_node *parent;
     struct  device_node *child;
     struct  device_node *sibling;
-    //struct  kobject kobj;
+    struct  kobject kobj;
     unsigned long _flags;
     void    *data;
 };
@@ -77,6 +77,9 @@ extern struct device_node *of_root;
 extern struct device_node *of_chosen;
 extern struct device_node *of_aliases;
 extern struct device_node *of_stdout;
+
+/* initialize a node */
+extern struct kobj_type of_node_ktype;
 
 extern const void *
 of_get_property(const struct device_node *node,
@@ -90,8 +93,8 @@ extern void of_alias_scan(void * (*dt_alloc)(u64 size, u64 align));
 
 static inline void of_node_init(struct device_node *node)
 {
-#if 0
     kobject_init(&node->kobj, &of_node_ktype);
+#if 0
     node->fwnode.ops = &of_fwnode_ops;
 #endif
 }

@@ -24,6 +24,19 @@
     struct list_head name = LIST_HEAD_INIT(name)
 
 /**
+ * INIT_LIST_HEAD - Initialize a list_head structure
+ * @list: list_head structure to be initialized.
+ *
+ * Initializes the list_head to point to itself.  If it is a list header,
+ * the result is an empty list.
+ */
+static inline void INIT_LIST_HEAD(struct list_head *list)
+{
+    WRITE_ONCE(list->next, list);
+    list->prev = list;
+}
+
+/**
  * list_entry - get the struct for this entry
  * @ptr:    the &struct list_head pointer.
  * @type:   the type of the struct this is embedded in.
