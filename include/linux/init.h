@@ -15,6 +15,8 @@
 #define __initdata  __section(.init.data)
 #define __initconst __section(.init.rodata)
 
+#define __ref   __section(.ref.text) noinline
+
 /* For assembly routines */
 #define __HEAD  .section ".head.text","ax"
 #define __INIT  .section ".init.text","ax"

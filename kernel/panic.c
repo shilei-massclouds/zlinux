@@ -56,7 +56,8 @@ void __weak panic_smp_self_stop(void)
  */
 void panic(const char *fmt, ...)
 {
-    long i, i_next = 0, len;
+    //long i, i_next = 0, len;
+    long i, len;
     va_list args;
     int old_cpu, this_cpu;
     static char buf[1024];

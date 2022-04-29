@@ -12,6 +12,8 @@
 
 typedef _Bool           bool;
 
+typedef __kernel_pid_t      pid_t;
+
 /*
  * The following typedefs are also protected by individual ifdefs for
  * historical reasons:
@@ -60,6 +62,9 @@ typedef u64 dma_addr_t;
 typedef unsigned long   uintptr_t;
 
 typedef phys_addr_t resource_size_t;
+
+typedef unsigned int __bitwise gfp_t;
+typedef unsigned int __bitwise slab_flags_t;
 
 typedef struct {
     int counter;

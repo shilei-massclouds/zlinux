@@ -123,7 +123,7 @@ EXPORT_SYMBOL(of_get_property);
  */
 void of_alias_scan(void * (*dt_alloc)(u64 size, u64 align))
 {
-    struct property *pp;
+    //struct property *pp;
 
     of_aliases = of_find_node_by_path("/aliases");
     of_chosen = of_find_node_by_path("/chosen");
@@ -187,7 +187,7 @@ __of_find_node_by_full_path(struct device_node *node, const char *path)
 struct device_node *
 of_find_node_opts_by_path(const char *path, const char **opts)
 {
-    struct property *pp;
+    //struct property *pp;
     unsigned long flags;
     struct device_node *np = NULL;
     const char *separator = strchr(path, ':');

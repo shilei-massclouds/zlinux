@@ -196,4 +196,10 @@ extern const char hex_asc_upper[];
 extern atomic_t panic_cpu;
 #define PANIC_CPU_INVALID   -1
 
+/**
+ * lower_32_bits - return bits 0-31 of a number
+ * @n: the number we're accessing
+ */
+#define lower_32_bits(n) ((u32)((n) & 0xffffffff))
+
 #endif /* _LINUX_KERNEL_H */

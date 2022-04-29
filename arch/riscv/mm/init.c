@@ -257,7 +257,7 @@ void __init setup_bootmem(void)
     struct memblock_region *reg;
     phys_addr_t mem_size = 0;
     phys_addr_t total_mem = 0;
-    phys_addr_t mem_start, end = 0;
+    phys_addr_t mem_start = 0, end = 0;
     phys_addr_t vmlinux_end = __pa_symbol(&_end);
     phys_addr_t vmlinux_start = __pa_symbol(&_start);
 

@@ -34,9 +34,9 @@
 //#include <linux/ftrace.h>
 
 static noinline void __down(struct semaphore *sem);
-static noinline int __down_interruptible(struct semaphore *sem);
-static noinline int __down_killable(struct semaphore *sem);
-static noinline int __down_timeout(struct semaphore *sem, long timeout);
+//static noinline int __down_interruptible(struct semaphore *sem);
+//static noinline int __down_killable(struct semaphore *sem);
+//static noinline int __down_timeout(struct semaphore *sem, long timeout);
 static noinline void __up(struct semaphore *sem);
 
 /**

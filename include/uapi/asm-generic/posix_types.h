@@ -4,6 +4,10 @@
 
 #include <asm/bitsperlong.h>
 
+#ifndef __kernel_pid_t
+typedef int __kernel_pid_t;
+#endif
+
 #ifndef __kernel_long_t
 typedef long            __kernel_long_t;
 typedef unsigned long   __kernel_ulong_t;

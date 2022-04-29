@@ -89,6 +89,7 @@
 #define __release(x)    (void)0
 #define __percpu
 #define __kernel
+#define __user
 
 /*
  * __unqual_scalar_typeof(x) - Declare an unqualified scalar type, leaving

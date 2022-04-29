@@ -339,7 +339,7 @@ static int __init
 __fdt_scan_reserved_mem(unsigned long node, const char *uname,
                         int depth, void *data)
 {
-    int err;
+    //int err;
     static int found;
 
     if (!found && depth == 1 && strcmp(uname, "reserved-memory") == 0) {

@@ -32,4 +32,14 @@
 
 #define __weak  __attribute__((__weak__))
 
+#define __maybe_unused  __attribute__((__unused__))
+
+#if __has_attribute(__assume_aligned__)
+# define __assume_aligned(a, ...)   __attribute__((__assume_aligned__(a, ## __VA_ARGS__)))
+#else
+# define __assume_aligned(a, ...)
+#endif
+
+#define __malloc __attribute__((__malloc__))
+
 #endif /* __LINUX_COMPILER_ATTRIBUTES_H */
