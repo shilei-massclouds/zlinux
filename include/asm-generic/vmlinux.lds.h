@@ -140,6 +140,11 @@
     *(.data.once)       \
     __end_once = .;     \
 
+#define PAGE_ALIGNED_DATA(page_align)   \
+    . = ALIGN(page_align);              \
+    *(.data..page_aligned)              \
+    . = ALIGN(page_align);
+
 /*
  * Writeable data.
  * All sections are combined in a single .data section.
@@ -155,8 +160,9 @@
 #define RW_DATA(cacheline, pagealigned, inittask) \
     . = ALIGN(PAGE_SIZE); \
     .data : AT(ADDR(.data) - LOAD_OFFSET) { \
-        INIT_TASK_DATA(inittask) \
-        DATA_DATA \
+        INIT_TASK_DATA(inittask)            \
+        PAGE_ALIGNED_DATA(pagealigned)      \
+        DATA_DATA                           \
     }
 
 #define JUMP_TABLE_DATA         \

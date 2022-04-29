@@ -1,6 +1,18 @@
 # SPDX-License-Identifier: GPL-2.0
 #
 # Kbuild for top-level directory of the kernel
+# vim: ft=make
+
+#####
+# Generate bounds.h
+
+bounds-file := include/generated/bounds.h
+
+always-y := $(bounds-file)
+targets := kernel/bounds.s
+
+$(bounds-file): kernel/bounds.s FORCE
+	$(call filechk,offsets,__LINUX_BOUNDS_H__)
 
 #####
 # Generate asm-offsets.h

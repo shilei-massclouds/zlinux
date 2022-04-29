@@ -9,6 +9,7 @@
 #include <linux/kernel.h>
 #include <linux/of_fdt.h>
 #include <linux/libfdt.h>
+#include <generated/bounds.h>
 
 #include <asm/fixmap.h>
 #include <asm/tlbflush.h>
@@ -29,6 +30,10 @@ EXPORT_SYMBOL(va_pa_offset);
 
 unsigned long pfn_base;
 EXPORT_SYMBOL(pfn_base);
+
+unsigned long
+empty_zero_page[PAGE_SIZE / sizeof(unsigned long)] __page_aligned_bss;
+EXPORT_SYMBOL(empty_zero_page);
 
 pgd_t swapper_pg_dir[PTRS_PER_PGD] __page_aligned_bss;
 
@@ -346,13 +351,30 @@ static void __init setup_vm_final(void)
     local_flush_tlb_all();
 }
 
+static void setup_zero_page(void)
+{
+    memset((void *)empty_zero_page, 0, PAGE_SIZE);
+}
+
+static void __init zone_sizes_init(void)
+{
+    unsigned long max_zone_pfns[MAX_NR_ZONES] = { 0, };
+
+#ifdef CONFIG_ZONE_DMA32
+    max_zone_pfns[ZONE_DMA32] =
+        PFN_DOWN(min(4UL * SZ_1G, (unsigned long) PFN_PHYS(max_low_pfn)));
+#endif
+    max_zone_pfns[ZONE_NORMAL] = max_low_pfn;
+
+    //free_area_init(max_zone_pfns);
+}
+
 void __init paging_init(void)
 {
     setup_vm_final();
-    /*
-    sparse_init();
     setup_zero_page();
     zone_sizes_init();
+    /*
     resource_init();
     */
 }
