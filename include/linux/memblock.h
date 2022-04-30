@@ -199,6 +199,9 @@ void __next_mem_range_rev(u64 *idx, int nid, enum memblock_flags flags,
                           phys_addr_t *out_start, phys_addr_t *out_end,
                           int *out_nid);
 
+phys_addr_t memblock_start_of_DRAM(void);
+phys_addr_t memblock_end_of_DRAM(void);
+
 #endif /* __KERNEL__ */
 
 #endif /* _LINUX_MEMBLOCK_H */

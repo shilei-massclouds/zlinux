@@ -20,6 +20,8 @@ static inline void set_max_mapnr(unsigned long limit)
     max_mapnr = limit;
 }
 
+void free_area_init(unsigned long *max_zone_pfn);
+
 #endif /* __KERNEL__ */
 
 #endif /* _LINUX_MM_H */

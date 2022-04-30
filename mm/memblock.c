@@ -731,6 +731,20 @@ memblock_alloc_try_nid(phys_addr_t size, phys_addr_t align,
     return ptr;
 }
 
+/* lowest address */
+phys_addr_t __init_memblock memblock_start_of_DRAM(void)
+{
+    return memblock.memory.regions[0].base;
+}
+
+phys_addr_t __init_memblock memblock_end_of_DRAM(void)
+{
+    int idx = memblock.memory.cnt - 1;
+
+    return (memblock.memory.regions[idx].base +
+            memblock.memory.regions[idx].size);
+}
+
 static int __init early_memblock(char *p)
 {
     if (p && strstr(p, "debug"))

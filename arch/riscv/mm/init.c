@@ -250,13 +250,6 @@ asmlinkage void __init setup_vm(uintptr_t dtb_pa)
     dtb_early_pa = dtb_pa;
 }
 
-phys_addr_t __init_memblock memblock_end_of_DRAM(void)
-{
-    int idx = memblock.memory.cnt - 1;
-
-    return (memblock.memory.regions[idx].base + memblock.memory.regions[idx].size);
-}
-
 void __init setup_bootmem(void)
 {
     struct memblock_region *reg;
@@ -366,7 +359,7 @@ static void __init zone_sizes_init(void)
 #endif
     max_zone_pfns[ZONE_NORMAL] = max_low_pfn;
 
-    //free_area_init(max_zone_pfns);
+    free_area_init(max_zone_pfns);
 }
 
 void __init paging_init(void)
