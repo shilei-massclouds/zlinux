@@ -1,2 +1,3 @@
 # zlinux
-Simplified linux kernel: just for study purpose. Step by step!
+Simplified linux kernel: just for study purpose.
+Now based on risc-v.
