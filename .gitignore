@@ -60,4 +60,5 @@ Image.gz
 tags
 *.s
 
+!scripts/Makefile.lib
 include/generated/*
