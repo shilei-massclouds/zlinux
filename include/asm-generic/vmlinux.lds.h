@@ -136,6 +136,7 @@
  */
 #define DATA_DATA       \
     *(DATA_MAIN)        \
+    *(.ref.data)        \
     __start_once = .;   \
     *(.data.once)       \
     __end_once = .;     \

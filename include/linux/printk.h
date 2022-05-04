@@ -127,6 +127,17 @@ static inline int printk_get_level(const char *buffer)
 #define pr_info(fmt, ...) \
     printk(KERN_INFO pr_fmt(fmt), ##__VA_ARGS__)
 
+/**
+ * pr_cont - Continues a previous log message in the same line.
+ * @fmt: format string
+ * @...: arguments for the format string
+ *
+ * This macro expands to a printk with KERN_CONT loglevel. It should only be
+ * used when continuing a log message with no newline ('\n') enclosed. Otherwise
+ * it defaults back to KERN_DEFAULT loglevel.
+ */
+#define pr_cont(fmt, ...) printk(KERN_CONT fmt, ##__VA_ARGS__)
+
 asmlinkage __printf(1, 2) __cold
 int printk(const char *fmt, ...);
 

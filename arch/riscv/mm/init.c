@@ -9,7 +9,6 @@
 #include <linux/kernel.h>
 #include <linux/of_fdt.h>
 #include <linux/libfdt.h>
-#include <generated/bounds.h>
 
 #include <asm/fixmap.h>
 #include <asm/tlbflush.h>
@@ -31,9 +30,15 @@ EXPORT_SYMBOL(va_pa_offset);
 unsigned long pfn_base;
 EXPORT_SYMBOL(pfn_base);
 
+unsigned long riscv_pfn_base __ro_after_init;
+EXPORT_SYMBOL(riscv_pfn_base);
+
 unsigned long
 empty_zero_page[PAGE_SIZE / sizeof(unsigned long)] __page_aligned_bss;
 EXPORT_SYMBOL(empty_zero_page);
+
+struct kernel_mapping kernel_map __ro_after_init;
+EXPORT_SYMBOL(kernel_map);
 
 pgd_t swapper_pg_dir[PTRS_PER_PGD] __page_aligned_bss;
 
@@ -201,6 +206,11 @@ asmlinkage void __init setup_vm(uintptr_t dtb_pa)
 
     va_pa_offset = PAGE_OFFSET - load_pa;
     pfn_base = PFN_DOWN(load_pa);
+
+    kernel_map.phys_addr = (uintptr_t)(&_start);
+    kernel_map.size = (uintptr_t)(&_end) - kernel_map.phys_addr;
+
+    riscv_pfn_base = PFN_DOWN(kernel_map.phys_addr);
 
     /*
      * Enforce boot alignment requirements of RV32 and

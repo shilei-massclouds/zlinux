@@ -5,7 +5,21 @@
 #ifndef __ASSEMBLY__
 #ifndef __GENERATING_BOUNDS_H
 
+#include <linux/spinlock.h>
 #include <linux/bitops.h>
+#include <linux/cache.h>
+#include <linux/numa.h>
+#include <linux/page-flags.h>
+#include <linux/atomic.h>
+
+/* Free memory management - zoned buddy allocator.  */
+#define MAX_ORDER 11
+#define MAX_ORDER_NR_PAGES (1 << (MAX_ORDER - 1))
+
+struct per_cpu_nodestat {
+    s8 stat_threshold;
+    //s8 vm_node_stat_diff[NR_VM_NODE_STAT_ITEMS];
+};
 
 #endif /* !__GENERATING_BOUNDS_H */
 
@@ -55,6 +69,124 @@ enum zone_type {
 };
 
 #ifndef __GENERATING_BOUNDS_H
+
+/*
+ * The array of struct pages for flatmem.
+ * It must be declared for SPARSEMEM as well because there are configurations
+ * that rely on that.
+ */
+extern struct page *mem_map;
+
+/* Maximum number of zones on a zonelist */
+#define MAX_ZONES_PER_ZONELIST (MAX_NUMNODES * MAX_NR_ZONES)
+
+struct zone {
+
+    struct pglist_data  *zone_pgdat;
+
+    /* zone_start_pfn == zone_start_paddr >> PAGE_SHIFT */
+    unsigned long       zone_start_pfn;
+
+    atomic_long_t       managed_pages;
+    unsigned long       spanned_pages;
+    unsigned long       present_pages;
+
+    const char          *name;
+
+    /* Primarily protects free_area */
+    spinlock_t          lock;
+
+} ____cacheline_internodealigned_in_smp;
+
+enum {
+    ZONELIST_FALLBACK,  /* zonelist with fallback */
+    MAX_ZONELISTS
+};
+
+/*
+ * This struct contains information about a zone in a zonelist. It is stored
+ * here to avoid dereferences into large structures and lookups of tables
+ */
+struct zoneref {
+    struct zone *zone;  /* Pointer to actual zone */
+    int zone_idx;       /* zone_idx(zoneref->zone) */
+};
+
+/*
+ * One allocation request operates on a zonelist. A zonelist
+ * is a list of zones, the first one is the 'goal' of the
+ * allocation, the other zones are fallback zones, in decreasing
+ * priority.
+ *
+ * To speed the reading of the zonelist, the zonerefs contain the zone index
+ * of the entry being read. Helper functions to access information given
+ * a struct zoneref are
+ *
+ * zonelist_zone()  - Return the struct zone * for an entry in _zonerefs
+ * zonelist_zone_idx()  - Return the index of the zone for an entry
+ * zonelist_node_idx()  - Return the index of the node for an entry
+ */
+struct zonelist {
+    struct zoneref _zonerefs[MAX_ZONES_PER_ZONELIST + 1];
+};
+
+/*
+ * On NUMA machines, each NUMA node would have a pg_data_t to describe
+ * it's memory layout. On UMA machines there is a single pglist_data which
+ * describes the whole memory.
+ *
+ * Memory statistics and page replacement data structures are maintained on a
+ * per-zone basis.
+ */
+typedef struct pglist_data {
+    /*
+     * node_zones contains just the zones for THIS node. Not all of the
+     * zones may be populated, but it is the full list. It is referenced by
+     * this node's node_zonelists as well as other node's node_zonelists.
+     */
+    struct zone node_zones[MAX_NR_ZONES];
+
+    /*
+     * node_zonelists contains references to all zones in all nodes.
+     * Generally the first zones will be references to this node's
+     * node_zones.
+     */
+    struct zonelist node_zonelists[MAX_ZONELISTS];
+
+    int nr_zones; /* number of populated zones in this node */
+
+    struct page *node_mem_map;
+
+    unsigned long node_start_pfn;
+    unsigned long node_present_pages; /* total number of physical pages */
+    unsigned long node_spanned_pages; /* total size of physical page range, including holes */
+
+    int node_id;
+
+    enum zone_type kswapd_highest_zoneidx;
+
+    /* Per-node vmstats */
+    struct per_cpu_nodestat __percpu *per_cpu_nodestats;
+} pg_data_t;
+
+extern struct pglist_data contig_page_data;
+static inline struct pglist_data *NODE_DATA(int nid)
+{
+    return &contig_page_data;
+}
+
+static inline unsigned long pgdat_end_pfn(pg_data_t *pgdat)
+{
+    return pgdat->node_start_pfn + pgdat->node_spanned_pages;
+}
+
+static inline void zone_set_nid(struct zone *zone, int nid) {}
+
+/* Returns true if a zone has memory */
+static inline bool populated_zone(struct zone *zone)
+{
+    return zone->present_pages;
+}
 
 #endif /* !__GENERATING_BOUNDS_H */
 #endif /* !__ASSEMBLY__ */

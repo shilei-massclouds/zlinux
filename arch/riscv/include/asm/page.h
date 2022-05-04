@@ -38,6 +38,9 @@ typedef struct page *pgtable_t;
 extern unsigned long va_pa_offset;
 extern unsigned long pfn_base;
 
+extern unsigned long riscv_pfn_base;
+#define ARCH_PFN_OFFSET (riscv_pfn_base)
+
 #define pte_val(x)  ((x).pte)
 #define pgd_val(x)  ((x).pgd)
 #define pgprot_val(x)   ((x).pgprot)
@@ -61,6 +64,24 @@ extern unsigned long pfn_base;
 #define __pa(x) __virt_to_phys((unsigned long)(x))
 #define __va(x) ((void *)__pa_to_va_nodebug((phys_addr_t)(x)))
 
-#endif /* __ASSEMBLY__ */
+struct kernel_mapping {
+    unsigned long page_offset;
+    unsigned long virt_addr;
+    uintptr_t phys_addr;
+    uintptr_t size;
+    /* Offset between linear mapping virtual address and kernel load address */
+    unsigned long va_pa_offset;
+    /* Offset between kernel mapping virtual address and kernel load address */
+    unsigned long va_kernel_pa_offset;
+    unsigned long va_kernel_xip_pa_offset;
+};
+
+extern struct kernel_mapping kernel_map;
+extern phys_addr_t phys_ram_base;
+
+#endif /* !__ASSEMBLY__ */
+
+#include <asm-generic/memory_model.h>
+//#include <asm-generic/getorder.h>
 
 #endif /* _ASM_RISCV_PAGE_H */

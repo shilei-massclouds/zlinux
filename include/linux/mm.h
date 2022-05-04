@@ -2,10 +2,10 @@
 #ifndef _LINUX_MM_H
 #define _LINUX_MM_H
 
-#ifdef __KERNEL__
-
 #include <linux/bug.h>
 #include <linux/pgtable.h>
+
+#include <asm/page.h>
 
 /* to align the pointer to the (next) page boundary */
 #define PAGE_ALIGN(addr) ALIGN(addr, PAGE_SIZE)
@@ -22,6 +22,9 @@ static inline void set_max_mapnr(unsigned long limit)
 
 void free_area_init(unsigned long *max_zone_pfn);
 
-#endif /* __KERNEL__ */
+static inline void setup_nr_node_ids(void) {}
+
+extern void get_pfn_range_for_nid(unsigned int nid,
+                                  unsigned long *start_pfn, unsigned long *end_pfn);
 
 #endif /* _LINUX_MM_H */

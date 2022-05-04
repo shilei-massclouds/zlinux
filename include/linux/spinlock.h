@@ -73,6 +73,17 @@ do_raw_spin_unlock(raw_spinlock_t *lock) __releases(lock)
     __release(lock);
 }
 
+static __always_inline raw_spinlock_t *spinlock_check(spinlock_t *lock)
+{
+    return &lock->rlock;
+}
+
+#define spin_lock_init(_lock)               \
+do {                                        \
+    spinlock_check(_lock);                  \
+    *(_lock) = __SPIN_LOCK_UNLOCKED(_lock); \
+} while (0)
+
 #include <linux/spinlock_api_smp.h>
 
 #endif /* __LINUX_SPINLOCK_H */

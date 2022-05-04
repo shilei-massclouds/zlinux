@@ -15,7 +15,11 @@
 #define __initdata  __section(.init.data)
 #define __initconst __section(.init.rodata)
 
-#define __ref   __section(.ref.text) noinline
+#define __ref       __section(".ref.text") noinline
+#define __refdata   __section(".ref.data")
+#define __refconst  __section(".ref.rodata")
+
+#define __meminit   __section(".meminit.text") __cold notrace __latent_entropy
 
 /* For assembly routines */
 #define __HEAD  .section ".head.text","ax"

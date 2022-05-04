@@ -23,6 +23,16 @@ static __always_inline void atomic_set(atomic_t *v, int i)
     WRITE_ONCE(v->counter, i);
 }
 
+#define ATOMIC64_INIT(i) { (i) }
+static __always_inline s64 arch_atomic64_read(const atomic64_t *v)
+{
+    return READ_ONCE(v->counter);
+}
+static __always_inline void arch_atomic64_set(atomic64_t *v, s64 i)
+{
+    WRITE_ONCE(v->counter, i);
+}
+
 /*
  * First, the atomic ops that have no ordering constraints and therefor don't
  * have the AQ or RL bits set.  These don't return anything, so there's only

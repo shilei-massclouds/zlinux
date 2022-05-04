@@ -11,6 +11,7 @@
 /* End */
 
 #include <linux/atomic-fallback.h>
-#include <asm-generic/atomic-long.h>
+#include <linux/atomic/atomic-long.h>
+#include <linux/atomic/atomic-instrumented.h>
 
 #endif /* _LINUX_ATOMIC_H */

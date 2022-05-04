@@ -7,6 +7,8 @@
 #define _struct_page_alignment
 
 struct page {
+    unsigned long flags;    /* Atomic flags, some possibly updated asynchronously */
+
 } _struct_page_alignment;
 
 /*

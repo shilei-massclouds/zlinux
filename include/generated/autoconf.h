@@ -39,4 +39,5 @@
 
 #define CONFIG_BUILD_SALT ""
 
+#define CONFIG_FLATMEM 1
 #define CONFIG_ZONE_DMA32 1

@@ -9,23 +9,23 @@
  * Released under the General Public License (GPL).
  */
 
-#include <asm/spinlock_types.h>
-//#include <linux/lockdep_types.h>
+#include <linux/spinlock_types_raw.h>
 
-typedef struct raw_spinlock {
-    arch_spinlock_t raw_lock;
-} raw_spinlock_t;
+/* Non PREEMPT_RT kernels map spinlock to raw_spinlock */
+typedef struct spinlock {
+    union {
+        struct raw_spinlock rlock;
+    };
+} spinlock_t;
 
-#define __RAW_SPIN_LOCK_INITIALIZER(lockname) \
-    { .raw_lock = __ARCH_SPIN_LOCK_UNLOCKED, }
+#define ___SPIN_LOCK_INITIALIZER(lockname)  \
+    { .raw_lock = __ARCH_SPIN_LOCK_UNLOCKED }
 
-#define __RAW_SPIN_LOCK_UNLOCKED(lockname) \
-    (raw_spinlock_t) __RAW_SPIN_LOCK_INITIALIZER(lockname)
+#define __SPIN_LOCK_INITIALIZER(lockname) \
+    { { .rlock = ___SPIN_LOCK_INITIALIZER(lockname) } }
 
-#define DEFINE_RAW_SPINLOCK(x) \
-    raw_spinlock_t x = __RAW_SPIN_LOCK_UNLOCKED(x)
-
-#define DEFINE_SPINLOCK(x)  spinlock_t x = __SPIN_LOCK_UNLOCKED(x)
+#define __SPIN_LOCK_UNLOCKED(lockname) \
+    (spinlock_t) __SPIN_LOCK_INITIALIZER(lockname)
 
 //#include <linux/rwlock_types.h>
 

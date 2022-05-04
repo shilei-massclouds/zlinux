@@ -57,6 +57,9 @@ struct memblock memblock __initdata_memblock = {
     .current_limit      = MEMBLOCK_ALLOC_ANYWHERE,
 };
 
+struct pglist_data __refdata contig_page_data;
+EXPORT_SYMBOL(contig_page_data);
+
 int memblock_debug __initdata_memblock;
 
 static int memblock_can_resize __initdata_memblock;
@@ -743,6 +746,62 @@ phys_addr_t __init_memblock memblock_end_of_DRAM(void)
 
     return (memblock.memory.regions[idx].base +
             memblock.memory.regions[idx].size);
+}
+
+/*
+ * Common iterator interface used to define for_each_mem_pfn_range().
+ */
+void __init_memblock
+__next_mem_pfn_range(int *idx, int nid,
+                     unsigned long *out_start_pfn, unsigned long *out_end_pfn,
+                     int *out_nid)
+{
+    int r_nid;
+    struct memblock_region *r;
+    struct memblock_type *type = &memblock.memory;
+
+    while (++*idx < type->cnt) {
+        r = &type->regions[*idx];
+        r_nid = memblock_get_region_node(r);
+
+        if (PFN_UP(r->base) >= PFN_DOWN(r->base + r->size))
+            continue;
+        if (nid == MAX_NUMNODES || nid == r_nid)
+            break;
+    }
+    if (*idx >= type->cnt) {
+        *idx = -1;
+        return;
+    }
+
+    if (out_start_pfn)
+        *out_start_pfn = PFN_UP(r->base);
+    if (out_end_pfn)
+        *out_end_pfn = PFN_DOWN(r->base + r->size);
+    if (out_nid)
+        *out_nid = r_nid;
+}
+
+void * __init
+memblock_alloc_try_nid_raw(phys_addr_t size, phys_addr_t align,
+                           phys_addr_t min_addr, phys_addr_t max_addr, int nid)
+{
+    memblock_dbg("%s: %llu bytes align=0x%llx nid=%d from=%pa max_addr=%pa %pS\n",
+                 __func__, (u64)size, (u64)align, nid, &min_addr,
+                 &max_addr, (void *)_RET_IP_);
+
+    return memblock_alloc_internal(size, align, min_addr, max_addr, nid, false);
+}
+
+void * __init
+memblock_alloc_exact_nid_raw(phys_addr_t size, phys_addr_t align,
+                             phys_addr_t min_addr, phys_addr_t max_addr, int nid)
+{
+    memblock_dbg("%s: %llu bytes align=0x%llx nid=%d from=%pa max_addr=%pa %pS\n",
+                 __func__, (u64)size, (u64)align, nid, &min_addr,
+                 &max_addr, (void *)_RET_IP_);
+
+    return memblock_alloc_internal(size, align, min_addr, max_addr, nid, true);
 }
 
 static int __init early_memblock(char *p)
