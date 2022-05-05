@@ -10,6 +10,7 @@
 #include <linux/compiler.h>
 #include <linux/bitops.h>
 #include <linux/log2.h>
+#include <linux/math.h>
 //#include <linux/typecheck.h>
 #include <linux/printk.h>
 #include <linux/build_bug.h>

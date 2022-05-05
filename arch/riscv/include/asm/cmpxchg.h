@@ -49,4 +49,11 @@
     __ret;                              \
 })
 
+#define arch_cmpxchg(ptr, o, n)                                         \
+({                                                                      \
+    __typeof__(*(ptr)) _o_ = (o);                                       \
+    __typeof__(*(ptr)) _n_ = (n);                                       \
+    (__typeof__(*(ptr))) __cmpxchg((ptr), _o_, _n_, sizeof(*(ptr)));    \
+})
+
 #endif /* _ASM_RISCV_CMPXCHG_H */

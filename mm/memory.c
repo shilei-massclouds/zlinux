@@ -68,3 +68,4 @@ EXPORT_SYMBOL(max_mapnr);
 struct page *mem_map;
 EXPORT_SYMBOL(mem_map);
 
+unsigned long highest_memmap_pfn __read_mostly;

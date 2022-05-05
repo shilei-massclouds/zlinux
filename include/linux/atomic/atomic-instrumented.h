@@ -19,7 +19,12 @@
 
 #include <linux/build_bug.h>
 #include <linux/compiler.h>
-//#include <linux/instrumented.h>
+
+#define cmpxchg(ptr, ...) \
+({ \
+    typeof(ptr) __ai_ptr = (ptr); \
+    arch_cmpxchg(__ai_ptr, __VA_ARGS__); \
+})
 
 static __always_inline void
 atomic_long_set(atomic_long_t *v, long i)

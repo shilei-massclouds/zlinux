@@ -48,11 +48,11 @@
 #include <linux/vmalloc.h>
 #include <linux/vmstat.h>
 #include <linux/mempolicy.h>
-#include <linux/memremap.h>
 #include <linux/stop_machine.h>
 #include <linux/random.h>
 #include <linux/sort.h>
 */
+#include <linux/memremap.h>
 #include <linux/nodemask.h>
 #include <linux/pfn.h>
 /*
@@ -382,6 +382,41 @@ void __init set_dma_reserve(unsigned long new_dma_reserve)
 }
 
 /*
+ * Calculate the size of the zone->blockflags rounded to an unsigned long
+ * Start by making sure zonesize is a multiple of pageblock_order by rounding
+ * up. Then use 1 NR_PAGEBLOCK_BITS worth of bits per pageblock, finally
+ * round what is now in bits to nearest long in bits, then return it in
+ * bytes.
+ */
+static unsigned long __init
+usemap_size(unsigned long zone_start_pfn, unsigned long zonesize)
+{
+    unsigned long usemapsize;
+
+    zonesize += zone_start_pfn & (pageblock_nr_pages-1);
+    usemapsize = roundup(zonesize, pageblock_nr_pages);
+    usemapsize = usemapsize >> pageblock_order;
+    usemapsize *= NR_PAGEBLOCK_BITS;
+    usemapsize = roundup(usemapsize, 8 * sizeof(unsigned long));
+
+    return usemapsize / 8;
+}
+
+static void __ref setup_usemap(struct zone *zone)
+{
+    unsigned long usemapsize = usemap_size(zone->zone_start_pfn,
+                                           zone->spanned_pages);
+    zone->pageblock_flags = NULL;
+    if (usemapsize) {
+        zone->pageblock_flags =
+            memblock_alloc_node(usemapsize, SMP_CACHE_BYTES, zone_to_nid(zone));
+        if (!zone->pageblock_flags)
+            panic("Failed to allocate %ld bytes for zone %s pageblock flags on node %d\n",
+                  usemapsize, zone->name, zone_to_nid(zone));
+    }
+}
+
+/*
  * Set up the zone data structures:
  *   - mark all pages reserved
  *   - mark all memory queues empty
@@ -441,19 +476,12 @@ static void __init free_area_init_core(struct pglist_data *pgdat)
          */
         zone_init_internals(zone, j, nid, freesize);
 
-#if 0
         if (!size)
             continue;
 
-        set_pageblock_order();
         setup_usemap(zone);
         init_currently_empty_zone(zone, zone->zone_start_pfn, size);
-#endif
-
-        panic("%s: step1\n", __func__);
     }
-
-    panic("%s: END\n", __func__);
 }
 
 static void __init free_area_init_node(int nid)
@@ -484,6 +512,182 @@ static void __init free_area_init_node(int nid)
     alloc_node_mem_map(pgdat);
 
     free_area_init_core(pgdat);
+}
+
+/* Any regular or high memory on that node ? */
+static void check_for_memory(pg_data_t *pgdat, int nid)
+{
+    enum zone_type zone_type;
+
+    for (zone_type = 0; zone_type <= ZONE_MOVABLE - 1; zone_type++) {
+        struct zone *zone = &pgdat->node_zones[zone_type];
+        if (populated_zone(zone)) {
+            if (zone_type <= ZONE_NORMAL)
+                node_set_state(nid, N_NORMAL_MEMORY);
+            break;
+        }
+    }
+}
+
+static void __meminit
+__init_single_page(struct page *page, unsigned long pfn,
+                   unsigned long zone, int nid)
+{
+    mm_zero_struct_page(page);
+    set_page_links(page, zone, nid, pfn);
+    init_page_count(page);
+    page_mapcount_reset(page);
+    page_cpupid_reset_last(page);
+
+    INIT_LIST_HEAD(&page->lru);
+}
+
+/* Return a pointer to the bitmap storing bits affecting a block of pages */
+static inline unsigned long *get_pageblock_bitmap(const struct page *page,
+                            unsigned long pfn)
+{
+    return page_zone(page)->pageblock_flags;
+}
+
+static inline int pfn_to_bitidx(const struct page *page, unsigned long pfn)
+{
+    pfn = pfn - round_down(page_zone(page)->zone_start_pfn, pageblock_nr_pages);
+    return (pfn >> pageblock_order) * NR_PAGEBLOCK_BITS;
+}
+
+/**
+ * set_pfnblock_flags_mask - Set the requested group of flags for a pageblock_nr_pages block of pages
+ * @page: The page within the block of interest
+ * @flags: The flags to set
+ * @pfn: The target page frame number
+ * @mask: mask of bits that the caller is interested in
+ */
+void set_pfnblock_flags_mask(struct page *page, unsigned long flags,
+                             unsigned long pfn,
+                             unsigned long mask)
+{
+    unsigned long *bitmap;
+    unsigned long bitidx, word_bitidx;
+    unsigned long old_word, word;
+
+    BUILD_BUG_ON(NR_PAGEBLOCK_BITS != 4);
+    BUILD_BUG_ON(MIGRATE_TYPES > (1 << PB_migratetype_bits));
+
+    bitmap = get_pageblock_bitmap(page, pfn);
+    bitidx = pfn_to_bitidx(page, pfn);
+    word_bitidx = bitidx / BITS_PER_LONG;
+    bitidx &= (BITS_PER_LONG-1);
+
+    VM_BUG_ON_PAGE(!zone_spans_pfn(page_zone(page), pfn), page);
+
+    mask <<= bitidx;
+    flags <<= bitidx;
+
+    word = READ_ONCE(bitmap[word_bitidx]);
+    for (;;) {
+        old_word = cmpxchg(&bitmap[word_bitidx], word, (word & ~mask) | flags);
+        if (word == old_word)
+            break;
+        word = old_word;
+    }
+}
+
+void set_pageblock_migratetype(struct page *page, int migratetype)
+{
+    set_pfnblock_flags_mask(page, (unsigned long)migratetype,
+                            page_to_pfn(page), MIGRATETYPE_MASK);
+}
+
+/*
+ * Initially all pages are reserved - free ones are freed
+ * up by memblock_free_all() once the early boot process is
+ * done. Non-atomic initialization, single-pass.
+ *
+ * All aligned pageblocks are initialized to the specified migratetype
+ * (usually MIGRATE_MOVABLE). Besides setting the migratetype, no related
+ * zone stats (e.g., nr_isolate_pageblock) are touched.
+ */
+void __meminit
+memmap_init_range(unsigned long size, int nid, unsigned long zone,
+                  unsigned long start_pfn, unsigned long zone_end_pfn,
+                  enum meminit_context context,
+                  struct vmem_altmap *altmap, int migratetype)
+{
+    struct page *page;
+    unsigned long pfn, end_pfn = start_pfn + size;
+
+    if (highest_memmap_pfn < end_pfn - 1)
+        highest_memmap_pfn = end_pfn - 1;
+
+    for (pfn = start_pfn; pfn < end_pfn; ) {
+        page = pfn_to_page(pfn);
+        __init_single_page(page, pfn, zone, nid);
+        if (context == MEMINIT_HOTPLUG)
+            __SetPageReserved(page);
+
+        /*
+         * Usually, we want to mark the pageblock MIGRATE_MOVABLE,
+         * such that unmovable allocations won't be scattered all
+         * over the place during system boot.
+         */
+        if (IS_ALIGNED(pfn, pageblock_nr_pages)) {
+            set_pageblock_migratetype(page, migratetype);
+            cond_resched();
+        }
+        pfn++;
+    }
+}
+
+static void __init
+memmap_init_zone_range(struct zone *zone,
+                       unsigned long start_pfn,
+                       unsigned long end_pfn,
+                       unsigned long *hole_pfn)
+{
+    unsigned long zone_start_pfn = zone->zone_start_pfn;
+    unsigned long zone_end_pfn = zone_start_pfn + zone->spanned_pages;
+    int nid = zone_to_nid(zone), zone_id = zone_idx(zone);
+
+    start_pfn = clamp(start_pfn, zone_start_pfn, zone_end_pfn);
+    end_pfn = clamp(end_pfn, zone_start_pfn, zone_end_pfn);
+
+    if (start_pfn >= end_pfn)
+        return;
+
+    memmap_init_range(end_pfn - start_pfn, nid, zone_id, start_pfn,
+                      zone_end_pfn, MEMINIT_EARLY, NULL, MIGRATE_MOVABLE);
+
+    panic("%s: (%lx, %lx) END\n", __func__, start_pfn, end_pfn);
+#if 0
+    if (*hole_pfn < start_pfn)
+        init_unavailable_range(*hole_pfn, start_pfn, zone_id, nid);
+
+    *hole_pfn = end_pfn;
+#endif
+}
+
+static void __init memmap_init(void)
+{
+    unsigned long start_pfn, end_pfn;
+    unsigned long hole_pfn = 0;
+    int i, j, zone_id = 0, nid;
+
+    for_each_mem_pfn_range(i, MAX_NUMNODES, &start_pfn, &end_pfn, &nid) {
+        struct pglist_data *node = NODE_DATA(nid);
+
+        for (j = 0; j < MAX_NR_ZONES; j++) {
+            struct zone *zone = node->node_zones + j;
+
+            if (!populated_zone(zone))
+                continue;
+
+            memmap_init_zone_range(zone, start_pfn, end_pfn, &hole_pfn);
+            zone_id = j;
+        }
+    }
+
+    panic("%s: END\n", __func__);
+    //init_unavailable_range(hole_pfn, end_pfn, zone_id, nid);
 }
 
 /**
@@ -570,23 +774,16 @@ void __init free_area_init(unsigned long *max_zone_pfn)
     /* Initialise every node */
     setup_nr_node_ids();
     for_each_node(nid) {
-        pg_data_t *pgdat;
-
-        if (!node_online(nid)) {
-            panic("Initializing node %d as memoryless\n", nid);
-        }
-
-        pgdat = NODE_DATA(nid);
+        pg_data_t *pgdat = NODE_DATA(nid);
         free_area_init_node(nid);
 
-#if 0
         /* Any memory on that node */
         if (pgdat->node_present_pages)
             node_set_state(nid, N_MEMORY);
         check_for_memory(pgdat, nid);
-#endif
     }
 
+    memmap_init();
     panic("%s: start_pfn(%lx)\n", __func__, start_pfn);
 }
 
@@ -619,4 +816,34 @@ void __init get_pfn_range_for_nid(unsigned int nid,
 
     if (*start_pfn == -1UL)
         *start_pfn = 0;
+}
+
+static void __meminit zone_init_free_lists(struct zone *zone)
+{
+    unsigned int order, t;
+    for_each_migratetype_order(order, t) {
+        INIT_LIST_HEAD(&zone->free_area[order].free_list[t]);
+        zone->free_area[order].nr_free = 0;
+    }
+}
+
+void __meminit
+init_currently_empty_zone(struct zone *zone,
+                          unsigned long zone_start_pfn, unsigned long size)
+{
+    struct pglist_data *pgdat = zone->zone_pgdat;
+    int zone_idx = zone_idx(zone) + 1;
+
+    if (zone_idx > pgdat->nr_zones)
+        pgdat->nr_zones = zone_idx;
+
+    zone->zone_start_pfn = zone_start_pfn;
+
+    pr_debug("Initialising map node %d zone %lu pfns %lu -> %lu\n",
+             pgdat->node_id,
+             (unsigned long)zone_idx(zone),
+             zone_start_pfn, (zone_start_pfn + size));
+
+    zone_init_free_lists(zone);
+    zone->initialized = 1;
 }

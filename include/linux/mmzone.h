@@ -6,10 +6,12 @@
 #ifndef __GENERATING_BOUNDS_H
 
 #include <linux/spinlock.h>
+#include <linux/list.h>
 #include <linux/bitops.h>
 #include <linux/cache.h>
 #include <linux/numa.h>
 #include <linux/page-flags.h>
+#include <linux/pageblock-flags.h>
 #include <linux/atomic.h>
 
 /* Free memory management - zoned buddy allocator.  */
@@ -80,6 +82,20 @@ extern struct page *mem_map;
 /* Maximum number of zones on a zonelist */
 #define MAX_ZONES_PER_ZONELIST (MAX_NUMNODES * MAX_NR_ZONES)
 
+enum migratetype {
+    MIGRATE_UNMOVABLE,
+    MIGRATE_MOVABLE,
+    MIGRATE_RECLAIMABLE,
+    MIGRATE_PCPTYPES,   /* the number of types on the pcp lists */
+    MIGRATE_HIGHATOMIC = MIGRATE_PCPTYPES,
+    MIGRATE_TYPES
+};
+
+struct free_area {
+    struct list_head    free_list[MIGRATE_TYPES];
+    unsigned long       nr_free;
+};
+
 struct zone {
 
     struct pglist_data  *zone_pgdat;
@@ -87,11 +103,22 @@ struct zone {
     /* zone_start_pfn == zone_start_paddr >> PAGE_SHIFT */
     unsigned long       zone_start_pfn;
 
+    /*
+     * Flags for a pageblock_nr_pages block. See pageblock-flags.h.
+     * In SPARSEMEM, this map is stored in struct mem_section
+     */
+    unsigned long       *pageblock_flags;
+
     atomic_long_t       managed_pages;
     unsigned long       spanned_pages;
     unsigned long       present_pages;
 
     const char          *name;
+
+    int                 initialized;
+
+    /* free areas of different sizes */
+    struct free_area    free_area[MAX_ORDER];
 
     /* Primarily protects free_area */
     spinlock_t          lock;
@@ -186,6 +213,45 @@ static inline void zone_set_nid(struct zone *zone, int nid) {}
 static inline bool populated_zone(struct zone *zone)
 {
     return zone->present_pages;
+}
+
+static inline int zone_to_nid(struct zone *zone)
+{
+    return 0;
+}
+
+extern void
+init_currently_empty_zone(struct zone *zone,
+                          unsigned long start_pfn, unsigned long size);
+
+/*
+ * zone_idx() returns 0 for the ZONE_DMA zone, 1 for the ZONE_NORMAL zone, etc.
+ */
+#define zone_idx(zone)  ((zone) - (zone)->zone_pgdat->node_zones)
+
+#define for_each_migratetype_order(order, type) \
+    for (order = 0; order < MAX_ORDER; order++) \
+        for (type = 0; type < MIGRATE_TYPES; type++)
+
+/*
+ * Memory initialization context, use to differentiate memory added by
+ * the platform statically or via memory hotplug interface.
+ */
+enum meminit_context {
+    MEMINIT_EARLY,
+    MEMINIT_HOTPLUG,
+};
+
+#define MIGRATETYPE_MASK ((1UL << PB_migratetype_bits) - 1)
+
+static inline unsigned long zone_end_pfn(const struct zone *zone)
+{
+    return zone->zone_start_pfn + zone->spanned_pages;
+}
+
+static inline bool zone_spans_pfn(const struct zone *zone, unsigned long pfn)
+{
+    return zone->zone_start_pfn <= pfn && pfn < zone_end_pfn(zone);
 }
 
 #endif /* !__GENERATING_BOUNDS_H */
