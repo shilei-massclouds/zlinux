@@ -50,6 +50,13 @@
 #define NODES_MASK          ((1UL << NODES_WIDTH) - 1)
 #define LAST_CPUPID_MASK    ((1UL << LAST_CPUPID_SHIFT) - 1)
 
+#define ZONEID_SHIFT (NODES_SHIFT + ZONES_SHIFT)
+#define ZONEID_PGOFF ((NODES_PGOFF < ZONES_PGOFF)? NODES_PGOFF : ZONES_PGOFF)
+
+#define ZONEID_MASK ((1UL << ZONEID_SHIFT) - 1)
+
+#define ZONEID_PGSHIFT (ZONEID_PGOFF * (ZONEID_SHIFT != 0))
+
 extern unsigned long max_mapnr;
 
 static inline void set_max_mapnr(unsigned long limit)
@@ -171,5 +178,20 @@ static inline void totalram_pages_add(long count)
 extern void reserve_bootmem_region(phys_addr_t start, phys_addr_t end);
 
 extern void *high_memory;
+
+/*
+ * The identification function is mainly used by the buddy allocator for
+ * determining if two pages could be buddies. We are not really identifying
+ * the zone since we could be using the section number id if we do not have
+ * node id available in page flags.
+ * We only guarantee that it will return the same value for two combinable
+ * pages in a zone.
+ */
+static inline int page_zone_id(struct page *page)
+{
+    return (page->flags >> ZONEID_PGSHIFT) & ZONEID_MASK;
+}
+
+extern void setup_per_cpu_pageset(void);
 
 #endif /* _LINUX_MM_H */

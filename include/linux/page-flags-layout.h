@@ -38,4 +38,12 @@
 
 #define LAST_CPUPID_SHIFT 0
 
+/*
+ * Note that this #define MUST have a value so that it can be tested with
+ * the IS_ENABLED() macro.
+ */
+#if NODES_SHIFT != 0 && NODES_WIDTH == 0
+#define NODE_NOT_IN_PAGE_FLAGS  1
+#endif
+
 #endif /* _LINUX_PAGE_FLAGS_LAYOUT */

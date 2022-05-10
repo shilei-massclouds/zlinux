@@ -140,3 +140,37 @@ void __init setup_per_cpu_areas(void)
         __per_cpu_offset[cpu] = delta + pcpu_unit_offsets[cpu];
 #endif
 }
+
+/**
+ * pcpu_alloc - the percpu allocator
+ * @size: size of area to allocate in bytes
+ * @align: alignment of area (max PAGE_SIZE)
+ * @reserved: allocate from the reserved chunk if available
+ * @gfp: allocation flags
+ *
+ * Allocate percpu area of @size bytes aligned at @align.  If @gfp doesn't
+ * contain %GFP_KERNEL, the allocation is atomic. If @gfp has __GFP_NOWARN
+ * then no warning will be triggered on invalid or failed allocation
+ * requests.
+ *
+ * RETURNS:
+ * Percpu pointer to the allocated area on success, NULL on failure.
+ */
+static void __percpu *
+pcpu_alloc(size_t size, size_t align, bool reserved, gfp_t gfp)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
+/**
+ * __alloc_percpu - allocate dynamic percpu area
+ * @size: size of area to allocate in bytes
+ * @align: alignment of area (max PAGE_SIZE)
+ *
+ * Equivalent to __alloc_percpu_gfp(size, align, %GFP_KERNEL).
+ */
+void __percpu *__alloc_percpu(size_t size, size_t align)
+{
+    return pcpu_alloc(size, align, false, GFP_KERNEL);
+}
+EXPORT_SYMBOL_GPL(__alloc_percpu);

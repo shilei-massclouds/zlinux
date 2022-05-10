@@ -39,6 +39,37 @@ enum pageflags {
 
 #ifndef __GENERATING_BOUNDS_H
 
+unsigned long get_pfnblock_flags_mask(const struct page *page,
+                                      unsigned long pfn, unsigned long mask);
+
+static inline unsigned long _compound_head(const struct page *page)
+{
+    unsigned long head = READ_ONCE(page->compound_head);
+
+    if (unlikely(head & 1))
+        return head - 1;
+    return (unsigned long)page;
+}
+
+#define compound_head(page) ((typeof(page))_compound_head(page))
+
+/**
+ * page_folio - Converts from page to folio.
+ * @p: The page.
+ *
+ * Every page is part of a folio.  This function cannot be called on a
+ * NULL pointer.
+ *
+ * Context: No reference, nor lock is required on @page.  If the caller
+ * does not hold a reference, this call may race with a folio split, so
+ * it should re-check the folio still contains this page after gaining
+ * a reference on the folio.
+ * Return: The folio which contains this page.
+ */
+#define page_folio(p)       (_Generic((p),              \
+    const struct page *:    (const struct folio *)_compound_head(p), \
+    struct page *:      (struct folio *)_compound_head(p)))
+
 #define PAGE_POISON_PATTERN -1l
 static inline int PagePoisoned(const struct page *page)
 {

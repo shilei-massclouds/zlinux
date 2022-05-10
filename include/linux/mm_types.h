@@ -56,6 +56,48 @@ struct page {
 
 } _struct_page_alignment;
 
+/**
+ * struct folio - Represents a contiguous set of bytes.
+ * @flags: Identical to the page flags.
+ * @lru: Least Recently Used list; tracks how recently this folio was used.
+ * @mapping: The file this page belongs to, or refers to the anon_vma for
+ *    anonymous memory.
+ * @index: Offset within the file, in units of pages.  For anonymous memory,
+ *    this is the index from the beginning of the mmap.
+ * @private: Filesystem per-folio data (see folio_attach_private()).
+ *    Used for swp_entry_t if folio_test_swapcache().
+ * @_mapcount: Do not access this member directly.  Use folio_mapcount() to
+ *    find out how many times this folio is mapped by userspace.
+ * @_refcount: Do not access this member directly.  Use folio_ref_count()
+ *    to find how many references there are to this folio.
+ * @memcg_data: Memory Control Group data.
+ *
+ * A folio is a physically, virtually and logically contiguous set
+ * of bytes.  It is a power-of-two in size, and it is aligned to that
+ * same power-of-two.  It is at least as large as %PAGE_SIZE.  If it is
+ * in the page cache, it is at a file offset which is a multiple of that
+ * power-of-two.  It may be mapped into userspace at an address which is
+ * at an arbitrary page offset, but its kernel virtual address is aligned
+ * to its size.
+ */
+struct folio {
+    /* private: don't document the anon union */
+    union {
+        struct {
+    /* public: */
+            unsigned long flags;
+            struct list_head lru;
+            struct address_space *mapping;
+            pgoff_t index;
+            void *private;
+            atomic_t _mapcount;
+            atomic_t _refcount;
+    /* private: the union with struct page is transitional */
+        };
+        struct page page;
+    };
+};
+
 /*
  * Used for sizing the vmemmap region on some architectures
  */

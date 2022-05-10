@@ -147,8 +147,6 @@ gfp_t gfp_allowed_mask __read_mostly = GFP_BOOT_MASK;
 #define BOOT_PAGESET_HIGH   0
 #define BOOT_PAGESET_BATCH  1
 static DEFINE_PER_CPU(struct per_cpu_pages, boot_pageset);
-static DEFINE_PER_CPU(struct per_cpu_zonestat, boot_zonestats);
-static DEFINE_PER_CPU(struct per_cpu_nodestat, boot_nodestats);
 
 //#define MAX_NODE_LOAD (nr_online_nodes)
 //static int node_load[MAX_NUMNODES];
@@ -416,6 +414,36 @@ calc_memmap_size(unsigned long spanned_pages, unsigned long present_pages)
     return PAGE_ALIGN(pages * sizeof(struct page)) >> PAGE_SHIFT;
 }
 
+static int zone_batchsize(struct zone *zone)
+{
+    int batch;
+
+    /*
+     * The number of pages to batch allocate is either ~0.1%
+     * of the zone or 1MB, whichever is smaller. The batch
+     * size is striking a balance between allocation latency
+     * and zone lock contention.
+     */
+    batch = min(zone_managed_pages(zone) >> 10, (1024 * 1024) / PAGE_SIZE);
+    batch /= 4;     /* We effectively *= 4 below */
+    if (batch < 1)
+        batch = 1;
+
+    /*
+     * Clamp the batch to a 2^n - 1 value. Having a power
+     * of 2 value was found to be more likely to have
+     * suboptimal cache aliasing properties in some cases.
+     *
+     * For example if 2 tasks are alternately allocating
+     * batches of pages, one task can end up with a lot
+     * of pages of one half of the possible page colors
+     * and the other with pages of the other colors.
+     */
+    batch = rounddown_pow_of_two(batch + batch/2) - 1;
+
+    return batch;
+}
+
 static __meminit void zone_pcp_init(struct zone *zone)
 {
     /*
@@ -423,16 +451,13 @@ static __meminit void zone_pcp_init(struct zone *zone)
      * relies on the ability of the linker to provide the
      * offset of a (static) per cpu variable into the per cpu area.
      */
-#if 0
     zone->per_cpu_pageset = &boot_pageset;
-    zone->per_cpu_zonestats = &boot_zonestats;
     zone->pageset_high = BOOT_PAGESET_HIGH;
     zone->pageset_batch = BOOT_PAGESET_BATCH;
 
     if (populated_zone(zone))
         pr_debug("  %s zone: %lu pages, LIFO batch:%u\n",
                  zone->name, zone->present_pages, zone_batchsize(zone));
-#endif
 }
 
 static void __meminit
@@ -513,7 +538,6 @@ static void __init free_area_init_core(struct pglist_data *pgdat)
     int nid = pgdat->node_id;
 
     pgdat_init_internals(pgdat);
-    pgdat->per_cpu_nodestats = &boot_nodestats;
 
     for (j = 0; j < MAX_NR_ZONES; j++) {
         unsigned long size, freesize, memmap_pages;
@@ -579,7 +603,6 @@ static void __init free_area_init_node(int nid)
 
     pgdat->node_id = nid;
     pgdat->node_start_pfn = start_pfn;
-    pgdat->per_cpu_nodestats = NULL;
 
     if (start_pfn != end_pfn) {
         pr_info("Initmem setup node %d [mem %#018Lx-%#018Lx]\n",
@@ -1027,6 +1050,17 @@ add_to_free_list(struct page *page, struct zone *zone,
     area->nr_free++;
 }
 
+/* Used for pages not on another list */
+static inline void
+add_to_free_list_tail(struct page *page, struct zone *zone,
+                      unsigned int order, int migratetype)
+{
+    struct free_area *area = &zone->free_area[order];
+
+    list_add_tail(&page->lru, &area->free_list[migratetype]);
+    area->nr_free++;
+}
+
 static inline void
 set_buddy_order(struct page *page, unsigned int order)
 {
@@ -1090,6 +1124,39 @@ struct page *__rmqueue_smallest(struct zone *zone, unsigned int order,
 }
 
 /*
+ * When we are falling back to another migratetype during allocation, try to
+ * steal extra free pages from the same pageblocks to satisfy further
+ * allocations, instead of polluting multiple pageblocks.
+ *
+ * If we are stealing a relatively large buddy page, it is likely there will
+ * be more free pages in the pageblock, so try to steal them all. For
+ * reclaimable and unmovable allocations, we steal regardless of page size,
+ * as fragmentation caused by those allocations polluting movable pageblocks
+ * is worse than movable allocations stealing from unmovable and reclaimable
+ * pageblocks.
+ */
+static bool can_steal_fallback(unsigned int order, int start_mt)
+{
+    /*
+     * Leaving this order check is intended, although there is
+     * relaxed order check in next check. The reason is that
+     * we can actually steal whole pageblock if this condition met,
+     * but, below check doesn't guarantee it and that is just heuristic
+     * so could be changed anytime.
+     */
+    if (order >= pageblock_order)
+        return true;
+
+    if (order >= pageblock_order / 2 ||
+        start_mt == MIGRATE_RECLAIMABLE ||
+        start_mt == MIGRATE_UNMOVABLE ||
+        page_group_by_mobility_disabled)
+        return true;
+
+    return false;
+}
+
+/*
  * Check whether there is a suitable fallback freepage with requested order.
  * If only_stealable is true, this function returns fallback_mt only if
  * we can steal other freepages all together. This would help to reduce
@@ -1114,7 +1181,6 @@ int find_suitable_fallback(struct free_area *area, unsigned int order,
         if (free_area_empty(area, fallback_mt))
             continue;
 
-#if 0
         if (can_steal_fallback(order, migratetype))
             *can_steal = true;
 
@@ -1123,10 +1189,71 @@ int find_suitable_fallback(struct free_area *area, unsigned int order,
 
         if (*can_steal)
             return fallback_mt;
-#endif
     }
 
     return -1;
+}
+
+/*
+ * Used for pages which are on another list. Move the pages to the tail
+ * of the list - so the moved pages won't immediately be considered for
+ * allocation again (e.g., optimization for memory onlining).
+ */
+static inline void
+move_to_free_list(struct page *page, struct zone *zone,
+                  unsigned int order, int migratetype)
+{
+    struct free_area *area = &zone->free_area[order];
+
+    list_move_tail(&page->lru, &area->free_list[migratetype]);
+}
+
+static void change_pageblock_range(struct page *pageblock_page,
+                                   int start_order, int migratetype)
+{
+    int nr_pageblocks = 1 << (start_order - pageblock_order);
+
+    while (nr_pageblocks--) {
+        set_pageblock_migratetype(pageblock_page, migratetype);
+        pageblock_page += pageblock_nr_pages;
+    }
+}
+
+/*
+ * This function implements actual steal behaviour. If order is large enough,
+ * we can steal whole pageblock. If not, we first move freepages in this
+ * pageblock to our migratetype and determine how many already-allocated pages
+ * are there in the pageblock with a compatible migratetype. If at least half
+ * of pages are free or compatible, we can change migratetype of the pageblock
+ * itself, so pages freed in the future will be put on the correct free list.
+ */
+static void
+steal_suitable_fallback(struct zone *zone, struct page *page,
+                        unsigned int alloc_flags, int start_type,
+                        bool whole_block)
+{
+    int old_block_type;
+    unsigned int current_order = buddy_order(page);
+
+    old_block_type = get_pageblock_migratetype(page);
+
+    /*
+     * This can happen due to races and we want to prevent broken
+     * highatomic accounting.
+     */
+    if (is_migrate_highatomic(old_block_type))
+        goto single_page;
+
+    /* Take ownership for orders >= pageblock_order */
+    if (current_order >= pageblock_order) {
+        change_pageblock_range(page, current_order, start_type);
+        goto single_page;
+    }
+
+    panic("%s: order(%d) END\n", __func__, current_order);
+
+single_page:
+    move_to_free_list(page, zone, current_order, start_type);
 }
 
 /*
@@ -1143,9 +1270,6 @@ static __always_inline bool
 __rmqueue_fallback(struct zone *zone, int order,
                    int start_migratetype, unsigned int alloc_flags)
 {
-    panic("%s: NO implementation!\n", __func__);
-    return false;
-#if 0
     bool can_steal;
     int fallback_mt;
     int current_order;
@@ -1176,9 +1300,33 @@ __rmqueue_fallback(struct zone *zone, int order,
         if (fallback_mt == -1)
             continue;
 
+        /*
+         * We cannot steal all free pages from the pageblock and the
+         * requested migratetype is movable. In that case it's better to
+         * steal and split the smallest available page instead of the
+         * largest available page, because even if the next movable
+         * allocation falls back into a different pageblock than this
+         * one, it won't cause permanent fragmentation.
+         */
+        if (!can_steal && start_migratetype == MIGRATE_MOVABLE &&
+            current_order > order)
+            goto find_smallest;
+
+        goto do_steal;
     }
 
-#endif
+    return false;
+
+ find_smallest:
+    panic("%s: NO implementation!\n", __func__);
+
+ do_steal:
+    page = get_page_from_free_area(area, fallback_mt);
+
+    steal_suitable_fallback(zone, page, alloc_flags,
+                            start_migratetype, can_steal);
+
+    return true;
 }
 
 /*
@@ -1346,6 +1494,7 @@ struct page *rmqueue(struct zone *preferred_zone, struct zone *zone,
     panic("%s: END!\n", __func__);
 
  out:
+    printk("%s: out\n", __func__);
     /* Separate test+clear to avoid unnecessary atomics */
 #if 0
     if (test_bit(ZONE_BOOSTED_WATERMARK, &zone->flags)) {
@@ -1444,6 +1593,7 @@ retry:
 
         page = rmqueue(ac->preferred_zoneref->zone, zone, order,
                        gfp_mask, alloc_flags, ac->migratetype);
+        printk("%s: step2\n", __func__);
         if (page) {
 #if 0
             prep_new_page(page, order, gfp_mask, alloc_flags);
@@ -1519,6 +1669,7 @@ __alloc_pages(gfp_t gfp, unsigned int order, int preferred_nid,
     if (likely(page))
         goto out;
 
+    printk("%s: step2\n", __func__);
     alloc_gfp = gfp;
     ac.spread_dirty_pages = false;
 
@@ -1610,13 +1761,11 @@ static void __build_all_zonelists(void *data)
 }
 
 static void
-per_cpu_pages_init(struct per_cpu_pages *pcp,
-                   struct per_cpu_zonestat *pzstats)
+per_cpu_pages_init(struct per_cpu_pages *pcp)
 {
     int pindex;
 
     memset(pcp, 0, sizeof(*pcp));
-    memset(pzstats, 0, sizeof(*pzstats));
 
     for (pindex = 0; pindex < NR_PCP_LISTS; pindex++)
         INIT_LIST_HEAD(&pcp->lists[pindex]);
@@ -1639,6 +1788,8 @@ build_all_zonelists_init(void)
 
     __build_all_zonelists(NULL);
 
+    printk("### %s: \n", __func__);
+
     /*
      * Initialize the boot_pagesets that are going to be used
      * for bootstrapping processors. The real pagesets for
@@ -1653,8 +1804,7 @@ build_all_zonelists_init(void)
      * (a chicken-egg dilemma).
      */
     for_each_possible_cpu(cpu)
-        per_cpu_pages_init(&per_cpu(boot_pageset, cpu),
-                           &per_cpu(boot_zonestats, cpu));
+        per_cpu_pages_init(&per_cpu(boot_pageset, cpu));
 }
 
 /*
@@ -1755,18 +1905,75 @@ free_pages_prepare(struct page *page, unsigned int order,
      return true;
 }
 
+/*
+ * This function checks whether a page is free && is the buddy
+ * we can coalesce a page and its buddy if
+ * (a) the buddy is not in a hole (check before calling!) &&
+ * (b) the buddy is in the buddy system &&
+ * (c) a page and its buddy have the same order &&
+ * (d) a page and its buddy are in the same zone.
+ *
+ * For recording whether a page is in the buddy system, we set PageBuddy.
+ * Setting, clearing, and testing PageBuddy is serialized by zone->lock.
+ *
+ * For recording page's order, we use page_private(page).
+ */
+static inline bool
+page_is_buddy(struct page *page, struct page *buddy, unsigned int order)
+{
+    if (!PageBuddy(buddy))
+        return false;
+
+    if (buddy_order(buddy) != order)
+        return false;
+
+    /*
+     * zone check is done late to avoid uselessly calculating
+     * zone/node ids for pages that could never merge.
+     */
+    if (page_zone_id(page) != page_zone_id(buddy))
+        return false;
+
+    VM_BUG_ON_PAGE(page_count(buddy) != 0, buddy);
+
+    return true;
+}
+
+/*
+ * If this is not the largest possible page, check if the buddy
+ * of the next-highest order is free. If it is, it's possible
+ * that pages are being freed that will coalesce soon. In case,
+ * that is happening, add the free page to the tail of the list
+ * so it's less likely to be used soon and more likely to be merged
+ * as a higher order page
+ */
+static inline bool
+buddy_merge_likely(unsigned long pfn, unsigned long buddy_pfn,
+                   struct page *page, unsigned int order)
+{
+    struct page *higher_page, *higher_buddy;
+    unsigned long combined_pfn;
+
+    if (order >= MAX_ORDER - 2)
+        return false;
+
+    combined_pfn = buddy_pfn & pfn;
+    higher_page = page + (combined_pfn - pfn);
+    buddy_pfn = __find_buddy_pfn(combined_pfn, order + 1);
+    higher_buddy = higher_page + (buddy_pfn - combined_pfn);
+
+    return page_is_buddy(higher_page, higher_buddy, order + 1);
+}
+
 static inline void
 __free_one_page(struct page *page, unsigned long pfn,
                 struct zone *zone, unsigned int order,
                 int migratetype, fpi_t fpi_flags)
 {
-#if 0
     bool to_tail;
     struct page *buddy;
     unsigned long buddy_pfn;
     unsigned long combined_pfn;
-    struct capture_control *capc = task_capc(zone);
-#endif
     unsigned int max_order;
 
     max_order = min_t(unsigned int, MAX_ORDER - 1, pageblock_order);
@@ -1782,7 +1989,45 @@ __free_one_page(struct page *page, unsigned long pfn,
 
     VM_BUG_ON_PAGE(pfn & ((1 << order) - 1), page);
 
-    panic("%s: END max_order(%d)\n", __func__, max_order);
+ continue_merging:
+    while (order < max_order) {
+        buddy_pfn = __find_buddy_pfn(pfn, order);
+        buddy = page + (buddy_pfn - pfn);
+
+        if (!page_is_buddy(page, buddy, order))
+            goto done_merging;
+
+        del_page_from_free_list(buddy, zone, order);
+        combined_pfn = buddy_pfn & pfn;
+        page = page + (combined_pfn - pfn);
+        pfn = combined_pfn;
+        order++;
+    }
+    if (order < MAX_ORDER - 1) {
+        /* If we are here, it means order is >= pageblock_order.
+         * We want to prevent merge between freepages on isolate
+         * pageblock and normal pageblock. Without this, pageblock
+         * isolation could cause incorrect freepage or CMA accounting.
+         *
+         * We don't want to hit this code for the more frequent
+         * low-order merging.
+         */
+        max_order = order + 1;
+        goto continue_merging;
+    }
+
+ done_merging:
+    set_buddy_order(page, order);
+
+    if (fpi_flags & FPI_TO_TAIL)
+        to_tail = true;
+    else
+        to_tail = buddy_merge_likely(pfn, buddy_pfn, page, order);
+
+    if (to_tail)
+        add_to_free_list_tail(page, zone, order, migratetype);
+    else
+        add_to_free_list(page, zone, order, migratetype);
 }
 
 static void
@@ -1839,6 +2084,72 @@ memblock_free_pages(struct page *page, unsigned long pfn,
                     unsigned int order)
 {
     __free_pages_core(page, order);
+}
+
+/*
+ * Calculate and set new high and batch values for all per-cpu pagesets of a
+ * zone based on the zone's size.
+ */
+static void zone_set_pageset_high_and_batch(struct zone *zone, int cpu_online)
+{
+#if 0
+    int new_high, new_batch;
+
+    new_batch = max(1, zone_batchsize(zone));
+    new_high = zone_highsize(zone, new_batch, cpu_online);
+
+    if (zone->pageset_high == new_high &&
+        zone->pageset_batch == new_batch)
+        return;
+
+    zone->pageset_high = new_high;
+    zone->pageset_batch = new_batch;
+
+    __zone_set_pageset_high_and_batch(zone, new_high, new_batch);
+#endif
+}
+
+void __meminit setup_zone_pageset(struct zone *zone)
+{
+    int cpu;
+
+    zone->per_cpu_pageset = alloc_percpu(struct per_cpu_pages);
+    for_each_possible_cpu(cpu) {
+        struct per_cpu_pages *pcp;
+
+        pcp = per_cpu_ptr(zone->per_cpu_pageset, cpu);
+        per_cpu_pages_init(pcp);
+    }
+
+    zone_set_pageset_high_and_batch(zone, 0);
+}
+
+/*
+ * Allocate per cpu pagesets and initialize them.
+ * Before this call only boot pagesets were available.
+ */
+void __init setup_per_cpu_pageset(void)
+{
+    struct zone *zone;
+    int __maybe_unused cpu;
+
+    for_each_populated_zone(zone)
+        setup_zone_pageset(zone);
+}
+
+/**
+ * get_pfnblock_flags_mask - Return the requested group of flags for the pageblock_nr_pages block of pages
+ * @page: The page within the block of interest
+ * @pfn: The target page frame number
+ * @mask: mask of bits that the caller is interested in
+ *
+ * Return: pageblock_bits flags
+ */
+unsigned long
+get_pfnblock_flags_mask(const struct page *page,
+                        unsigned long pfn, unsigned long mask)
+{
+    return __get_pfnblock_flags_mask(page, pfn, mask);
 }
 
 void __init mem_init_print_info(void)

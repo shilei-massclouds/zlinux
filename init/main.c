@@ -17,6 +17,7 @@
 #include <linux/mm.h>
 
 #include <asm/setup.h>
+#include "z_tests.h"
 
 extern const struct obs_kernel_param __setup_start[], __setup_end[];
 
@@ -28,6 +29,8 @@ char __initdata boot_command_line[COMMAND_LINE_SIZE];
 
 static int __ref kernel_init(void *unused)
 {
+    z_tests();
+
     panic("%s: END!\n", __func__);
 }
 
@@ -76,9 +79,13 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 
     mm_init();
 
+    //setup_per_cpu_pageset();
+
     /* TEST: alloc_page */
     {
-        struct page *p = alloc_page(GFP_KERNEL);
+        struct page *p;
+        printk("%s: alloc page ...\n", __func__);
+        p = alloc_page(GFP_KERNEL);
         panic("%s: alloc page %pa\n", __func__, p);
     }
 

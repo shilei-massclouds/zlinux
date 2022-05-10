@@ -14,4 +14,9 @@
 
 extern void __init setup_per_cpu_areas(void);
 
+extern void __percpu *__alloc_percpu(size_t size, size_t align) __alloc_size(1);
+
+#define alloc_percpu(type) \
+    (typeof(type) __percpu *)__alloc_percpu(sizeof(type), __alignof__(type))
+
 #endif /* __LINUX_PERCPU_H */

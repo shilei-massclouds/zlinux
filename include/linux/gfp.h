@@ -225,6 +225,7 @@ static inline int gfp_migratetype(const gfp_t gfp_flags)
     /* Group based on mobility */
     return (gfp_flags & GFP_MOVABLE_MASK) >> GFP_MOVABLE_SHIFT;
 }
+
 #undef GFP_MOVABLE_MASK
 #undef GFP_MOVABLE_SHIFT
 

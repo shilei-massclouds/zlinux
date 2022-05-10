@@ -154,6 +154,13 @@ struct zone {
 
     struct pglist_data  *zone_pgdat;
 
+    /*
+     * the high and batch values are copied to individual pagesets for
+     * faster access
+     */
+    int pageset_high;
+    int pageset_batch;
+
     struct per_cpu_pages __percpu *per_cpu_pageset;
 
     /* zone_start_pfn == zone_start_paddr >> PAGE_SHIFT */
@@ -249,7 +256,7 @@ typedef struct pglist_data {
     enum zone_type kswapd_highest_zoneidx;
 
     /* Per-node vmstats */
-    struct per_cpu_nodestat __percpu *per_cpu_nodestats;
+    //struct per_cpu_nodestat __percpu *per_cpu_nodestats;
 } pg_data_t;
 
 extern struct pglist_data contig_page_data;
@@ -469,6 +476,19 @@ static inline bool zone_is_initialized(struct zone *zone)
 {
     return zone->initialized;
 }
+
+extern struct zone *next_zone(struct zone *zone);
+
+#define for_each_populated_zone(zone)               \
+    for (zone = (first_online_pgdat())->node_zones; \
+         zone;                  \
+         zone = next_zone(zone))            \
+        if (!populated_zone(zone))      \
+            ; /* do nothing */      \
+        else
+
+#define get_pageblock_migratetype(page) \
+    get_pfnblock_flags_mask(page, page_to_pfn(page), MIGRATETYPE_MASK)
 
 #endif /* !__GENERATING_BOUNDS_H */
 #endif /* !__ASSEMBLY__ */

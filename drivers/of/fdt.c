@@ -514,8 +514,10 @@ static void populate_properties(const void *blob,
             pprev      = &pp->next;
             memcpy(pp->value, ps, len - 1);
             ((char *)pp->value)[len - 1] = 0;
+            /*
             pr_debug("fixed up name for %s -> %s\n",
                      nodename, (char *)pp->value);
+                     */
         }
     }
 

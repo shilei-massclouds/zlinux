@@ -25,5 +25,12 @@ static inline __u64 rol64(__u64 word, unsigned int shift)
     return (word << (shift & 63)) | (word >> ((-shift) & 63));
 }
 
+static inline unsigned fls_long(unsigned long l)
+{
+    if (sizeof(l) == 4)
+        return fls(l);
+    return fls64(l);
+}
+
 #endif /* __KERNEL__ */
 #endif
