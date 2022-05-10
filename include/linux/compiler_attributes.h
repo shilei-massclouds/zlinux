@@ -59,4 +59,6 @@
 # define fallthrough    do {} while (0)  /* fallthrough */
 #endif
 
+#define __pure  __attribute__((__pure__))
+
 #endif /* __LINUX_COMPILER_ATTRIBUTES_H */

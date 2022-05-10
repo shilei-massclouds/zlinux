@@ -13,8 +13,9 @@ lib-y += kobject.o
 obj-y += kstrtox.o
 obj-y += hexdump.o
 
-libfdt_files = fdt.o fdt_ro.o
+libfdt_files = fdt.o fdt_ro.o find_bit.o
 
 $(foreach file, $(libfdt_files), \
 	$(eval CFLAGS_$(file) = -I $(srctree)/scripts/dtc/libfdt))
 lib-$(CONFIG_LIBFDT) += $(libfdt_files)
+lib-$(CONFIG_SMP) += cpumask.o

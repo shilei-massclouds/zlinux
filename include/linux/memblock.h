@@ -23,6 +23,14 @@
 /* We are using top down, so it is safe to use 0 here */
 #define MEMBLOCK_LOW_LIMIT 0
 
+extern unsigned long max_low_pfn;
+extern unsigned long min_low_pfn;
+
+/*
+ * highest page
+ */
+extern unsigned long max_pfn;
+
 /**
  * enum memblock_flags - definition of memory region attributes
  * @MEMBLOCK_NONE: no special request
@@ -232,6 +240,65 @@ memblock_alloc_node(phys_addr_t size, phys_addr_t align, int nid)
     return memblock_alloc_try_nid(size, align, MEMBLOCK_LOW_LIMIT,
                                   MEMBLOCK_ALLOC_ACCESSIBLE, nid);
 }
+
+void memblock_free_all(void);
+void memblock_free(void *ptr, size_t size);
+void reset_node_managed_pages(pg_data_t *pgdat);
+void reset_all_zones_managed_pages(void);
+
+void __next_mem_range(u64 *idx, int nid, enum memblock_flags flags,
+                      struct memblock_type *type_a,
+                      struct memblock_type *type_b, phys_addr_t *out_start,
+                      phys_addr_t *out_end, int *out_nid);
+
+/**
+ * __for_each_mem_range - iterate through memblock areas from type_a and not
+ * included in type_b. Or just type_a if type_b is NULL.
+ * @i: u64 used as loop variable
+ * @type_a: ptr to memblock_type to iterate
+ * @type_b: ptr to memblock_type which excludes from the iteration
+ * @nid: node selector, %NUMA_NO_NODE for all nodes
+ * @flags: pick from blocks based on memory attributes
+ * @p_start: ptr to phys_addr_t for start address of the range, can be %NULL
+ * @p_end: ptr to phys_addr_t for end address of the range, can be %NULL
+ * @p_nid: ptr to int for nid of the range, can be %NULL
+ */
+#define __for_each_mem_range(i, type_a, type_b, nid, flags, \
+                             p_start, p_end, p_nid)         \
+    for (i = 0, __next_mem_range(&i, nid, flags, type_a, type_b,    \
+                                 p_start, p_end, p_nid);            \
+         i != (u64)ULLONG_MAX;                                      \
+         __next_mem_range(&i, nid, flags, type_a, type_b,           \
+                          p_start, p_end, p_nid))
+
+/**
+ * for_each_reserved_mem_range - iterate over all reserved memblock areas
+ * @i: u64 used as loop variable
+ * @p_start: ptr to phys_addr_t for start address of the range, can be %NULL
+ * @p_end: ptr to phys_addr_t for end address of the range, can be %NULL
+ *
+ * Walks over reserved areas of memblock. Available as soon as memblock
+ * is initialized.
+ */
+#define for_each_reserved_mem_range(i, p_start, p_end) \
+    __for_each_mem_range(i, &memblock.reserved, NULL, NUMA_NO_NODE, \
+                         MEMBLOCK_NONE, p_start, p_end, NULL)
+
+/**
+ * for_each_free_mem_range - iterate through free memblock areas
+ * @i: u64 used as loop variable
+ * @nid: node selector, %NUMA_NO_NODE for all nodes
+ * @flags: pick from blocks based on memory attributes
+ * @p_start: ptr to phys_addr_t for start address of the range, can be %NULL
+ * @p_end: ptr to phys_addr_t for end address of the range, can be %NULL
+ * @p_nid: ptr to int for nid of the range, can be %NULL
+ *
+ * Walks over free (memory && !reserved) areas of memblock.  Available as
+ * soon as memblock is initialized.
+ */
+#define for_each_free_mem_range(i, nid, flags, p_start, p_end, p_nid) \
+    __for_each_mem_range(i, &memblock.memory, &memblock.reserved, \
+                         nid, flags, p_start, p_end, p_nid)
 
 #endif /* __KERNEL__ */
 

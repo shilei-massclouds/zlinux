@@ -35,12 +35,12 @@
 #define raw_local_irq_disable() arch_local_irq_disable()
 #define raw_local_irq_enable()  arch_local_irq_enable()
 #define raw_local_irq_save(flags)           \
-    do {                        \
+    do {                                    \
         typecheck(unsigned long, flags);    \
         flags = arch_local_irq_save();      \
     } while (0)
-#define raw_local_irq_restore(flags)            \
-    do {                        \
+#define raw_local_irq_restore(flags)        \
+    do {                                    \
         typecheck(unsigned long, flags);    \
         arch_local_irq_restore(flags);      \
     } while (0)

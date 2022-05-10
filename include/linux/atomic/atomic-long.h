@@ -20,4 +20,16 @@ arch_atomic_long_set(atomic_long_t *v, long i)
     arch_atomic64_set(v, i);
 }
 
+static __always_inline long
+arch_atomic_long_read(const atomic_long_t *v)
+{
+    return arch_atomic64_read(v);
+}
+
+static __always_inline void
+arch_atomic_long_add(long i, atomic_long_t *v)
+{
+    arch_atomic64_add(i, v);
+}
+
 #endif /* _LINUX_ATOMIC_LONG_H */

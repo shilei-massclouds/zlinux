@@ -15,6 +15,16 @@
 
 #define MAX_SCHEDULE_TIMEOUT    LONG_MAX
 
+/*
+ * Per process flags
+ */
+#define PF_MEMALLOC_NOFS    0x00040000  /* All allocation requests will inherit GFP_NOFS */
+#define PF_MEMALLOC_NOIO    0x00080000  /* All allocation requests will inherit GFP_NOIO */
+
+#define PF_KTHREAD          0x00200000  /* I am a kernel thread */
+#define PF_MEMALLOC_PIN     0x10000000  /* Allocation context constrained to zones which allow long term pinning. */
+
+
 static inline int _cond_resched(void) { return 0; }
 
 #define cond_resched() ({           \
@@ -34,6 +44,9 @@ struct task_struct {
 
     /* -1 unrunnable, 0 runnable, >0 stopped: */
     volatile long   state;
+
+    /* Per task flags (PF_*), defined further below: */
+    unsigned int    flags;
 
     /* A live task holds one reference: */
     refcount_t          stack_refcount;

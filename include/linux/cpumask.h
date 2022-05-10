@@ -13,6 +13,8 @@
 #include <linux/atomic.h>
 #include <linux/bug.h>
 
+extern unsigned int nr_cpu_ids;
+
 /* Don't assign or return these: may not be this big! */
 typedef struct cpumask { DECLARE_BITMAP(bits, NR_CPUS); } cpumask_t;
 
@@ -37,6 +39,22 @@ extern struct cpumask __cpu_active_mask;
 #define cpu_online(cpu) cpumask_test_cpu((cpu), cpu_online_mask)
 
 #define nr_cpumask_bits ((unsigned int)NR_CPUS)
+
+/**
+ * for_each_cpu - iterate over every cpu in a mask
+ * @cpu: the (optionally unsigned) integer iterator
+ * @mask: the cpumask pointer
+ *
+ * After the loop, cpu is >= nr_cpu_ids.
+ */
+#define for_each_cpu(cpu, mask)                 \
+    for ((cpu) = -1;                            \
+        (cpu) = cpumask_next((cpu), (mask)),    \
+        (cpu) < nr_cpu_ids;)
+
+#define for_each_possible_cpu(cpu) for_each_cpu((cpu), cpu_possible_mask)
+#define for_each_online_cpu(cpu)   for_each_cpu((cpu), cpu_online_mask)
+#define for_each_present_cpu(cpu)  for_each_cpu((cpu), cpu_present_mask)
 
 static inline void cpu_max_bits_warn(unsigned int cpu, unsigned int bits)
 {
@@ -141,5 +159,7 @@ set_cpu_possible(unsigned int cpu, bool possible)
     else
         cpumask_clear_cpu(cpu, &__cpu_possible_mask);
 }
+
+unsigned int __pure cpumask_next(int n, const struct cpumask *srcp);
 
 #endif /* __LINUX_CPUMASK_H */

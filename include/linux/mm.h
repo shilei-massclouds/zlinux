@@ -2,8 +2,30 @@
 #ifndef _LINUX_MM_H
 #define _LINUX_MM_H
 
+#include <linux/mmdebug.h>
+#include <linux/gfp.h>
 #include <linux/bug.h>
+#include <linux/list.h>
+#include <linux/mmzone.h>
+//#include <linux/rbtree.h>
+#include <linux/atomic.h>
+//#include <linux/debug_locks.h>
+#include <linux/mm_types.h>
+//#include <linux/mmap_lock.h>
+//#include <linux/range.h>
+#include <linux/pfn.h>
+//#include <linux/percpu-refcount.h>
+//#include <linux/bit_spinlock.h>
+//#include <linux/shrinker.h>
+//#include <linux/resource.h>
+//#include <linux/page_ext.h>
+#include <linux/err.h>
+#include <linux/page-flags.h>
 #include <linux/page_ref.h>
+#include <linux/memremap.h>
+//#include <linux/overflow.h>
+#include <linux/sizes.h>
+#include <linux/sched.h>
 #include <linux/pgtable.h>
 
 #include <asm/page.h>
@@ -135,5 +157,19 @@ static inline struct zone *page_zone(const struct page *page)
 {
     return &NODE_DATA(page_to_nid(page))->node_zones[page_zonenum(page)];
 }
+
+extern void mem_init(void);
+extern void mem_init_print_info(void);
+
+extern atomic_long_t _totalram_pages;
+
+static inline void totalram_pages_add(long count)
+{
+    atomic_long_add(count, &_totalram_pages);
+}
+
+extern void reserve_bootmem_region(phys_addr_t start, phys_addr_t end);
+
+extern void *high_memory;
 
 #endif /* _LINUX_MM_H */

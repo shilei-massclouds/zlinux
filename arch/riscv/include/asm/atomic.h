@@ -49,14 +49,9 @@ void atomic##prefix##_##op(c_type i, atomic##prefix##_t *v)     \
         : "memory");                        \
 }                                   \
 
-#ifdef CONFIG_GENERIC_ATOMIC64
-#define ATOMIC_OPS(op, asm_op, I)                   \
-        ATOMIC_OP (op, asm_op, I, w, int,   )
-#else
 #define ATOMIC_OPS(op, asm_op, I)                   \
         ATOMIC_OP (op, asm_op, I, w, int,   )               \
         ATOMIC_OP (op, asm_op, I, d, s64, 64)
-#endif
 
 ATOMIC_OPS(add, add,  i)
 ATOMIC_OPS(sub, add, -i)
@@ -151,5 +146,34 @@ ATOMIC_OPS()
 
 #undef ATOMIC_OPS
 #undef ATOMIC_OP
+
+/*
+ * First, the atomic ops that have no ordering constraints and therefor don't
+ * have the AQ or RL bits set.  These don't return anything, so there's only
+ * one version to worry about.
+ */
+#define ATOMIC_OP(op, asm_op, I, asm_type, c_type, prefix)      \
+static __always_inline                          \
+void arch_atomic##prefix##_##op(c_type i, atomic##prefix##_t *v)    \
+{                                   \
+    __asm__ __volatile__ (                      \
+        "   amo" #asm_op "." #asm_type " zero, %1, %0"  \
+        : "+A" (v->counter)                 \
+        : "r" (I)                       \
+        : "memory");                        \
+}                                   \
+
+#define ATOMIC_OPS(op, asm_op, I)                   \
+        ATOMIC_OP (op, asm_op, I, w, int,   )               \
+        ATOMIC_OP (op, asm_op, I, d, s64, 64)
+
+ATOMIC_OPS(add, add,  i)
+ATOMIC_OPS(sub, add, -i)
+ATOMIC_OPS(and, and,  i)
+ATOMIC_OPS( or,  or,  i)
+ATOMIC_OPS(xor, xor,  i)
+
+#undef ATOMIC_OP
+#undef ATOMIC_OPS
 
 #endif /* _ASM_RISCV_ATOMIC_H */

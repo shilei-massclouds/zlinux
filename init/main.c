@@ -14,10 +14,14 @@
 #include <linux/percpu.h>
 #include <linux/sched.h>
 #include <linux/sched/task.h>
+#include <linux/mm.h>
 
 #include <asm/setup.h>
 
 extern const struct obs_kernel_param __setup_start[], __setup_end[];
+
+enum system_states system_state __read_mostly;
+EXPORT_SYMBOL(system_state);
 
 /* Untouched command line saved by arch-specific code. */
 char __initdata boot_command_line[COMMAND_LINE_SIZE];
@@ -46,6 +50,14 @@ void __init __weak arch_call_rest_init(void)
     rest_init();
 }
 
+/*
+ * Set up kernel memory allocators
+ */
+static void __init mm_init(void)
+{
+    mem_init();
+}
+
 asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 {
     char *command_line;
@@ -59,6 +71,16 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
     pr_notice("%s", linux_banner);
     setup_arch(&command_line);
     setup_per_cpu_areas();
+
+    build_all_zonelists(NULL);
+
+    mm_init();
+
+    /* TEST: alloc_page */
+    {
+        struct page *p = alloc_page(GFP_KERNEL);
+        panic("%s: alloc page %pa\n", __func__, p);
+    }
 
     /* Do the rest non-__init'ed, we're now alive */
     arch_call_rest_init();

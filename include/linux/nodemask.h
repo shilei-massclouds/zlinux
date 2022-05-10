@@ -7,6 +7,8 @@
 //#include <linux/minmax.h>
 #include <linux/numa.h>
 
+typedef struct { DECLARE_BITMAP(bits, MAX_NUMNODES); } nodemask_t;
+
 #define for_each_node_state(node, __state) \
     for ( (node) = 0; (node) == 0; (node) = 1)
 
@@ -23,6 +25,7 @@
 #define node_possible(node) node_state((node), N_POSSIBLE)
 
 #define for_each_node(node) for_each_node_state(node, N_POSSIBLE)
+#define for_each_online_node(node) for_each_node_state(node, N_ONLINE)
 
 /*
  * Bitmasks that are kept for all the nodes.

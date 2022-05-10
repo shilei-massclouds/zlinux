@@ -9,3 +9,5 @@ obj-y += sched/
 obj-y += locking/
 obj-y += printk/
 obj-y += time/
+
+obj-$(CONFIG_SMP) += smp.o

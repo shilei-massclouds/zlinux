@@ -110,6 +110,39 @@ do {                                    \
 #define DEFINE_PER_CPU(type, name) \
     DEFINE_PER_CPU_SECTION(type, name, "")
 
+/*
+ * __verify_pcpu_ptr() verifies @ptr is a percpu pointer without evaluating
+ * @ptr and is invoked once before a percpu area is accessed by all
+ * accessors and operations.  This is performed in the generic part of
+ * percpu and arch overrides don't need to worry about it; however, if an
+ * arch wants to implement an arch-specific percpu accessor or operation,
+ * it may use __verify_pcpu_ptr() to verify the parameters.
+ *
+ * + 0 is required in order to convert the pointer type from a
+ * potential array type to a pointer to a single item of the array.
+ */
+#define __verify_pcpu_ptr(ptr)                      \
+do {                                    \
+    const void __percpu *__vpp_verify = (typeof((ptr) + 0))NULL;    \
+    (void)__vpp_verify;                     \
+} while (0)
+
+#define per_cpu_ptr(ptr, cpu)   \
+({                              \
+    __verify_pcpu_ptr(ptr);     \
+    SHIFT_PERCPU_PTR((ptr), per_cpu_offset((cpu))); \
+})
+
+#define per_cpu(var, cpu)   (*per_cpu_ptr(&(var), cpu))
+
+#define raw_cpu_ptr(ptr)                        \
+({                                  \
+    __verify_pcpu_ptr(ptr);                     \
+    arch_raw_cpu_ptr(ptr);                      \
+})
+
+#define this_cpu_ptr(ptr) raw_cpu_ptr(ptr)
+
 #endif /* __ASSEMBLY__ */
 
 #endif /* _LINUX_PERCPU_DEFS_H */

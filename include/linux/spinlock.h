@@ -58,7 +58,8 @@ do_raw_spin_lock_flags(raw_spinlock_t *lock, unsigned long *flags)
     mmiowb_spin_lock();
 }
 
-static inline void do_raw_spin_lock(raw_spinlock_t *lock) __acquires(lock)
+static inline void
+do_raw_spin_lock(raw_spinlock_t *lock) __acquires(lock)
 {
     __acquire(lock);
     arch_spin_lock(&lock->raw_lock);
@@ -73,6 +74,8 @@ do_raw_spin_unlock(raw_spinlock_t *lock) __releases(lock)
     __release(lock);
 }
 
+#include <linux/spinlock_api_smp.h>
+
 static __always_inline raw_spinlock_t *spinlock_check(spinlock_t *lock)
 {
     return &lock->rlock;
@@ -83,6 +86,27 @@ do {                                        \
     spinlock_check(_lock);                  \
     *(_lock) = __SPIN_LOCK_UNLOCKED(_lock); \
 } while (0)
+
+static __always_inline void spin_lock(spinlock_t *lock)
+{
+    raw_spin_lock(&lock->rlock);
+}
+
+static __always_inline void spin_unlock(spinlock_t *lock)
+{
+    raw_spin_unlock(&lock->rlock);
+}
+
+#define spin_lock_irqsave(lock, flags)                  \
+do {                                                    \
+    raw_spin_lock_irqsave(spinlock_check(lock), flags); \
+} while (0)
+
+static __always_inline void
+spin_unlock_irqrestore(spinlock_t *lock, unsigned long flags)
+{
+    raw_spin_unlock_irqrestore(&lock->rlock, flags);
+}
 
 #include <linux/spinlock_api_smp.h>
 

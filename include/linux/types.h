@@ -55,6 +55,11 @@ typedef u64         u_int64_t;
 typedef s64         int64_t;
 #endif
 
+/*
+ * The type of an index into the pagecache.
+ */
+#define pgoff_t unsigned long
+
 typedef u64 phys_addr_t;
 
 typedef u64 dma_addr_t;

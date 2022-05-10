@@ -116,13 +116,67 @@ static __always_inline void __ClearPage##uname(struct page *page)   \
     SETPAGEFLAG(uname, lname, policy)   \
     CLEARPAGEFLAG(uname, lname, policy)
 
+#define TESTPAGEFLAG_FALSE(uname, lname) \
+    static inline int Page##uname(const struct page *page) { return 0; }
+
+#define SETPAGEFLAG_NOOP(uname, lname) \
+    static inline void SetPage##uname(struct page *page) {  }
+
+#define CLEARPAGEFLAG_NOOP(uname, lname) \
+    static inline void ClearPage##uname(struct page *page) {  }
+
+#define PAGEFLAG_FALSE(uname, lname)    \
+    TESTPAGEFLAG_FALSE(uname, lname)    \
+    SETPAGEFLAG_NOOP(uname, lname)      \
+    CLEARPAGEFLAG_NOOP(uname, lname)
+
 PAGEFLAG(Reserved, reserved, PF_NO_COMPOUND)
     __CLEARPAGEFLAG(Reserved, reserved, PF_NO_COMPOUND)
     __SETPAGEFLAG(Reserved, reserved, PF_NO_COMPOUND)
 
+PAGEFLAG_FALSE(HWPoison, hwpoison)
+
 static inline void page_init_poison(struct page *page, size_t size)
 {
 }
+
+#define PAGE_TYPE_BASE  0xf0000000
+/* Reserve      0x0000007f to catch underflows of page_mapcount */
+#define PAGE_MAPCOUNT_RESERVE   -128
+#define PG_buddy    0x00000080
+#define PG_offline  0x00000100
+#define PG_table    0x00000200
+#define PG_guard    0x00000400
+
+#define PageType(page, flag) \
+    ((page->page_type & (PAGE_TYPE_BASE | flag)) == PAGE_TYPE_BASE)
+
+static inline int page_has_type(struct page *page)
+{
+    return (int)page->page_type < PAGE_MAPCOUNT_RESERVE;
+}
+
+#define PAGE_TYPE_OPS(uname, lname)                 \
+static __always_inline int Page##uname(struct page *page)       \
+{                                   \
+    return PageType(page, PG_##lname);              \
+}                                   \
+static __always_inline void __SetPage##uname(struct page *page)     \
+{                                   \
+    VM_BUG_ON_PAGE(!PageType(page, 0), page);           \
+    page->page_type &= ~PG_##lname;                 \
+}                                   \
+static __always_inline void __ClearPage##uname(struct page *page)   \
+{                                   \
+    VM_BUG_ON_PAGE(!Page##uname(page), page);           \
+    page->page_type |= PG_##lname;                  \
+}
+
+/*
+ * PageBuddy() indicates that the page is free and in the buddy system
+ * (see mm/page_alloc.c).
+ */
+PAGE_TYPE_OPS(Buddy, buddy)
 
 #endif /* !__GENERATING_BOUNDS_H */
 

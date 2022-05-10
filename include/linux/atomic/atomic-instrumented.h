@@ -32,4 +32,16 @@ atomic_long_set(atomic_long_t *v, long i)
     arch_atomic_long_set(v, i);
 }
 
+static __always_inline long
+atomic_long_read(const atomic_long_t *v)
+{
+    return arch_atomic_long_read(v);
+}
+
+static __always_inline void
+atomic_long_add(long i, atomic_long_t *v)
+{
+    arch_atomic_long_add(i, v);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */

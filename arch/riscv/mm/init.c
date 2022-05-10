@@ -21,6 +21,9 @@
 
 #define MAX_EARLY_MAPPING_SIZE  SZ_128M
 
+phys_addr_t phys_ram_base __ro_after_init;
+EXPORT_SYMBOL(phys_ram_base);
+
 void *dtb_early_va;
 static phys_addr_t dtb_early_pa __initdata;
 
@@ -50,11 +53,6 @@ pte_t fixmap_pte[PTRS_PER_PTE] __page_aligned_bss;
 
 pmd_t early_pmd[PTRS_PER_PMD] __initdata __aligned(PAGE_SIZE);
 pgd_t early_pg_dir[PTRS_PER_PGD] __initdata __aligned(PAGE_SIZE);
-
-unsigned long max_low_pfn;
-unsigned long min_low_pfn;
-unsigned long max_pfn;
-unsigned long long max_possible_pfn;
 
 static bool mmu_enabled;
 
@@ -262,6 +260,50 @@ asmlinkage void __init setup_vm(uintptr_t dtb_pa)
 
 void __init setup_bootmem(void)
 {
+    phys_addr_t phys_ram_end;
+    phys_addr_t __maybe_unused max_mapped_addr;
+    phys_addr_t vmlinux_start = __pa_symbol(&_start);
+    phys_addr_t vmlinux_end = __pa_symbol(&_end);
+
+    //memblock_enforce_memory_limit(memory_limit);
+
+    /*
+     * Reserve from the start of the kernel to the end of the kernel
+     */
+    /*
+     * Make sure we align the reservation on PMD_SIZE since we will
+     * map the kernel in the linear mapping as read-only: we do not want
+     * any allocation to happen between _end and the next pmd aligned page.
+     */
+    vmlinux_end = (vmlinux_end + PMD_SIZE - 1) & PMD_MASK;
+
+    memblock_reserve(vmlinux_start, vmlinux_end - vmlinux_start);
+
+    phys_ram_end = memblock_end_of_DRAM();
+
+    min_low_pfn = PFN_UP(phys_ram_base);
+    max_low_pfn = max_pfn = PFN_DOWN(phys_ram_end);
+
+    //dma32_phys_limit = min(4UL * SZ_1G, (unsigned long)PFN_PHYS(max_low_pfn));
+    set_max_mapnr(max_low_pfn - ARCH_PFN_OFFSET);
+
+    //reserve_initrd_mem();
+
+    /*
+     * If DTB is built in, no need to reserve its memblock.
+     * Otherwise, do reserve it but avoid using
+     * early_init_fdt_reserve_self() since __pa() does
+     * not work for DTB pointers that are fixmap addresses
+     */
+    memblock_reserve(dtb_early_pa, fdt_totalsize(dtb_early_va));
+
+    early_init_fdt_scan_reserved_mem();
+    //dma_contiguous_reserve(dma32_phys_limit);
+    memblock_allow_resize();
+
+
+    //////////////////////////////////////////////
+#if 0
     struct memblock_region *reg;
     phys_addr_t mem_size = 0;
     phys_addr_t total_mem = 0;
@@ -309,6 +351,7 @@ void __init setup_bootmem(void)
 
     memblock_allow_resize();
     memblock_dump_all();
+#endif
 }
 
 static void __init setup_vm_final(void)
@@ -380,4 +423,12 @@ void __init paging_init(void)
     /*
     resource_init();
     */
+}
+
+void __init mem_init(void)
+{
+    BUG_ON(!mem_map);
+
+    high_memory = (void *)(__va(PFN_PHYS(max_low_pfn)));
+    memblock_free_all();
 }

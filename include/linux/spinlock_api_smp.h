@@ -15,6 +15,8 @@
  * Released under the General Public License (GPL).
  */
 
+void __lockfunc _raw_spin_lock(raw_spinlock_t *lock) __acquires(lock);
+
 unsigned long __lockfunc
 _raw_spin_lock_irqsave(raw_spinlock_t *lock) __acquires(lock);
 

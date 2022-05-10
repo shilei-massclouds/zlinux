@@ -11,16 +11,79 @@
 #include <linux/cache.h>
 #include <linux/numa.h>
 #include <linux/page-flags.h>
+#include <linux/local_lock.h>
 #include <linux/pageblock-flags.h>
+#include <linux/nodemask.h>
 #include <linux/atomic.h>
+
+/*
+ * PAGE_ALLOC_COSTLY_ORDER is the order at which allocations are deemed
+ * costly to service.  That is between allocation orders which should
+ * coalesce naturally under reasonable reclaim pressure and those which
+ * will not.
+ */
+#define PAGE_ALLOC_COSTLY_ORDER 3
+
+#define NR_PCP_THP 0
+#define NR_PCP_LISTS \
+    (MIGRATE_PCPTYPES * (PAGE_ALLOC_COSTLY_ORDER + 1 + NR_PCP_THP))
 
 /* Free memory management - zoned buddy allocator.  */
 #define MAX_ORDER 11
 #define MAX_ORDER_NR_PAGES (1 << (MAX_ORDER - 1))
 
+enum migratetype {
+    MIGRATE_UNMOVABLE,
+    MIGRATE_MOVABLE,
+    MIGRATE_RECLAIMABLE,
+    MIGRATE_PCPTYPES,   /* the number of types on the pcp lists */
+    MIGRATE_HIGHATOMIC = MIGRATE_PCPTYPES,
+    MIGRATE_TYPES
+};
+
+enum zone_stat_item {
+    /* First 128 byte cacheline (assuming 64 bit words) */
+    NR_FREE_PAGES,
+    NR_ZONE_LRU_BASE, /* Used only for compaction and reclaim retry */
+    NR_ZONE_INACTIVE_ANON = NR_ZONE_LRU_BASE,
+    NR_ZONE_ACTIVE_ANON,
+    NR_ZONE_INACTIVE_FILE,
+    NR_ZONE_ACTIVE_FILE,
+    NR_ZONE_UNEVICTABLE,
+    NR_ZONE_WRITE_PENDING,  /* Count of dirty, writeback and unstable pages */
+    NR_MLOCK,       /* mlock()ed pages found and moved off LRU */
+    /* Second 128 byte cacheline */
+    NR_BOUNCE,
+    NR_FREE_CMA_PAGES,
+    NR_VM_ZONE_STAT_ITEMS
+};
+
+/* Fields and list protected by pagesets local_lock in page_alloc.c */
+struct per_cpu_pages {
+    int count;          /* number of pages in the list */
+    int high;           /* high watermark, emptying needed */
+    int batch;          /* chunk size for buddy add/remove */
+    short free_factor;  /* batch scaling factor during free */
+
+    /* Lists of pages, one per migrate type stored on the pcp-lists */
+    struct list_head lists[NR_PCP_LISTS];
+};
+
+struct per_cpu_zonestat {
+    s8 vm_stat_diff[NR_VM_ZONE_STAT_ITEMS];
+    s8 stat_threshold;
+};
+
 struct per_cpu_nodestat {
     s8 stat_threshold;
     //s8 vm_node_stat_diff[NR_VM_NODE_STAT_ITEMS];
+};
+
+enum zone_watermarks {
+    WMARK_MIN,
+    WMARK_LOW,
+    WMARK_HIGH,
+    NR_WMARK
 };
 
 #endif /* !__GENERATING_BOUNDS_H */
@@ -82,15 +145,6 @@ extern struct page *mem_map;
 /* Maximum number of zones on a zonelist */
 #define MAX_ZONES_PER_ZONELIST (MAX_NUMNODES * MAX_NR_ZONES)
 
-enum migratetype {
-    MIGRATE_UNMOVABLE,
-    MIGRATE_MOVABLE,
-    MIGRATE_RECLAIMABLE,
-    MIGRATE_PCPTYPES,   /* the number of types on the pcp lists */
-    MIGRATE_HIGHATOMIC = MIGRATE_PCPTYPES,
-    MIGRATE_TYPES
-};
-
 struct free_area {
     struct list_head    free_list[MIGRATE_TYPES];
     unsigned long       nr_free;
@@ -99,6 +153,8 @@ struct free_area {
 struct zone {
 
     struct pglist_data  *zone_pgdat;
+
+    struct per_cpu_pages __percpu *per_cpu_pageset;
 
     /* zone_start_pfn == zone_start_paddr >> PAGE_SHIFT */
     unsigned long       zone_start_pfn;
@@ -252,6 +308,166 @@ static inline unsigned long zone_end_pfn(const struct zone *zone)
 static inline bool zone_spans_pfn(const struct zone *zone, unsigned long pfn)
 {
     return zone->zone_start_pfn <= pfn && pfn < zone_end_pfn(zone);
+}
+
+extern int page_group_by_mobility_disabled;
+
+static inline int zonelist_zone_idx(struct zoneref *zoneref)
+{
+    return zoneref->zone_idx;
+}
+
+struct zoneref *
+__next_zones_zonelist(struct zoneref *z,
+                      enum zone_type highest_zoneidx,
+                      nodemask_t *nodes);
+
+/**
+ * next_zones_zonelist - Returns the next zone at or below highest_zoneidx within the allowed nodemask using a cursor within a zonelist as a starting point
+ * @z: The cursor used as a starting point for the search
+ * @highest_zoneidx: The zone index of the highest zone to return
+ * @nodes: An optional nodemask to filter the zonelist with
+ *
+ * This function returns the next zone at or below a given zone index that is
+ * within the allowed nodemask using a cursor as the starting point for the
+ * search. The zoneref returned is a cursor that represents the current zone
+ * being examined. It should be advanced by one before calling
+ * next_zones_zonelist again.
+ *
+ * Return: the next zone at or below highest_zoneidx within the allowed
+ * nodemask using a cursor within a zonelist as a starting point
+ */
+static __always_inline struct zoneref *
+next_zones_zonelist(struct zoneref *z,
+                    enum zone_type highest_zoneidx,
+                    nodemask_t *nodes)
+{
+    if (likely(!nodes && zonelist_zone_idx(z) <= highest_zoneidx))
+        return z;
+    return __next_zones_zonelist(z, highest_zoneidx, nodes);
+}
+
+/**
+ * first_zones_zonelist - Returns the first zone at or below highest_zoneidx within the allowed nodemask in a zonelist
+ * @zonelist: The zonelist to search for a suitable zone
+ * @highest_zoneidx: The zone index of the highest zone to return
+ * @nodes: An optional nodemask to filter the zonelist with
+ *
+ * This function returns the first zone at or below a given zone index that is
+ * within the allowed nodemask. The zoneref returned is a cursor that can be
+ * used to iterate the zonelist with next_zones_zonelist by advancing it by
+ * one before calling.
+ *
+ * When no eligible zone is found, zoneref->zone is NULL (zoneref itself is
+ * never NULL). This may happen either genuinely, or due to concurrent nodemask
+ * update due to cpuset modification.
+ *
+ * Return: Zoneref pointer for the first suitable zone found
+ */
+static inline struct zoneref *
+first_zones_zonelist(struct zonelist *zonelist,
+                     enum zone_type highest_zoneidx,
+                     nodemask_t *nodes)
+{
+    return next_zones_zonelist(zonelist->_zonerefs, highest_zoneidx, nodes);
+}
+
+void build_all_zonelists(pg_data_t *pgdat);
+
+static inline unsigned long zone_managed_pages(struct zone *zone)
+{
+    return (unsigned long)atomic_long_read(&zone->managed_pages);
+}
+
+/*
+ * Returns true if a zone has pages managed by the buddy allocator.
+ * All the reclaim decisions have to use this function rather than
+ * populated_zone(). If the whole zone is reserved then we can easily
+ * end up with populated_zone() && !managed_zone().
+ */
+static inline bool managed_zone(struct zone *zone)
+{
+    return zone_managed_pages(zone);
+}
+
+static inline struct zone *zonelist_zone(struct zoneref *zoneref)
+{
+    return zoneref->zone;
+}
+
+#define for_next_zone_zonelist_nodemask(zone, z, highidx, nodemask) \
+    for (zone = z->zone;    \
+         zone;              \
+         z = next_zones_zonelist(++z, highidx, nodemask), \
+         zone = zonelist_zone(z))
+
+static inline struct page *
+get_page_from_free_area(struct free_area *area, int migratetype)
+{
+    return list_first_entry_or_null(&area->free_list[migratetype],
+                                    struct page, lru);
+}
+
+static inline bool
+free_area_empty(struct free_area *area, int migratetype)
+{
+    return list_empty(&area->free_list[migratetype]);
+}
+
+extern struct pglist_data *first_online_pgdat(void);
+extern struct pglist_data *next_online_pgdat(struct pglist_data *pgdat);
+
+/**
+ * for_each_online_pgdat - helper macro to iterate over all online nodes
+ * @pgdat: pointer to a pg_data_t variable
+ */
+#define for_each_online_pgdat(pgdat)            \
+    for (pgdat = first_online_pgdat();      \
+         pgdat;                 \
+         pgdat = next_online_pgdat(pgdat))
+
+/**
+ * pfn_valid - check if there is a valid memory map entry for a PFN
+ * @pfn: the page frame number to check
+ *
+ * Check if there is a valid memory map entry aka struct page for the @pfn.
+ * Note, that availability of the memory map entry does not imply that
+ * there is actual usable memory at that @pfn. The struct page may
+ * represent a hole or an unusable page frame.
+ *
+ * Return: 1 for PFNs that have memory map entries and 0 otherwise
+ */
+static inline int pfn_valid(unsigned long pfn)
+{
+    return 1;
+#if 0
+    struct mem_section *ms;
+
+    /*
+     * Ensure the upper PAGE_SHIFT bits are clear in the
+     * pfn. Else it might lead to false positives when
+     * some of the upper bits are set, but the lower bits
+     * match a valid pfn.
+     */
+    if (PHYS_PFN(PFN_PHYS(pfn)) != pfn)
+        return 0;
+
+    if (pfn_to_section_nr(pfn) >= NR_MEM_SECTIONS)
+        return 0;
+    ms = __pfn_to_section(pfn);
+    if (!valid_section(ms))
+        return 0;
+    /*
+     * Traditionally early sections always returned pfn_valid() for
+     * the entire section-sized span.
+     */
+    return early_section(ms) || pfn_section_valid(ms, pfn);
+#endif
+}
+
+static inline bool zone_is_initialized(struct zone *zone)
+{
+    return zone->initialized;
 }
 
 #endif /* !__GENERATING_BOUNDS_H */

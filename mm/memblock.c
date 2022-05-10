@@ -34,6 +34,10 @@
 # define INIT_MEMBLOCK_RESERVED_REGIONS INIT_MEMBLOCK_REGIONS
 #endif
 
+unsigned long max_low_pfn;
+unsigned long min_low_pfn;
+unsigned long max_pfn;
+
 static struct memblock_region
 memblock_memory_init_regions[INIT_MEMBLOCK_REGIONS]
 __initdata_memblock;
@@ -566,6 +570,85 @@ should_skip_region(struct memblock_region *m, int nid, int flags)
     return false;
 }
 
+void __next_mem_range(u64 *idx, int nid, enum memblock_flags flags,
+                      struct memblock_type *type_a,
+                      struct memblock_type *type_b,
+                      phys_addr_t *out_start, phys_addr_t *out_end,
+                      int *out_nid)
+{
+    int idx_a = *idx & 0xffffffff;
+    int idx_b = *idx >> 32;
+
+    if (WARN_ONCE(nid == MAX_NUMNODES,
+        "Usage of MAX_NUMNODES is deprecated. Use NUMA_NO_NODE instead\n"))
+        nid = NUMA_NO_NODE;
+
+    for (; idx_a < type_a->cnt; idx_a++) {
+        struct memblock_region *m = &type_a->regions[idx_a];
+
+        phys_addr_t m_start = m->base;
+        phys_addr_t m_end = m->base + m->size;
+        int m_nid = memblock_get_region_node(m);
+
+        if (should_skip_region(m, nid, flags))
+            continue;
+
+        if (!type_b) {
+            if (out_start)
+                *out_start = m_start;
+            if (out_end)
+                *out_end = m_end;
+            if (out_nid)
+                *out_nid = m_nid;
+            idx_a++;
+            *idx = (u32)idx_a | (u64)idx_b << 32;
+            return;
+        }
+
+        /* scan areas before each reservation */
+        for (; idx_b < type_b->cnt + 1; idx_b++) {
+            struct memblock_region *r;
+            phys_addr_t r_start;
+            phys_addr_t r_end;
+
+            r = &type_b->regions[idx_b];
+            r_start = idx_b ? r[-1].base + r[-1].size : 0;
+            r_end = idx_b < type_b->cnt ?
+                r->base : PHYS_ADDR_MAX;
+
+            /*
+             * if idx_b advanced past idx_a,
+             * break out to advance idx_a
+             */
+            if (r_start >= m_end)
+                break;
+            /* if the two regions intersect, we're done */
+            if (m_start < r_end) {
+                if (out_start)
+                    *out_start =
+                        max(m_start, r_start);
+                if (out_end)
+                    *out_end = min(m_end, r_end);
+                if (out_nid)
+                    *out_nid = m_nid;
+                /*
+                 * The region which ends first is
+                 * advanced for the next iteration.
+                 */
+                if (m_end <= r_end)
+                    idx_a++;
+                else
+                    idx_b++;
+                *idx = (u32)idx_a | (u64)idx_b << 32;
+                return;
+            }
+        }
+    }
+
+    /* signal end of iteration */
+    *idx = ULLONG_MAX;
+}
+
 /**
  * __next_mem_range_rev - generic next function for for_each_*_range_rev()
  *
@@ -802,6 +885,118 @@ memblock_alloc_exact_nid_raw(phys_addr_t size, phys_addr_t align,
                  &max_addr, (void *)_RET_IP_);
 
     return memblock_alloc_internal(size, align, min_addr, max_addr, nid, true);
+}
+
+void reset_node_managed_pages(pg_data_t *pgdat)
+{
+    struct zone *z;
+
+    for (z = pgdat->node_zones; z < pgdat->node_zones + MAX_NR_ZONES; z++)
+        atomic_long_set(&z->managed_pages, 0);
+}
+
+static int reset_managed_pages_done __initdata;
+
+void __init reset_all_zones_managed_pages(void)
+{
+    struct pglist_data *pgdat;
+
+    if (reset_managed_pages_done)
+        return;
+
+    for_each_online_pgdat(pgdat)
+        reset_node_managed_pages(pgdat);
+
+    reset_managed_pages_done = 1;
+}
+
+static void __init memmap_init_reserved_pages(void)
+{
+    u64 i;
+    phys_addr_t start, end;
+    struct memblock_region *region;
+
+    /* initialize struct pages for the reserved regions */
+    for_each_reserved_mem_range(i, &start, &end)
+        reserve_bootmem_region(start, end);
+
+#if 0
+    /* and also treat struct pages for the NOMAP regions as PageReserved */
+    for_each_mem_region(region) {
+        if (memblock_is_nomap(region)) {
+            start = region->base;
+            end = start + region->size;
+            reserve_bootmem_region(start, end);
+        }
+    }
+#endif
+}
+
+static void __init
+__free_pages_memory(unsigned long start, unsigned long end)
+{
+    int order;
+
+    while (start < end) {
+        order = min(MAX_ORDER - 1UL, __ffs(start));
+
+        while (start + (1UL << order) > end)
+            order--;
+
+        memblock_free_pages(pfn_to_page(start), start, order);
+
+        start += (1UL << order);
+    }
+}
+
+static unsigned long __init
+__free_memory_core(phys_addr_t start, phys_addr_t end)
+{
+    unsigned long start_pfn = PFN_UP(start);
+    unsigned long end_pfn = min_t(unsigned long,
+                                  PFN_DOWN(end), max_low_pfn);
+
+    if (start_pfn >= end_pfn)
+        return 0;
+
+    __free_pages_memory(start_pfn, end_pfn);
+
+    return end_pfn - start_pfn;
+}
+
+static unsigned long __init free_low_memory_core_early(void)
+{
+    u64 i;
+    phys_addr_t start, end;
+    unsigned long count = 0;
+
+    //memblock_clear_hotplug(0, -1);
+
+    memmap_init_reserved_pages();
+
+    /*
+     * We need to use NUMA_NO_NODE instead of NODE_DATA(0)->node_id
+     *  because in some case like Node0 doesn't have RAM installed
+     *  low ram will be on Node1
+     */
+    for_each_free_mem_range(i, NUMA_NO_NODE, MEMBLOCK_NONE,
+                            &start, &end, NULL)
+        count += __free_memory_core(start, end);
+
+    return count;
+}
+
+/**
+ * memblock_free_all - release free pages to the buddy allocator
+ */
+void __init memblock_free_all(void)
+{
+    unsigned long pages;
+
+    reset_all_zones_managed_pages();
+
+    pages = free_low_memory_core_early();
+    totalram_pages_add(pages);
 }
 
 static int __init early_memblock(char *p)
