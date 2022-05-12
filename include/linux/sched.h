@@ -24,6 +24,8 @@
 #define PF_KTHREAD          0x00200000  /* I am a kernel thread */
 #define PF_MEMALLOC_PIN     0x10000000  /* Allocation context constrained to zones which allow long term pinning. */
 
+/* Task command name length: */
+#define TASK_COMM_LEN   16
 
 static inline int _cond_resched(void) { return 0; }
 
@@ -40,16 +42,25 @@ struct task_struct {
      * For reasons of header soup (see current_thread_info()), this
      * must be the first element of task_struct.
      */
-    struct thread_info  thread_info;
+    struct thread_info thread_info;
 
     /* -1 unrunnable, 0 runnable, >0 stopped: */
-    volatile long   state;
+    volatile long state;
 
     /* Per task flags (PF_*), defined further below: */
-    unsigned int    flags;
+    unsigned int flags;
 
     /* A live task holds one reference: */
-    refcount_t          stack_refcount;
+    refcount_t stack_refcount;
+
+    /*
+     * executable name, excluding path.
+     *
+     * - normally initialized setup_new_exec()
+     * - access it with [gs]et_task_comm()
+     * - lock it with task_lock()
+     */
+    char comm[TASK_COMM_LEN];
 };
 
 extern long schedule_timeout(long timeout);

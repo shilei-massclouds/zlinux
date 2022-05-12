@@ -3,6 +3,7 @@
 #ifndef _ASM_RISCV_PAGE_H
 #define _ASM_RISCV_PAGE_H
 
+#include <linux/pfn.h>
 #include <linux/const.h>
 
 #define PAGE_SHIFT  (12)
@@ -14,6 +15,9 @@
 #define KERN_VIRT_SIZE (-PAGE_OFFSET)
 
 #ifndef __ASSEMBLY__
+
+#define clear_page(pgaddr)  memset((pgaddr), 0, PAGE_SIZE)
+#define copy_page(to, from) memcpy((to), (from), PAGE_SIZE)
 
 /*
  * Use struct definitions to apply C type checking
@@ -78,6 +82,15 @@ struct kernel_mapping {
 
 extern struct kernel_mapping kernel_map;
 extern phys_addr_t phys_ram_base;
+
+#define phys_to_pfn(phys)   (PFN_DOWN(phys))
+#define pfn_to_phys(pfn)    (PFN_PHYS(pfn))
+
+#define virt_to_pfn(vaddr)  (phys_to_pfn(__pa(vaddr)))
+#define pfn_to_virt(pfn)    (__va(pfn_to_phys(pfn)))
+
+#define virt_to_page(vaddr) (pfn_to_page(virt_to_pfn(vaddr)))
+#define page_to_virt(page)  (pfn_to_virt(page_to_pfn(page)))
 
 #endif /* !__ASSEMBLY__ */
 

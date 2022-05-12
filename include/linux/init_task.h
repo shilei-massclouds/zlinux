@@ -8,4 +8,6 @@
 
 #include <asm/thread_info.h>
 
+#define INIT_TASK_COMM "swapper"
+
 #endif /* _LINUX__INIT_TASK_H */

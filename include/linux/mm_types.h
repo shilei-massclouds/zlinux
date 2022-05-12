@@ -18,6 +18,8 @@ struct page {
              * by the page owner.
              */
             struct list_head lru;
+            /* See page-flags.h for PAGE_MAPPING_FLAGS */
+            struct address_space *mapping;
             pgoff_t index;      /* Our offset within mapping. */
             /**
              * @private: Mapping-private opaque data.
@@ -29,6 +31,18 @@ struct page {
         };
         struct {    /* Tail pages of compound page */
             unsigned long compound_head;    /* Bit zero is set */
+
+            /* First tail page only */
+            unsigned char compound_dtor;
+            unsigned char compound_order;
+            atomic_t compound_mapcount;
+            unsigned int compound_nr; /* 1 << compound_order */
+        };
+        struct {    /* Second tail page of compound page */
+            unsigned long _compound_pad_1;  /* compound_head */
+            atomic_t hpage_pinned_refcount;
+            /* For both global and memcg */
+            struct list_head deferred_list;
         };
     };
 
@@ -120,6 +134,16 @@ static inline void
 set_page_private(struct page *page, unsigned long private)
 {
     page->private = private;
+}
+
+static inline atomic_t *compound_mapcount_ptr(struct page *page)
+{
+    return &page[1].compound_mapcount;
+}
+
+static inline atomic_t *compound_pincount_ptr(struct page *page)
+{
+    return &page[2].hpage_pinned_refcount;
 }
 
 #endif /* _LINUX_MM_TYPES_H */

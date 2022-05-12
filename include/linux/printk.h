@@ -66,6 +66,17 @@ static inline int printk_get_level(const char *buffer)
 #define pr_emerg(fmt, ...) \
     printk(KERN_EMERG pr_fmt(fmt), ##__VA_ARGS__)
 
+/**
+ * pr_alert - Print an alert-level message
+ * @fmt: format string
+ * @...: arguments for the format string
+ *
+ * This macro expands to a printk with KERN_ALERT loglevel. It uses pr_fmt() to
+ * generate the format string.
+ */
+#define pr_alert(fmt, ...) \
+    printk(KERN_ALERT pr_fmt(fmt), ##__VA_ARGS__)
+
 /*
  * Dummy printk for disabled debugging statements to use whilst maintaining
  * gcc's format checking.

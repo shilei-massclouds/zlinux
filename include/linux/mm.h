@@ -30,6 +30,11 @@
 
 #include <asm/page.h>
 
+/*
+ * Some inline functions in vmstat.h depend on page_zone()
+ */
+#include <linux/vmstat.h>
+
 /* to align the pointer to the (next) page boundary */
 #define PAGE_ALIGN(addr) ALIGN(addr, PAGE_SIZE)
 
@@ -193,5 +198,74 @@ static inline int page_zone_id(struct page *page)
 }
 
 extern void setup_per_cpu_pageset(void);
+
+static inline bool want_init_on_alloc(gfp_t flags)
+{
+    return flags & __GFP_ZERO;
+}
+
+static inline u8 page_kasan_tag(const struct page *page)
+{
+    return 0xff;
+}
+
+static __always_inline void *lowmem_page_address(const struct page *page)
+{
+    return page_to_virt(page);
+}
+
+#define page_address(page) lowmem_page_address(page)
+
+/* Keep the enum in sync with compound_page_dtors array in mm/page_alloc.c */
+enum compound_dtor_id {
+    NULL_COMPOUND_DTOR,
+    COMPOUND_PAGE_DTOR,
+    NR_COMPOUND_DTORS,
+};
+
+static inline void
+set_compound_page_dtor(struct page *page, enum compound_dtor_id compound_dtor)
+{
+    VM_BUG_ON_PAGE(compound_dtor >= NR_COMPOUND_DTORS, page);
+    page[1].compound_dtor = compound_dtor;
+}
+
+static inline unsigned int compound_order(struct page *page)
+{
+    if (!PageHead(page))
+        return 0;
+    return page[1].compound_order;
+}
+
+static inline bool hpage_pincount_available(struct page *page)
+{
+    /*
+     * Can the page->hpage_pinned_refcount field be used? That field is in
+     * the 3rd page of the compound page, so the smallest (2-page) compound
+     * pages cannot support it.
+     */
+    page = compound_head(page);
+    return PageCompound(page) && compound_order(page) > 1;
+}
+
+static inline void set_compound_order(struct page *page, unsigned int order)
+{
+    page[1].compound_order = order;
+    page[1].compound_nr = 1U << order;
+}
+
+/*
+ * Only to be called by the page allocator on a freshly allocated
+ * page.
+ */
+static inline void set_page_pfmemalloc(struct page *page)
+{
+    page->lru.next = (void *)BIT(1);
+}
+
+static inline void clear_page_pfmemalloc(struct page *page)
+{
+    page->lru.next = NULL;
+}
 
 #endif /* _LINUX_MM_H */

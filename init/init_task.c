@@ -14,5 +14,6 @@ struct task_struct init_task __aligned(L1_CACHE_BYTES) = {
     .thread_info    = INIT_THREAD_INFO(init_task),
     .stack_refcount = REFCOUNT_INIT(1),
     .flags          = PF_KTHREAD,
+    .comm           = INIT_TASK_COMM,
 };
 EXPORT_SYMBOL(init_task);

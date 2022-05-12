@@ -46,6 +46,8 @@ struct alloc_context {
 
 extern unsigned long highest_memmap_pfn;
 
+#define ALLOC_HARDER         0x10 /* try to alloc harder */
+
 /* The GFP flags allowed during early boot */
 #define GFP_BOOT_MASK (__GFP_BITS_MASK & ~(__GFP_RECLAIM|__GFP_IO|__GFP_FS))
 
@@ -56,6 +58,9 @@ extern unsigned long highest_memmap_pfn;
 #define ALLOC_NO_WATERMARKS 0x04    /* don't check watermarks at all */
 
 #define ALLOC_NOFRAGMENT    0x100   /* avoid mixing pageblock types */
+
+/* Mask to get the watermark bits */
+#define ALLOC_WMARK_MASK    (ALLOC_NO_WATERMARKS-1)
 
 static inline int
 find_next_best_node(int node, nodemask_t *used_node_mask)
@@ -107,6 +112,17 @@ static inline unsigned int buddy_order(struct page *page)
 static inline bool is_migrate_highatomic(enum migratetype migratetype)
 {
     return migratetype == MIGRATE_HIGHATOMIC;
+}
+
+/*
+ * Turn a non-refcounted page (->_refcount == 0) into refcounted with
+ * a count of one.
+ */
+static inline void set_page_refcounted(struct page *page)
+{
+    VM_BUG_ON_PAGE(PageTail(page), page);
+    VM_BUG_ON_PAGE(page_ref_count(page), page);
+    set_page_count(page, 1);
 }
 
 #endif  /* __MM_INTERNAL_H */

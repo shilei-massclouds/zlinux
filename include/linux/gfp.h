@@ -24,7 +24,12 @@
 #define ___GFP_DIRECT_RECLAIM   0x400u
 #define ___GFP_KSWAPD_RECLAIM   0x800u
 
+#define ___GFP_NOFAIL       0x8000u
+
+#define ___GFP_COMP         0x40000u
+
 #define ___GFP_THISNODE     0x200000u
+#define ___GFP_ZEROTAGS     0x800000u
 
 #define __GFP_IO    ((__force gfp_t)___GFP_IO)
 #define __GFP_FS    ((__force gfp_t)___GFP_FS)
@@ -32,6 +37,8 @@
     ((__force gfp_t)___GFP_KSWAPD_RECLAIM) /* kswapd can wake */
 #define __GFP_RECLAIM \
     ((__force gfp_t)(___GFP_DIRECT_RECLAIM|___GFP_KSWAPD_RECLAIM))
+
+#define __GFP_NOFAIL    ((__force gfp_t)___GFP_NOFAIL)
 
 /**
  * DOC: Page mobility and placement hints
@@ -84,7 +91,9 @@
  * effect in HW tags mode.
  */
 #define __GFP_NOWARN    ((__force gfp_t)___GFP_NOWARN)
+#define __GFP_COMP      ((__force gfp_t)___GFP_COMP)
 #define __GFP_ZERO      ((__force gfp_t)___GFP_ZERO)
+#define __GFP_ZEROTAGS  ((__force gfp_t)___GFP_ZEROTAGS)
 
 /*
  * Physical address zone modifiers (see linux/mmzone.h - low four bits)

@@ -146,6 +146,10 @@
     *(.data..page_aligned)              \
     . = ALIGN(page_align);
 
+#define CACHELINE_ALIGNED_DATA(align)   \
+    . = ALIGN(align);                   \
+    *(.data..cacheline_aligned)
+
 /*
  * Writeable data.
  * All sections are combined in a single .data section.
@@ -163,6 +167,7 @@
     .data : AT(ADDR(.data) - LOAD_OFFSET) { \
         INIT_TASK_DATA(inittask)            \
         PAGE_ALIGNED_DATA(pagealigned)      \
+        CACHELINE_ALIGNED_DATA(cacheline)   \
         DATA_DATA                           \
     }
 

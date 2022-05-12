@@ -32,6 +32,11 @@
 #define MAX_ORDER 11
 #define MAX_ORDER_NR_PAGES (1 << (MAX_ORDER - 1))
 
+#define min_wmark_pages(z)  (z->_watermark[WMARK_MIN] + z->watermark_boost)
+#define low_wmark_pages(z)  (z->_watermark[WMARK_LOW] + z->watermark_boost)
+#define high_wmark_pages(z) (z->_watermark[WMARK_HIGH] + z->watermark_boost)
+#define wmark_pages(z, i)   (z->_watermark[i] + z->watermark_boost)
+
 enum migratetype {
     MIGRATE_UNMOVABLE,
     MIGRATE_MOVABLE,
@@ -56,6 +61,17 @@ enum zone_stat_item {
     NR_BOUNCE,
     NR_FREE_CMA_PAGES,
     NR_VM_ZONE_STAT_ITEMS
+};
+
+enum node_stat_item {
+    NR_LRU_BASE,
+    NR_INACTIVE_FILE,   /*  "     "     "   "       "         */
+    NR_ACTIVE_FILE,     /*  "     "     "   "       "         */
+    NR_SLAB_RECLAIMABLE_B,
+    NR_SLAB_UNRECLAIMABLE_B,
+    NR_FILE_DIRTY,
+    NR_WRITEBACK,
+    NR_VM_NODE_STAT_ITEMS
 };
 
 /* Fields and list protected by pagesets local_lock in page_alloc.c */
@@ -85,6 +101,16 @@ enum zone_watermarks {
     WMARK_HIGH,
     NR_WMARK
 };
+
+/*
+ * Add a wild amount of padding here to ensure data fall into separate
+ * cachelines.  There are very few zone structures in the machine, so space
+ * consumption is not a concern here.
+ */
+struct zone_padding {
+    char x[0];
+} ____cacheline_internodealigned_in_smp;
+#define ZONE_PADDING(name)  struct zone_padding name;
 
 #endif /* !__GENERATING_BOUNDS_H */
 
@@ -152,7 +178,15 @@ struct free_area {
 
 struct zone {
 
+    /* zone watermarks, access with *_wmark_pages(zone) macros */
+    unsigned long _watermark[NR_WMARK];
+    unsigned long watermark_boost;
+
+    unsigned long nr_reserved_highatomic;
+
     struct pglist_data  *zone_pgdat;
+
+    struct per_cpu_zonestat __percpu *per_cpu_zonestats;
 
     /*
      * the high and batch values are copied to individual pagesets for
@@ -180,11 +214,21 @@ struct zone {
 
     int                 initialized;
 
+    /* Write-intensive fields used from the page allocator */
+    ZONE_PADDING(_pad1_)
+
     /* free areas of different sizes */
     struct free_area    free_area[MAX_ORDER];
 
     /* Primarily protects free_area */
     spinlock_t          lock;
+
+    /* Write-intensive fields used by compaction and vmstats. */
+    ZONE_PADDING(_pad2_)
+
+    ZONE_PADDING(_pad3_)
+    /* Zone statistics */
+    atomic_long_t       vm_stat[NR_VM_ZONE_STAT_ITEMS];
 
 } ____cacheline_internodealigned_in_smp;
 
@@ -254,6 +298,12 @@ typedef struct pglist_data {
     int node_id;
 
     enum zone_type kswapd_highest_zoneidx;
+
+    /*
+     * This is a per-node reserve of pages that are not available
+     * to userspace allocations.
+     */
+    unsigned long totalreserve_pages;
 
     /* Per-node vmstats */
     //struct per_cpu_nodestat __percpu *per_cpu_nodestats;

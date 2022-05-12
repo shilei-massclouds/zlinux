@@ -31,11 +31,14 @@
  */
 enum pageflags {
     PG_locked,      /* Page is locked. Don't touch. */
+    PG_lru,
     PG_reserved,
     PG_head,        /* A head page */
 
     __NR_PAGEFLAGS,
 };
+
+#define PAGEFLAGS_MASK  ((1UL << NR_PAGEFLAGS) - 1)
 
 #ifndef __GENERATING_BOUNDS_H
 
@@ -115,6 +118,8 @@ static __always_inline int PageCompound(struct page *page)
 #define PF_POISONED_CHECK(page) ({                  \
     VM_BUG_ON_PGFLAGS(PagePoisoned(page), page);    \
     page; })
+#define PF_ANY(page, enforce)   PF_POISONED_CHECK(page)
+#define PF_HEAD(page, enforce)  PF_POISONED_CHECK(compound_head(page))
 #define PF_NO_COMPOUND(page, enforce) ({                    \
     VM_BUG_ON_PGFLAGS(enforce && PageCompound(page), page); \
     PF_POISONED_CHECK(page); })
@@ -147,6 +152,11 @@ static __always_inline void __ClearPage##uname(struct page *page)   \
     SETPAGEFLAG(uname, lname, policy)   \
     CLEARPAGEFLAG(uname, lname, policy)
 
+#define __PAGEFLAG(uname, lname, policy)    \
+    TESTPAGEFLAG(uname, lname, policy)      \
+    __SETPAGEFLAG(uname, lname, policy)     \
+    __CLEARPAGEFLAG(uname, lname, policy)
+
 #define TESTPAGEFLAG_FALSE(uname, lname) \
     static inline int Page##uname(const struct page *page) { return 0; }
 
@@ -161,15 +171,26 @@ static __always_inline void __ClearPage##uname(struct page *page)   \
     SETPAGEFLAG_NOOP(uname, lname)      \
     CLEARPAGEFLAG_NOOP(uname, lname)
 
+#define TESTCLEARFLAG(uname, lname, policy) \
+static __always_inline int TestClearPage##uname(struct page *page) \
+{ return test_and_clear_bit(PG_##lname, &policy(page, 1)->flags); }
+
+PAGEFLAG(LRU, lru, PF_HEAD)
+    __CLEARPAGEFLAG(LRU, lru, PF_HEAD)
+    TESTCLEARFLAG(LRU, lru, PF_HEAD)
+
 PAGEFLAG(Reserved, reserved, PF_NO_COMPOUND)
     __CLEARPAGEFLAG(Reserved, reserved, PF_NO_COMPOUND)
     __SETPAGEFLAG(Reserved, reserved, PF_NO_COMPOUND)
 
 PAGEFLAG_FALSE(HWPoison, hwpoison)
+#define __PG_HWPOISON 0
 
 static inline void page_init_poison(struct page *page, size_t size)
 {
 }
+
+__PAGEFLAG(Head, head, PF_ANY) CLEARPAGEFLAG(Head, head, PF_ANY)
 
 #define PAGE_TYPE_BASE  0xf0000000
 /* Reserve      0x0000007f to catch underflows of page_mapcount */
@@ -208,6 +229,50 @@ static __always_inline void __ClearPage##uname(struct page *page)   \
  * (see mm/page_alloc.c).
  */
 PAGE_TYPE_OPS(Buddy, buddy)
+
+/*
+ * Flags checked when a page is prepped for return by the page allocator.
+ * Pages being prepped should not have these flags set.  If they are set,
+ * there has been a kernel bug or struct page corruption.
+ *
+ * __PG_HWPOISON is exceptional because it needs to be kept beyond page's
+ * alloc-free cycle to prevent from reusing the page.
+ */
+#define PAGE_FLAGS_CHECK_AT_PREP (PAGEFLAGS_MASK & ~__PG_HWPOISON)
+
+static __always_inline void
+set_compound_head(struct page *page, struct page *head)
+{
+    WRITE_ONCE(page->compound_head, (unsigned long)head + 1);
+}
+
+/*
+ * On an anonymous page mapped into a user virtual memory area,
+ * page->mapping points to its anon_vma, not to a struct address_space;
+ * with the PAGE_MAPPING_ANON bit set to distinguish it.  See rmap.h.
+ *
+ * On an anonymous page in a VM_MERGEABLE area, if CONFIG_KSM is enabled,
+ * the PAGE_MAPPING_MOVABLE bit may be set along with the PAGE_MAPPING_ANON
+ * bit; and then page->mapping points, not to an anon_vma, but to a private
+ * structure which KSM associates with that merged page.  See ksm.h.
+ *
+ * PAGE_MAPPING_KSM without PAGE_MAPPING_ANON is used for non-lru movable
+ * page and then page->mapping points a struct address_space.
+ *
+ * Please note that, confusingly, "page_mapping" refers to the inode
+ * address_space which maps the page from disk; whereas "page_mapped"
+ * refers to user virtual address space into which the page is mapped.
+ */
+#define PAGE_MAPPING_ANON       0x1
+#define PAGE_MAPPING_MOVABLE    0x2
+#define PAGE_MAPPING_KSM        (PAGE_MAPPING_ANON | PAGE_MAPPING_MOVABLE)
+#define PAGE_MAPPING_FLAGS      (PAGE_MAPPING_ANON | PAGE_MAPPING_MOVABLE)
+
+static __always_inline int __PageMovable(struct page *page)
+{
+    return ((unsigned long)page->mapping & PAGE_MAPPING_FLAGS) ==
+        PAGE_MAPPING_MOVABLE;
+}
 
 #endif /* !__GENERATING_BOUNDS_H */
 

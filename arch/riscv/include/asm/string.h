@@ -17,4 +17,8 @@ extern asmlinkage void *__memset(void *, int, size_t);
 extern asmlinkage void *memcpy(void *, const void *, size_t);
 extern asmlinkage void *__memcpy(void *, const void *, size_t);
 
+#define __HAVE_ARCH_MEMMOVE
+extern asmlinkage void *memmove(void *, const void *, size_t);
+extern asmlinkage void *__memmove(void *, const void *, size_t);
+
 #endif /* _ASM_RISCV_STRING_H */

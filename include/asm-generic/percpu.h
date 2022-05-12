@@ -44,9 +44,14 @@ extern unsigned long __per_cpu_offset[NR_CPUS];
 #define arch_raw_cpu_ptr(ptr) SHIFT_PERCPU_PTR(ptr, __my_cpu_offset)
 #endif
 
-#define raw_cpu_generic_to_op(pcp, val, op)             \
-do {                                    \
-    *raw_cpu_ptr(&(pcp)) op val;                    \
+#define raw_cpu_generic_read(pcp)   \
+({                                  \
+    *raw_cpu_ptr(&(pcp));           \
+})
+
+#define raw_cpu_generic_to_op(pcp, val, op) \
+do {                                        \
+    *raw_cpu_ptr(&(pcp)) op val;            \
 } while (0)
 
 #define this_cpu_generic_to_op(pcp, val, op)    \
@@ -68,6 +73,32 @@ do {                                            \
 #endif
 #ifndef this_cpu_add_8
 #define this_cpu_add_8(pcp, val)    this_cpu_generic_to_op(pcp, val, +=)
+#endif
+
+#ifndef raw_cpu_read_1
+#define raw_cpu_read_1(pcp)     raw_cpu_generic_read(pcp)
+#endif
+#ifndef raw_cpu_read_2
+#define raw_cpu_read_2(pcp)     raw_cpu_generic_read(pcp)
+#endif
+#ifndef raw_cpu_read_4
+#define raw_cpu_read_4(pcp)     raw_cpu_generic_read(pcp)
+#endif
+#ifndef raw_cpu_read_8
+#define raw_cpu_read_8(pcp)     raw_cpu_generic_read(pcp)
+#endif
+
+#ifndef raw_cpu_write_1
+#define raw_cpu_write_1(pcp, val)   raw_cpu_generic_to_op(pcp, val, =)
+#endif
+#ifndef raw_cpu_write_2
+#define raw_cpu_write_2(pcp, val)   raw_cpu_generic_to_op(pcp, val, =)
+#endif
+#ifndef raw_cpu_write_4
+#define raw_cpu_write_4(pcp, val)   raw_cpu_generic_to_op(pcp, val, =)
+#endif
+#ifndef raw_cpu_write_8
+#define raw_cpu_write_8(pcp, val)   raw_cpu_generic_to_op(pcp, val, =)
 #endif
 
 #endif /* _ASM_GENERIC_PERCPU_H_ */

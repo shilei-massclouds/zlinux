@@ -20,4 +20,8 @@
 # define swab64s __swab64s
 # define swahw32s __swahw32s
 # define swahb32s __swahb32s
+
+/* linux/mm/page_alloc.c */
+extern unsigned long totalreserve_pages;
+
 #endif /* _LINUX_SWAB_H */

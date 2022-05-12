@@ -14,4 +14,8 @@
 #define LIST_POISON1  ((void *) 0x100 + POISON_POINTER_DELTA)
 #define LIST_POISON2  ((void *) 0x122 + POISON_POINTER_DELTA)
 
+/********** mm/page_alloc.c ************/
+
+#define TAIL_MAPPING    ((void *) 0x400 + POISON_POINTER_DELTA)
+
 #endif /* _LINUX_POISON_H */
