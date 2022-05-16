@@ -670,8 +670,8 @@ __init_single_page(struct page *page, unsigned long pfn,
 }
 
 /* Return a pointer to the bitmap storing bits affecting a block of pages */
-static inline unsigned long *get_pageblock_bitmap(const struct page *page,
-                            unsigned long pfn)
+static inline unsigned long *
+get_pageblock_bitmap(const struct page *page, unsigned long pfn)
 {
     return page_zone(page)->pageblock_flags;
 }
@@ -2182,9 +2182,9 @@ void __meminit reserve_bootmem_region(phys_addr_t start, phys_addr_t end)
 }
 
 static __always_inline
-unsigned long __get_pfnblock_flags_mask(const struct page *page,
-                    unsigned long pfn,
-                    unsigned long mask)
+unsigned long
+__get_pfnblock_flags_mask(const struct page *page, unsigned long pfn,
+                          unsigned long mask)
 {
     unsigned long word;
     unsigned long *bitmap;
@@ -2549,7 +2549,6 @@ static int nr_pcp_free(struct per_cpu_pages *pcp, int high, int batch)
     if (batch < max_nr_free)
         pcp->free_factor++;
     batch = clamp(batch, min_nr_free, max_nr_free);
-
     return batch;
 }
 
@@ -2658,6 +2657,7 @@ static void free_pcppages_bulk(struct zone *zone, int count,
 
         __free_one_page(page, page_to_pfn(page), zone, order, mt, FPI_NONE);
     }
+
     spin_unlock(&zone->lock);
 }
 
