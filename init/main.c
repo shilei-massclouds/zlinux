@@ -86,7 +86,9 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
         struct page *p;
         printk("%s: alloc page ...\n", __func__);
         p = alloc_page(GFP_KERNEL);
-        panic("%s: alloc page %pa\n", __func__, &p);
+        printk("%s: free page (%pa)...\n", __func__, &p);
+        __free_page(p);
+        panic("%s: alloc/free page\n", __func__);
     }
 
     /* Do the rest non-__init'ed, we're now alive */

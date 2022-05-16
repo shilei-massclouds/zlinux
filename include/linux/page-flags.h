@@ -31,9 +31,28 @@
  */
 enum pageflags {
     PG_locked,      /* Page is locked. Don't touch. */
+    PG_referenced,
+    PG_uptodate,
+    PG_dirty,
     PG_lru,
+    PG_active,
+    PG_workingset,
+    PG_waiters,     /* Page has waiters, check its waitqueue.
+                       Must be bit #7 and in the same byte as "PG_locked" */
+    PG_error,
+    PG_slab,
+    PG_owner_priv_1,    /* Owner use. If pagecache, fs may use*/
+    PG_arch_1,
     PG_reserved,
+    PG_private,     /* If pagecache, has fs-private data */
+    PG_private_2,   /* If pagecache, has fs aux data */
+    PG_writeback,   /* Page is under writeback */
     PG_head,        /* A head page */
+    PG_mappedtodisk,    /* Has blocks allocated on-disk */
+    PG_reclaim,     /* To be reclaimed asap */
+    PG_swapbacked,  /* Page is backed by RAM/swap */
+    PG_unevictable, /* Page is "unevictable"  */
+    PG_mlocked,     /* Page is vma mlocked */
 
     __NR_PAGEFLAGS,
 };
@@ -273,6 +292,19 @@ static __always_inline int __PageMovable(struct page *page)
     return ((unsigned long)page->mapping & PAGE_MAPPING_FLAGS) ==
         PAGE_MAPPING_MOVABLE;
 }
+
+#define __PG_MLOCKED    (1UL << PG_mlocked)
+
+/*
+ * Flags checked when a page is freed.  Pages being freed should not have
+ * these flags set.  If they are, there is a problem.
+ */
+#define PAGE_FLAGS_CHECK_AT_FREE                \
+    (1UL << PG_lru      | 1UL << PG_locked  |   \
+     1UL << PG_private  | 1UL << PG_private_2   |   \
+     1UL << PG_writeback| 1UL << PG_reserved    |   \
+     1UL << PG_slab     | 1UL << PG_active  |   \
+     1UL << PG_unevictable  | __PG_MLOCKED)
 
 #endif /* !__GENERATING_BOUNDS_H */
 

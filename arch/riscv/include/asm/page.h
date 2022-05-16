@@ -92,7 +92,15 @@ extern phys_addr_t phys_ram_base;
 #define virt_to_page(vaddr) (pfn_to_page(virt_to_pfn(vaddr)))
 #define page_to_virt(page)  (pfn_to_virt(page_to_pfn(page)))
 
+#define pfn_valid(pfn) \
+    (((pfn) >= ARCH_PFN_OFFSET) && (((pfn) - ARCH_PFN_OFFSET) < max_mapnr))
+
 #endif /* !__ASSEMBLY__ */
+
+#define virt_addr_valid(vaddr) ({ \
+    unsigned long _addr = (unsigned long)vaddr; \
+    (unsigned long)(_addr) >= PAGE_OFFSET && pfn_valid(virt_to_pfn(_addr)); \
+})
 
 #include <asm-generic/memory_model.h>
 //#include <asm-generic/getorder.h>

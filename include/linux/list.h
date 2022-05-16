@@ -24,6 +24,14 @@
     struct list_head name = LIST_HEAD_INIT(name)
 
 /**
+ * list_entry_is_head - test if the entry points to the head of the list
+ * @pos:    the type * to cursor
+ * @head:   the head for your list.
+ * @member: the name of the list_head within the struct.
+ */
+#define list_entry_is_head(pos, head, member) (&pos->member == (head))
+
+/**
  * INIT_LIST_HEAD - Initialize a list_head structure
  * @list: list_head structure to be initialized.
  *
@@ -55,6 +63,25 @@ static inline void INIT_LIST_HEAD(struct list_head *list)
  */
 #define list_first_entry(ptr, type, member) \
     list_entry((ptr)->next, type, member)
+
+/**
+ * list_last_entry - get the last element from a list
+ * @ptr:    the list head to take the element from.
+ * @type:   the type of the struct this is embedded in.
+ * @member: the name of the list_head within the struct.
+ *
+ * Note, that list is expected to be not empty.
+ */
+#define list_last_entry(ptr, type, member) \
+    list_entry((ptr)->prev, type, member)
+
+/**
+ * list_next_entry - get the next element in list
+ * @pos:    the type * to cursor
+ * @member: the name of the list_head within the struct.
+ */
+#define list_next_entry(pos, member) \
+    list_entry((pos)->member.next, typeof(*(pos)), member)
 
 static inline bool
 __list_add_valid(struct list_head *new,
@@ -182,5 +209,18 @@ static inline void list_move_tail(struct list_head *list,
     __list_del_entry(list);
     list_add_tail(list, head);
 }
+
+/**
+ * list_for_each_entry_safe - iterate over list of given type safe against removal of list entry
+ * @pos:    the type * to use as a loop cursor.
+ * @n:      another type * to use as temporary storage
+ * @head:   the head for your list.
+ * @member: the name of the list_head within the struct.
+ */
+#define list_for_each_entry_safe(pos, n, head, member)          \
+    for (pos = list_first_entry(head, typeof(*pos), member),    \
+         n = list_next_entry(pos, member);                      \
+         !list_entry_is_head(pos, head, member);                \
+         pos = n, n = list_next_entry(n, member))
 
 #endif /* _LINUX_LIST_H */

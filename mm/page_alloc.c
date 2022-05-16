@@ -99,6 +99,9 @@
 /* Free Page Internal flags: for internal, non-pcp variants of free_pages(). */
 typedef int __bitwise fpi_t;
 
+/* No special request */
+#define FPI_NONE        ((__force fpi_t)0)
+
 /*
  * Place the (possibly merged) page to the tail of the freelist. Will ignore
  * page shuffling (relevant code - e.g., memory onlining - is expected to
@@ -190,6 +193,19 @@ static inline int pindex_to_order(unsigned int pindex)
 
     VM_BUG_ON(order > PAGE_ALLOC_COSTLY_ORDER);
     return order;
+}
+
+/*
+ * A cached value of the page's pageblock's migratetype, used when the page is
+ * put on a pcplist. Used to avoid the pageblock migratetype lookup when
+ * freeing from pcplists in most cases, at the cost of possibly becoming stale.
+ * Also the migratetype set in the page does not necessarily match the pcplist
+ * index, e.g. page might have MIGRATE_CMA set but be on a pcplist with any
+ * other index - this ensures that it will be put on the correct CMA freelist.
+ */
+static inline int get_pcppage_migratetype(struct page *page)
+{
+    return page->index;
 }
 
 static inline void
@@ -2450,6 +2466,296 @@ get_pfnblock_flags_mask(const struct page *page,
 {
     return __get_pfnblock_flags_mask(page, pfn, mask);
 }
+
+static void check_free_page_bad(struct page *page)
+{
+    bad_page(page, page_bad_reason(page, PAGE_FLAGS_CHECK_AT_FREE));
+}
+
+static inline int check_free_page(struct page *page)
+{
+    if (likely(page_expected_state(page, PAGE_FLAGS_CHECK_AT_FREE)))
+        return 0;
+
+    /* Something has gone sideways, find it */
+    check_free_page_bad(page);
+    return 1;
+}
+
+/*
+ * With DEBUG_VM disabled, order-0 pages being freed are checked only when
+ * moving from pcp lists to free list in order to reduce overhead. With
+ * debug_pagealloc enabled, they are checked also immediately when being freed
+ * to the pcp lists.
+ */
+static bool free_pcp_prepare(struct page *page, unsigned int order)
+{
+    return free_pages_prepare(page, order, false, FPI_NONE);
+}
+
+static bool bulkfree_pcp_prepare(struct page *page)
+{
+    return check_free_page(page);
+}
+
+static bool
+free_unref_page_prepare(struct page *page, unsigned long pfn,
+                        unsigned int order)
+{
+    int migratetype;
+
+    if (!free_pcp_prepare(page, order))
+        return false;
+
+    migratetype = get_pfnblock_migratetype(page, pfn);
+    set_pcppage_migratetype(page, migratetype);
+    return true;
+}
+
+static int nr_pcp_high(struct per_cpu_pages *pcp, struct zone *zone)
+{
+    int high = READ_ONCE(pcp->high);
+
+    if (unlikely(!high))
+        return 0;
+
+    if (!test_bit(ZONE_RECLAIM_ACTIVE, &zone->flags))
+        return high;
+
+    /*
+     * If reclaim is active, limit the number of pages that can be
+     * stored on pcp lists
+     */
+    return min(READ_ONCE(pcp->batch) << 2, high);
+}
+
+static int nr_pcp_free(struct per_cpu_pages *pcp, int high, int batch)
+{
+    int min_nr_free, max_nr_free;
+
+    /* Check for PCP disabled or boot pageset */
+    if (unlikely(high < batch))
+        return 1;
+
+    /* Leave at least pcp->batch pages on the list */
+    min_nr_free = batch;
+    max_nr_free = high - batch;
+
+    /*
+     * Double the number of pages freed each time there is subsequent
+     * freeing of pages without any allocation.
+     */
+    batch <<= pcp->free_factor;
+    if (batch < max_nr_free)
+        pcp->free_factor++;
+    batch = clamp(batch, min_nr_free, max_nr_free);
+
+    return batch;
+}
+
+static inline void prefetch_buddy(struct page *page)
+{
+    unsigned long pfn = page_to_pfn(page);
+    unsigned long buddy_pfn = __find_buddy_pfn(pfn, 0);
+    struct page *buddy = page + (buddy_pfn - pfn);
+
+    prefetch(buddy);
+}
+
+/*
+ * Frees a number of pages from the PCP lists
+ * Assumes all pages on list are in same zone.
+ * count is the number of pages to free.
+ */
+static void free_pcppages_bulk(struct zone *zone, int count,
+                               struct per_cpu_pages *pcp)
+{
+    int pindex = 0;
+    int batch_free = 0;
+    int nr_freed = 0;
+    unsigned int order;
+    int prefetch_nr = READ_ONCE(pcp->batch);
+    struct page *page, *tmp;
+    LIST_HEAD(head);
+
+    /*
+     * Ensure proper count is passed which otherwise would stuck in the
+     * below while (list_empty(list)) loop.
+     */
+    count = min(pcp->count, count);
+    while (count > 0) {
+        struct list_head *list;
+
+        /*
+         * Remove pages from lists in a round-robin fashion. A
+         * batch_free count is maintained that is incremented when an
+         * empty list is encountered.  This is so more pages are freed
+         * off fuller lists instead of spinning excessively around empty
+         * lists
+         */
+        do {
+            batch_free++;
+            if (++pindex == NR_PCP_LISTS)
+                pindex = 0;
+            list = &pcp->lists[pindex];
+        } while (list_empty(list));
+
+        /* This is the only non-empty list. Free them all. */
+        if (batch_free == NR_PCP_LISTS)
+            batch_free = count;
+
+        order = pindex_to_order(pindex);
+        BUILD_BUG_ON(MAX_ORDER >= (1<<NR_PCP_ORDER_WIDTH));
+        do {
+            page = list_last_entry(list, struct page, lru);
+            /* must delete to avoid corrupting pcp list */
+            list_del(&page->lru);
+            nr_freed += 1 << order;
+            count -= 1 << order;
+
+            if (bulkfree_pcp_prepare(page))
+                continue;
+
+            /* Encode order with the migratetype */
+            page->index <<= NR_PCP_ORDER_WIDTH;
+            page->index |= order;
+
+            list_add_tail(&page->lru, &head);
+
+            /*
+             * We are going to put the page back to the global
+             * pool, prefetch its buddy to speed up later access
+             * under zone->lock. It is believed the overhead of
+             * an additional test and calculating buddy_pfn here
+             * can be offset by reduced memory latency later. To
+             * avoid excessive prefetching due to large count, only
+             * prefetch buddy for the first pcp->batch nr of pages.
+             */
+            if (prefetch_nr) {
+                prefetch_buddy(page);
+                prefetch_nr--;
+            }
+        } while (count > 0 && --batch_free && !list_empty(list));
+    }
+    pcp->count -= nr_freed;
+
+    /*
+     * local_lock_irq held so equivalent to spin_lock_irqsave for
+     * both PREEMPT_RT and non-PREEMPT_RT configurations.
+     */
+    spin_lock(&zone->lock);
+
+    /*
+     * Use safe version since after __free_one_page(),
+     * page->lru.next will not point to original list.
+     */
+    list_for_each_entry_safe(page, tmp, &head, lru) {
+        int mt = get_pcppage_migratetype(page);
+
+        /* mt has been encoded with the order (see above) */
+        order = mt & NR_PCP_ORDER_MASK;
+        mt >>= NR_PCP_ORDER_WIDTH;
+
+        __free_one_page(page, page_to_pfn(page), zone, order, mt, FPI_NONE);
+    }
+    spin_unlock(&zone->lock);
+}
+
+static void
+free_unref_page_commit(struct page *page, unsigned long pfn,
+                       int migratetype, unsigned int order)
+{
+    int high;
+    int pindex;
+    struct per_cpu_pages *pcp;
+    struct zone *zone = page_zone(page);
+
+    pcp = this_cpu_ptr(zone->per_cpu_pageset);
+    pindex = order_to_pindex(migratetype, order);
+    list_add(&page->lru, &pcp->lists[pindex]);
+    pcp->count += 1 << order;
+    high = nr_pcp_high(pcp, zone);
+    if (pcp->count >= high) {
+        int batch = READ_ONCE(pcp->batch);
+
+        free_pcppages_bulk(zone, nr_pcp_free(pcp, high, batch), pcp);
+    }
+}
+
+/*
+ * Free a pcp page
+ */
+void free_unref_page(struct page *page, unsigned int order)
+{
+    int migratetype;
+    unsigned long flags;
+    unsigned long pfn = page_to_pfn(page);
+
+    if (!free_unref_page_prepare(page, pfn, order))
+        return;
+
+    /*
+     * We only track unmovable, reclaimable and movable on pcp lists.
+     * Place ISOLATE pages on the isolated list because they are being
+     * offlined but treat HIGHATOMIC as movable pages so we can get those
+     * areas back if necessary. Otherwise, we may have to free
+     * excessively into the page allocator
+     */
+    migratetype = get_pcppage_migratetype(page);
+    if (unlikely(migratetype >= MIGRATE_PCPTYPES))
+        migratetype = MIGRATE_MOVABLE;
+
+    local_lock_irqsave(&pagesets.lock, flags);
+    free_unref_page_commit(page, pfn, migratetype, order);
+    local_unlock_irqrestore(&pagesets.lock, flags);
+}
+
+static inline void free_the_page(struct page *page, unsigned int order)
+{
+    if (pcp_allowed_order(order))       /* Via pcp? */
+        free_unref_page(page, order);
+    else
+        __free_pages_ok(page, order, FPI_NONE);
+}
+
+/**
+ * __free_pages - Free pages allocated with alloc_pages().
+ * @page: The page pointer returned from alloc_pages().
+ * @order: The order of the allocation.
+ *
+ * This function can free multi-page allocations that are not compound
+ * pages.  It does not check that the @order passed in matches that of
+ * the allocation, so it is easy to leak memory.  Freeing more memory
+ * than was allocated will probably emit a warning.
+ *
+ * If the last reference to this page is speculative, it will be released
+ * by put_page() which only frees the first page of a non-compound
+ * allocation.  To prevent the remaining pages from being leaked, we free
+ * the subsequent pages here.  If you want to use the page's reference
+ * count to decide when to free the allocation, you should allocate a
+ * compound page, and use put_page() instead of __free_pages().
+ *
+ * Context: May be called in interrupt context or while holding a normal
+ * spinlock, but not in NMI context or while holding a raw spinlock.
+ */
+void __free_pages(struct page *page, unsigned int order)
+{
+    if (put_page_testzero(page))
+        free_the_page(page, order);
+    else if (!PageHead(page))
+        while (order-- > 0)
+            free_the_page(page + (1 << order), order);
+}
+EXPORT_SYMBOL(__free_pages);
+
+void free_pages(unsigned long addr, unsigned int order)
+{
+    if (addr != 0) {
+        VM_BUG_ON(!virt_addr_valid((void *)addr));
+        __free_pages(virt_to_page((void *)addr), order);
+    }
+}
+EXPORT_SYMBOL(free_pages);
 
 void __init mem_init_print_info(void)
 {

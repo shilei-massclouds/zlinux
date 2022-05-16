@@ -28,6 +28,13 @@
 #define NR_PCP_LISTS \
     (MIGRATE_PCPTYPES * (PAGE_ALLOC_COSTLY_ORDER + 1 + NR_PCP_THP))
 
+/*
+ * Shift to encode migratetype and order in the same integer, with order
+ * in the least significant bits.
+ */
+#define NR_PCP_ORDER_WIDTH 8
+#define NR_PCP_ORDER_MASK ((1<<NR_PCP_ORDER_WIDTH) - 1)
+
 /* Free memory management - zoned buddy allocator.  */
 #define MAX_ORDER 11
 #define MAX_ORDER_NR_PAGES (1 << (MAX_ORDER - 1))
@@ -44,6 +51,12 @@ enum migratetype {
     MIGRATE_PCPTYPES,   /* the number of types on the pcp lists */
     MIGRATE_HIGHATOMIC = MIGRATE_PCPTYPES,
     MIGRATE_TYPES
+};
+
+enum zone_flags {
+    ZONE_BOOSTED_WATERMARK, /* zone recently boosted watermarks.
+                             * Cleared when kswapd is woken. */
+    ZONE_RECLAIM_ACTIVE,    /* kswapd may be scanning the zone. */
 };
 
 enum zone_stat_item {
@@ -219,6 +232,9 @@ struct zone {
 
     /* free areas of different sizes */
     struct free_area    free_area[MAX_ORDER];
+
+    /* zone flags, see below */
+    unsigned long       flags;
 
     /* Primarily protects free_area */
     spinlock_t          lock;
@@ -482,45 +498,6 @@ extern struct pglist_data *next_online_pgdat(struct pglist_data *pgdat);
     for (pgdat = first_online_pgdat();      \
          pgdat;                 \
          pgdat = next_online_pgdat(pgdat))
-
-/**
- * pfn_valid - check if there is a valid memory map entry for a PFN
- * @pfn: the page frame number to check
- *
- * Check if there is a valid memory map entry aka struct page for the @pfn.
- * Note, that availability of the memory map entry does not imply that
- * there is actual usable memory at that @pfn. The struct page may
- * represent a hole or an unusable page frame.
- *
- * Return: 1 for PFNs that have memory map entries and 0 otherwise
- */
-static inline int pfn_valid(unsigned long pfn)
-{
-    return 1;
-#if 0
-    struct mem_section *ms;
-
-    /*
-     * Ensure the upper PAGE_SHIFT bits are clear in the
-     * pfn. Else it might lead to false positives when
-     * some of the upper bits are set, but the lower bits
-     * match a valid pfn.
-     */
-    if (PHYS_PFN(PFN_PHYS(pfn)) != pfn)
-        return 0;
-
-    if (pfn_to_section_nr(pfn) >= NR_MEM_SECTIONS)
-        return 0;
-    ms = __pfn_to_section(pfn);
-    if (!valid_section(ms))
-        return 0;
-    /*
-     * Traditionally early sections always returned pfn_valid() for
-     * the entire section-sized span.
-     */
-    return early_section(ms) || pfn_section_valid(ms, pfn);
-#endif
-}
 
 static inline bool zone_is_initialized(struct zone *zone)
 {

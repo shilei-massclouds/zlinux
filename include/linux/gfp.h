@@ -152,7 +152,13 @@ static inline struct page *alloc_pages(gfp_t gfp_mask, unsigned int order)
     return alloc_pages_node(numa_node_id(), gfp_mask, order);
 }
 
+extern void __free_pages(struct page *page, unsigned int order);
+extern void free_pages(unsigned long addr, unsigned int order);
+
 #define alloc_page(gfp_mask) alloc_pages(gfp_mask, 0)
+
+#define __free_page(page) __free_pages((page), 0)
+#define free_page(addr) free_pages((addr), 0)
 
 #define OPT_ZONE_DMA        ZONE_NORMAL
 #define OPT_ZONE_HIGHMEM    ZONE_NORMAL

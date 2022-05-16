@@ -44,4 +44,22 @@ atomic_long_add(long i, atomic_long_t *v)
     arch_atomic_long_add(i, v);
 }
 
+static __always_inline bool
+atomic_dec_and_test(atomic_t *v)
+{
+    return arch_atomic_dec_and_test(v);
+}
+
+static __always_inline void
+atomic_inc(atomic_t *v)
+{
+    arch_atomic_inc(v);
+}
+
+static __always_inline void
+atomic_dec(atomic_t *v)
+{
+    arch_atomic_dec(v);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */

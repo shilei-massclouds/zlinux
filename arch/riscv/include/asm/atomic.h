@@ -176,4 +176,67 @@ ATOMIC_OPS(xor, xor,  i)
 #undef ATOMIC_OP
 #undef ATOMIC_OPS
 
+#undef ATOMIC_FETCH_OP
+#undef ATOMIC_OP_RETURN
+
+/*
+ * Atomic ops that have ordered, relaxed, acquire, and release variants.
+ * There's two flavors of these: the arithmatic ops have both fetch and return
+ * versions, while the logical ops only have fetch versions.
+ */
+#define ATOMIC_FETCH_OP(op, asm_op, I, asm_type, c_type, prefix)    \
+static __always_inline                          \
+c_type arch_atomic##prefix##_fetch_##op##_relaxed(c_type i,     \
+                         atomic##prefix##_t *v) \
+{                                   \
+    register c_type ret;                        \
+    __asm__ __volatile__ (                      \
+        "   amo" #asm_op "." #asm_type " %1, %2, %0"    \
+        : "+A" (v->counter), "=r" (ret)             \
+        : "r" (I)                       \
+        : "memory");                        \
+    return ret;                         \
+}                                   \
+static __always_inline                          \
+c_type arch_atomic##prefix##_fetch_##op(c_type i, atomic##prefix##_t *v)    \
+{                                   \
+    register c_type ret;                        \
+    __asm__ __volatile__ (                      \
+        "   amo" #asm_op "." #asm_type ".aqrl  %1, %2, %0"  \
+        : "+A" (v->counter), "=r" (ret)             \
+        : "r" (I)                       \
+        : "memory");                        \
+    return ret;                         \
+}
+
+#define ATOMIC_OP_RETURN(op, asm_op, c_op, I, asm_type, c_type, prefix) \
+static __always_inline                          \
+c_type arch_atomic##prefix##_##op##_return_relaxed(c_type i,        \
+                          atomic##prefix##_t *v)    \
+{                                   \
+    return arch_atomic##prefix##_fetch_##op##_relaxed(i, v) c_op I; \
+}                                   \
+static __always_inline                          \
+c_type arch_atomic##prefix##_##op##_return(c_type i, atomic##prefix##_t *v) \
+{                                   \
+    return arch_atomic##prefix##_fetch_##op(i, v) c_op I;       \
+}
+
+#define ATOMIC_OPS(op, asm_op, c_op, I)                 \
+        ATOMIC_FETCH_OP( op, asm_op,       I, w, int,   )       \
+        ATOMIC_OP_RETURN(op, asm_op, c_op, I, w, int,   )       \
+        ATOMIC_FETCH_OP( op, asm_op,       I, d, s64, 64)       \
+        ATOMIC_OP_RETURN(op, asm_op, c_op, I, d, s64, 64)
+
+ATOMIC_OPS(add, add, +,  i)
+ATOMIC_OPS(sub, add, +, -i)
+
+#define arch_atomic_add_return      arch_atomic_add_return
+#define arch_atomic_sub_return      arch_atomic_sub_return
+
+#undef ATOMIC_OPS
+
+#undef ATOMIC_FETCH_OP
+#undef ATOMIC_OP_RETURN
+
 #endif /* _ASM_RISCV_ATOMIC_H */
