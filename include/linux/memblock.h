@@ -285,6 +285,15 @@ void __next_mem_range(u64 *idx, int nid, enum memblock_flags flags,
                          MEMBLOCK_NONE, p_start, p_end, NULL)
 
 /**
+ * for_each_mem_region - itereate over memory regions
+ * @region: loop variable
+ */
+#define for_each_mem_region(region) \
+    for (region = memblock.memory.regions; \
+         region < (memblock.memory.regions + memblock.memory.cnt); \
+         region++)
+
+/**
  * for_each_free_mem_range - iterate through free memblock areas
  * @i: u64 used as loop variable
  * @nid: node selector, %NUMA_NO_NODE for all nodes
@@ -299,6 +308,12 @@ void __next_mem_range(u64 *idx, int nid, enum memblock_flags flags,
 #define for_each_free_mem_range(i, nid, flags, p_start, p_end, p_nid) \
     __for_each_mem_range(i, &memblock.memory, &memblock.reserved, \
                          nid, flags, p_start, p_end, p_nid)
+
+static inline void memblock_set_region_node(struct memblock_region *r, int nid)
+{
+}
+
+void memblock_enforce_memory_limit(phys_addr_t memory_limit);
 
 #endif /* __KERNEL__ */
 

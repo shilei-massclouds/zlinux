@@ -240,6 +240,7 @@ memblock_insert_region(struct memblock_type *type,
     rgn->base = base;
     rgn->size = size;
     rgn->flags = flags;
+    memblock_set_region_node(rgn, nid);
     type->cnt++;
     type->total_size += size;
 }
@@ -474,8 +475,7 @@ memblock_find_in_range_node(phys_addr_t size, phys_addr_t align,
     phys_addr_t kernel_end;
 
     /* pump up @end */
-    if (end == MEMBLOCK_ALLOC_ACCESSIBLE ||
-        end == MEMBLOCK_ALLOC_KASAN)
+    if (end == MEMBLOCK_ALLOC_ACCESSIBLE || end == MEMBLOCK_ALLOC_KASAN)
         end = memblock.current_limit;
 
     /* avoid allocating the first page */
@@ -491,8 +491,7 @@ memblock_find_in_range_node(phys_addr_t size, phys_addr_t align,
         panic("%s: NOT-implemented!\n", __func__);
     }
 
-    return __memblock_find_range_top_down(start, end, size, align,
-                                          nid, flags);
+    return __memblock_find_range_top_down(start, end, size, align, nid, flags);
 }
 
 phys_addr_t __init
@@ -513,8 +512,7 @@ memblock_alloc_range_nid(phys_addr_t size, phys_addr_t align,
     }
 
 again:
-    found = memblock_find_in_range_node(size, align, start, end,
-                                        nid, flags);
+    found = memblock_find_in_range_node(size, align, start, end, nid, flags);
     if (found && !memblock_reserve(found, size))
         goto done;
 
@@ -527,8 +525,7 @@ again:
 
     if (flags & MEMBLOCK_MIRROR) {
         flags &= ~MEMBLOCK_MIRROR;
-        pr_warn("Could not allocate %pap bytes of mirrored memory\n",
-                &size);
+        pr_warn("Could not allocate %pap bytes of mirrored memory\n", &size);
         goto again;
     }
 
@@ -551,10 +548,8 @@ done:
  * %0 on failure.
  */
 phys_addr_t __init
-memblock_phys_alloc_range(phys_addr_t size,
-                          phys_addr_t align,
-                          phys_addr_t start,
-                          phys_addr_t end)
+memblock_phys_alloc_range(phys_addr_t size, phys_addr_t align,
+                          phys_addr_t start, phys_addr_t end)
 {
     return memblock_alloc_range_nid(size, align, start, end,
                                     NUMA_NO_NODE, false);
@@ -563,6 +558,12 @@ memblock_phys_alloc_range(phys_addr_t size,
 static bool
 should_skip_region(struct memblock_region *m, int nid, int flags)
 {
+    int m_nid = memblock_get_region_node(m);
+
+    /* only memory regions are associated with nodes, check it */
+    if (nid != NUMA_NO_NODE && nid != m_nid)
+        return true;
+
     /* skip nomap memory unless we were asked for it explicitly */
     if (!(flags & MEMBLOCK_NOMAP) && memblock_is_nomap(m))
         return true;
@@ -920,7 +921,6 @@ static void __init memmap_init_reserved_pages(void)
     for_each_reserved_mem_range(i, &start, &end)
         reserve_bootmem_region(start, end);
 
-#if 0
     /* and also treat struct pages for the NOMAP regions as PageReserved */
     for_each_mem_region(region) {
         if (memblock_is_nomap(region)) {
@@ -929,7 +929,6 @@ static void __init memmap_init_reserved_pages(void)
             reserve_bootmem_region(start, end);
         }
     }
-#endif
 }
 
 static void __init
@@ -997,6 +996,49 @@ void __init memblock_free_all(void)
 
     pages = free_low_memory_core_early();
     totalram_pages_add(pages);
+}
+
+static phys_addr_t __init_memblock __find_max_addr(phys_addr_t limit)
+{
+    struct memblock_region *r;
+    phys_addr_t max_addr = PHYS_ADDR_MAX;
+
+    /*
+     * translate the memory @limit size into the max address within one of
+     * the memory memblock regions, if the @limit exceeds the total size
+     * of those regions, max_addr will keep original value PHYS_ADDR_MAX
+     */
+    for_each_mem_region(r) {
+        if (limit <= r->size) {
+            max_addr = r->base + limit;
+            break;
+        }
+        limit -= r->size;
+    }
+
+    return max_addr;
+}
+
+void __init memblock_enforce_memory_limit(phys_addr_t limit)
+{
+    phys_addr_t max_addr;
+
+    if (!limit)
+        return;
+
+    max_addr = __find_max_addr(limit);
+
+    /* @limit exceeds the total size of the memory, do nothing */
+    if (max_addr == PHYS_ADDR_MAX)
+        return;
+
+    panic("%s: NOT implemented!\n", __func__);
+
+#if 0
+    /* truncate both memory and reserved regions */
+    memblock_remove_range(&memblock.memory, max_addr, PHYS_ADDR_MAX);
+    memblock_remove_range(&memblock.reserved, max_addr, PHYS_ADDR_MAX);
+#endif
 }
 
 static int __init early_memblock(char *p)

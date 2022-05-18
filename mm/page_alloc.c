@@ -814,7 +814,6 @@ static void __init memmap_init(void)
         }
     }
 
-    //panic("%s: END\n", __func__);
     //init_unavailable_range(hole_pfn, end_pfn, zone_id, nid);
 }
 
@@ -912,7 +911,6 @@ void __init free_area_init(unsigned long *max_zone_pfn)
     }
 
     memmap_init();
-    //panic("%s: start_pfn(%lx)\n", __func__, start_pfn);
 }
 
 /**

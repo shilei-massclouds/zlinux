@@ -54,6 +54,17 @@ pte_t fixmap_pte[PTRS_PER_PTE] __page_aligned_bss;
 pmd_t early_pmd[PTRS_PER_PMD] __initdata __aligned(PAGE_SIZE);
 pgd_t early_pg_dir[PTRS_PER_PGD] __initdata __aligned(PAGE_SIZE);
 
+/*
+ * The default maximal physical memory size is -PAGE_OFFSET for 32-bit kernel,
+ * whereas for 64-bit kernel, the end of the virtual address space is occupied
+ * by the modules/BPF/kernel mappings which reduces the available size of the
+ * linear mapping.
+ * Limit the memory size via mem.
+ */
+static phys_addr_t memory_limit = -PAGE_OFFSET - SZ_4G;
+
+static phys_addr_t dma32_phys_limit __initdata;
+
 static bool mmu_enabled;
 
 void __set_fixmap(enum fixed_addresses idx, phys_addr_t phys, pgprot_t prot)
@@ -265,7 +276,7 @@ void __init setup_bootmem(void)
     phys_addr_t vmlinux_start = __pa_symbol(&_start);
     phys_addr_t vmlinux_end = __pa_symbol(&_end);
 
-    //memblock_enforce_memory_limit(memory_limit);
+    memblock_enforce_memory_limit(memory_limit);
 
     /*
      * Reserve from the start of the kernel to the end of the kernel
@@ -284,7 +295,7 @@ void __init setup_bootmem(void)
     min_low_pfn = PFN_UP(phys_ram_base);
     max_low_pfn = max_pfn = PFN_DOWN(phys_ram_end);
 
-    //dma32_phys_limit = min(4UL * SZ_1G, (unsigned long)PFN_PHYS(max_low_pfn));
+    dma32_phys_limit = min(4UL * SZ_1G, (unsigned long)PFN_PHYS(max_low_pfn));
     set_max_mapnr(max_low_pfn - ARCH_PFN_OFFSET);
 
     //reserve_initrd_mem();
@@ -298,60 +309,7 @@ void __init setup_bootmem(void)
     memblock_reserve(dtb_early_pa, fdt_totalsize(dtb_early_va));
 
     early_init_fdt_scan_reserved_mem();
-    //dma_contiguous_reserve(dma32_phys_limit);
     memblock_allow_resize();
-
-
-    //////////////////////////////////////////////
-#if 0
-    struct memblock_region *reg;
-    phys_addr_t mem_size = 0;
-    phys_addr_t total_mem = 0;
-    phys_addr_t mem_start = 0, end = 0;
-    phys_addr_t vmlinux_end = __pa_symbol(&_end);
-    phys_addr_t vmlinux_start = __pa_symbol(&_start);
-
-    /* Find the memory region containing the kernel */
-    for_each_memblock(memory, reg) {
-        end = reg->base + reg->size;
-        if (!total_mem)
-            mem_start = reg->base;
-        if (reg->base <= vmlinux_start && vmlinux_end <= end)
-            BUG_ON(reg->size == 0);
-        total_mem = total_mem + reg->size;
-    }
-
-    /*
-     * Remove memblock from the end of usable area to the
-     * end of region
-     */
-    mem_size = min(total_mem, (phys_addr_t)-PAGE_OFFSET);
-    if (mem_start + mem_size < end)
-        memblock_remove(mem_start + mem_size,
-                        end - mem_start - mem_size);
-
-    /* Reserve from the start of the kernel to the end of the kernel */
-    memblock_reserve(vmlinux_start, vmlinux_end - vmlinux_start);
-
-    max_pfn = PFN_DOWN(memblock_end_of_DRAM());
-    max_low_pfn = max_pfn;
-    set_max_mapnr(max_low_pfn);
-
-#ifdef CONFIG_BLK_DEV_INITRD
-    setup_initrd();
-#endif /* CONFIG_BLK_DEV_INITRD */
-
-    /*
-     * Avoid using early_init_fdt_reserve_self() since __pa() does
-     * not work for DTB pointers that are fixmap addresses
-     */
-    memblock_reserve(dtb_early_pa, fdt_totalsize(dtb_early_va));
-
-    early_init_fdt_scan_reserved_mem();
-
-    memblock_allow_resize();
-    memblock_dump_all();
-#endif
 }
 
 static void __init setup_vm_final(void)
