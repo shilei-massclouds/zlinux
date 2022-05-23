@@ -18,27 +18,73 @@
 #define ___GFP_IO           0x40u
 #define ___GFP_FS           0x80u
 #define ___GFP_ZERO         0x100u
-#define ___GFP_WRITE        0x1000u
-#define ___GFP_NOWARN       0x2000u
+#define ___GFP_ATOMIC       0x200u
 
 #define ___GFP_DIRECT_RECLAIM   0x400u
 #define ___GFP_KSWAPD_RECLAIM   0x800u
 
+#define ___GFP_WRITE        0x1000u
+#define ___GFP_NOWARN       0x2000u
+
+#define ___GFP_RETRY_MAYFAIL    0x4000u
+
 #define ___GFP_NOFAIL       0x8000u
-
+#define ___GFP_NORETRY      0x10000u
+#define ___GFP_MEMALLOC     0x20000u
 #define ___GFP_COMP         0x40000u
+#define ___GFP_NOMEMALLOC   0x80000u
 
+#define ___GFP_HARDWALL     0x100000u
 #define ___GFP_THISNODE     0x200000u
 #define ___GFP_ZEROTAGS     0x800000u
 
 #define __GFP_IO    ((__force gfp_t)___GFP_IO)
 #define __GFP_FS    ((__force gfp_t)___GFP_FS)
+
+#define __GFP_DIRECT_RECLAIM \
+    ((__force gfp_t)___GFP_DIRECT_RECLAIM) /* Caller can reclaim */
+
 #define __GFP_KSWAPD_RECLAIM \
     ((__force gfp_t)___GFP_KSWAPD_RECLAIM) /* kswapd can wake */
 #define __GFP_RECLAIM \
     ((__force gfp_t)(___GFP_DIRECT_RECLAIM|___GFP_KSWAPD_RECLAIM))
 
+#define __GFP_RETRY_MAYFAIL ((__force gfp_t)___GFP_RETRY_MAYFAIL)
+
 #define __GFP_NOFAIL    ((__force gfp_t)___GFP_NOFAIL)
+#define __GFP_NORETRY   ((__force gfp_t)___GFP_NORETRY)
+
+/**
+ * DOC: Watermark modifiers
+ *
+ * Watermark modifiers -- controls access to emergency reserves
+ * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ *
+ * %__GFP_HIGH indicates that the caller is high-priority and that granting
+ * the request is necessary before the system can make forward progress.
+ * For example, creating an IO context to clean pages.
+ *
+ * %__GFP_ATOMIC indicates that the caller cannot reclaim or sleep and is
+ * high priority. Users are typically interrupt handlers. This may be
+ * used in conjunction with %__GFP_HIGH
+ *
+ * %__GFP_MEMALLOC allows access to all memory. This should only be used when
+ * the caller guarantees the allocation will allow more memory to be freed
+ * very shortly e.g. process exiting or swapping. Users either should
+ * be the MM or co-ordinating closely with the VM (e.g. swap over NFS).
+ * Users of this flag have to be extremely careful to not deplete the reserve
+ * completely and implement a throttling mechanism which controls the
+ * consumption of the reserve based on the amount of freed memory.
+ * Usage of a pre-allocated pool (e.g. mempool) should be always considered
+ * before using this flag.
+ *
+ * %__GFP_NOMEMALLOC is used to explicitly forbid access to emergency reserves.
+ * This takes precedence over the %__GFP_MEMALLOC flag if both are set.
+ */
+#define __GFP_ATOMIC        ((__force gfp_t)___GFP_ATOMIC)
+#define __GFP_HIGH          ((__force gfp_t)___GFP_HIGH)
+#define __GFP_MEMALLOC      ((__force gfp_t)___GFP_MEMALLOC)
+#define __GFP_NOMEMALLOC    ((__force gfp_t)___GFP_NOMEMALLOC)
 
 /**
  * DOC: Page mobility and placement hints
@@ -69,6 +115,7 @@
  */
 #define __GFP_RECLAIMABLE   ((__force gfp_t)___GFP_RECLAIMABLE)
 #define __GFP_WRITE         ((__force gfp_t)___GFP_WRITE)
+#define __GFP_HARDWALL      ((__force gfp_t)___GFP_HARDWALL)
 #define __GFP_THISNODE      ((__force gfp_t)___GFP_THISNODE)
 
 /**
@@ -115,6 +162,19 @@
 #define __GFP_BITS_MASK     ((__force gfp_t)((1 << __GFP_BITS_SHIFT) - 1))
 
 #define GFP_KERNEL  (__GFP_RECLAIM | __GFP_IO | __GFP_FS)
+#define GFP_NOWAIT  (__GFP_KSWAPD_RECLAIM)
+
+#define GFP_DMA     __GFP_DMA
+#define GFP_DMA32   __GFP_DMA32
+
+/*
+ * gfp_allowed_mask is set to GFP_BOOT_MASK during early boot to restrict what
+ * GFP flags are used before interrupts are enabled. Once interrupts are
+ * enabled, it is set to __GFP_BITS_MASK while the system is running. During
+ * hibernation, it is used by PM to avoid I/O during memory allocation while
+ * devices are suspended.
+ */
+extern gfp_t gfp_allowed_mask;
 
 struct page *
 __alloc_pages(gfp_t gfp, unsigned int order, int preferred_nid,
@@ -243,5 +303,10 @@ static inline int gfp_migratetype(const gfp_t gfp_flags)
 
 #undef GFP_MOVABLE_MASK
 #undef GFP_MOVABLE_SHIFT
+
+static inline bool gfpflags_allow_blocking(const gfp_t gfp_flags)
+{
+    return !!(gfp_flags & __GFP_DIRECT_RECLAIM);
+}
 
 #endif /* __LINUX_GFP_H */

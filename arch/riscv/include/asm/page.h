@@ -103,6 +103,6 @@ extern phys_addr_t phys_ram_base;
 })
 
 #include <asm-generic/memory_model.h>
-//#include <asm-generic/getorder.h>
+#include <asm-generic/getorder.h>
 
 #endif /* _ASM_RISCV_PAGE_H */

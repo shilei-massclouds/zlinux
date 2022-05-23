@@ -211,6 +211,17 @@ static inline void list_move_tail(struct list_head *list,
 }
 
 /**
+ * list_move - delete from one list and add as another's head
+ * @list: the entry to move
+ * @head: the head that will precede our entry
+ */
+static inline void list_move(struct list_head *list, struct list_head *head)
+{
+    __list_del_entry(list);
+    list_add(list, head);
+}
+
+/**
  * list_for_each_entry_safe - iterate over list of given type safe against removal of list entry
  * @pos:    the type * to use as a loop cursor.
  * @n:      another type * to use as temporary storage

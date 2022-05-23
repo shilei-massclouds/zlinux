@@ -15,7 +15,6 @@
  *          (lots of bits borrowed from Ingo Molnar & Andrew Morton)
  */
 
-#include <linux/stddef.h>
 #include <linux/mm.h>
 #include <linux/highmem.h>
 /*
@@ -178,6 +177,9 @@ atomic_long_t _totalram_pages __read_mostly;
 EXPORT_SYMBOL(_totalram_pages);
 
 unsigned long totalreserve_pages __read_mostly;
+
+DEFINE_STATIC_KEY_MAYBE(CONFIG_INIT_ON_ALLOC_DEFAULT_ON, init_on_alloc);
+EXPORT_SYMBOL(init_on_alloc);
 
 static inline unsigned int order_to_pindex(int migratetype, int order)
 {

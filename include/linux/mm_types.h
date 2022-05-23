@@ -3,6 +3,7 @@
 #define _LINUX_MM_TYPES_H
 
 #include <linux/log2.h>
+#include <linux/rcupdate.h>
 #include <linux/page-flags-layout.h>
 
 #define _struct_page_alignment
@@ -29,6 +30,27 @@ struct page {
              */
             unsigned long private;
         };
+        struct {    /* slab, slob and slub */
+            union {
+                struct list_head slab_list;
+                struct {        /* Partial pages */
+                    struct page *next;
+                    int pages;  /* Nr of pages left */
+                };
+            };
+            struct kmem_cache *slab_cache; /* not slob */
+            /* Double-word boundary */
+            void *freelist;             /* first free object */
+            union {
+                void *s_mem;            /* slab: first object */
+                unsigned long counters; /* SLUB */
+                struct {                /* SLUB */
+                    unsigned inuse:16;
+                    unsigned objects:15;
+                    unsigned frozen:1;
+                };
+            };
+        };
         struct {    /* Tail pages of compound page */
             unsigned long compound_head;    /* Bit zero is set */
 
@@ -44,6 +66,10 @@ struct page {
             /* For both global and memcg */
             struct list_head deferred_list;
         };
+
+
+        /** @rcu_head: You can use this to free a page by RCU. */
+        struct rcu_head rcu_head;
     };
 
     union {     /* This union is 4 bytes in size. */

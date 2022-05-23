@@ -5,6 +5,13 @@
 #include <asm/types.h>
 #include <linux/bits.h>
 
+#include <uapi/linux/kernel.h>
+
+extern unsigned int __sw_hweight8(unsigned int w);
+extern unsigned int __sw_hweight16(unsigned int w);
+extern unsigned int __sw_hweight32(unsigned int w);
+extern unsigned long __sw_hweight64(__u64 w);
+
 /* Include this here because some architectures need generic_ffs/fls
  * in scope.
  */
@@ -30,6 +37,11 @@ static inline unsigned fls_long(unsigned long l)
     if (sizeof(l) == 4)
         return fls(l);
     return fls64(l);
+}
+
+static __always_inline unsigned long hweight_long(unsigned long w)
+{
+    return sizeof(w) == 4 ? hweight32(w) : hweight64((__u64)w);
 }
 
 #endif /* __KERNEL__ */

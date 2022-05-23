@@ -19,6 +19,10 @@
 #define smp_store_release(p, v) __smp_store_release(p, v)
 #endif
 
+#ifndef smp_mb
+#define smp_mb()    __smp_mb()
+#endif
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* __ASM_GENERIC_BARRIER_H */

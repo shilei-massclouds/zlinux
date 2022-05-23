@@ -27,13 +27,9 @@
 #include <linux/sizes.h>
 #include <linux/sched.h>
 #include <linux/pgtable.h>
+#include <linux/jump_label.h>
 
 #include <asm/page.h>
-
-/*
- * Some inline functions in vmstat.h depend on page_zone()
- */
-#include <linux/vmstat.h>
 
 /* to align the pointer to the (next) page boundary */
 #define PAGE_ALIGN(addr) ALIGN(addr, PAGE_SIZE)
@@ -199,8 +195,12 @@ static inline int page_zone_id(struct page *page)
 
 extern void setup_per_cpu_pageset(void);
 
+DECLARE_STATIC_KEY_MAYBE(CONFIG_INIT_ON_ALLOC_DEFAULT_ON, init_on_alloc);
 static inline bool want_init_on_alloc(gfp_t flags)
 {
+    if (static_branch_maybe(CONFIG_INIT_ON_ALLOC_DEFAULT_ON, &init_on_alloc))
+        return true;
+
     return flags & __GFP_ZERO;
 }
 
@@ -276,5 +276,28 @@ static inline int put_page_testzero(struct page *page)
     VM_BUG_ON_PAGE(page_ref_count(page) == 0, page);
     return page_ref_dec_and_test(page);
 }
+
+static inline pg_data_t *page_pgdat(const struct page *page)
+{
+    return NODE_DATA(page_to_nid(page));
+}
+
+extern atomic_long_t _totalram_pages;
+static inline unsigned long totalram_pages(void)
+{
+    return (unsigned long)atomic_long_read(&_totalram_pages);
+}
+
+static inline struct page *virt_to_head_page(const void *x)
+{
+    struct page *page = virt_to_page(x);
+
+    return compound_head(page);
+}
+
+/*
+ * Some inline functions in vmstat.h depend on page_zone()
+ */
+#include <linux/vmstat.h>
 
 #endif /* _LINUX_MM_H */

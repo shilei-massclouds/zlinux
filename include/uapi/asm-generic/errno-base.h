@@ -4,6 +4,7 @@
 
 #define ENOENT      2   /* No such file or directory */
 #define EINTR       4   /* Interrupted system call */
+#define E2BIG       7   /* Argument list too long */
 #define ENOMEM      12  /* Out of memory */
 #define EFAULT      14  /* Bad address */
 #define ENODEV      19  /* No such device */

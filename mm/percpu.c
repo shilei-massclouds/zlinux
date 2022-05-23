@@ -103,6 +103,16 @@
 #include "percpu-internal.h"
 #endif
 
+#ifndef __pcpu_ptr_to_addr
+#define __pcpu_ptr_to_addr(ptr) \
+    (void __force *)((unsigned long)(ptr) + \
+                     (unsigned long)pcpu_base_addr - \
+                     (unsigned long)__per_cpu_start)
+#endif
+
+/* the address of the first chunk which starts with the kernel static area */
+void *pcpu_base_addr __ro_after_init;
+
 /*
  * Generic SMP percpu area setup.
  *
@@ -174,3 +184,64 @@ void __percpu *__alloc_percpu(size_t size, size_t align)
     return pcpu_alloc(size, align, false, GFP_KERNEL);
 }
 EXPORT_SYMBOL_GPL(__alloc_percpu);
+
+/**
+ * free_percpu - free percpu area
+ * @ptr: pointer to area to free
+ *
+ * Free percpu area @ptr.
+ *
+ * CONTEXT:
+ * Can be called from atomic context.
+ */
+void free_percpu(void __percpu *ptr)
+{
+    void *addr;
+    struct pcpu_chunk *chunk;
+    unsigned long flags;
+    int size, off;
+    bool need_balance = false;
+
+    if (!ptr)
+        return;
+
+    panic("%s: END\n", __func__);
+#if 0
+    addr = __pcpu_ptr_to_addr(ptr);
+
+    spin_lock_irqsave(&pcpu_lock, flags);
+
+    chunk = pcpu_chunk_addr_search(addr);
+    off = addr - chunk->base_addr;
+
+    size = pcpu_free_area(chunk, off);
+
+    pcpu_memcg_free_hook(chunk, off, size);
+
+    /*
+     * If there are more than one fully free chunks, wake up grim reaper.
+     * If the chunk is isolated, it may be in the process of being
+     * reclaimed.  Let reclaim manage cleaning up of that chunk.
+     */
+    if (!chunk->isolated && chunk->free_bytes == pcpu_unit_size) {
+        struct pcpu_chunk *pos;
+
+        list_for_each_entry(pos, &pcpu_chunk_lists[pcpu_free_slot], list)
+            if (pos != chunk) {
+                need_balance = true;
+                break;
+            }
+    } else if (pcpu_should_reclaim_chunk(chunk)) {
+        pcpu_isolate_chunk(chunk);
+        need_balance = true;
+    }
+
+    trace_percpu_free_percpu(chunk->base_addr, off, ptr);
+
+    spin_unlock_irqrestore(&pcpu_lock, flags);
+
+    if (need_balance)
+        pcpu_schedule_balance_work();
+#endif
+}
+EXPORT_SYMBOL_GPL(free_percpu);

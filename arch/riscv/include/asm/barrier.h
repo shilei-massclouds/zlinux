@@ -32,6 +32,9 @@ do {                                    \
     ___p1;                              \
 })
 
+/* These barriers do not need to enforce ordering on devices, just memory. */
+#define __smp_mb()  RISCV_FENCE(rw,rw)
+
 #include <asm-generic/barrier.h>
 
 #endif /* __ASSEMBLY__ */

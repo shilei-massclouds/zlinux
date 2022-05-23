@@ -10,6 +10,8 @@
 OUTPUT_ARCH(riscv)
 ENTRY(_start)
 
+jiffies = jiffies_64;
+
 SECTIONS
 {
 	/* Beginning of code and text segment */

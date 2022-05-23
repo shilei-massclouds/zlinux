@@ -35,6 +35,10 @@
 #include <linux/percpu.h>
 #include <asm/topology.h>
 
+#ifndef nr_cpus_node
+#define nr_cpus_node(node) cpumask_weight(cpumask_of_node(node))
+#endif
+
 /* Returns the number of the current Node. */
 #ifndef numa_node_id
 static inline int numa_node_id(void)

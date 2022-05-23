@@ -2,11 +2,22 @@
 #ifndef _ASM_RISCV_BITOPS_H
 #define _ASM_RISCV_BITOPS_H
 
+#ifndef _LINUX_BITOPS_H
+#error "Only <linux/bitops.h> can be included directly"
+#endif /* _LINUX_BITOPS_H */
+
+#include <linux/compiler.h>
+#include <linux/irqflags.h>
+#include <asm/barrier.h>
+#include <asm/bitsperlong.h>
+
 #include <asm-generic/bitops/__ffs.h>
 #include <asm-generic/bitops/fls.h>
 #include <asm-generic/bitops/__fls.h>
 #include <asm-generic/bitops/fls64.h>
 #include <asm-generic/bitops/find.h>
+
+#include <asm-generic/bitops/hweight.h>
 
 #define __AMO(op)   "amo" #op ".d"
 

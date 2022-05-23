@@ -51,4 +51,12 @@
  */
 #define max(x, y)   __careful_cmp(x, y, >)
 
+/**
+ * min3 - return minimum of three values
+ * @x: first value
+ * @y: second value
+ * @z: third value
+ */
+#define min3(x, y, z) min((typeof(x))min(x, y), z)
+
 #endif  /* _LINUX_MINMAX_H */

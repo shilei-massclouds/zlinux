@@ -53,6 +53,10 @@ struct task_struct {
     /* A live task holds one reference: */
     refcount_t stack_refcount;
 
+
+    /* VM state: */
+    struct reclaim_state *reclaim_state;
+
     /*
      * executable name, excluding path.
      *

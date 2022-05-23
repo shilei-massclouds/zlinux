@@ -108,6 +108,20 @@ spin_unlock_irqrestore(spinlock_t *lock, unsigned long flags)
     raw_spin_unlock_irqrestore(&lock->rlock, flags);
 }
 
+#define raw_spin_is_locked(lock)    arch_spin_is_locked(&(lock)->raw_lock)
+
+#define assert_spin_locked(lock)    assert_raw_spin_locked(&(lock)->rlock)
+
+static __always_inline void spin_lock_irq(spinlock_t *lock)
+{
+    raw_spin_lock_irq(&lock->rlock);
+}
+
+static __always_inline void spin_unlock_irq(spinlock_t *lock)
+{
+    raw_spin_unlock_irq(&lock->rlock);
+}
+
 #include <linux/spinlock_api_smp.h>
 
 #endif /* __LINUX_SPINLOCK_H */

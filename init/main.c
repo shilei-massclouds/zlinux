@@ -15,6 +15,7 @@
 #include <linux/sched.h>
 #include <linux/sched/task.h>
 #include <linux/mm.h>
+#include <linux/slab.h>
 
 #include <asm/setup.h>
 #include "z_tests.h"
@@ -59,6 +60,7 @@ void __init __weak arch_call_rest_init(void)
 static void __init mm_init(void)
 {
     mem_init();
+    kmem_cache_init();
 }
 
 asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
@@ -81,13 +83,13 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 
     //setup_per_cpu_pageset();
 
-    /* TEST: alloc_page */
+    /* TEST: kmalloc */
     {
         struct page *p;
-        printk("%s: alloc page ...\n", __func__);
-        p = alloc_page(GFP_KERNEL);
-        printk("%s: free page (%pa)...\n", __func__, &p);
-        __free_page(p);
+        printk("%s: kmalloc ...\n", __func__);
+        p = kmalloc(64, GFP_KERNEL);
+        printk("%s: kfree (%pa)...\n", __func__, &p);
+        kfree(p);
         panic("%s: alloc/free page\n", __func__);
     }
 

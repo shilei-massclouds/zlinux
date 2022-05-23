@@ -30,8 +30,8 @@
 
 //#include <asm-generic/bitops/sched.h>
 #include <asm-generic/bitops/ffs.h>
-#if 0
 #include <asm-generic/bitops/hweight.h>
+#if 0
 #include <asm-generic/bitops/lock.h>
 #endif
 

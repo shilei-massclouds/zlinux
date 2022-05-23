@@ -12,6 +12,7 @@ lib-y := ctype.o string.o vsprintf.o cmdline.o siphash.o
 lib-y += kobject.o
 obj-y += kstrtox.o
 obj-y += hexdump.o
+obj-y += hweight.o bitmap.o
 
 libfdt_files = fdt.o fdt_ro.o find_bit.o
 
@@ -19,3 +20,5 @@ $(foreach file, $(libfdt_files), \
 	$(eval CFLAGS_$(file) = -I $(srctree)/scripts/dtc/libfdt))
 lib-$(CONFIG_LIBFDT) += $(libfdt_files)
 lib-$(CONFIG_SMP) += cpumask.o
+
+obj-y += math/

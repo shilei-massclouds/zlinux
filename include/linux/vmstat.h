@@ -85,4 +85,21 @@ zone_page_state_add(long x, struct zone *zone, enum zone_stat_item item)
     atomic_long_add(x, &vm_zone_stat[item]);
 }
 
+void mod_node_page_state(struct pglist_data *, enum node_stat_item, long);
+
+static inline void
+mod_lruvec_page_state(struct page *page,
+                      enum node_stat_item idx, int val)
+{
+    mod_node_page_state(page_pgdat(page), idx, val);
+}
+
+static inline void
+node_page_state_add(long x, struct pglist_data *pgdat,
+                    enum node_stat_item item)
+{
+    atomic_long_add(x, &pgdat->vm_stat[item]);
+    atomic_long_add(x, &vm_node_stat[item]);
+}
+
 #endif /* _LINUX_VMSTAT_H */

@@ -11,4 +11,9 @@
 #include <linux/preempt.h>
 #include <asm/processor.h>
 
+/* Exported common interfaces */
+void call_rcu(struct rcu_head *head, rcu_callback_t func);
+
+void synchronize_rcu(void);
+
 #endif /* __LINUX_RCUPDATE_H */

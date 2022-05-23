@@ -12,9 +12,9 @@
 #include <linux/notifier.h>
 #endif
 #include <linux/thread_info.h>
+#include <linux/jiffies.h>
 #if 0
 #include <linux/time.h>
-#include <linux/jiffies.h>
 #include <linux/posix-timers.h>
 #endif
 #include <linux/cpu.h>
@@ -40,6 +40,10 @@
 //#include <asm/io.h>
 
 //#include "tick-internal.h"
+
+__visible u64 jiffies_64 __cacheline_aligned_in_smp = INITIAL_JIFFIES;
+
+EXPORT_SYMBOL(jiffies_64);
 
 signed long __sched schedule_timeout(signed long timeout)
 {

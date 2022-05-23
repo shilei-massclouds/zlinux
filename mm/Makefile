@@ -1,6 +1,7 @@
 mmu-$(CONFIG_MMU) := memory.o
 
-obj-y := mmzone.o vmstat.o percpu.o page-writeback.o $(mmu-y)
+obj-y := mmzone.o vmstat.o percpu.o page-writeback.o slab_common.o \
+	$(mmu-y)
 obj-y += memblock.o
 obj-$(CONFIG_SLAB) += slab.o
 

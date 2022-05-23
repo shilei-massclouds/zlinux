@@ -105,7 +105,7 @@ struct per_cpu_zonestat {
 
 struct per_cpu_nodestat {
     s8 stat_threshold;
-    //s8 vm_node_stat_diff[NR_VM_NODE_STAT_ITEMS];
+    s8 vm_node_stat_diff[NR_VM_NODE_STAT_ITEMS];
 };
 
 enum zone_watermarks {
@@ -322,7 +322,8 @@ typedef struct pglist_data {
     unsigned long totalreserve_pages;
 
     /* Per-node vmstats */
-    //struct per_cpu_nodestat __percpu *per_cpu_nodestats;
+    struct per_cpu_nodestat __percpu *per_cpu_nodestats;
+    atomic_long_t vm_stat[NR_VM_NODE_STAT_ITEMS];
 } pg_data_t;
 
 extern struct pglist_data contig_page_data;

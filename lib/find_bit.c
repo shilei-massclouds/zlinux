@@ -12,7 +12,6 @@
  * size and improve performance, 2015.
  */
 
-#include <linux/stddef.h>
 #include <linux/bitops.h>
 #include <linux/bitmap.h>
 #include <linux/export.h>

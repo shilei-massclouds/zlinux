@@ -139,6 +139,9 @@ static __always_inline int PageCompound(struct page *page)
     page; })
 #define PF_ANY(page, enforce)   PF_POISONED_CHECK(page)
 #define PF_HEAD(page, enforce)  PF_POISONED_CHECK(compound_head(page))
+#define PF_NO_TAIL(page, enforce) ({                    \
+    VM_BUG_ON_PGFLAGS(enforce && PageTail(page), page); \
+    PF_POISONED_CHECK(compound_head(page)); })
 #define PF_NO_COMPOUND(page, enforce) ({                    \
     VM_BUG_ON_PGFLAGS(enforce && PageCompound(page), page); \
     PF_POISONED_CHECK(page); })
@@ -198,6 +201,10 @@ PAGEFLAG(LRU, lru, PF_HEAD)
     __CLEARPAGEFLAG(LRU, lru, PF_HEAD)
     TESTCLEARFLAG(LRU, lru, PF_HEAD)
 
+PAGEFLAG(Active, active, PF_HEAD)
+    __CLEARPAGEFLAG(Active, active, PF_HEAD)
+    TESTCLEARFLAG(Active, active, PF_HEAD)
+
 PAGEFLAG(Reserved, reserved, PF_NO_COMPOUND)
     __CLEARPAGEFLAG(Reserved, reserved, PF_NO_COMPOUND)
     __SETPAGEFLAG(Reserved, reserved, PF_NO_COMPOUND)
@@ -209,6 +216,7 @@ static inline void page_init_poison(struct page *page, size_t size)
 {
 }
 
+__PAGEFLAG(Slab, slab, PF_NO_TAIL)
 __PAGEFLAG(Head, head, PF_ANY) CLEARPAGEFLAG(Head, head, PF_ANY)
 
 #define PAGE_TYPE_BASE  0xf0000000
@@ -305,6 +313,33 @@ static __always_inline int __PageMovable(struct page *page)
      1UL << PG_writeback| 1UL << PG_reserved    |   \
      1UL << PG_slab     | 1UL << PG_active  |   \
      1UL << PG_unevictable  | __PG_MLOCKED)
+
+/*
+ * A version of PageSlabPfmemalloc() for opportunistic checks where the page
+ * might have been freed under us and not be a PageSlab anymore.
+ */
+static inline int __PageSlabPfmemalloc(struct page *page)
+{
+    return PageActive(page);
+}
+
+static inline void SetPageSlabPfmemalloc(struct page *page)
+{
+    VM_BUG_ON_PAGE(!PageSlab(page), page);
+    SetPageActive(page);
+}
+
+static inline void __ClearPageSlabPfmemalloc(struct page *page)
+{
+    VM_BUG_ON_PAGE(!PageSlab(page), page);
+    __ClearPageActive(page);
+}
+
+static inline void ClearPageSlabPfmemalloc(struct page *page)
+{
+    VM_BUG_ON_PAGE(!PageSlab(page), page);
+    ClearPageActive(page);
+}
 
 #endif /* !__GENERATING_BOUNDS_H */
 

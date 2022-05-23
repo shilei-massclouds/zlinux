@@ -67,3 +67,44 @@ void __mod_zone_page_state(struct zone *zone,
     __this_cpu_write(*p, x);
 }
 EXPORT_SYMBOL(__mod_zone_page_state);
+
+void __mod_node_page_state(struct pglist_data *pgdat,
+                           enum node_stat_item item, long delta)
+{
+    long x;
+    long t;
+    struct per_cpu_nodestat __percpu *pcp = pgdat->per_cpu_nodestats;
+    s8 __percpu *p = pcp->vm_node_stat_diff + item;
+
+    if (vmstat_item_in_bytes(item)) {
+        /*
+         * Only cgroups use subpage accounting right now; at
+         * the global level, these items still change in
+         * multiples of whole pages. Store them as pages
+         * internally to keep the per-cpu counters compact.
+         */
+        VM_WARN_ON_ONCE(delta & (PAGE_SIZE - 1));
+        delta >>= PAGE_SHIFT;
+    }
+
+    x = delta + __this_cpu_read(*p);
+
+    t = __this_cpu_read(pcp->stat_threshold);
+
+    if (unlikely(abs(x) > t)) {
+        node_page_state_add(x, pgdat, item);
+        x = 0;
+    }
+    __this_cpu_write(*p, x);
+}
+
+void mod_node_page_state(struct pglist_data *pgdat,
+                         enum node_stat_item item, long delta)
+{
+    unsigned long flags;
+
+    local_irq_save(flags);
+    __mod_node_page_state(pgdat, item, delta);
+    local_irq_restore(flags);
+}
+EXPORT_SYMBOL(mod_node_page_state);

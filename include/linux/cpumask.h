@@ -9,7 +9,7 @@
  */
 #include <linux/kernel.h>
 #include <linux/threads.h>
-//#include <linux/bitmap.h>
+#include <linux/bitmap.h>
 #include <linux/atomic.h>
 #include <linux/bug.h>
 
@@ -39,6 +39,11 @@ extern struct cpumask __cpu_active_mask;
 #define cpu_online(cpu) cpumask_test_cpu((cpu), cpu_online_mask)
 
 #define nr_cpumask_bits ((unsigned int)NR_CPUS)
+
+#define num_online_cpus()   1U
+#define num_possible_cpus() 1U
+#define num_present_cpus()  1U
+#define num_active_cpus()   1U
 
 /**
  * for_each_cpu - iterate over every cpu in a mask
@@ -161,5 +166,14 @@ set_cpu_possible(unsigned int cpu, bool possible)
 }
 
 unsigned int __pure cpumask_next(int n, const struct cpumask *srcp);
+
+/**
+ * cpumask_weight - Count of bits in *srcp
+ * @srcp: the cpumask to count bits (< nr_cpu_ids) in.
+ */
+static inline unsigned int cpumask_weight(const struct cpumask *srcp)
+{
+    return bitmap_weight(cpumask_bits(srcp), nr_cpumask_bits);
+}
 
 #endif /* __LINUX_CPUMASK_H */
