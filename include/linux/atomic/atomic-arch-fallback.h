@@ -52,5 +52,56 @@ arch_atomic_dec(atomic_t *v)
 #define arch_atomic_dec arch_atomic_dec
 #endif
 
-#endif /* _LINUX_ATOMIC_FALLBACK_H */
+#ifndef arch_atomic64_try_cmpxchg
+static __always_inline bool
+arch_atomic64_try_cmpxchg(atomic64_t *v, s64 *old, s64 new)
+{
+    s64 r, o = *old;
+    r = arch_atomic64_cmpxchg(v, o, new);
+    if (unlikely(r != o))
+        *old = r;
+    return likely(r == o);
+}
+#define arch_atomic64_try_cmpxchg arch_atomic64_try_cmpxchg
+#endif
 
+#ifndef arch_atomic64_try_cmpxchg_acquire
+static __always_inline bool
+arch_atomic64_try_cmpxchg_acquire(atomic64_t *v, s64 *old, s64 new)
+{
+    s64 r, o = *old;
+    r = arch_atomic64_cmpxchg_acquire(v, o, new);
+    if (unlikely(r != o))
+        *old = r;
+    return likely(r == o);
+}
+#define arch_atomic64_try_cmpxchg_acquire arch_atomic64_try_cmpxchg_acquire
+#endif
+
+#ifndef arch_atomic64_try_cmpxchg_release
+static __always_inline bool
+arch_atomic64_try_cmpxchg_release(atomic64_t *v, s64 *old, s64 new)
+{
+    s64 r, o = *old;
+    r = arch_atomic64_cmpxchg_release(v, o, new);
+    if (unlikely(r != o))
+        *old = r;
+    return likely(r == o);
+}
+#define arch_atomic64_try_cmpxchg_release arch_atomic64_try_cmpxchg_release
+#endif
+
+#ifndef arch_atomic64_try_cmpxchg_relaxed
+static __always_inline bool
+arch_atomic64_try_cmpxchg_relaxed(atomic64_t *v, s64 *old, s64 new)
+{
+    s64 r, o = *old;
+    r = arch_atomic64_cmpxchg_relaxed(v, o, new);
+    if (unlikely(r != o))
+        *old = r;
+    return likely(r == o);
+}
+#define arch_atomic64_try_cmpxchg_relaxed arch_atomic64_try_cmpxchg_relaxed
+#endif
+
+#endif /* _LINUX_ATOMIC_FALLBACK_H */

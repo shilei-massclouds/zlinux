@@ -32,4 +32,10 @@ arch_atomic_long_add(long i, atomic_long_t *v)
     arch_atomic64_add(i, v);
 }
 
+static __always_inline bool
+arch_atomic_long_try_cmpxchg_acquire(atomic_long_t *v, long *old, long new)
+{
+    return arch_atomic64_try_cmpxchg_acquire(v, (s64 *)old, new);
+}
+
 #endif /* _LINUX_ATOMIC_LONG_H */

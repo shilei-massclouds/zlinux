@@ -12,6 +12,13 @@
 
 #include <asm/percpu.h>
 
+/* minimum unit size, also is the maximum supported allocation size */
+#define PCPU_MIN_UNIT_SIZE      PFN_ALIGN(32 << 10)
+
+/* minimum allocation size and shift in bytes */
+#define PCPU_MIN_ALLOC_SHIFT    2
+#define PCPU_MIN_ALLOC_SIZE     (1 << PCPU_MIN_ALLOC_SHIFT)
+
 extern void __init setup_per_cpu_areas(void);
 
 extern void __percpu *__alloc_percpu(size_t size, size_t align) __alloc_size(1);

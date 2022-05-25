@@ -68,9 +68,7 @@
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
-#if 0
 #include <linux/bitmap.h>
-#endif
 #include <linux/memblock.h>
 #include <linux/err.h>
 //#include <linux/lcm.h>
@@ -81,18 +79,17 @@
 //#include <linux/mutex.h>
 #include <linux/percpu.h>
 #include <linux/pfn.h>
-//#include <linux/slab.h>
+#include <linux/slab.h>
 #include <linux/spinlock.h>
 #if 0
 #include <linux/vmalloc.h>
 #include <linux/workqueue.h>
-#include <linux/kmemleak.h>
 #endif
 #include <linux/sched.h>
-#if 0
 #include <linux/sched/mm.h>
 #include <linux/memcontrol.h>
 
+#if 0
 #include <asm/cacheflush.h>
 #endif
 #include <asm/sections.h>
@@ -169,6 +166,62 @@ void __init setup_per_cpu_areas(void)
 static void __percpu *
 pcpu_alloc(size_t size, size_t align, bool reserved, gfp_t gfp)
 {
+#if 0
+    struct obj_cgroup *objcg = NULL;
+    static int warn_limit = 10;
+    struct pcpu_chunk *chunk, *next;
+    const char *err;
+    int slot, off, cpu, ret;
+    unsigned long flags;
+    void __percpu *ptr;
+#endif
+    bool do_warn;
+    bool is_atomic;
+    gfp_t pcpu_gfp;
+    size_t bits, bit_align;
+
+    gfp = current_gfp_context(gfp);
+    /* whitelisted flags that can be passed to the backing allocators */
+    pcpu_gfp = gfp & (GFP_KERNEL | __GFP_NORETRY | __GFP_NOWARN);
+    is_atomic = (gfp & GFP_KERNEL) != GFP_KERNEL;
+    do_warn = !(gfp & __GFP_NOWARN);
+
+    /*
+     * There is now a minimum allocation size of PCPU_MIN_ALLOC_SIZE,
+     * therefore alignment must be a minimum of that many bytes.
+     * An allocation may have internal fragmentation from rounding up
+     * of up to PCPU_MIN_ALLOC_SIZE - 1 bytes.
+     */
+    if (unlikely(align < PCPU_MIN_ALLOC_SIZE))
+        align = PCPU_MIN_ALLOC_SIZE;
+
+    size = ALIGN(size, PCPU_MIN_ALLOC_SIZE);
+    bits = size >> PCPU_MIN_ALLOC_SHIFT;
+    bit_align = align >> PCPU_MIN_ALLOC_SHIFT;
+
+    if (unlikely(!size || size > PCPU_MIN_UNIT_SIZE ||
+                 align > PAGE_SIZE || !is_power_of_2(align))) {
+        WARN(do_warn,
+             "illegal size (%zu) or align (%zu) for percpu allocation\n",
+             size, align);
+        return NULL;
+    }
+
+#if 0
+    if (!is_atomic) {
+        /*
+         * pcpu_balance_workfn() allocates memory under this mutex,
+         * and it may wait for memory reclaim. Allow current task
+         * to become OOM victim, in case of memory pressure.
+         */
+        if (gfp & __GFP_NOFAIL) {
+            mutex_lock(&pcpu_alloc_mutex);
+        } else if (mutex_lock_killable(&pcpu_alloc_mutex)) {
+            return NULL;
+        }
+    }
+#endif
+
     panic("%s: NO implementation!\n", __func__);
 }
 
@@ -196,11 +249,13 @@ EXPORT_SYMBOL_GPL(__alloc_percpu);
  */
 void free_percpu(void __percpu *ptr)
 {
+#if 0
     void *addr;
     struct pcpu_chunk *chunk;
     unsigned long flags;
     int size, off;
     bool need_balance = false;
+#endif
 
     if (!ptr)
         return;

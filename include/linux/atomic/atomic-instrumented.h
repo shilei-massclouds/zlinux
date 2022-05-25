@@ -62,4 +62,16 @@ atomic_dec(atomic_t *v)
     arch_atomic_dec(v);
 }
 
+static __always_inline bool
+atomic_long_try_cmpxchg_acquire(atomic_long_t *v, long *old, long new)
+{
+    return arch_atomic_long_try_cmpxchg_acquire(v, old, new);
+}
+
+static __always_inline int
+atomic_cmpxchg(atomic_t *v, int old, int new)
+{
+    return arch_atomic_cmpxchg(v, old, new);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */

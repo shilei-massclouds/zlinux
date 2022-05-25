@@ -6,7 +6,7 @@
 #include <linux/types.h>
 
 #include <asm/atomic.h>
-//#include <asm/barrier.h>
+#include <asm/barrier.h>
 
 /* End */
 
