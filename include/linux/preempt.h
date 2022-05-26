@@ -45,6 +45,12 @@ do { \
     barrier(); \
 } while (0)
 
+#define sched_preempt_enable_no_resched() \
+do { \
+    barrier(); \
+    preempt_count_dec(); \
+} while (0)
+
 #define preempt_disable_notrace() \
 do { \
     __preempt_count_inc(); \

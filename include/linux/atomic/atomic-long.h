@@ -38,4 +38,22 @@ arch_atomic_long_try_cmpxchg_acquire(atomic_long_t *v, long *old, long new)
     return arch_atomic64_try_cmpxchg_acquire(v, (s64 *)old, new);
 }
 
+static __always_inline bool
+arch_atomic_long_try_cmpxchg_release(atomic_long_t *v, long *old, long new)
+{
+    return arch_atomic64_try_cmpxchg_release(v, (s64 *)old, new);
+}
+
+static __always_inline void
+arch_atomic_long_or(long i, atomic_long_t *v)
+{
+    arch_atomic64_or(i, v);
+}
+
+static __always_inline void
+arch_atomic_long_andnot(long i, atomic_long_t *v)
+{
+    arch_atomic64_andnot(i, v);
+}
+
 #endif /* _LINUX_ATOMIC_LONG_H */

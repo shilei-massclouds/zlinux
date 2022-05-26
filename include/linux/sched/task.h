@@ -28,4 +28,18 @@ struct kernel_clone_args {
 #endif
 };
 
+static inline struct task_struct *get_task_struct(struct task_struct *t)
+{
+    refcount_inc(&t->usage);
+    return t;
+}
+
+extern void __put_task_struct(struct task_struct *t);
+
+static inline void put_task_struct(struct task_struct *t)
+{
+    if (refcount_dec_and_test(&t->usage))
+        __put_task_struct(t);
+}
+
 #endif /* _LINUX_SCHED_TASK_H */

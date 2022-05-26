@@ -14,11 +14,11 @@
 #include <asm/current.h>
 #include <linux/list.h>
 #include <linux/spinlock_types.h>
-#include <linux/lockdep.h>
+//#include <linux/lockdep.h>
 #include <linux/atomic.h>
 #include <asm/processor.h>
-#include <linux/osq_lock.h>
-#include <linux/debug_locks.h>
+//#include <linux/osq_lock.h>
+//#include <linux/debug_locks.h>
 
 /*
  * Simple, straightforward mutexes with strict semantics:
@@ -55,5 +55,6 @@ struct mutex {
 };
 
 extern void mutex_lock(struct mutex *lock);
+extern void mutex_unlock(struct mutex *lock);
 
 #endif /* __LINUX_MUTEX_H */

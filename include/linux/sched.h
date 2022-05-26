@@ -13,6 +13,8 @@
 #define __TASK_STOPPED          0x0004
 #define __TASK_TRACED           0x0008
 
+#define TASK_WAKEKILL           0x0100
+
 #define MAX_SCHEDULE_TIMEOUT    LONG_MAX
 
 /*
@@ -34,8 +36,19 @@ static inline int _cond_resched(void) { return 0; }
     _cond_resched();            \
 })
 
-#define __set_current_state(state_value) \
-    current->state = (state_value)
+#define __set_current_state(state_value)                \
+    do {                                \
+        WRITE_ONCE(current->__state, (state_value));        \
+    } while (0)
+
+#define set_current_state(state_value)                  \
+    do {                                \
+        smp_store_mb(current->__state, (state_value));      \
+    } while (0)
+
+struct wake_q_node {
+    struct wake_q_node *next;
+};
 
 struct task_struct {
     /*
@@ -44,8 +57,9 @@ struct task_struct {
      */
     struct thread_info thread_info;
 
-    /* -1 unrunnable, 0 runnable, >0 stopped: */
-    volatile long state;
+    unsigned int __state;
+
+    refcount_t usage;
 
     /* Per task flags (PF_*), defined further below: */
     unsigned int flags;
@@ -53,6 +67,7 @@ struct task_struct {
     /* A live task holds one reference: */
     refcount_t stack_refcount;
 
+    struct wake_q_node wake_q;
 
     /* VM state: */
     struct reclaim_state *reclaim_state;
@@ -70,5 +85,7 @@ struct task_struct {
 extern long schedule_timeout(long timeout);
 
 extern int wake_up_process(struct task_struct *tsk);
+
+extern void schedule_preempt_disabled(void);
 
 #endif /* _LINUX_SCHED_H */

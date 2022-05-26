@@ -9,7 +9,7 @@
 CFLAGS_string.o := -ffreestanding
 
 lib-y := ctype.o string.o vsprintf.o cmdline.o siphash.o
-lib-y += kobject.o
+lib-y += kobject.o refcount.o
 obj-y += kstrtox.o
 obj-y += hexdump.o
 obj-y += hweight.o bitmap.o
