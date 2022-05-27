@@ -55,4 +55,6 @@ static inline int numa_mem_id(void)
 }
 #endif
 
+#define LOCAL_DISTANCE      10
+
 #endif /* _LINUX_TOPOLOGY_H */

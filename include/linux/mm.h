@@ -23,7 +23,7 @@
 #include <linux/page-flags.h>
 #include <linux/page_ref.h>
 #include <linux/memremap.h>
-//#include <linux/overflow.h>
+#include <linux/overflow.h>
 #include <linux/sizes.h>
 #include <linux/sched.h>
 #include <linux/pgtable.h>
@@ -299,5 +299,7 @@ static inline struct page *virt_to_head_page(const void *x)
  * Some inline functions in vmstat.h depend on page_zone()
  */
 #include <linux/vmstat.h>
+
+#define offset_in_page(p)       ((unsigned long)(p) & ~PAGE_MASK)
 
 #endif /* _LINUX_MM_H */

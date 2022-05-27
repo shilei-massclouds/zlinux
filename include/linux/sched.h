@@ -15,6 +15,8 @@
 
 #define TASK_WAKEKILL           0x0100
 
+#define TASK_KILLABLE           (TASK_WAKEKILL | TASK_UNINTERRUPTIBLE)
+
 #define MAX_SCHEDULE_TIMEOUT    LONG_MAX
 
 /*

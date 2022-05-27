@@ -13,7 +13,7 @@
 #include <linux/init.h>
 #include <linux/mm.h>
 #include <linux/numa.h>
-//#include <asm/dma.h>
+#include <asm/dma.h>
 
 /* Flags for memblock allocation APIs */
 #define MEMBLOCK_ALLOC_ANYWHERE (~(phys_addr_t)0)
@@ -314,6 +314,13 @@ static inline void memblock_set_region_node(struct memblock_region *r, int nid)
 }
 
 void memblock_enforce_memory_limit(phys_addr_t memory_limit);
+
+static inline void *
+memblock_alloc_from(phys_addr_t size, phys_addr_t align, phys_addr_t min_addr)
+{
+    return memblock_alloc_try_nid(size, align, min_addr,
+                                  MEMBLOCK_ALLOC_ACCESSIBLE, NUMA_NO_NODE);
+}
 
 #endif /* __KERNEL__ */
 

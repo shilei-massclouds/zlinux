@@ -82,4 +82,6 @@
     __builtin_types_compatible_p(typeof(x), unsigned type),     \
     ({ signed type __x = (x); __x < 0 ? -__x : __x; }), other)
 
+#define DIV_ROUND_UP __KERNEL_DIV_ROUND_UP
+
 #endif  /* _LINUX_MATH_H */

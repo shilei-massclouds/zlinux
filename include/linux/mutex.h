@@ -14,11 +14,18 @@
 #include <asm/current.h>
 #include <linux/list.h>
 #include <linux/spinlock_types.h>
-//#include <linux/lockdep.h>
 #include <linux/atomic.h>
 #include <asm/processor.h>
 //#include <linux/osq_lock.h>
 //#include <linux/debug_locks.h>
+
+#define __MUTEX_INITIALIZER(lockname) \
+    { .owner = ATOMIC_LONG_INIT(0), \
+      .wait_lock = __RAW_SPIN_LOCK_UNLOCKED(lockname.wait_lock), \
+      .wait_list = LIST_HEAD_INIT(lockname.wait_list) }
+
+#define DEFINE_MUTEX(mutexname) \
+    struct mutex mutexname = __MUTEX_INITIALIZER(mutexname)
 
 /*
  * Simple, straightforward mutexes with strict semantics:
@@ -56,5 +63,6 @@ struct mutex {
 
 extern void mutex_lock(struct mutex *lock);
 extern void mutex_unlock(struct mutex *lock);
+extern int __must_check mutex_lock_killable(struct mutex *lock);
 
 #endif /* __LINUX_MUTEX_H */

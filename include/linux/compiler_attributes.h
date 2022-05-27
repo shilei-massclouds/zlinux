@@ -7,6 +7,7 @@
 #define __noreturn      __attribute__((__noreturn__))
 #define __packed        __attribute__((__packed__))
 #define __aligned(x)    __attribute__((__aligned__(x)))
+#define __flatten       __attribute__((flatten))
 
 #define __always_inline inline __attribute__((__always_inline__))
 

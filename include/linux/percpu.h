@@ -19,11 +19,60 @@
 #define PCPU_MIN_ALLOC_SHIFT    2
 #define PCPU_MIN_ALLOC_SIZE     (1 << PCPU_MIN_ALLOC_SHIFT)
 
+#define PERCPU_MODULE_RESERVE   (8 << 10)
+#define PERCPU_DYNAMIC_RESERVE  (28 << 10)
+
+/*
+ * Percpu allocator can serve percpu allocations before slab is
+ * initialized which allows slab to depend on the percpu allocator.
+ * The following two parameters decide how much resource to
+ * preallocate for this.  Keep PERCPU_DYNAMIC_RESERVE equal to or
+ * larger than PERCPU_DYNAMIC_EARLY_SIZE.
+ */
+#define PERCPU_DYNAMIC_EARLY_SLOTS  128
+#define PERCPU_DYNAMIC_EARLY_SIZE   (12 << 10)
+
+/*
+ * The PCPU_BITMAP_BLOCK_SIZE must be the same size as PAGE_SIZE as the
+ * updating of hints is used to manage the nr_empty_pop_pages in both
+ * the chunk and globally.
+ */
+#define PCPU_BITMAP_BLOCK_SIZE PAGE_SIZE
+#define PCPU_BITMAP_BLOCK_BITS (PCPU_BITMAP_BLOCK_SIZE >> PCPU_MIN_ALLOC_SHIFT)
+
+extern void *pcpu_base_addr;
+extern const unsigned long *pcpu_unit_offsets;
+
+struct pcpu_group_info {
+    int             nr_units;       /* aligned # of units */
+    unsigned long   base_offset;    /* base address offset */
+    unsigned int    *cpu_map; /* unit->cpu map, empty entries contain NR_CPUS */
+};
+
+struct pcpu_alloc_info {
+    size_t  static_size;
+    size_t  reserved_size;
+    size_t  dyn_size;
+    size_t  unit_size;
+    size_t  atom_size;
+    size_t  alloc_size;
+    size_t  __ai_size;  /* internal, don't use */
+    int     nr_groups;  /* 0 if grouping unnecessary */
+    struct pcpu_group_info  groups[];
+};
+
 extern void __init setup_per_cpu_areas(void);
 
 extern void __percpu *__alloc_percpu(size_t size, size_t align) __alloc_size(1);
 
 extern void free_percpu(void __percpu *__pdata);
+
+typedef int (pcpu_fc_cpu_distance_fn_t)(unsigned int from, unsigned int to);
+
+typedef void *
+(*pcpu_fc_alloc_fn_t)(unsigned int cpu, size_t size, size_t align);
+
+typedef void (*pcpu_fc_free_fn_t)(void *ptr, size_t size);
 
 #define alloc_percpu(type) \
     (typeof(type) __percpu *)__alloc_percpu(sizeof(type), __alignof__(type))

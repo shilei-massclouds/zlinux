@@ -59,4 +59,12 @@
  */
 #define min3(x, y, z) min((typeof(x))min(x, y), z)
 
+/**
+ * swap - swap values of @a and @b
+ * @a: first value
+ * @b: second value
+ */
+#define swap(a, b) \
+    do { typeof(a) __tmp = (a); (a) = (b); (b) = __tmp; } while (0)
+
 #endif  /* _LINUX_MINMAX_H */

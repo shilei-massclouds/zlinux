@@ -4,8 +4,12 @@
 
 #include <asm/types.h>
 #include <linux/bits.h>
+#include <linux/math.h>
 
 #include <uapi/linux/kernel.h>
+
+#define BITS_PER_TYPE(type) (sizeof(type) * BITS_PER_BYTE)
+#define BITS_TO_LONGS(nr)   DIV_ROUND_UP(nr, BITS_PER_TYPE(long))
 
 extern unsigned int __sw_hweight8(unsigned int w);
 extern unsigned int __sw_hweight16(unsigned int w);
@@ -18,9 +22,6 @@ extern unsigned long __sw_hweight64(__u64 w);
 #include <asm/bitops.h>
 
 #ifdef __KERNEL__
-
-#define BITS_PER_TYPE(type) (sizeof(type) * BITS_PER_BYTE)
-#define BITS_TO_LONGS(nr)   DIV_ROUND_UP(nr, BITS_PER_TYPE(long))
 
 /**
  * rol64 - rotate a 64-bit value left

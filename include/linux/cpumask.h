@@ -13,6 +13,14 @@
 #include <linux/atomic.h>
 #include <linux/bug.h>
 
+/**
+ * cpumask_pr_args - printf args to output a cpumask
+ * @maskp: cpumask to be printed
+ *
+ * Can be used to provide arguments for '%*pb[l]' when printing a cpumask.
+ */
+#define cpumask_pr_args(maskp)      nr_cpu_ids, cpumask_bits(maskp)
+
 extern unsigned int nr_cpu_ids;
 
 /* Don't assign or return these: may not be this big! */
@@ -174,6 +182,51 @@ unsigned int __pure cpumask_next(int n, const struct cpumask *srcp);
 static inline unsigned int cpumask_weight(const struct cpumask *srcp)
 {
     return bitmap_weight(cpumask_bits(srcp), nr_cpumask_bits);
+}
+
+/**
+ * cpumask_clear - clear all cpus (< nr_cpu_ids) in a cpumask
+ * @dstp: the cpumask pointer
+ */
+static inline void cpumask_clear(struct cpumask *dstp)
+{
+    bitmap_zero(cpumask_bits(dstp), nr_cpumask_bits);
+}
+
+/**
+ * cpumask_copy - *dstp = *srcp
+ * @dstp: the result
+ * @srcp: the input cpumask
+ */
+static inline void
+cpumask_copy(struct cpumask *dstp, const struct cpumask *srcp)
+{
+    bitmap_copy(cpumask_bits(dstp), cpumask_bits(srcp), nr_cpumask_bits);
+}
+
+/**
+ * cpumask_empty - *srcp == 0
+ * @srcp: the cpumask to that all cpus < nr_cpu_ids are clear.
+ */
+static inline bool cpumask_empty(const struct cpumask *srcp)
+{
+    return bitmap_empty(cpumask_bits(srcp), nr_cpumask_bits);
+}
+
+/**
+ * cpumask_first - get the first cpu in a cpumask
+ * @srcp: the cpumask pointer
+ *
+ * Returns >= nr_cpu_ids if no cpus set.
+ */
+static inline unsigned int cpumask_first(const struct cpumask *srcp)
+{
+    return find_first_bit(cpumask_bits(srcp), nr_cpumask_bits);
+}
+
+static inline bool cpu_possible(unsigned int cpu)
+{
+    return cpumask_test_cpu(cpu, cpu_possible_mask);
 }
 
 #endif /* __LINUX_CPUMASK_H */

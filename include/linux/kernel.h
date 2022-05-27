@@ -19,12 +19,6 @@
 #include <asm/div64.h>
 #include <uapi/linux/kernel.h>
 
-/* @a is a power of 2 value */
-#define ALIGN(x, a)         __ALIGN_KERNEL((x), (a))
-#define PTR_ALIGN(p, a)     ((typeof(p))ALIGN((unsigned long)(p), (a)))
-
-#define IS_ALIGNED(x, a)    (((x) & ((typeof(x))(a) - 1)) == 0)
-
 /* This cannot be an enum because some may be used in assembly source. */
 #define TAINT_WARN          9
 
@@ -105,8 +99,6 @@ extern const char hex_asc[];
 extern const char hex_asc_upper[];
 #define hex_asc_upper_lo(x) hex_asc_upper[((x) & 0x0f)]
 #define hex_asc_upper_hi(x) hex_asc_upper[((x) & 0xf0) >> 4]
-
-#define DIV_ROUND_UP __KERNEL_DIV_ROUND_UP
 
 #define _RET_IP_ (unsigned long)__builtin_return_address(0)
 
