@@ -575,6 +575,24 @@ pcpu_alloc_first_chunk(unsigned long tmp_addr, int map_size)
     return chunk;
 }
 
+static int pcpu_size_to_slot(int size)
+{
+    if (size == pcpu_unit_size)
+        return pcpu_free_slot;
+    return __pcpu_size_to_slot(size);
+}
+
+static int pcpu_chunk_slot(const struct pcpu_chunk *chunk)
+{
+    const struct pcpu_block_md *chunk_md = &chunk->chunk_md;
+
+    if (chunk->free_bytes < PCPU_MIN_ALLOC_SIZE ||
+        chunk_md->contig_hint == 0)
+        return 0;
+
+    return pcpu_size_to_slot(chunk_md->contig_hint * PCPU_MIN_ALLOC_SIZE);
+}
+
 /**
  * pcpu_chunk_relocate - put chunk in the appropriate chunk slot
  * @chunk: chunk of interest
@@ -1001,15 +1019,6 @@ void __init setup_per_cpu_areas(void)
     for_each_possible_cpu(cpu)
         __per_cpu_offset[cpu] = delta + pcpu_unit_offsets[cpu];
 }
-
-#if 0
-static int pcpu_size_to_slot(int size)
-{
-    if (size == pcpu_unit_size)
-        return pcpu_free_slot;
-    return __pcpu_size_to_slot(size);
-}
-#endif
 
 /**
  * pcpu_alloc - the percpu allocator
