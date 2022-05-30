@@ -17,17 +17,18 @@
  * we don't know if a new contig hint would be better than the current one.
  */
 struct pcpu_block_md {
-    int scan_hint;  /* scan hint for block */
-    int scan_hint_start; /* block relative starting position of the scan hint */
-    int contig_hint;    /* contig hint for block */
-    int contig_hint_start; /* block relative starting
-                              position of the contig hint */
-    int left_free;      /* size of free space along
-                           the left side of the block */
-    int right_free;     /* size of free space along
-                           the right side of the block */
-    int first_free;     /* block position of first free */
-    int nr_bits;        /* total bits responsible for */
+    int scan_hint;          /* scan hint for block */
+    int scan_hint_start;    /* block relative starting position
+                               of the scan hint */
+    int contig_hint;        /* contig hint for block */
+    int contig_hint_start;  /* block relative starting
+                               position of the contig hint */
+    int left_free;          /* size of free space along
+                               the left side of the block */
+    int right_free;         /* size of free space along
+                               the right side of the block */
+    int first_free;         /* block position of first free */
+    int nr_bits;            /* total bits responsible for */
 };
 
 struct pcpu_chunk {
@@ -42,6 +43,7 @@ struct pcpu_chunk {
     struct pcpu_block_md    *md_blocks; /* metadata blocks */
 
     bool immutable;     /* no [de]population allowed */
+    bool isolated;      /* isolated from active chunk slots */
 
     int start_offset;   /* the overlap with the previous
                            region to have a page aligned base_addr */
