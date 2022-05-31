@@ -16,6 +16,8 @@
 #define BITMAP_FIRST_WORD_MASK(start) (~0UL << ((start) & (BITS_PER_LONG - 1)))
 #define BITMAP_LAST_WORD_MASK(nbits) (~0UL >> (-(nbits) & (BITS_PER_LONG - 1)))
 
+void __bitmap_clear(unsigned long *map, unsigned int start, int len);
+
 static inline void bitmap_zero(unsigned long *dst, unsigned int nbits)
 {
     unsigned int len = BITS_TO_LONGS(nbits) * sizeof(unsigned long);
@@ -85,6 +87,20 @@ bitmap_next_set_region(unsigned long *bitmap,
 {
     *rs = find_next_bit(bitmap, end, *rs);
     *re = find_next_zero_bit(bitmap, end, *rs + 1);
+}
+
+static __always_inline void
+bitmap_clear(unsigned long *map, unsigned int start, unsigned int nbits)
+{
+    if (__builtin_constant_p(nbits) && nbits == 1)
+        __clear_bit(start, map);
+    else if (__builtin_constant_p(start & BITMAP_MEM_MASK) &&
+             IS_ALIGNED(start, BITMAP_MEM_ALIGNMENT) &&
+             __builtin_constant_p(nbits & BITMAP_MEM_MASK) &&
+             IS_ALIGNED(nbits, BITMAP_MEM_ALIGNMENT))
+        memset((char *)map + start / 8, 0, nbits / 8);
+    else
+        __bitmap_clear(map, start, nbits);
 }
 
 /*

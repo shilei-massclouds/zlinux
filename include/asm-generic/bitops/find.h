@@ -7,6 +7,9 @@ _find_next_bit(const unsigned long *addr1, const unsigned long *addr2,
                unsigned long nbits, unsigned long start,
                unsigned long invert, unsigned long le);
 
+extern unsigned long
+_find_last_bit(const unsigned long *addr, unsigned long size);
+
 #ifndef find_next_bit
 /**
  * find_next_bit - find the next set bit in a memory region
@@ -61,6 +64,27 @@ unsigned long find_next_zero_bit(const unsigned long *addr, unsigned long size,
     }
 
     return _find_next_bit(addr, NULL, size, offset, ~0UL, 0);
+}
+#endif
+
+#ifndef find_last_bit
+/**
+ * find_last_bit - find the last set bit in a memory region
+ * @addr: The address to start the search at
+ * @size: The number of bits to search
+ *
+ * Returns the bit number of the last set bit, or size.
+ */
+static inline
+unsigned long find_last_bit(const unsigned long *addr, unsigned long size)
+{
+    if (small_const_nbits(size)) {
+        unsigned long val = *addr & GENMASK(size - 1, 0);
+
+        return val ? __fls(val) : size;
+    }
+
+    return _find_last_bit(addr, size);
 }
 #endif
 

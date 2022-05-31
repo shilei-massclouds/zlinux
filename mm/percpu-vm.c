@@ -16,3 +16,26 @@ static int __init pcpu_verify_alloc_info(const struct pcpu_alloc_info *ai)
     return 0;
 }
 
+static struct pcpu_chunk *pcpu_create_chunk(gfp_t gfp)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
+/**
+ * pcpu_populate_chunk - populate and map an area of a pcpu_chunk
+ * @chunk: chunk of interest
+ * @page_start: the start page
+ * @page_end: the end page
+ * @gfp: allocation flags passed to the underlying memory allocator
+ *
+ * For each cpu, populate and map pages [@page_start,@page_end) into
+ * @chunk.
+ *
+ * CONTEXT:
+ * pcpu_alloc_mutex, does GFP_KERNEL allocation.
+ */
+static int pcpu_populate_chunk(struct pcpu_chunk *chunk,
+                               int page_start, int page_end, gfp_t gfp)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
