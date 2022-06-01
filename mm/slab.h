@@ -48,6 +48,9 @@ extern struct list_head slab_caches;
 /* The slab cache that manages slab cache information */
 extern struct kmem_cache *kmem_cache;
 
+/* Kmalloc array related functions */
+void setup_kmalloc_cache_index_table(void);
+
 static inline struct kmem_cache *
 slab_pre_alloc_hook(struct kmem_cache *s, struct obj_cgroup **objcgp,
                     size_t size, gfp_t flags)

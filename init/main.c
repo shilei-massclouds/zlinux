@@ -81,7 +81,7 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 
     mm_init();
 
-    //setup_per_cpu_pageset();
+    setup_per_cpu_pageset();
 
     /* TEST: kmalloc */
     {

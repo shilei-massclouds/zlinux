@@ -21,10 +21,10 @@
 #include    <linux/string.h>
 #include    <linux/nodemask.h>
 #include    <linux/rcupdate.h>
-/*
 #include    <linux/uaccess.h>
-#include    <linux/mempolicy.h>
 #include    <linux/mutex.h>
+/*
+#include    <linux/mempolicy.h>
 #include    <linux/fault-inject.h>
 #include    <linux/rtmutex.h>
 #include    <linux/debugobjects.h>
@@ -558,7 +558,6 @@ static void *cache_alloc_refill(struct kmem_cache *cachep, gfp_t flags)
     }
     ac->touched = 1;
 
-    panic("%s: END!\n", __func__);
     return ac->entry[--ac->avail];
 }
 
@@ -642,6 +641,40 @@ static void kmem_cache_node_init(struct kmem_cache_node *parent)
     parent->free_touched = 0;
 }
 
+#define MAKE_LIST(cachep, listp, slab, nodeid)              \
+do {                                \
+    INIT_LIST_HEAD(listp);                  \
+    list_splice(&get_node(cachep, nodeid)->slab, listp);    \
+} while (0)
+
+#define MAKE_ALL_LISTS(cachep, ptr, nodeid)             \
+do {                                \
+    MAKE_LIST((cachep), (&(ptr)->slabs_full), slabs_full, nodeid);  \
+    MAKE_LIST((cachep), (&(ptr)->slabs_partial), slabs_partial, nodeid); \
+    MAKE_LIST((cachep), (&(ptr)->slabs_free), slabs_free, nodeid);  \
+} while (0)
+
+/*
+ * swap the static kmem_cache_node with kmalloced memory
+ */
+static void __init
+init_list(struct kmem_cache *cachep, struct kmem_cache_node *list, int nodeid)
+{
+    struct kmem_cache_node *ptr;
+
+    ptr = kmalloc_node(sizeof(struct kmem_cache_node), GFP_NOWAIT, nodeid);
+    BUG_ON(!ptr);
+
+    memcpy(ptr, list, sizeof(struct kmem_cache_node));
+    /*
+     * Do not assume that spinlocks can be initialized via memcpy:
+     */
+    spin_lock_init(&ptr->list_lock);
+
+    MAKE_ALL_LISTS(cachep, ptr, nodeid);
+    cachep->node[nodeid] = ptr;
+}
+
 /*
  * Initialisation.  Called after the page allocator have been initialised and
  * before smp_init().
@@ -712,7 +745,20 @@ void __init kmem_cache_init(void)
 
     slab_early_init = 0;
 
-    panic("%s: END\n", __func__);
+    /* 5) Replace the bootstrap kmem_cache_node */
+    {
+        int nid;
+
+        for_each_online_node(nid) {
+            init_list(kmem_cache,
+                      &init_kmem_cache_node[CACHE_CACHE + nid], nid);
+
+            init_list(kmalloc_caches[KMALLOC_NORMAL][INDEX_NODE],
+                      &init_kmem_cache_node[SIZE_NODE + nid], nid);
+        }
+    }
+
+    create_kmalloc_caches(ARCH_KMALLOC_FLAGS);
 }
 
 /*

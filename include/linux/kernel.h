@@ -156,4 +156,10 @@ extern atomic_t panic_cpu;
  */
 #define lower_32_bits(n) ((u32)((n) & 0xffffffff))
 
+/**
+ * ARRAY_SIZE - get the number of elements in array @arr
+ * @arr: array to be sized
+ */
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]) + __must_be_array(arr))
+
 #endif /* _LINUX_KERNEL_H */

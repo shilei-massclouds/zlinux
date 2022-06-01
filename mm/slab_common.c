@@ -300,3 +300,96 @@ create_kmalloc_cache(const char *name, unsigned int size, slab_flags_t flags,
     s->refcount = 1;
     return s;
 }
+
+/*
+ * Patch up the size_index table if we have strange large alignment
+ * requirements for the kmalloc array. This is only the case for
+ * MIPS it seems. The standard arches will not generate any code here.
+ *
+ * Largest permitted alignment is 256 bytes due to the way we
+ * handle the index determination for the smaller caches.
+ *
+ * Make sure that nothing crazy happens if someone starts tinkering
+ * around with ARCH_KMALLOC_MINALIGN
+ */
+void __init setup_kmalloc_cache_index_table(void)
+{
+    unsigned int i;
+
+    BUILD_BUG_ON(KMALLOC_MIN_SIZE > 256 || !is_power_of_2(KMALLOC_MIN_SIZE));
+
+    for (i = 8; i < KMALLOC_MIN_SIZE; i += 8) {
+        unsigned int elem = size_index_elem(i);
+
+        if (elem >= ARRAY_SIZE(size_index))
+            break;
+        size_index[elem] = KMALLOC_SHIFT_LOW;
+    }
+
+    if (KMALLOC_MIN_SIZE >= 64) {
+        /*
+         * The 96 byte sized cache is not used if the alignment
+         * is 64 byte.
+         */
+        for (i = 64 + 8; i <= 96; i += 8)
+            size_index[size_index_elem(i)] = 7;
+
+    }
+
+    if (KMALLOC_MIN_SIZE >= 128) {
+        /*
+         * The 192 byte sized cache is not used if the alignment
+         * is 128 byte. Redirect kmalloc to use the 256 byte cache
+         * instead.
+         */
+        for (i = 128 + 8; i <= 192; i += 8)
+            size_index[size_index_elem(i)] = 8;
+    }
+}
+
+static void __init
+new_kmalloc_cache(int idx, enum kmalloc_cache_type type, slab_flags_t flags)
+{
+    if (type == KMALLOC_RECLAIM) {
+        flags |= SLAB_RECLAIM_ACCOUNT;
+    }
+
+    kmalloc_caches[type][idx] =
+        create_kmalloc_cache(kmalloc_info[idx].name[type],
+                             kmalloc_info[idx].size, flags, 0,
+                             kmalloc_info[idx].size);
+}
+
+/*
+ * Create the kmalloc array. Some of the regular kmalloc arrays
+ * may already have been created because they were needed to
+ * enable allocations for slab creation.
+ */
+void __init create_kmalloc_caches(slab_flags_t flags)
+{
+    int i;
+    enum kmalloc_cache_type type;
+
+    /*
+     * Including KMALLOC_CGROUP if CONFIG_MEMCG_KMEM defined
+     */
+    for (type = KMALLOC_NORMAL; type <= KMALLOC_RECLAIM; type++) {
+        for (i = KMALLOC_SHIFT_LOW; i <= KMALLOC_SHIFT_HIGH; i++) {
+            if (!kmalloc_caches[type][i])
+                new_kmalloc_cache(i, type, flags);
+
+            /*
+             * Caches that are not of the two-to-the-power-of size.
+             * These have to be created immediately after the
+             * earlier power of two caches
+             */
+            if (KMALLOC_MIN_SIZE <= 32 && i == 6 && !kmalloc_caches[type][1])
+                new_kmalloc_cache(1, type, flags);
+            if (KMALLOC_MIN_SIZE <= 64 && i == 7 && !kmalloc_caches[type][2])
+                new_kmalloc_cache(2, type, flags);
+        }
+    }
+
+    /* Kmalloc array is now usable */
+    slab_state = UP;
+}

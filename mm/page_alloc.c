@@ -152,6 +152,7 @@ gfp_t gfp_allowed_mask __read_mostly = GFP_BOOT_MASK;
 #define BOOT_PAGESET_BATCH  1
 static DEFINE_PER_CPU(struct per_cpu_pages, boot_pageset);
 static DEFINE_PER_CPU(struct per_cpu_zonestat, boot_zonestats);
+DEFINE_PER_CPU(struct per_cpu_nodestat, boot_nodestats);
 
 //#define MAX_NODE_LOAD (nr_online_nodes)
 //static int node_load[MAX_NUMNODES];
@@ -562,6 +563,7 @@ static void __init free_area_init_core(struct pglist_data *pgdat)
     int nid = pgdat->node_id;
 
     pgdat_init_internals(pgdat);
+    pgdat->per_cpu_nodestats = &boot_nodestats;
 
     for (j = 0; j < MAX_NR_ZONES; j++) {
         unsigned long size, freesize, memmap_pages;
@@ -627,6 +629,7 @@ static void __init free_area_init_node(int nid)
 
     pgdat->node_id = nid;
     pgdat->node_start_pfn = start_pfn;
+    pgdat->per_cpu_nodestats = NULL;
 
     if (start_pfn != end_pfn) {
         pr_info("Initmem setup node %d [mem %#018Lx-%#018Lx]\n",
@@ -2437,7 +2440,6 @@ void __meminit setup_zone_pageset(struct zone *zone)
     zone_set_pageset_high_and_batch(zone, 0);
 }
 
-#if 0
 /*
  * Allocate per cpu pagesets and initialize them.
  * Before this call only boot pagesets were available.
@@ -2445,12 +2447,14 @@ void __meminit setup_zone_pageset(struct zone *zone)
 void __init setup_per_cpu_pageset(void)
 {
     struct zone *zone;
-    int __maybe_unused cpu;
+    struct pglist_data *pgdat;
 
     for_each_populated_zone(zone)
         setup_zone_pageset(zone);
+
+    for_each_online_pgdat(pgdat)
+        pgdat->per_cpu_nodestats = alloc_percpu(struct per_cpu_nodestat);
 }
-#endif
 
 /**
  * get_pfnblock_flags_mask - Return the requested group of flags for the pageblock_nr_pages block of pages

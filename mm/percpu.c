@@ -1934,7 +1934,6 @@ restart:
     /* search through normal chunks */
     for (slot = pcpu_size_to_slot(size); slot <= pcpu_free_slot; slot++) {
         list_for_each_entry_safe(chunk, next, &pcpu_chunk_lists[slot], list) {
-            printk("%s: slot(%u) 1\n", __func__, slot);
             off = pcpu_find_block_fit(chunk, bits, bit_align, is_atomic);
             if (off < 0) {
                 if (slot < PCPU_SLOT_FAIL_THRESHOLD)
