@@ -23,8 +23,8 @@
 */
 #include <linux/slab.h>
 #include <linux/sched/task.h>
-/*
 #include <linux/sched/task_stack.h>
+/*
 #include <linux/sched/cputime.h>
 #include <linux/seq_file.h>
 #include <linux/rtmutex.h>
@@ -258,3 +258,11 @@ void __put_task_struct(struct task_struct *tsk)
 #endif
 }
 EXPORT_SYMBOL_GPL(__put_task_struct);
+
+void set_task_stack_end_magic(struct task_struct *tsk)
+{
+    unsigned long *stackend;
+
+    stackend = end_of_stack(tsk);
+    *stackend = STACK_END_MAGIC;    /* for overflow detection */
+}

@@ -34,6 +34,7 @@ typedef bool (*smp_cond_func_t)(int cpu, void *info);
 
 #define smp_processor_id() __smp_processor_id()
 
+void smp_setup_processor_id(void);
 void kick_all_cpus_sync(void);
 
 #endif /* __LINUX_SMP_H */

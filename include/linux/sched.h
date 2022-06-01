@@ -61,6 +61,7 @@ struct task_struct {
 
     unsigned int __state;
 
+    void *stack;
     refcount_t usage;
 
     /* Per task flags (PF_*), defined further below: */
@@ -83,6 +84,8 @@ struct task_struct {
      */
     char comm[TASK_COMM_LEN];
 };
+
+extern unsigned long init_stack[THREAD_SIZE / sizeof(unsigned long)];
 
 extern long schedule_timeout(long timeout);
 

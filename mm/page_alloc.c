@@ -2098,8 +2098,6 @@ build_all_zonelists_init(void)
 
     __build_all_zonelists(NULL);
 
-    printk("### %s: \n", __func__);
-
     /*
      * Initialize the boot_pagesets that are going to be used
      * for bootstrapping processors. The real pagesets for

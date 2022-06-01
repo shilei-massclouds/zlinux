@@ -24,8 +24,8 @@
 phys_addr_t phys_ram_base __ro_after_init;
 EXPORT_SYMBOL(phys_ram_base);
 
-void *dtb_early_va;
-static phys_addr_t dtb_early_pa __initdata;
+void *_dtb_early_va __initdata;
+uintptr_t _dtb_early_pa __initdata;
 
 unsigned long va_pa_offset;
 EXPORT_SYMBOL(va_pa_offset);
@@ -355,18 +355,12 @@ static void __init setup_vm_final(void)
     local_flush_tlb_all();
 }
 
-static void setup_zero_page(void)
-{
-    memset((void *)empty_zero_page, 0, PAGE_SIZE);
-}
-
 static void __init zone_sizes_init(void)
 {
     unsigned long max_zone_pfns[MAX_NR_ZONES] = { 0, };
 
 #ifdef CONFIG_ZONE_DMA32
-    max_zone_pfns[ZONE_DMA32] =
-        PFN_DOWN(min(4UL * SZ_1G, (unsigned long) PFN_PHYS(max_low_pfn)));
+    max_zone_pfns[ZONE_DMA32] = PFN_DOWN(dma32_phys_limit);
 #endif
     max_zone_pfns[ZONE_NORMAL] = max_low_pfn;
 
@@ -375,12 +369,13 @@ static void __init zone_sizes_init(void)
 
 void __init paging_init(void)
 {
+    setup_bootmem();
     setup_vm_final();
-    setup_zero_page();
+}
+
+void __init misc_mem_init(void)
+{
     zone_sizes_init();
-    /*
-    resource_init();
-    */
 }
 
 void __init mem_init(void)

@@ -14,11 +14,21 @@
 #include <linux/percpu.h>
 #include <linux/sched.h>
 #include <linux/sched/task.h>
+#include <linux/sched/task_stack.h>
 #include <linux/mm.h>
 #include <linux/slab.h>
 
 #include <asm/setup.h>
 #include "z_tests.h"
+
+/*
+ * Debug helper: via this flag we know that we are in 'early bootup code'
+ * where only the boot processor is running with IRQ disabled.  This means
+ * two things - IRQ must not be enabled before the flag is cleared and some
+ * operations which are not allowed with IRQ disabled are allowed while the
+ * flag is set.
+ */
+bool early_boot_irqs_disabled __read_mostly;
 
 extern const struct obs_kernel_param __setup_start[], __setup_end[];
 
@@ -67,6 +77,12 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 {
     char *command_line;
 
+    set_task_stack_end_magic(&init_task);
+    smp_setup_processor_id();
+
+    local_irq_disable();
+    early_boot_irqs_disabled = true;
+
     /*
      * Interrupts are still disabled. Do necessary setups, then
      * enable them.
@@ -75,6 +91,8 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 
     pr_notice("%s", linux_banner);
     setup_arch(&command_line);
+
+    printk("%s: ================== PILOT ==================\n", __func__);
     setup_per_cpu_areas();
 
     build_all_zonelists(NULL);
@@ -82,6 +100,9 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
     mm_init();
 
     setup_per_cpu_pageset();
+
+    early_boot_irqs_disabled = false;
+    local_irq_enable();
 
     /* TEST: kmalloc */
     {

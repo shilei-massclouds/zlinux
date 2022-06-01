@@ -13,6 +13,7 @@
 #include <linux/smp.h>
 
 //#include <asm/cpu_ops.h>
+#include <asm/pgtable.h>
 #include <asm/setup.h>
 #include <asm/sections.h>
 #include <asm/sbi.h>
@@ -40,10 +41,20 @@ void __init parse_dtb(void)
 
 void __init setup_arch(char **cmdline_p)
 {
+    parse_dtb();
+
     parse_early_param();
 
-    setup_bootmem();
     paging_init();
 
-    unflatten_device_tree();
+    {
+        printk("%s: (%d)\n", __func__, NODE_DATA(0)->nr_zones);
+    }
+
+    if (early_init_dt_verify(__va(dtb_early_pa)))
+        unflatten_device_tree();
+    else
+        pr_err("No DTB found in kernel mappings\n");
+
+    misc_mem_init();
 }

@@ -179,7 +179,6 @@ clear_bss_done:
 
     /* Start the kernel */
     call soc_early_init
-    call parse_dtb
     tail start_kernel
 
 .Lsecondary_start:

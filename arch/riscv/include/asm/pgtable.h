@@ -118,11 +118,17 @@ pte_clear(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
     set_pte_at(mm, addr, ptep, __pte(0));
 }
 
-extern void *dtb_early_va;
+extern void *_dtb_early_va;
+extern uintptr_t _dtb_early_pa;
+
+#define dtb_early_va    _dtb_early_va
+#define dtb_early_pa    _dtb_early_pa
+
 extern pgd_t swapper_pg_dir[];
 
 void setup_bootmem(void);
 void paging_init(void);
+void misc_mem_init(void);
 
 #endif /* !__ASSEMBLY__ */
 

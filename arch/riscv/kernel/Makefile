@@ -9,6 +9,7 @@ extra-y += vmlinux.lds
 obj-y   += soc.o
 obj-y   += entry.o
 obj-y   += setup.o
+obj-y	+= smp.o
 obj-y   += smpboot.o
 obj-y   += cpu_ops.o
 obj-y   += process.o
