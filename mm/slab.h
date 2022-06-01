@@ -34,6 +34,12 @@ enum slab_state {
     FULL            /* Everything is working */
 };
 
+/* A table of kmalloc cache names and sizes */
+extern const struct kmalloc_info_struct {
+    const char *name[NR_KMALLOC_TYPES];
+    unsigned int size;
+} kmalloc_info[];
+
 extern enum slab_state slab_state;
 
 /* The list of all slab caches on the system */
@@ -132,5 +138,11 @@ struct kmem_cache *kmalloc_slab(size_t, gfp_t);
 #define for_each_kmem_cache_node(__s, __node, __n) \
     for (__node = 0; __node < nr_node_ids; __node++) \
          if ((__n = get_node(__s, __node)))
+
+void create_kmalloc_caches(slab_flags_t);
+
+struct kmem_cache *
+create_kmalloc_cache(const char *name, unsigned int size, slab_flags_t flags,
+                     unsigned int useroffset, unsigned int usersize);
 
 #endif /* MM_SLAB_H */

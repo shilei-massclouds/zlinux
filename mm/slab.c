@@ -47,6 +47,10 @@
 
 #include    "slab.h"
 
+#ifndef ARCH_KMALLOC_FLAGS
+#define ARCH_KMALLOC_FLAGS SLAB_HWCACHE_ALIGN
+#endif
+
 /* Shouldn't this be in a header file somewhere? */
 #define BYTES_PER_WORD  sizeof(void *)
 #define REDZONE_ALIGN   max(BYTES_PER_WORD, __alignof__(unsigned long long))
@@ -83,6 +87,10 @@ typedef unsigned short freelist_idx_t;
 static int slab_max_order = SLAB_MAX_ORDER_LO;
 static bool slab_max_order_set __initdata;
 
+static int slab_early_init = 1;
+
+#define INDEX_NODE kmalloc_index(sizeof(struct kmem_cache_node))
+
 #define BOOT_CPUCACHE_ENTRIES   1
 /* internal cache of cache description objs */
 static struct kmem_cache kmem_cache_boot = {
@@ -100,6 +108,8 @@ static int use_alien_caches __read_mostly = 1;
  */
 #define NUM_INIT_LISTS (2 * MAX_NUMNODES)
 static struct kmem_cache_node __initdata init_kmem_cache_node[NUM_INIT_LISTS];
+#define CACHE_CACHE 0
+#define SIZE_NODE (MAX_NUMNODES)
 
 /*
  * struct array_cache
@@ -687,6 +697,20 @@ void __init kmem_cache_init(void)
 
     list_add(&kmem_cache->list, &slab_caches);
     slab_state = PARTIAL;
+
+    /*
+     * Initialize the caches that provide memory for the  kmem_cache_node
+     * structures first.  Without this, further allocations will bug.
+     */
+    kmalloc_caches[KMALLOC_NORMAL][INDEX_NODE] = create_kmalloc_cache(
+            kmalloc_info[INDEX_NODE].name[KMALLOC_NORMAL],
+            kmalloc_info[INDEX_NODE].size,
+            ARCH_KMALLOC_FLAGS, 0,
+            kmalloc_info[INDEX_NODE].size);
+    slab_state = PARTIAL_NODE;
+    setup_kmalloc_cache_index_table();
+
+    slab_early_init = 0;
 
     panic("%s: END\n", __func__);
 }
@@ -1383,6 +1407,21 @@ static int enable_cpucache(struct kmem_cache *cachep, gfp_t gfp)
     return err;
 }
 
+/*
+ * For setting up all the kmem_cache_node for cache whose buffer_size is same as
+ * size of kmem_cache_node.
+ */
+static void __init set_up_node(struct kmem_cache *cachep, int index)
+{
+    int node;
+
+    for_each_online_node(node) {
+        cachep->node[node] = &init_kmem_cache_node[index + node];
+        cachep->node[node]->next_reap = jiffies + REAPTIMEOUT_NODE +
+            ((unsigned long)cachep) % REAPTIMEOUT_NODE;
+    }
+}
+
 static int __ref setup_cpu_cache(struct kmem_cache *cachep, gfp_t gfp)
 {
     if (slab_state >= FULL)
@@ -1392,7 +1431,6 @@ static int __ref setup_cpu_cache(struct kmem_cache *cachep, gfp_t gfp)
     if (!cachep->cpu_cache)
         return 1;
 
-#if 0
     if (slab_state == DOWN) {
         /* Creation of first cache (kmem_cache). */
         set_up_node(kmem_cache, CACHE_CACHE);
@@ -1420,7 +1458,7 @@ static int __ref setup_cpu_cache(struct kmem_cache *cachep, gfp_t gfp)
     cpu_cache_get(cachep)->touched = 0;
     cachep->batchcount = 1;
     cachep->limit = BOOT_CPUCACHE_ENTRIES;
-#endif
+
     return 0;
 }
 

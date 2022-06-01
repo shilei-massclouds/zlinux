@@ -78,6 +78,52 @@ static u8 size_index[24] __ro_after_init = {
     2   /* 192 */
 };
 
+#define KMALLOC_CGROUP_NAME(sz)
+#define KMALLOC_DMA_NAME(sz)
+
+#define INIT_KMALLOC_INFO(__size, __short_size)         \
+{                               \
+    .name[KMALLOC_NORMAL]  = "kmalloc-" #__short_size,  \
+    .name[KMALLOC_RECLAIM] = "kmalloc-rcl-" #__short_size,  \
+    KMALLOC_CGROUP_NAME(__short_size)           \
+    KMALLOC_DMA_NAME(__short_size)              \
+    .size = __size,                     \
+}
+
+/*
+ * kmalloc_info[] is to make slub_debug=,kmalloc-xx option work at boot time.
+ * kmalloc_index() supports up to 2^25=32MB, so the final entry of the table is
+ * kmalloc-32M.
+ */
+const struct kmalloc_info_struct kmalloc_info[] __initconst = {
+    INIT_KMALLOC_INFO(0, 0),
+    INIT_KMALLOC_INFO(96, 96),
+    INIT_KMALLOC_INFO(192, 192),
+    INIT_KMALLOC_INFO(8, 8),
+    INIT_KMALLOC_INFO(16, 16),
+    INIT_KMALLOC_INFO(32, 32),
+    INIT_KMALLOC_INFO(64, 64),
+    INIT_KMALLOC_INFO(128, 128),
+    INIT_KMALLOC_INFO(256, 256),
+    INIT_KMALLOC_INFO(512, 512),
+    INIT_KMALLOC_INFO(1024, 1k),
+    INIT_KMALLOC_INFO(2048, 2k),
+    INIT_KMALLOC_INFO(4096, 4k),
+    INIT_KMALLOC_INFO(8192, 8k),
+    INIT_KMALLOC_INFO(16384, 16k),
+    INIT_KMALLOC_INFO(32768, 32k),
+    INIT_KMALLOC_INFO(65536, 64k),
+    INIT_KMALLOC_INFO(131072, 128k),
+    INIT_KMALLOC_INFO(262144, 256k),
+    INIT_KMALLOC_INFO(524288, 512k),
+    INIT_KMALLOC_INFO(1048576, 1M),
+    INIT_KMALLOC_INFO(2097152, 2M),
+    INIT_KMALLOC_INFO(4194304, 4M),
+    INIT_KMALLOC_INFO(8388608, 8M),
+    INIT_KMALLOC_INFO(16777216, 16M),
+    INIT_KMALLOC_INFO(33554432, 32M)
+};
+
 gfp_t kmalloc_fix_flags(gfp_t flags)
 {
     gfp_t invalid_mask = flags & GFP_SLAB_BUG_MASK;
@@ -238,4 +284,19 @@ struct kmem_cache *kmalloc_slab(size_t size, gfp_t flags)
     }
 
     return kmalloc_caches[kmalloc_type(flags)][index];
+}
+
+struct kmem_cache *__init
+create_kmalloc_cache(const char *name, unsigned int size, slab_flags_t flags,
+                     unsigned int useroffset, unsigned int usersize)
+{
+    struct kmem_cache *s = kmem_cache_zalloc(kmem_cache, GFP_NOWAIT);
+
+    if (!s)
+        panic("Out of memory when creating slab %s\n", name);
+
+    create_boot_cache(s, name, size, flags, useroffset, usersize);
+    list_add(&s->list, &slab_caches);
+    s->refcount = 1;
+    return s;
 }

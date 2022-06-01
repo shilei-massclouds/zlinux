@@ -382,4 +382,12 @@ kmalloc_node(size_t size, gfp_t flags, int node)
     return __kmalloc_node(size, flags, node);
 }
 
+/*
+ * Shortcuts
+ */
+static inline void *kmem_cache_zalloc(struct kmem_cache *k, gfp_t flags)
+{
+    return kmem_cache_alloc(k, flags | __GFP_ZERO);
+}
+
 #endif  /* _LINUX_SLAB_H */
