@@ -21,6 +21,8 @@
 
 #define MAX_EARLY_MAPPING_SIZE  SZ_128M
 
+#define DTB_EARLY_BASE_VA   PGDIR_SIZE
+
 phys_addr_t phys_ram_base __ro_after_init;
 EXPORT_SYMBOL(phys_ram_base);
 
@@ -54,6 +56,9 @@ pte_t fixmap_pte[PTRS_PER_PTE] __page_aligned_bss;
 pmd_t early_pmd[PTRS_PER_PMD] __initdata __aligned(PAGE_SIZE);
 pgd_t early_pg_dir[PTRS_PER_PGD] __initdata __aligned(PAGE_SIZE);
 
+static pmd_t __maybe_unused
+early_dtb_pmd[PTRS_PER_PMD] __initdata __aligned(PAGE_SIZE);
+
 /*
  * The default maximal physical memory size is -PAGE_OFFSET for 32-bit kernel,
  * whereas for 64-bit kernel, the end of the virtual address space is occupied
@@ -66,6 +71,17 @@ static phys_addr_t memory_limit = -PAGE_OFFSET - SZ_4G;
 static phys_addr_t dma32_phys_limit __initdata;
 
 static bool mmu_enabled;
+
+struct pt_alloc_ops {
+    pte_t *(*get_pte_virt)(phys_addr_t pa);
+    phys_addr_t (*alloc_pte)(uintptr_t va);
+    pmd_t *(*get_pmd_virt)(phys_addr_t pa);
+    phys_addr_t (*alloc_pmd)(uintptr_t va);
+};
+
+static struct pt_alloc_ops _pt_ops __initdata;
+
+#define pt_ops _pt_ops
 
 void __set_fixmap(enum fixed_addresses idx, phys_addr_t phys, pgprot_t prot)
 {
@@ -206,31 +222,112 @@ create_pgd_mapping(pgd_t *pgdp, uintptr_t va, phys_addr_t pa,
     create_pgd_next_mapping(nextp, va, pa, sz, prot);
 }
 
-asmlinkage void __init setup_vm(uintptr_t dtb_pa)
+static inline phys_addr_t __init alloc_pte_early(uintptr_t va)
+{
+    /*
+     * We only create PMD or PGD early mappings so we
+     * should never reach here with MMU disabled.
+     */
+    BUG();
+}
+
+static inline pte_t *__init get_pte_virt_early(phys_addr_t pa)
+{
+    return (pte_t *)((uintptr_t)pa);
+}
+
+static phys_addr_t __init alloc_pmd_early(uintptr_t va)
+{
+    BUG_ON((va - kernel_map.virt_addr) >> PGDIR_SHIFT);
+
+    return (uintptr_t)early_pmd;
+}
+
+static pmd_t *__init get_pmd_virt_early(phys_addr_t pa)
+{
+    /* Before MMU is enabled */
+    return (pmd_t *)((uintptr_t)pa);
+}
+
+static __init pgprot_t pgprot_from_va(uintptr_t va)
+{
+    if (is_va_kernel_text(va))
+        return PAGE_KERNEL_READ_EXEC;
+
+    /*
+     * In 64-bit kernel, the kernel mapping is outside the linear mapping so
+     * we must protect its linear mapping alias from being executed and
+     * written.
+     * And rodata section is marked readonly in mark_rodata_ro.
+     */
+    if (is_va_kernel_lm_alias_text(va))
+        return PAGE_KERNEL_READ;
+
+    return PAGE_KERNEL;
+}
+
+static void __init create_kernel_page_table(pgd_t *pgdir, bool early)
 {
     uintptr_t va, end_va;
-    uintptr_t load_pa = (uintptr_t)(&_start);
-    uintptr_t load_sz = (uintptr_t)(&_end) - load_pa;
-    uintptr_t map_size = best_map_size(load_pa, MAX_EARLY_MAPPING_SIZE);
 
-    va_pa_offset = PAGE_OFFSET - load_pa;
-    pfn_base = PFN_DOWN(load_pa);
+    end_va = kernel_map.virt_addr + kernel_map.size;
+    for (va = kernel_map.virt_addr; va < end_va; va += PMD_SIZE)
+        create_pgd_mapping(pgdir, va,
+                           kernel_map.phys_addr + (va - kernel_map.virt_addr),
+                           PMD_SIZE,
+                           early ? PAGE_KERNEL_EXEC : pgprot_from_va(va));
+}
+
+/*
+ * Setup a 4MB mapping that encompasses the device tree: for 64-bit kernel,
+ * this means 2 PMD entries whereas for 32-bit kernel, this is only 1 PGDIR
+ * entry.
+ */
+static void __init create_fdt_early_page_table(pgd_t *pgdir, uintptr_t dtb_pa)
+{
+    uintptr_t pa = dtb_pa & ~(PMD_SIZE - 1);
+
+    create_pgd_mapping(early_pg_dir, DTB_EARLY_BASE_VA,
+                       (uintptr_t)early_dtb_pmd, PGDIR_SIZE, PAGE_TABLE);
+
+    create_pmd_mapping(early_dtb_pmd, DTB_EARLY_BASE_VA,
+                       pa, PMD_SIZE, PAGE_KERNEL);
+    create_pmd_mapping(early_dtb_pmd, DTB_EARLY_BASE_VA + PMD_SIZE,
+                       pa + PMD_SIZE, PMD_SIZE, PAGE_KERNEL);
+
+    dtb_early_va = (void *)DTB_EARLY_BASE_VA + (dtb_pa & (PMD_SIZE - 1));
+
+    dtb_early_pa = dtb_pa;
+}
+
+asmlinkage void __init setup_vm(uintptr_t dtb_pa)
+{
+    pmd_t __maybe_unused fix_bmap_spmd, fix_bmap_epmd;
+
+    kernel_map.virt_addr = KERNEL_LINK_ADDR;
 
     kernel_map.phys_addr = (uintptr_t)(&_start);
     kernel_map.size = (uintptr_t)(&_end) - kernel_map.phys_addr;
 
-    riscv_pfn_base = PFN_DOWN(kernel_map.phys_addr);
+    kernel_map.va_pa_offset = PAGE_OFFSET - kernel_map.phys_addr;
+    kernel_map.va_kernel_pa_offset = kernel_map.virt_addr - kernel_map.phys_addr;
 
-    /*
-     * Enforce boot alignment requirements of RV32 and
-     * RV64 by only allowing PMD or PGD mappings.
-     */
-    BUG_ON(map_size == PAGE_SIZE);
+    riscv_pfn_base = PFN_DOWN(kernel_map.phys_addr);
 
     /* Sanity check alignment and size */
     BUG_ON((PAGE_OFFSET % PGDIR_SIZE) != 0);
-    BUG_ON((load_pa % map_size) != 0);
-    BUG_ON(load_sz > MAX_EARLY_MAPPING_SIZE);
+    BUG_ON((kernel_map.phys_addr % PMD_SIZE) != 0);
+
+    /*
+     * The last 4K bytes of the addressable memory can not be mapped because
+     * of IS_ERR_VALUE macro.
+     */
+    BUG_ON((kernel_map.virt_addr + kernel_map.size) > ADDRESS_SPACE_END - SZ_4K);
+
+    pt_ops.alloc_pte = alloc_pte_early;
+    pt_ops.get_pte_virt = get_pte_virt_early;
+    pt_ops.alloc_pmd = alloc_pmd_early;
+    pt_ops.get_pmd_virt = get_pmd_virt_early;
 
     /* Setup early PGD for fixmap */
     create_pgd_mapping(early_pg_dir, FIXADDR_START,
@@ -239,34 +336,49 @@ asmlinkage void __init setup_vm(uintptr_t dtb_pa)
     /* Setup fixmap PMD */
     create_pmd_mapping(fixmap_pmd, FIXADDR_START,
                        (uintptr_t)fixmap_pte, PMD_SIZE, PAGE_TABLE);
-
     /* Setup trampoline PGD and PMD */
-    create_pgd_mapping(trampoline_pg_dir, PAGE_OFFSET,
+    create_pgd_mapping(trampoline_pg_dir, kernel_map.virt_addr,
                        (uintptr_t)trampoline_pmd, PGDIR_SIZE, PAGE_TABLE);
-    create_pmd_mapping(trampoline_pmd, PAGE_OFFSET,
-                       load_pa, PMD_SIZE, PAGE_KERNEL_EXEC);
+    create_pmd_mapping(trampoline_pmd, kernel_map.virt_addr,
+                       kernel_map.phys_addr, PMD_SIZE, PAGE_KERNEL_EXEC);
 
     /*
-     * Setup early PGD covering entire kernel which will allows
+     * Setup early PGD covering entire kernel which will allow
      * us to reach paging_init(). We map all memory banks later
      * in setup_vm_final() below.
      */
-    end_va = PAGE_OFFSET + load_sz;
-    for (va = PAGE_OFFSET; va < end_va; va += map_size)
-        create_pgd_mapping(early_pg_dir, va, load_pa + (va - PAGE_OFFSET),
-                           map_size, PAGE_KERNEL_EXEC);
+    create_kernel_page_table(early_pg_dir, true);
 
-    /* Create fixed mapping for early FDT parsing */
-    end_va = __fix_to_virt(FIX_FDT) + FIX_FDT_SIZE;
-    for (va = __fix_to_virt(FIX_FDT); va < end_va; va += PAGE_SIZE)
-        create_pte_mapping(fixmap_pte,
-                           va, dtb_pa + (va - __fix_to_virt(FIX_FDT)),
-                           PAGE_SIZE, PAGE_KERNEL);
+    /* Setup early mapping for FDT early scan */
+    create_fdt_early_page_table(early_pg_dir, dtb_pa);
 
-    /* Save pointer to DTB for early FDT parsing */
-    dtb_early_va = (void *)fix_to_virt(FIX_FDT) + (dtb_pa & ~PAGE_MASK);
-    /* Save physical address for memblock reservation */
-    dtb_early_pa = dtb_pa;
+    /*
+     * Bootime fixmap only can handle PMD_SIZE mapping. Thus, boot-ioremap
+     * range can not span multiple pmds.
+     */
+    BUILD_BUG_ON((__fix_to_virt(FIX_BTMAP_BEGIN) >> PMD_SHIFT) !=
+                 (__fix_to_virt(FIX_BTMAP_END) >> PMD_SHIFT));
+
+    /*
+     * Early ioremap fixmap is already created as it lies within first 2MB
+     * of fixmap region. We always map PMD_SIZE. Thus, both FIX_BTMAP_END
+     * FIX_BTMAP_BEGIN should lie in the same pmd. Verify that and warn
+     * the user if not.
+     */
+    fix_bmap_spmd = fixmap_pmd[pmd_index(__fix_to_virt(FIX_BTMAP_BEGIN))];
+    fix_bmap_epmd = fixmap_pmd[pmd_index(__fix_to_virt(FIX_BTMAP_END))];
+    if (pmd_val(fix_bmap_spmd) != pmd_val(fix_bmap_epmd)) {
+        WARN_ON(1);
+        pr_warn("fixmap btmap start [%08lx] != end [%08lx]\n",
+            pmd_val(fix_bmap_spmd), pmd_val(fix_bmap_epmd));
+        pr_warn("fix_to_virt(FIX_BTMAP_BEGIN): %08lx\n",
+            fix_to_virt(FIX_BTMAP_BEGIN));
+        pr_warn("fix_to_virt(FIX_BTMAP_END):   %08lx\n",
+            fix_to_virt(FIX_BTMAP_END));
+
+        pr_warn("FIX_BTMAP_END:       %d\n", FIX_BTMAP_END);
+        pr_warn("FIX_BTMAP_BEGIN:     %d\n", FIX_BTMAP_BEGIN);
+    }
 }
 
 void __init setup_bootmem(void)

@@ -2,11 +2,14 @@
 
 #define GENERATING_ASM_OFFSETS
 
-#include <linux/stddef.h>
 #include <linux/kbuild.h>
+#include <linux/mm.h>
 #include <linux/sched.h>
+//#include <asm/kvm_host.h>
+#include <asm/thread_info.h>
+#include <asm/ptrace.h>
 
 void asm_offsets(void)
 {
-    OFFSET(TASK_TI_CPU, task_struct, thread_info.cpu);
+    OFFSET(KERNEL_MAP_VIRT_ADDR, kernel_mapping, virt_addr);
 }

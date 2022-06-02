@@ -36,7 +36,8 @@ ENTRY(_start)
 .align 2
 relocate:
     /* Relocate return address */
-    li a1, PAGE_OFFSET
+    la a1, kernel_map
+    REG_L a1, KERNEL_MAP_VIRT_ADDR(a1)
     la a2, _start
     sub a1, a1, a2
     add ra, ra, a1
@@ -115,7 +116,6 @@ setup_trap_vector:
 
 END(_start)
 
-__INIT
 ENTRY(_start_kernel)
     /* Mask all interrupts */
     csrw CSR_IE, zero
@@ -174,7 +174,6 @@ clear_bss_done:
     call setup_trap_vector
     /* Restore C environment */
     la tp, init_task
-    sw zero, TASK_TI_CPU(tp)
     la sp, init_thread_union + THREAD_SIZE
 
     /* Start the kernel */

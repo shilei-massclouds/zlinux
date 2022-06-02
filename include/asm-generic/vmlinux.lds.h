@@ -39,6 +39,18 @@
         _einittext = .; \
     }
 
+#define EXIT_DATA                           \
+    *(.exit.data .exit.data.*)              \
+    *(.fini_array .fini_array.*)            \
+    *(.dtors .dtors.*)                      \
+    MEM_DISCARD(exit.data*)                 \
+    MEM_DISCARD(exit.rodata*)
+
+#define EXIT_TEXT                           \
+    *(.exit.text)                           \
+    *(.text.exit)                           \
+    MEM_DISCARD(exit.text)
+
 #define EARLYCON_TABLE() . = ALIGN(8);  \
     __earlycon_table = .;               \
     KEEP(*(__earlycon_table))           \

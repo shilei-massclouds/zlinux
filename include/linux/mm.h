@@ -58,6 +58,10 @@
 
 #define ZONEID_PGSHIFT (ZONEID_PGOFF * (ZONEID_SHIFT != 0))
 
+#ifndef lm_alias
+#define lm_alias(x) __va(__pa_symbol(x))
+#endif
+
 extern unsigned long max_mapnr;
 
 static inline void set_max_mapnr(unsigned long limit)

@@ -53,11 +53,32 @@ extern unsigned long riscv_pfn_base;
 #define __pgd(x)    ((pgd_t) { (x) })
 #define __pgprot(x) ((pgprot_t) { (x) })
 
-#define __va_to_pa_nodebug(x) ((unsigned long)(x) - va_pa_offset)
-#define __pa_to_va_nodebug(x) \
-    ((void *)((unsigned long) (x) + va_pa_offset))
+#define linear_mapping_pa_to_va(x) \
+    ((void *)((unsigned long)(x) + kernel_map.va_pa_offset))
 
-#define __phys_addr_symbol(x) __va_to_pa_nodebug(x)
+#define kernel_mapping_pa_to_va(y)  ({                              \
+    unsigned long _y = y;                                           \
+    (void *)((unsigned long)(_y) + kernel_map.va_kernel_pa_offset); \
+})
+
+#define __pa_to_va_nodebug(x) linear_mapping_pa_to_va(x)
+
+#define is_linear_mapping(x) \
+    ((x) >= PAGE_OFFSET && (x) < kernel_map.virt_addr)
+
+#define linear_mapping_va_to_pa(x) \
+    ((unsigned long)(x) - kernel_map.va_pa_offset)
+
+#define kernel_mapping_va_to_pa(y) ({ \
+    unsigned long _y = y; \
+    ((unsigned long)(_y) - kernel_map.va_kernel_pa_offset); \
+})
+
+#define __va_to_pa_nodebug(x) ({                    \
+    unsigned long _x = x;                           \
+    is_linear_mapping(_x) ?                         \
+        linear_mapping_va_to_pa(_x) : kernel_mapping_va_to_pa(_x);  \
+})
 
 #define __virt_to_phys(x)       __va_to_pa_nodebug(x)
 #define __phys_addr_symbol(x)   __va_to_pa_nodebug(x)

@@ -7,6 +7,11 @@
 
 #include <asm/pgtable-bits.h>
 
+#define ADDRESS_SPACE_END   (UL(-1))
+
+/* Leave 2GB for kernel and BPF at the end of the address space */
+#define KERNEL_LINK_ADDR    (ADDRESS_SPACE_END - SZ_2G + 1)
+
 #ifndef __ASSEMBLY__
 
 #include <asm/page.h>
@@ -46,7 +51,10 @@
                          _PAGE_ACCESSED | _PAGE_DIRTY)
 
 #define PAGE_KERNEL         __pgprot(_PAGE_KERNEL)
+#define PAGE_KERNEL_READ    __pgprot(_PAGE_KERNEL & ~_PAGE_WRITE)
 #define PAGE_KERNEL_EXEC    __pgprot(_PAGE_KERNEL | _PAGE_EXEC)
+#define PAGE_KERNEL_READ_EXEC \
+    __pgprot((_PAGE_KERNEL & ~_PAGE_WRITE) | _PAGE_EXEC)
 
 #define PAGE_TABLE          __pgprot(_PAGE_TABLE)
 
