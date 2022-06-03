@@ -33,8 +33,15 @@ unsigned long boot_cpu_hartid;
 
 void __init parse_dtb(void)
 {
-    if (early_init_dt_scan(dtb_early_va))
+    /* Early scan of device tree from init memory */
+    if (early_init_dt_scan(dtb_early_va)) {
+        const char *name = of_flat_dt_get_machine_name();
+
+        if (name) {
+            pr_info("Machine model: %s\n", name);
+        }
         return;
+    }
 
     pr_err("No DTB passed to the kernel\n");
 }
@@ -46,10 +53,6 @@ void __init setup_arch(char **cmdline_p)
     parse_early_param();
 
     paging_init();
-
-    {
-        printk("%s: (%d)\n", __func__, NODE_DATA(0)->nr_zones);
-    }
 
     if (early_init_dt_verify(__va(dtb_early_pa)))
         unflatten_device_tree();

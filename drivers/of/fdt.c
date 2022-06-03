@@ -275,16 +275,19 @@ void __init early_init_dt_scan_nodes(void)
 {
     int rc = 0;
 
+    /* Initialize {size,address}-cells info */
+    of_scan_flat_dt(early_init_dt_scan_root, NULL);
+
     /* Retrieve various information from the /chosen node */
     rc = of_scan_flat_dt(early_init_dt_scan_chosen, boot_command_line);
     if (!rc)
         pr_warn("No chosen node found, continuing without\n");
 
-    /* Initialize {size,address}-cells info */
-    of_scan_flat_dt(early_init_dt_scan_root, NULL);
-
     /* Setup memory, calling early_init_dt_add_memory_arch */
     of_scan_flat_dt(early_init_dt_scan_memory, NULL);
+
+    /* Handle linux,usable-memory-range property */
+    memblock_cap_memory_range(cap_mem_addr, cap_mem_size);
 }
 
 bool __init early_init_dt_scan(void *params)
@@ -566,6 +569,25 @@ static bool populate_node(const void *blob, int offset, void **mem,
 
     *pnp = np;
     return true;
+}
+
+/*
+ * of_get_flat_dt_root - find the root node in the flat blob
+ */
+unsigned long __init of_get_flat_dt_root(void)
+{
+    return 0;
+}
+
+const char * __init of_flat_dt_get_machine_name(void)
+{
+    const char *name;
+    unsigned long dt_root = of_get_flat_dt_root();
+
+    name = of_get_flat_dt_prop(dt_root, "model", NULL);
+    if (!name)
+        name = of_get_flat_dt_prop(dt_root, "compatible", NULL);
+    return name;
 }
 
 static void reverse_nodes(struct device_node *parent)

@@ -388,6 +388,7 @@ void __init setup_bootmem(void)
     phys_addr_t vmlinux_start = __pa_symbol(&_start);
     phys_addr_t vmlinux_end = __pa_symbol(&_end);
 
+    printk("%s: step1\n", __func__);
     memblock_enforce_memory_limit(memory_limit);
 
     /*

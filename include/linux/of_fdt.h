@@ -10,6 +10,8 @@ extern void early_init_fdt_scan_reserved_mem(void);
 
 extern void unflatten_device_tree(void);
 
+extern const char *of_flat_dt_get_machine_name(void);
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* _LINUX_OF_FDT_H */
