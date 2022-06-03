@@ -9,3 +9,4 @@ obj-$(CONFIG_SLAB) += slab.o
 page-alloc-y := page_alloc.o
 
 obj-y += page-alloc.o
+obj-y += init-mm.o

@@ -77,28 +77,39 @@ of_get_flat_dt_prop(unsigned long node, const char *name, int *size)
     return fdt_getprop(initial_boot_params, node, name, size);
 }
 
-int __init
-early_init_dt_scan_chosen(unsigned long node, const char *uname,
-                          int depth, void *data)
-{
-    int l;
-    const char *p;
+static unsigned long chosen_node_offset = -FDT_ERR_NOTFOUND;
 
-    if (depth != 1 || !data ||
-        (strcmp(uname, "chosen") != 0 && strcmp(uname, "chosen@0") != 0))
-        return 0;
+int __init early_init_dt_scan_chosen(char *cmdline)
+{
+    int l, node;
+    const char *p;
+    const void *fdt = initial_boot_params;
+
+    node = fdt_path_offset(fdt, "/chosen");
+    if (node < 0)
+        node = fdt_path_offset(fdt, "/chosen@0");
+    if (node < 0)
+        return -ENOENT;
+
+    chosen_node_offset = node;
+
+#if 0
+    early_init_dt_check_for_initrd(node);
+    early_init_dt_check_for_elfcorehdr(node);
+#endif
 
     /* Retrieve command line */
     p = of_get_flat_dt_prop(node, "bootargs", &l);
     if (p != NULL && l > 0)
-        strlcpy(data, p, min(l, COMMAND_LINE_SIZE));
+        strlcpy(cmdline, p, min(l, COMMAND_LINE_SIZE));
 
     /* No arguments from boot loader, use kernel's  cmdl*/
-    if (!((char *)data)[0])
-        strlcpy(data, CONFIG_CMDLINE, COMMAND_LINE_SIZE);
+    if (!((char *)cmdline)[0])
+        strlcpy(cmdline, CONFIG_CMDLINE, COMMAND_LINE_SIZE);
 
-    /* break now */
-    return 1;
+    pr_debug("Command line is: %s\n", (char *)cmdline);
+
+    return 0;
 }
 
 /**
@@ -135,14 +146,14 @@ of_scan_flat_dt(int (*it)(unsigned long node, const char *uname,
 /**
  * early_init_dt_scan_root - fetch the top level address and size cells
  */
-int __init
-early_init_dt_scan_root(unsigned long node, const char *uname,
-                        int depth, void *data)
+int __init early_init_dt_scan_root(void)
 {
     const __be32 *prop;
+    const void *fdt = initial_boot_params;
+    int node = fdt_path_offset(fdt, "/");
 
-    if (depth != 0)
-        return 0;
+    if (node < 0)
+        return -ENODEV;
 
     dt_root_size_cells = OF_ROOT_NODE_SIZE_CELLS_DEFAULT;
     dt_root_addr_cells = OF_ROOT_NODE_ADDR_CELLS_DEFAULT;
@@ -157,8 +168,7 @@ early_init_dt_scan_root(unsigned long node, const char *uname,
         dt_root_addr_cells = be32_to_cpup(prop);
     pr_debug("dt_root_addr_cells = %x\n", dt_root_addr_cells);
 
-    /* break now */
-    return 1;
+    return 0;
 }
 
 u64 __init dt_mem_next_cell(int s, const __be32 **cellp)
@@ -221,73 +231,109 @@ void __init __weak early_init_dt_add_memory_arch(u64 base, u64 size)
 /**
  * early_init_dt_scan_memory - Look for and parse memory nodes
  */
-int __init
-early_init_dt_scan_memory(unsigned long node, const char *uname,
-                          int depth, void *data)
+int __init early_init_dt_scan_memory(void)
 {
-    int l;
-    bool hotpluggable;
-    const __be32 *reg, *endp;
-    const char *type = of_get_flat_dt_prop(node, "device_type", NULL);
+    int node;
+    const void *fdt = initial_boot_params;
 
-    /* We are scanning "memory" nodes only */
-    if (type == NULL || strcmp(type, "memory") != 0)
-        return 0;
+    fdt_for_each_subnode(node, fdt, 0) {
+        int l;
+        bool hotpluggable;
+        const __be32 *reg, *endp;
+        const char *type = of_get_flat_dt_prop(node, "device_type", NULL);
 
-    reg = of_get_flat_dt_prop(node, "linux,usable-memory", &l);
-    if (reg == NULL)
-        reg = of_get_flat_dt_prop(node, "reg", &l);
-    if (reg == NULL)
-        return 0;
-
-    endp = reg + (l / sizeof(__be32));
-    hotpluggable = of_get_flat_dt_prop(node, "hotpluggable", NULL);
-
-    pr_debug("memory scan node %s, reg size %d,\n", uname, l);
-
-    while ((endp - reg) >= (dt_root_addr_cells + dt_root_size_cells)) {
-        u64 base, size;
-
-        base = dt_mem_next_cell(dt_root_addr_cells, &reg);
-        size = dt_mem_next_cell(dt_root_size_cells, &reg);
-
-        if (size == 0)
-            continue;
-        pr_debug(" - %llx ,  %llx\n", (unsigned long long)base,
-                 (unsigned long long)size);
-
-        early_init_dt_add_memory_arch(base, size);
-
-        if (!hotpluggable)
+        /* We are scanning "memory" nodes only */
+        if (type == NULL || strcmp(type, "memory") != 0)
             continue;
 
+        reg = of_get_flat_dt_prop(node, "linux,usable-memory", &l);
+        if (reg == NULL)
+            reg = of_get_flat_dt_prop(node, "reg", &l);
+        if (reg == NULL)
+            continue;
+
+        endp = reg + (l / sizeof(__be32));
+        hotpluggable = of_get_flat_dt_prop(node, "hotpluggable", NULL);
+
+        pr_debug("memory scan node %s, reg size %d,\n",
+                 fdt_get_name(fdt, node, NULL), l);
+
+        while ((endp - reg) >= (dt_root_addr_cells + dt_root_size_cells)) {
+            u64 base, size;
+
+            base = dt_mem_next_cell(dt_root_addr_cells, &reg);
+            size = dt_mem_next_cell(dt_root_size_cells, &reg);
+
+            if (size == 0)
+                continue;
+            pr_debug(" - %llx, %llx\n", base, size);
+
+            early_init_dt_add_memory_arch(base, size);
+
+            if (!hotpluggable)
+                continue;
+
+            panic("%s: NOT support hotplug memory!\n", __func__);
 #if 0
-        if (early_init_dt_mark_hotplug_memory_arch(base, size))
-            pr_warn("failed to mark hotplug range 0x%llx - 0x%llx\n",
-                    base, base + size);
+            if (memblock_mark_hotplug(base, size))
+                pr_warn("failed to mark hotplug range 0x%llx - 0x%llx\n",
+                        base, base + size);
 #endif
+        }
     }
-
     return 0;
+}
+
+/**
+ * early_init_dt_check_for_usable_mem_range - Decode usable memory range
+ * location from flat tree
+ */
+void __init early_init_dt_check_for_usable_mem_range(void)
+{
+    const __be32 *prop;
+    int len;
+    phys_addr_t cap_mem_addr;
+    phys_addr_t cap_mem_size;
+    unsigned long node = chosen_node_offset;
+
+    if ((long)node < 0)
+        return;
+
+    pr_debug("Looking for usable-memory-range property... ");
+
+    prop = of_get_flat_dt_prop(node, "linux,usable-memory-range", &len);
+    if (!prop || (len < (dt_root_addr_cells + dt_root_size_cells)))
+        return;
+
+    cap_mem_addr = dt_mem_next_cell(dt_root_addr_cells, &prop);
+    cap_mem_size = dt_mem_next_cell(dt_root_size_cells, &prop);
+
+    pr_debug("cap_mem_start=%pa cap_mem_size=%pa\n", &cap_mem_addr,
+         &cap_mem_size);
+
+    panic("%s: NOT support usable-memory config!\n", __func__);
+#if 0
+    memblock_cap_memory_range(cap_mem_addr, cap_mem_size);
+#endif
 }
 
 void __init early_init_dt_scan_nodes(void)
 {
-    int rc = 0;
+    int rc;
 
     /* Initialize {size,address}-cells info */
-    of_scan_flat_dt(early_init_dt_scan_root, NULL);
+    early_init_dt_scan_root();
 
     /* Retrieve various information from the /chosen node */
-    rc = of_scan_flat_dt(early_init_dt_scan_chosen, boot_command_line);
-    if (!rc)
+    rc = early_init_dt_scan_chosen(boot_command_line);
+    if (rc)
         pr_warn("No chosen node found, continuing without\n");
 
     /* Setup memory, calling early_init_dt_add_memory_arch */
-    of_scan_flat_dt(early_init_dt_scan_memory, NULL);
+    early_init_dt_scan_memory();
 
     /* Handle linux,usable-memory-range property */
-    memblock_cap_memory_range(cap_mem_addr, cap_mem_size);
+    early_init_dt_check_for_usable_mem_range();
 }
 
 bool __init early_init_dt_scan(void *params)

@@ -11,6 +11,27 @@
 
 #include "libfdt_internal.h"
 
+static int fdt_nodename_eq_(const void *fdt, int offset,
+                const char *s, int len)
+{
+    int olen;
+    const char *p = fdt_get_name(fdt, offset, &olen);
+
+    if (!p || olen < len)
+        /* short match */
+        return 0;
+
+    if (memcmp(p, s, len) != 0)
+        return 0;
+
+    if (p[len] == '\0')
+        return 1;
+    else if (!memchr(s, '@', len) && (p[len] == '@'))
+        return 1;
+    else
+        return 0;
+}
+
 const char *fdt_get_name(const void *fdt, int nodeoffset, int *len)
 {
     int err;
@@ -291,4 +312,84 @@ fdt_getprop_by_offset(const void *fdt, int offset,
         (offset + sizeof(*prop)) % 8 && fdt32_ld(&prop->len) >= 8)
         return prop->data + 4;
     return prop->data;
+}
+
+const char *
+fdt_get_alias_namelen(const void *fdt, const char *name, int namelen)
+{
+    int aliasoffset;
+
+    aliasoffset = fdt_path_offset(fdt, "/aliases");
+    if (aliasoffset < 0)
+        return NULL;
+
+    return fdt_getprop_namelen(fdt, aliasoffset, name, namelen, NULL);
+}
+
+int fdt_subnode_offset_namelen(const void *fdt, int offset,
+                               const char *name, int namelen)
+{
+    int depth;
+
+    FDT_RO_PROBE(fdt);
+
+    for (depth = 0;
+         (offset >= 0) && (depth >= 0);
+         offset = fdt_next_node(fdt, offset, &depth))
+        if ((depth == 1) && fdt_nodename_eq_(fdt, offset, name, namelen))
+            return offset;
+
+    if (depth < 0)
+        return -FDT_ERR_NOTFOUND;
+    return offset; /* error */
+}
+
+int fdt_path_offset_namelen(const void *fdt, const char *path, int namelen)
+{
+    int offset = 0;
+    const char *p = path;
+    const char *end = path + namelen;
+
+    FDT_RO_PROBE(fdt);
+
+    /* see if we have an alias */
+    if (*path != '/') {
+        const char *q = memchr(path, '/', end - p);
+
+        if (!q)
+            q = end;
+
+        p = fdt_get_alias_namelen(fdt, p, q - p);
+        if (!p)
+            return -FDT_ERR_BADPATH;
+        offset = fdt_path_offset(fdt, p);
+
+        p = q;
+    }
+
+    while (p < end) {
+        const char *q;
+
+        while (*p == '/') {
+            p++;
+            if (p == end)
+                return offset;
+        }
+        q = memchr(p, '/', end - p);
+        if (! q)
+            q = end;
+
+        offset = fdt_subnode_offset_namelen(fdt, offset, p, q-p);
+        if (offset < 0)
+            return offset;
+
+        p = q;
+    }
+
+    return offset;
+}
+
+int fdt_path_offset(const void *fdt, const char *path)
+{
+    return fdt_path_offset_namelen(fdt, path, strlen(path));
 }

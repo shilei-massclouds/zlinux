@@ -17,6 +17,7 @@
 
 /* Error codes: codes for bad parameters */
 #define FDT_ERR_BADOFFSET       4
+#define FDT_ERR_BADPATH         5
 #define FDT_ERR_BADSTATE        7
 
 /* Error codes: codes for bad device tree blobs */
@@ -107,5 +108,104 @@ int fdt_next_property_offset(const void *fdt, int offset);
 const void *fdt_getprop_by_offset(const void *fdt, int offset,
                                   const char **namep, int *lenp);
 
+/**
+ * fdt_path_offset - find a tree node by its full path
+ * @fdt: pointer to the device tree blob
+ * @path: full path of the node to locate
+ *
+ * fdt_path_offset() finds a node of a given path in the device tree.
+ * Each path component may omit the unit address portion, but the
+ * results of this are undefined if any such path component is
+ * ambiguous (that is if there are multiple nodes at the relevant
+ * level matching the given component, differentiated only by unit
+ * address).
+ *
+ * returns:
+ *  structure block offset of the node with the requested path (>=0), on
+ *      success
+ *  -FDT_ERR_BADPATH, given path does not begin with '/' or is invalid
+ *  -FDT_ERR_NOTFOUND, if the requested node does not exist
+ *      -FDT_ERR_BADMAGIC,
+ *  -FDT_ERR_BADVERSION,
+ *  -FDT_ERR_BADSTATE,
+ *  -FDT_ERR_BADSTRUCTURE,
+ *  -FDT_ERR_TRUNCATED, standard meanings.
+ */
+int fdt_path_offset(const void *fdt, const char *path);
+
+/**
+ * fdt_for_each_subnode - iterate over all subnodes of a parent
+ *
+ * @node:   child node (int, lvalue)
+ * @fdt:    FDT blob (const void *)
+ * @parent: parent node (int)
+ *
+ * This is actually a wrapper around a for loop and would be used like so:
+ *
+ *  fdt_for_each_subnode(node, fdt, parent) {
+ *      Use node
+ *      ...
+ *  }
+ *
+ *  if ((node < 0) && (node != -FDT_ERR_NOTFOUND)) {
+ *      Error handling
+ *  }
+ *
+ * Note that this is implemented as a macro and @node is used as
+ * iterator in the loop. The parent variable be constant or even a
+ * literal.
+ */
+#define fdt_for_each_subnode(node, fdt, parent)     \
+    for (node = fdt_first_subnode(fdt, parent); \
+         node >= 0;                 \
+         node = fdt_next_subnode(fdt, node))
+/**
+ * fdt_for_each_subnode - iterate over all subnodes of a parent
+ *
+ * @node:   child node (int, lvalue)
+ * @fdt:    FDT blob (const void *)
+ * @parent: parent node (int)
+ *
+ * This is actually a wrapper around a for loop and would be used like so:
+ *
+ *  fdt_for_each_subnode(node, fdt, parent) {
+ *      Use node
+ *      ...
+ *  }
+ *
+ *  if ((node < 0) && (node != -FDT_ERR_NOTFOUND)) {
+ *      Error handling
+ *  }
+ *
+ * Note that this is implemented as a macro and @node is used as
+ * iterator in the loop. The parent variable be constant or even a
+ * literal.
+ */
+#define fdt_for_each_subnode(node, fdt, parent) \
+    for (node = fdt_first_subnode(fdt, parent); \
+         node >= 0;                             \
+         node = fdt_next_subnode(fdt, node))
+
+/**
+ * fdt_first_subnode() - get offset of first direct subnode
+ * @fdt:    FDT blob
+ * @offset: Offset of node to check
+ *
+ * Return: offset of first subnode, or -FDT_ERR_NOTFOUND if there is none
+ */
+int fdt_first_subnode(const void *fdt, int offset);
+
+/**
+ * fdt_next_subnode() - get offset of next direct subnode
+ * @fdt:    FDT blob
+ * @offset: Offset of previous subnode
+ *
+ * After first calling fdt_first_subnode(), call this function repeatedly to
+ * get direct subnodes of a parent node.
+ *
+ * Return: offset of next subnode, or -FDT_ERR_NOTFOUND if there are no more
+ *         subnodes
+ */
+int fdt_next_subnode(const void *fdt, int offset);
 
 #endif /* LIBFDT_H */

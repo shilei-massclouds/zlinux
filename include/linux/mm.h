@@ -299,6 +299,9 @@ static inline struct page *virt_to_head_page(const void *x)
     return compound_head(page);
 }
 
+void setup_initial_init_mm(void *start_code, void *end_code,
+                           void *end_data, void *brk);
+
 /*
  * Some inline functions in vmstat.h depend on page_zone()
  */

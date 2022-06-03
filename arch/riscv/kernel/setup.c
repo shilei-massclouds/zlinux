@@ -49,15 +49,35 @@ void __init parse_dtb(void)
 void __init setup_arch(char **cmdline_p)
 {
     parse_dtb();
+    setup_initial_init_mm(_stext, _etext, _edata, _end);
 
+    *cmdline_p = boot_command_line;
+
+#if 0
+    early_ioremap_setup();
+    jump_label_init();
+#endif
     parse_early_param();
 
+#if 0
+    efi_init();
+#endif
     paging_init();
+    printk("%s: ================== PILOT ==================\n", __func__);
 
-    if (early_init_dt_verify(__va(dtb_early_pa)))
+#if 0
+    if (early_init_dt_verify(__va(XIP_FIXUP(dtb_early_pa))))
         unflatten_device_tree();
     else
         pr_err("No DTB found in kernel mappings\n");
 
     misc_mem_init();
+
+    init_resources();
+    sbi_init();
+
+    setup_smp();
+
+    riscv_fill_hwcap();
+#endif
 }

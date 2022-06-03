@@ -144,6 +144,8 @@ struct folio {
 #define STRUCT_PAGE_MAX_SHIFT   (order_base_2(sizeof(struct page)))
 
 struct mm_struct {
+    unsigned long start_code, end_code, start_data, end_data;
+    unsigned long start_brk, brk, start_stack;
 };
 
 extern struct mm_struct init_mm;
