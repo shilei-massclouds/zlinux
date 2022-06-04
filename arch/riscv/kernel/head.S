@@ -34,7 +34,8 @@ ENTRY(_start)
     .word 0
 
 .align 2
-relocate:
+.global relocate_enable_mmu
+relocate_enable_mmu:
     /* Relocate return address */
     la a1, kernel_map
     REG_L a1, KERNEL_MAP_VIRT_ADDR(a1)
@@ -88,11 +89,10 @@ relocate:
 
     ret
 
-.global secondary_start_common
-secondary_start_common:
+.Lsecondary_start_common:
     /* Enable virtual memory and relocate to virtual address */
     la a0, swapper_pg_dir
-    call relocate
+    call relocate_enable_mmu
     call setup_trap_vector
     tail smp_callin
 
@@ -134,12 +134,10 @@ ENTRY(_start_kernel)
     li t0, SR_FS
     csrc CSR_STATUS, t0
 
-#ifdef CONFIG_SMP
     li t0, CONFIG_NR_CPUS
     blt a0, t0, .Lgood_cores
     tail .Lsecondary_park
 .Lgood_cores:
-#endif
 
     /* Pick one hart to run the main boot sequence */
     la a3, hart_lottery
@@ -169,7 +167,7 @@ clear_bss_done:
     call setup_vm
 
     la a0, early_pg_dir
-    call relocate
+    call relocate_enable_mmu
 
     call setup_trap_vector
     /* Restore C environment */
@@ -186,8 +184,8 @@ clear_bss_done:
     csrw CSR_TVEC, a3
 
     slli a3, a0, LGREG
-    la a1, __cpu_up_stack_pointer
-    la a2, __cpu_up_task_pointer
+    la a1, __cpu_spinwait_stack_pointer
+    la a2, __cpu_spinwait_task_pointer
     add a1, a3, a1
     add a2, a3, a2
 
@@ -203,6 +201,6 @@ clear_bss_done:
     beqz tp, .Lwait_for_cpu_up
     fence
 
-    tail secondary_start_common
+    tail .Lsecondary_start_common
 
 END(_start_kernel)
