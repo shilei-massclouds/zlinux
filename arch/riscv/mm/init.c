@@ -45,7 +45,14 @@ EXPORT_SYMBOL(empty_zero_page);
 struct kernel_mapping kernel_map __ro_after_init;
 EXPORT_SYMBOL(kernel_map);
 
+u64 satp_mode __ro_after_init = SATP_MODE_57;
+EXPORT_SYMBOL(satp_mode);
+
 pgd_t swapper_pg_dir[PTRS_PER_PGD] __page_aligned_bss;
+
+static pud_t trampoline_pud[PTRS_PER_PUD] __page_aligned_bss;
+static pud_t fixmap_pud[PTRS_PER_PUD] __page_aligned_bss;
+static pud_t early_pud[PTRS_PER_PUD] __initdata __aligned(PAGE_SIZE);
 
 pgd_t trampoline_pg_dir[PTRS_PER_PGD] __page_aligned_bss;
 pmd_t trampoline_pmd[PTRS_PER_PMD] __page_aligned_bss;
@@ -82,6 +89,29 @@ struct pt_alloc_ops {
 static struct pt_alloc_ops _pt_ops __initdata;
 
 #define pt_ops _pt_ops
+
+#define pgd_next_t      p4d_t
+#define alloc_pgd_next(__va)    (pgtable_l5_enabled ?           \
+        pt_ops.alloc_p4d(__va) : (pgtable_l4_enabled ?      \
+        pt_ops.alloc_pud(__va) : pt_ops.alloc_pmd(__va)))
+#define get_pgd_next_virt(__pa) (pgtable_l5_enabled ?           \
+        pt_ops.get_p4d_virt(__pa) : (pgd_next_t *)(pgtable_l4_enabled ? \
+        pt_ops.get_pud_virt(__pa) : (pud_t *)pt_ops.get_pmd_virt(__pa)))
+#define create_pgd_next_mapping(__nextp, __va, __pa, __sz, __prot)  \
+                (pgtable_l5_enabled ?           \
+        create_p4d_mapping(__nextp, __va, __pa, __sz, __prot) : \
+                (pgtable_l4_enabled ?           \
+        create_pud_mapping((pud_t *)__nextp, __va, __pa, __sz, __prot) :    \
+        create_pmd_mapping((pmd_t *)__nextp, __va, __pa, __sz, __prot)))
+#define fixmap_pgd_next     (pgtable_l5_enabled ?           \
+        (uintptr_t)fixmap_p4d : (pgtable_l4_enabled ?       \
+        (uintptr_t)fixmap_pud : (uintptr_t)fixmap_pmd))
+#define trampoline_pgd_next (pgtable_l5_enabled ?           \
+        (uintptr_t)trampoline_p4d : (pgtable_l4_enabled ?   \
+        (uintptr_t)trampoline_pud : (uintptr_t)trampoline_pmd))
+#define early_dtb_pgd_next  (pgtable_l5_enabled ?           \
+        (uintptr_t)early_dtb_p4d : (pgtable_l4_enabled ?    \
+        (uintptr_t)early_dtb_pud : (uintptr_t)early_dtb_pmd))
 
 void __set_fixmap(enum fixed_addresses idx, phys_addr_t phys, pgprot_t prot)
 {
@@ -176,6 +206,60 @@ create_pmd_mapping(pmd_t *pmdp, uintptr_t va, phys_addr_t pa,
     }
 
     create_pte_mapping(ptep, va, pa, sz, prot);
+}
+
+static void __init
+create_pud_mapping(pud_t *pudp, uintptr_t va, phys_addr_t pa,
+                   phys_addr_t sz, pgprot_t prot)
+{
+    pmd_t *nextp;
+    phys_addr_t next_phys;
+    uintptr_t pud_index = pud_index(va);
+
+    if (sz == PUD_SIZE) {
+        if (pud_val(pudp[pud_index]) == 0)
+            pudp[pud_index] = pfn_pud(PFN_DOWN(pa), prot);
+        return;
+    }
+
+    if (pud_val(pudp[pud_index]) == 0) {
+        next_phys = pt_ops.alloc_pmd(va);
+        pudp[pud_index] = pfn_pud(PFN_DOWN(next_phys), PAGE_TABLE);
+        nextp = pt_ops.get_pmd_virt(next_phys);
+        memset(nextp, 0, PAGE_SIZE);
+    } else {
+        next_phys = PFN_PHYS(_pud_pfn(pudp[pud_index]));
+        nextp = pt_ops.get_pmd_virt(next_phys);
+    }
+
+    create_pmd_mapping(nextp, va, pa, sz, prot);
+}
+
+static void __init
+create_p4d_mapping(p4d_t *p4dp, uintptr_t va, phys_addr_t pa,
+                   phys_addr_t sz, pgprot_t prot)
+{
+    pud_t *nextp;
+    phys_addr_t next_phys;
+    uintptr_t p4d_index = p4d_index(va);
+
+    if (sz == P4D_SIZE) {
+        if (p4d_val(p4dp[p4d_index]) == 0)
+            p4dp[p4d_index] = pfn_p4d(PFN_DOWN(pa), prot);
+        return;
+    }
+
+    if (p4d_val(p4dp[p4d_index]) == 0) {
+        next_phys = pt_ops.alloc_pud(va);
+        p4dp[p4d_index] = pfn_p4d(PFN_DOWN(next_phys), PAGE_TABLE);
+        nextp = pt_ops.get_pud_virt(next_phys);
+        memset(nextp, 0, PAGE_SIZE);
+    } else {
+        next_phys = PFN_PHYS(_p4d_pfn(p4dp[p4d_index]));
+        nextp = pt_ops.get_pud_virt(next_phys);
+    }
+
+    create_pud_mapping(nextp, va, pa, sz, prot);
 }
 
 #define pgd_next_t              pmd_t
@@ -300,19 +384,66 @@ static void __init create_fdt_early_page_table(pgd_t *pgdir, uintptr_t dtb_pa)
     dtb_early_pa = dtb_pa;
 }
 
+/*
+ * MMU is not enabled, the page tables are allocated directly using
+ * early_pmd/pud/p4d and the address returned is the physical one.
+ */
+void __init pt_ops_set_early(void)
+{
+    pt_ops.alloc_pte = alloc_pte_early;
+    pt_ops.get_pte_virt = get_pte_virt_early;
+    pt_ops.alloc_pmd = alloc_pmd_early;
+    pt_ops.get_pmd_virt = get_pmd_virt_early;
+    pt_ops.alloc_pud = alloc_pud_early;
+    pt_ops.get_pud_virt = get_pud_virt_early;
+    pt_ops.alloc_p4d = alloc_p4d_early;
+    pt_ops.get_p4d_virt = get_p4d_virt_early;
+}
+
+/*
+ * MMU is enabled but page table setup is not complete yet.
+ * fixmap page table alloc functions must be used as a means to temporarily
+ * map the allocated physical pages since the linear mapping does not exist yet.
+ *
+ * Note that this is called with MMU disabled, hence kernel_mapping_pa_to_va,
+ * but it will be used as described above.
+ */
+void __init pt_ops_set_fixmap(void)
+{
+    pt_ops.alloc_pte = kernel_mapping_pa_to_va((uintptr_t)alloc_pte_fixmap);
+    pt_ops.get_pte_virt = kernel_mapping_pa_to_va((uintptr_t)get_pte_virt_fixmap);
+    pt_ops.alloc_pmd = kernel_mapping_pa_to_va((uintptr_t)alloc_pmd_fixmap);
+    pt_ops.get_pmd_virt = kernel_mapping_pa_to_va((uintptr_t)get_pmd_virt_fixmap);
+    pt_ops.alloc_pud = kernel_mapping_pa_to_va((uintptr_t)alloc_pud_fixmap);
+    pt_ops.get_pud_virt = kernel_mapping_pa_to_va((uintptr_t)get_pud_virt_fixmap);
+    pt_ops.alloc_p4d = kernel_mapping_pa_to_va((uintptr_t)alloc_p4d_fixmap);
+    pt_ops.get_p4d_virt = kernel_mapping_pa_to_va((uintptr_t)get_p4d_virt_fixmap);
+}
+
 asmlinkage void __init setup_vm(uintptr_t dtb_pa)
 {
     pmd_t __maybe_unused fix_bmap_spmd, fix_bmap_epmd;
 
     kernel_map.virt_addr = KERNEL_LINK_ADDR;
+    kernel_map.page_offset = _AC(CONFIG_PAGE_OFFSET, UL);
 
     kernel_map.phys_addr = (uintptr_t)(&_start);
     kernel_map.size = (uintptr_t)(&_end) - kernel_map.phys_addr;
+
+    set_satp_mode();
 
     kernel_map.va_pa_offset = PAGE_OFFSET - kernel_map.phys_addr;
     kernel_map.va_kernel_pa_offset = kernel_map.virt_addr - kernel_map.phys_addr;
 
     riscv_pfn_base = PFN_DOWN(kernel_map.phys_addr);
+
+    /*
+     * The default maximal physical memory size is KERN_VIRT_SIZE for 32-bit
+     * kernel, whereas for 64-bit kernel, the end of the virtual address
+     * space is occupied by the modules/BPF/kernel mappings which reduces
+     * the available size of the linear mapping.
+     */
+    memory_limit = KERN_VIRT_SIZE - SZ_4G;
 
     /* Sanity check alignment and size */
     BUG_ON((PAGE_OFFSET % PGDIR_SIZE) != 0);
@@ -324,21 +455,31 @@ asmlinkage void __init setup_vm(uintptr_t dtb_pa)
      */
     BUG_ON((kernel_map.virt_addr + kernel_map.size) > ADDRESS_SPACE_END - SZ_4K);
 
-    pt_ops.alloc_pte = alloc_pte_early;
-    pt_ops.get_pte_virt = get_pte_virt_early;
-    pt_ops.alloc_pmd = alloc_pmd_early;
-    pt_ops.get_pmd_virt = get_pmd_virt_early;
+    pt_ops_set_early();
 
     /* Setup early PGD for fixmap */
     create_pgd_mapping(early_pg_dir, FIXADDR_START,
-                       (uintptr_t)fixmap_pgd_next, PGDIR_SIZE, PAGE_TABLE);
+                       fixmap_pgd_next, PGDIR_SIZE, PAGE_TABLE);
 
-    /* Setup fixmap PMD */
+    /* Setup fixmap P4D and PUD */
+    if (pgtable_l5_enabled)
+        create_p4d_mapping(fixmap_p4d, FIXADDR_START,
+                           (uintptr_t)fixmap_pud, P4D_SIZE, PAGE_TABLE);
+    /* Setup fixmap PUD and PMD */
+    if (pgtable_l4_enabled)
+        create_pud_mapping(fixmap_pud, FIXADDR_START,
+                           (uintptr_t)fixmap_pmd, PUD_SIZE, PAGE_TABLE);
     create_pmd_mapping(fixmap_pmd, FIXADDR_START,
                        (uintptr_t)fixmap_pte, PMD_SIZE, PAGE_TABLE);
     /* Setup trampoline PGD and PMD */
     create_pgd_mapping(trampoline_pg_dir, kernel_map.virt_addr,
-                       (uintptr_t)trampoline_pmd, PGDIR_SIZE, PAGE_TABLE);
+                       trampoline_pgd_next, PGDIR_SIZE, PAGE_TABLE);
+    if (pgtable_l5_enabled)
+        create_p4d_mapping(trampoline_p4d, kernel_map.virt_addr,
+                           (uintptr_t)trampoline_pud, P4D_SIZE, PAGE_TABLE);
+    if (pgtable_l4_enabled)
+        create_pud_mapping(trampoline_pud, kernel_map.virt_addr,
+                           (uintptr_t)trampoline_pmd, PUD_SIZE, PAGE_TABLE);
     create_pmd_mapping(trampoline_pmd, kernel_map.virt_addr,
                        kernel_map.phys_addr, PMD_SIZE, PAGE_KERNEL_EXEC);
 
@@ -356,8 +497,8 @@ asmlinkage void __init setup_vm(uintptr_t dtb_pa)
      * Bootime fixmap only can handle PMD_SIZE mapping. Thus, boot-ioremap
      * range can not span multiple pmds.
      */
-    BUILD_BUG_ON((__fix_to_virt(FIX_BTMAP_BEGIN) >> PMD_SHIFT) !=
-                 (__fix_to_virt(FIX_BTMAP_END) >> PMD_SHIFT));
+    BUG_ON((__fix_to_virt(FIX_BTMAP_BEGIN) >> PMD_SHIFT) !=
+           (__fix_to_virt(FIX_BTMAP_END) >> PMD_SHIFT));
 
     /*
      * Early ioremap fixmap is already created as it lies within first 2MB
@@ -370,15 +511,17 @@ asmlinkage void __init setup_vm(uintptr_t dtb_pa)
     if (pmd_val(fix_bmap_spmd) != pmd_val(fix_bmap_epmd)) {
         WARN_ON(1);
         pr_warn("fixmap btmap start [%08lx] != end [%08lx]\n",
-            pmd_val(fix_bmap_spmd), pmd_val(fix_bmap_epmd));
+                pmd_val(fix_bmap_spmd), pmd_val(fix_bmap_epmd));
         pr_warn("fix_to_virt(FIX_BTMAP_BEGIN): %08lx\n",
-            fix_to_virt(FIX_BTMAP_BEGIN));
+                fix_to_virt(FIX_BTMAP_BEGIN));
         pr_warn("fix_to_virt(FIX_BTMAP_END):   %08lx\n",
-            fix_to_virt(FIX_BTMAP_END));
+                fix_to_virt(FIX_BTMAP_END));
 
         pr_warn("FIX_BTMAP_END:       %d\n", FIX_BTMAP_END);
         pr_warn("FIX_BTMAP_BEGIN:     %d\n", FIX_BTMAP_BEGIN);
     }
+
+    pt_ops_set_fixmap();
 }
 
 void __init setup_bootmem(void)
@@ -464,7 +607,7 @@ static void __init setup_vm_final(void)
     clear_fixmap(FIX_PMD);
 
     /* Move to swapper page table */
-    csr_write(CSR_SATP, PFN_DOWN(__pa_symbol(swapper_pg_dir)) | SATP_MODE);
+    csr_write(CSR_SATP, PFN_DOWN(__pa_symbol(swapper_pg_dir)) | satp_mode);
     local_flush_tlb_all();
 }
 

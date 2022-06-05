@@ -15,7 +15,8 @@
 
 /* SATP flags */
 #define SATP_MODE_39    _AC(0x8000000000000000, UL)
-#define SATP_MODE       SATP_MODE_39
+#define SATP_MODE_48    _AC(0x9000000000000000, UL)
+#define SATP_MODE_57    _AC(0xa000000000000000, UL)
 
 /* Interrupt causes (minus the high bit) */
 #define IRQ_S_SOFT      1
