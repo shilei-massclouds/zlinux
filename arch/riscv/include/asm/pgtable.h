@@ -12,13 +12,14 @@
 /* Leave 2GB for kernel and BPF at the end of the address space */
 #define KERNEL_LINK_ADDR    (ADDRESS_SPACE_END - SZ_2G + 1)
 
-#ifndef __ASSEMBLY__
-
-#include <asm/page.h>
-#include <linux/mm_types.h>
+/*
+ * Half of the kernel address space (half of the entries of the page global
+ * directory) is for the direct mapping.
+ */
+#define KERN_VIRT_SIZE  ((PTRS_PER_PGD / 2 * PGDIR_SIZE) / 2)
 
 #define VMALLOC_SIZE    (KERN_VIRT_SIZE >> 1)
-#define VMALLOC_END     (PAGE_OFFSET - 1)
+#define VMALLOC_END     PAGE_OFFSET
 #define VMALLOC_START   (PAGE_OFFSET - VMALLOC_SIZE)
 
 /*
@@ -26,10 +27,17 @@
  * struct pages to map half the virtual address space. Then
  * position vmemmap directly below the VMALLOC region.
  */
+#define VA_BITS 57
+
+/*
+ * Roughly size the vmemmap space to be large enough to fit enough
+ * struct pages to map half the virtual address space. Then
+ * position vmemmap directly below the VMALLOC region.
+ */
 #define VMEMMAP_SHIFT \
-    (CONFIG_VA_BITS - PAGE_SHIFT - 1 + STRUCT_PAGE_MAX_SHIFT)
+    (VA_BITS - PAGE_SHIFT - 1 + STRUCT_PAGE_MAX_SHIFT)
 #define VMEMMAP_SIZE    BIT(VMEMMAP_SHIFT)
-#define VMEMMAP_END     (VMALLOC_START - 1)
+#define VMEMMAP_END     VMALLOC_START
 #define VMEMMAP_START   (VMALLOC_START - VMEMMAP_SIZE)
 
 #define PCI_IO_SIZE     SZ_16M
@@ -39,6 +47,11 @@
 #define FIXADDR_TOP     PCI_IO_START
 #define FIXADDR_SIZE    PMD_SIZE
 #define FIXADDR_START   (FIXADDR_TOP - FIXADDR_SIZE)
+
+#ifndef __ASSEMBLY__
+
+#include <asm/page.h>
+#include <linux/mm_types.h>
 
 #include <asm/pgtable-64.h>
 
@@ -57,6 +70,17 @@
     __pgprot((_PAGE_KERNEL & ~_PAGE_WRITE) | _PAGE_EXEC)
 
 #define PAGE_TABLE          __pgprot(_PAGE_TABLE)
+
+struct pt_alloc_ops {
+    pte_t *(*get_pte_virt)(phys_addr_t pa);
+    phys_addr_t (*alloc_pte)(uintptr_t va);
+    pmd_t *(*get_pmd_virt)(phys_addr_t pa);
+    phys_addr_t (*alloc_pmd)(uintptr_t va);
+    pud_t *(*get_pud_virt)(phys_addr_t pa);
+    phys_addr_t (*alloc_pud)(uintptr_t va);
+    p4d_t *(*get_p4d_virt)(phys_addr_t pa);
+    phys_addr_t (*alloc_p4d)(uintptr_t va);
+};
 
 static inline int pmd_none(pmd_t pmd)
 {

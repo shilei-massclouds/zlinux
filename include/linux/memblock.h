@@ -167,11 +167,10 @@ phys_addr_t
 memblock_phys_alloc_range(phys_addr_t size, phys_addr_t align,
                           phys_addr_t start, phys_addr_t end);
 
-static inline phys_addr_t memblock_phys_alloc(phys_addr_t size,
-                          phys_addr_t align)
+static inline phys_addr_t
+memblock_phys_alloc(phys_addr_t size, phys_addr_t align)
 {
-    return memblock_phys_alloc_range(size, align, 0,
-                                     MEMBLOCK_ALLOC_ACCESSIBLE);
+    return memblock_phys_alloc_range(size, align, 0, MEMBLOCK_ALLOC_ACCESSIBLE);
 }
 
 /*

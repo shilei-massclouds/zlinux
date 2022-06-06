@@ -10,13 +10,14 @@
 #define PAGE_SIZE   (_AC(1, UL) << PAGE_SHIFT)
 #define PAGE_MASK   (~(PAGE_SIZE - 1))
 
-#define PAGE_OFFSET _AC(CONFIG_PAGE_OFFSET, UL)
+#define PAGE_OFFSET kernel_map.page_offset
 
 /*
- * Half of the kernel address space (half of the entries of the page global
- * directory) is for the direct mapping.
+ * By default, CONFIG_PAGE_OFFSET value corresponds to SV48 address space so
+ * define the PAGE_OFFSET value for SV39.
  */
-#define KERN_VIRT_SIZE ((PTRS_PER_PGD / 2 * PGDIR_SIZE) / 2)
+#define PAGE_OFFSET_L4  _AC(0xffffaf8000000000, UL)
+#define PAGE_OFFSET_L3  _AC(0xffffffd800000000, UL)
 
 #ifndef __ASSEMBLY__
 

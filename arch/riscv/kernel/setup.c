@@ -63,6 +63,7 @@ void __init setup_arch(char **cmdline_p)
     efi_init();
 #endif
     paging_init();
+    printk("l4(%d) l5(%d)\n", pgtable_l4_enabled, pgtable_l5_enabled);
     printk("%s: ================== PILOT ==================\n", __func__);
 
 #if 0
