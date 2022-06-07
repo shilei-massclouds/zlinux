@@ -149,6 +149,11 @@ static inline int printk_get_level(const char *buffer)
  */
 #define pr_cont(fmt, ...) printk(KERN_CONT fmt, ##__VA_ARGS__)
 
+#define printk_once(fmt, ...) DO_ONCE_LITE(printk, fmt, ##__VA_ARGS__)
+
+#define pr_warn_once(fmt, ...) \
+    printk_once(KERN_WARNING pr_fmt(fmt), ##__VA_ARGS__)
+
 asmlinkage __printf(1, 2) __cold
 int printk(const char *fmt, ...);
 

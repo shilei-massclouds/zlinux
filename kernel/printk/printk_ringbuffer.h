@@ -6,6 +6,103 @@
 #include <linux/atomic.h>
 #include <linux/dev_printk.h>
 
+#define _DATA_SIZE(sz_bits) (1UL << (sz_bits))
+#define _DESCS_COUNT(ct_bits)   (1U << (ct_bits))
+#define DESC_SV_BITS        (sizeof(unsigned long) * 8)
+#define DESC_FLAGS_SHIFT    (DESC_SV_BITS - 2)
+#define DESC_FLAGS_MASK     (3UL << DESC_FLAGS_SHIFT)
+#define DESC_STATE(sv)      (3UL & (sv >> DESC_FLAGS_SHIFT))
+#define DESC_SV(id, state)  (((unsigned long)state << DESC_FLAGS_SHIFT) | id)
+#define DESC_ID_MASK        (~DESC_FLAGS_MASK)
+#define DESC_ID(sv)         ((sv) & DESC_ID_MASK)
+#define FAILED_LPOS         0x1
+#define NO_LPOS             0x3
+
+#define FAILED_BLK_LPOS \
+{               \
+    .begin  = FAILED_LPOS,  \
+    .next   = FAILED_LPOS,  \
+}
+
+/*
+ * Initiating Logical Value Overflows
+ *
+ * Both logical position (lpos) and ID values can be mapped to array indexes
+ * but may experience overflows during the lifetime of the system. To ensure
+ * that printk_ringbuffer can handle the overflows for these types, initial
+ * values are chosen that map to the correct initial array indexes, but will
+ * result in overflows soon.
+ *
+ *   BLK0_LPOS
+ *     The initial @head_lpos and @tail_lpos for data rings. It is at index
+ *     0 and the lpos value is such that it will overflow on the first wrap.
+ *
+ *   DESC0_ID
+ *     The initial @head_id and @tail_id for the desc ring. It is at the last
+ *     index of the descriptor array (see Req3 above) and the ID value is such
+ *     that it will overflow on the second wrap.
+ */
+#define BLK0_LPOS(sz_bits)  (-(_DATA_SIZE(sz_bits)))
+#define DESC0_ID(ct_bits)   DESC_ID(-(_DESCS_COUNT(ct_bits) + 1))
+#define DESC0_SV(ct_bits)   DESC_SV(DESC0_ID(ct_bits), desc_reusable)
+
+/*
+ * Define a ringbuffer with an external text data buffer. The same as
+ * DEFINE_PRINTKRB() but requires specifying an external buffer for the
+ * text data.
+ *
+ * Note: The specified external buffer must be of the size:
+ *       2 ^ (descbits + avgtextbits)
+ */
+#define _DEFINE_PRINTKRB(name, descbits, avgtextbits, text_buf)         \
+static struct prb_desc _##name##_descs[_DESCS_COUNT(descbits)] = {              \
+    /* the initial head and tail */                             \
+    [_DESCS_COUNT(descbits) - 1] = {                            \
+        /* reusable */                                  \
+        .state_var  = ATOMIC_INIT(DESC0_SV(descbits)),              \
+        /* no associated data block */                          \
+        .text_blk_lpos  = FAILED_BLK_LPOS,                      \
+    },                                          \
+};                                              \
+static struct printk_info _##name##_infos[_DESCS_COUNT(descbits)] = {               \
+    /* this will be the first record reserved by a writer */                \
+    [0] = {                                         \
+        /* will be incremented to 0 on the first reservation */             \
+        .seq = -(u64)_DESCS_COUNT(descbits),                        \
+    },                                          \
+    /* the initial head and tail */                             \
+    [_DESCS_COUNT(descbits) - 1] = {                            \
+        /* reports the first seq value during the bootstrap phase */            \
+        .seq = 0,                                   \
+    },                                          \
+};                                              \
+static struct printk_ringbuffer name = {                            \
+    .desc_ring = {                                      \
+        .count_bits = descbits,                         \
+        .descs      = &_##name##_descs[0],                      \
+        .infos      = &_##name##_infos[0],                      \
+        .head_id    = ATOMIC_INIT(DESC0_ID(descbits)),              \
+        .tail_id    = ATOMIC_INIT(DESC0_ID(descbits)),              \
+        .last_finalized_id = ATOMIC_INIT(DESC0_ID(descbits)),               \
+    },                                          \
+    .text_data_ring = {                                 \
+        .size_bits  = (avgtextbits) + (descbits),                   \
+        .data       = text_buf,                         \
+        .head_lpos  = ATOMIC_LONG_INIT(BLK0_LPOS((avgtextbits) + (descbits))),  \
+        .tail_lpos  = ATOMIC_LONG_INIT(BLK0_LPOS((avgtextbits) + (descbits))),  \
+    },                                          \
+    .fail           = ATOMIC_LONG_INIT(0),                      \
+}
+
+/* The possible responses of a descriptor state-query. */
+enum desc_state {
+    desc_miss   =  -1,  /* ID mismatch (pseudo state) */
+    desc_reserved   = 0x0,  /* reserved, in use by writer */
+    desc_committed  = 0x1,  /* committed by writer, could get reopened */
+    desc_finalized  = 0x2,  /* committed, no further modification allowed */
+    desc_reusable   = 0x3,  /* free, not yet used by any writer */
+};
+
 /*
  * Meta information about each stored message.
  *
@@ -123,10 +220,16 @@ static inline void prb_rec_init_wr(struct printk_record *r,
     r->text_buf_size = text_buf_size;
 }
 
+bool prb_reserve(struct prb_reserved_entry *e, struct printk_ringbuffer *rb,
+                 struct printk_record *r);
+
 bool prb_reserve_in_last(struct prb_reserved_entry *e,
                          struct printk_ringbuffer *rb,
                          struct printk_record *r,
                          u32 caller_id,
                          unsigned int max_size);
+
+void prb_commit(struct prb_reserved_entry *e);
+void prb_final_commit(struct prb_reserved_entry *e);
 
 #endif /* _KERNEL_PRINTK_RINGBUFFER_H */

@@ -29,6 +29,25 @@
 
 static DEFINE_PER_CPU(int, printk_pending);
 
+#define LOG_ALIGN __alignof__(unsigned long)
+#define __LOG_BUF_LEN (1 << CONFIG_LOG_BUF_SHIFT)
+#define LOG_BUF_LEN_MAX (u32)(1 << 31)
+static char __log_buf[__LOG_BUF_LEN] __aligned(LOG_ALIGN);
+static char *log_buf = __log_buf;
+static u32 log_buf_len = __LOG_BUF_LEN;
+
+/*
+ * Define the average message size. This only affects the number of
+ * descriptors that will be available. Underestimating is better than
+ * overestimating (too many available descriptors is better than not enough).
+ */
+#define PRB_AVGBITS 5   /* 32 character average length */
+
+_DEFINE_PRINTKRB(printk_rb_static, CONFIG_LOG_BUF_SHIFT - PRB_AVGBITS,
+                 PRB_AVGBITS, &__log_buf[0]);
+
+static struct printk_ringbuffer *prb = &printk_rb_static;
+
 #define logbuf_lock_irqsave(flags)          \
     do {                        \
         printk_safe_enter_irqsave(flags);   \
@@ -274,15 +293,6 @@ struct printk_log {
     u8 flags:5;     /* internal record flags */
     u8 level:3;     /* syslog level */
 };
-
-/* record buffer */
-#define LOG_ALIGN __alignof__(struct printk_log)
-#define __LOG_BUF_LEN (1 << CONFIG_LOG_BUF_SHIFT)
-#define LOG_BUF_LEN_MAX (u32)(1 << 31)
-
-static char __log_buf[__LOG_BUF_LEN] __aligned(LOG_ALIGN);
-static char *log_buf = __log_buf;
-static u32 log_buf_len = __LOG_BUF_LEN;
 
 /* human readable text of the record */
 static char *log_text(const struct printk_log *msg)
@@ -1063,22 +1073,23 @@ static int log_make_free_space(u32 msg_size)
 #define MAX_LOG_TAKE_PART 4
 static const char trunc_msg[] = "<truncated>";
 
-static u32 truncate_msg(u16 *text_len, u16 *trunc_msg_len,
-                        u16 *dict_len, u32 *pad_len)
+static void truncate_msg(u16 *text_len, u16 *trunc_msg_len)
 {
     /*
      * The message should not take the whole buffer. Otherwise, it might
      * get removed too soon.
      */
     u32 max_text_len = log_buf_len / MAX_LOG_TAKE_PART;
+
     if (*text_len > max_text_len)
         *text_len = max_text_len;
-    /* enable the warning message */
+
+    /* enable the warning message (if there is room) */
     *trunc_msg_len = strlen(trunc_msg);
-    /* disable the "dict" completely */
-    *dict_len = 0;
-    /* compute the size again, count also the warning message */
-    return msg_used_size(*text_len + *trunc_msg_len, 0, pad_len);
+    if (*text_len >= *trunc_msg_len)
+        *text_len -= *trunc_msg_len;
+    else
+        *trunc_msg_len = 0;
 }
 
 /*
@@ -1169,6 +1180,35 @@ u16 printk_parse_prefix(const char *text, int *level,
     return prefix_len;
 }
 
+__printf(5, 0)
+static u16 printk_sprint(char *text, u16 size, int facility,
+                         enum printk_info_flags *flags, const char *fmt,
+                         va_list args)
+{
+    u16 text_len;
+
+    text_len = vscnprintf(text, size, fmt, args);
+
+    /* Mark and strip a trailing newline. */
+    if (text_len && text[text_len - 1] == '\n') {
+        text_len--;
+        *flags |= LOG_NEWLINE;
+    }
+
+    /* Strip log level and control flags. */
+    if (facility == 0) {
+        u16 prefix_len;
+
+        prefix_len = printk_parse_prefix(text, NULL, NULL);
+        if (prefix_len) {
+            text_len -= prefix_len;
+            memmove(text, text + prefix_len, text_len);
+        }
+    }
+
+    return text_len;
+}
+
 __printf(4, 0)
 int vprintk_store(int facility, int level,
                   const struct dev_printk_info *dev_info,
@@ -1241,7 +1281,45 @@ int vprintk_store(int facility, int level,
         }
     }
 
-    panic("%s: END!\n", __func__);
+    /*
+     * Explicitly initialize the record before every prb_reserve() call.
+     * prb_reserve_in_last() and prb_reserve() purposely invalidate the
+     * structure when they fail.
+     */
+    prb_rec_init_wr(&r, reserve_size);
+    if (!prb_reserve(&e, prb, &r)) {
+        /* truncate the message if it is too long for empty buffer */
+        truncate_msg(&reserve_size, &trunc_msg_len);
+
+        prb_rec_init_wr(&r, reserve_size + trunc_msg_len);
+        if (!prb_reserve(&e, prb, &r))
+            goto out;
+    }
+
+    /* fill message */
+    text_len = printk_sprint(&r.text_buf[0], reserve_size, facility, &flags,
+                             fmt, args);
+    if (trunc_msg_len)
+        memcpy(&r.text_buf[text_len], trunc_msg, trunc_msg_len);
+    r.info->text_len = text_len + trunc_msg_len;
+    r.info->facility = facility;
+    r.info->level = level & 7;
+    r.info->flags = flags & 0x1f;
+    //r.info->ts_nsec = ts_nsec;
+    r.info->caller_id = caller_id;
+    if (dev_info)
+        memcpy(&r.info->dev_info, dev_info, sizeof(r.info->dev_info));
+
+    /* A message without a trailing newline can be continued. */
+    if (!(flags & LOG_NEWLINE))
+        prb_commit(&e);
+    else
+        prb_final_commit(&e);
+
+    ret = text_len + trunc_msg_len;
+out:
+    printk_exit_irqrestore(recursion_ptr, irqflags);
+    return ret;
 }
 
 asmlinkage int

@@ -56,4 +56,28 @@ arch_atomic_long_andnot(long i, atomic_long_t *v)
     arch_atomic64_andnot(i, v);
 }
 
+static __always_inline void
+arch_atomic_long_inc(atomic_long_t *v)
+{
+    arch_atomic64_inc(v);
+}
+
+static __always_inline long
+arch_atomic_long_cmpxchg(atomic_long_t *v, long old, long new)
+{
+    return arch_atomic64_cmpxchg(v, old, new);
+}
+
+static __always_inline long
+arch_atomic_long_cmpxchg_relaxed(atomic_long_t *v, long old, long new)
+{
+    return arch_atomic64_cmpxchg_relaxed(v, old, new);
+}
+
+static __always_inline bool
+arch_atomic_long_try_cmpxchg(atomic_long_t *v, long *old, long new)
+{
+    return arch_atomic64_try_cmpxchg(v, (s64 *)old, new);
+}
+
 #endif /* _LINUX_ATOMIC_LONG_H */

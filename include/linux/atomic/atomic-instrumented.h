@@ -120,4 +120,28 @@ atomic_fetch_sub_release(int i, atomic_t *v)
     arch_cmpxchg_relaxed(__ai_ptr, __VA_ARGS__); \
 })
 
+static __always_inline void
+atomic_long_inc(atomic_long_t *v)
+{
+    arch_atomic_long_inc(v);
+}
+
+static __always_inline long
+atomic_long_cmpxchg(atomic_long_t *v, long old, long new)
+{
+    return arch_atomic_long_cmpxchg(v, old, new);
+}
+
+static __always_inline long
+atomic_long_cmpxchg_relaxed(atomic_long_t *v, long old, long new)
+{
+    return arch_atomic_long_cmpxchg_relaxed(v, old, new);
+}
+
+static __always_inline bool
+atomic_long_try_cmpxchg(atomic_long_t *v, long *old, long new)
+{
+    return arch_atomic_long_try_cmpxchg(v, old, new);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */

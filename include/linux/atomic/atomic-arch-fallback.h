@@ -113,4 +113,13 @@ arch_atomic64_andnot(s64 i, atomic64_t *v)
 #define arch_atomic64_andnot arch_atomic64_andnot
 #endif
 
+#ifndef arch_atomic64_inc
+static __always_inline void
+arch_atomic64_inc(atomic64_t *v)
+{
+    arch_atomic64_add(1, v);
+}
+#define arch_atomic64_inc arch_atomic64_inc
+#endif
+
 #endif /* _LINUX_ATOMIC_FALLBACK_H */
