@@ -62,6 +62,48 @@ do {                                            \
     raw_local_irq_restore(__flags);             \
 } while (0)
 
+#define __this_cpu_generic_read_nopreempt(pcp)              \
+({                                  \
+    typeof(pcp) ___ret;                     \
+    preempt_disable_notrace();                  \
+    ___ret = READ_ONCE(*raw_cpu_ptr(&(pcp)));           \
+    preempt_enable_notrace();                   \
+    ___ret;                             \
+})
+
+#define __this_cpu_generic_read_noirq(pcp)              \
+({                                  \
+    typeof(pcp) ___ret;                     \
+    unsigned long ___flags;                     \
+    raw_local_irq_save(___flags);                   \
+    ___ret = raw_cpu_generic_read(pcp);             \
+    raw_local_irq_restore(___flags);                \
+    ___ret;                             \
+})
+
+#define this_cpu_generic_read(pcp)                  \
+({                                  \
+    typeof(pcp) __ret;                      \
+    if (__native_word(pcp))                     \
+        __ret = __this_cpu_generic_read_nopreempt(pcp);     \
+    else                                \
+        __ret = __this_cpu_generic_read_noirq(pcp);     \
+    __ret;                              \
+})
+
+#ifndef this_cpu_read_1
+#define this_cpu_read_1(pcp)        this_cpu_generic_read(pcp)
+#endif
+#ifndef this_cpu_read_2
+#define this_cpu_read_2(pcp)        this_cpu_generic_read(pcp)
+#endif
+#ifndef this_cpu_read_4
+#define this_cpu_read_4(pcp)        this_cpu_generic_read(pcp)
+#endif
+#ifndef this_cpu_read_8
+#define this_cpu_read_8(pcp)        this_cpu_generic_read(pcp)
+#endif
+
 #ifndef this_cpu_add_1
 #define this_cpu_add_1(pcp, val)    this_cpu_generic_to_op(pcp, val, +=)
 #endif
@@ -73,6 +115,32 @@ do {                                            \
 #endif
 #ifndef this_cpu_add_8
 #define this_cpu_add_8(pcp, val)    this_cpu_generic_to_op(pcp, val, +=)
+#endif
+
+#ifndef this_cpu_and_1
+#define this_cpu_and_1(pcp, val)    this_cpu_generic_to_op(pcp, val, &=)
+#endif
+#ifndef this_cpu_and_2
+#define this_cpu_and_2(pcp, val)    this_cpu_generic_to_op(pcp, val, &=)
+#endif
+#ifndef this_cpu_and_4
+#define this_cpu_and_4(pcp, val)    this_cpu_generic_to_op(pcp, val, &=)
+#endif
+#ifndef this_cpu_and_8
+#define this_cpu_and_8(pcp, val)    this_cpu_generic_to_op(pcp, val, &=)
+#endif
+
+#ifndef this_cpu_or_1
+#define this_cpu_or_1(pcp, val)     this_cpu_generic_to_op(pcp, val, |=)
+#endif
+#ifndef this_cpu_or_2
+#define this_cpu_or_2(pcp, val)     this_cpu_generic_to_op(pcp, val, |=)
+#endif
+#ifndef this_cpu_or_4
+#define this_cpu_or_4(pcp, val)     this_cpu_generic_to_op(pcp, val, |=)
+#endif
+#ifndef this_cpu_or_8
+#define this_cpu_or_8(pcp, val)     this_cpu_generic_to_op(pcp, val, |=)
 #endif
 
 #ifndef raw_cpu_read_1

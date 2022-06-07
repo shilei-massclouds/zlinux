@@ -12,12 +12,22 @@
 #include <linux/string.h>
 #include <linux/smp.h>
 #include <linux/semaphore.h>
+#include <linux/mutex.h>
 
+#include "printk_ringbuffer.h"
 #include "console_cmdline.h"
 #include "internal.h"
 
 #define PREFIX_MAX      32
 #define LOG_LINE_MAX    (1024 - PREFIX_MAX)
+
+/*
+ * Delayed printk version, for scheduler-internal messages:
+ */
+#define PRINTK_PENDING_WAKEUP   0x01
+#define PRINTK_PENDING_OUTPUT   0x02
+
+static DEFINE_PER_CPU(int, printk_pending);
 
 #define logbuf_lock_irqsave(flags)          \
     do {                        \
@@ -33,11 +43,20 @@
 
 static bool printk_time = true;
 
+/* syslog_lock protects syslog_* variables and write access to clear_seq. */
+static DEFINE_MUTEX(syslog_lock);
+
 /*
  * System may need to suppress printk message under certain
  * circumstances, like after kernel panic happens.
  */
 int __read_mostly suppress_printk;
+
+/*
+ * During panic, heavy printk by other CPUs can delay the
+ * panic and risk deadlock on console resources.
+ */
+static int __read_mostly suppress_panic_printk;
 
 int console_printk[4] = {
     CONSOLE_LOGLEVEL_DEFAULT,   /* console_loglevel */
@@ -71,7 +90,6 @@ EXPORT_SYMBOL_GPL(console_drivers);
 static struct console_cmdline console_cmdline[MAX_CMDLINECONSOLES];
 
 static int preferred_console = -1;
-static bool has_preferred_console;
 
 /* Flag: console code may call schedule() */
 static int console_may_schedule;
@@ -83,10 +101,17 @@ enum con_msg_format_flags {
 
 static int console_msg_format = MSG_FORMAT_DEFAULT;
 
-enum log_flags {
-    LOG_NEWLINE = 2,    /* text ended with a newline */
-    LOG_CONT    = 8,    /* text is a fragment of a continuation line */
-};
+/*
+ * We cannot access per-CPU data (e.g. per-CPU flush irq_work) before
+ * per_cpu_areas are initialised. This variable is set to true when
+ * it's safe to access per-CPU data.
+ */
+static bool __printk_percpu_data_ready __read_mostly;
+
+bool printk_percpu_data_ready(void)
+{
+    return __printk_percpu_data_ready;
+}
 
 /* Number of registered extended console drivers. */
 static int nr_ext_console_drivers;
@@ -94,6 +119,22 @@ static int nr_ext_console_drivers;
 static DEFINE_RAW_SPINLOCK(console_owner_lock);
 static struct task_struct *console_owner;
 static bool console_waiter;
+
+/*
+ * Recursion is tracked separately on each CPU. If NMIs are supported, an
+ * additional NMI context per CPU is also separately tracked. Until per-CPU
+ * is available, a separate "early tracking" is performed.
+ */
+static DEFINE_PER_CPU(u8, printk_count);
+static u8 printk_count_early;
+
+/*
+ * Recursion is limited to keep the output sane. printk() should not require
+ * more than 1 level of recursion (allowing, for example, printk() to trigger
+ * a WARN), but a higher value is used in case some printk-internal errors
+ * exist, such as the ringbuffer validation checks failing.
+ */
+#define PRINTK_MAX_RECURSION 3
 
 /*
  * Helper macros to handle lockdep when locking/unlocking console_sem. We use
@@ -206,7 +247,6 @@ int __read_mostly suppress_printk;
 
 /* the next printk record to read by syslog(READ) or /proc/kmsg */
 static u64 syslog_seq;
-static u32 syslog_idx;
 
 /* index and sequence number of the first record stored in the buffer */
 static u64 log_first_seq;
@@ -294,73 +334,12 @@ asmlinkage __visible int printk(const char *fmt, ...)
     int r;
 
     va_start(args, fmt);
-    r = vprintk_func(fmt, args);
+    r = vprintk(fmt, args);
     va_end(args);
 
     return r;
 }
 EXPORT_SYMBOL(printk);
-
-/*
- * This is called by register_console() to try to match
- * the newly registered console with any of the ones selected
- * by either the command line or add_preferred_console() and
- * setup/enable it.
- *
- * Care need to be taken with consoles that are statically
- * enabled such as netconsole
- */
-static int
-try_enable_new_console(struct console *newcon, bool user_specified)
-{
-    struct console_cmdline *c;
-    int i;
-    //int i, err;
-
-    for (i = 0, c = console_cmdline;
-         i < MAX_CMDLINECONSOLES && c->name[0];
-         i++, c++) {
-#if 0
-        if (c->user_specified != user_specified)
-            continue;
-        if (!newcon->match ||
-            newcon->match(newcon, c->name, c->index, c->options) != 0) {
-            /* default matching */
-            BUILD_BUG_ON(sizeof(c->name) != sizeof(newcon->name));
-            if (strcmp(c->name, newcon->name) != 0)
-                continue;
-            if (newcon->index >= 0 &&
-                newcon->index != c->index)
-                continue;
-            if (newcon->index < 0)
-                newcon->index = c->index;
-
-            if (_braille_register_console(newcon, c))
-                return 0;
-
-            if (newcon->setup &&
-                (err = newcon->setup(newcon, c->options)) != 0)
-                return err;
-        }
-        newcon->flags |= CON_ENABLED;
-        if (i == preferred_console) {
-            newcon->flags |= CON_CONSDEV;
-            has_preferred_console = true;
-        }
-        return 0;
-#endif
-    }
-
-    /*
-     * Some consoles, such as pstore and netconsole, can be enabled even
-     * without matching. Accept the pre-enabled consoles only
-     * when match() and setup() had a chance to be called.
-     */
-    if (newcon->flags & CON_ENABLED && c->user_specified == user_specified)
-        return 0;
-
-    return -ENOENT;
-}
 
 /*
  * Call the console drivers, asking them to write out
@@ -682,6 +661,81 @@ void console_unlock(void)
 }
 
 /*
+ * This is called by register_console() to try to match
+ * the newly registered console with any of the ones selected
+ * by either the command line or add_preferred_console() and
+ * setup/enable it.
+ *
+ * Care need to be taken with consoles that are statically
+ * enabled such as netconsole
+ */
+static int
+try_enable_preferred_console(struct console *newcon, bool user_specified)
+{
+    int i;
+    struct console_cmdline *c;
+
+    for (i = 0, c = console_cmdline;
+         i < MAX_CMDLINECONSOLES && c->name[0];
+         i++, c++) {
+        if (c->user_specified != user_specified)
+            continue;
+
+        panic("%s: NO implementation!\n", __func__);
+#if 0
+        if (!newcon->match ||
+            newcon->match(newcon, c->name, c->index, c->options) != 0) {
+            /* default matching */
+            BUILD_BUG_ON(sizeof(c->name) != sizeof(newcon->name));
+            if (strcmp(c->name, newcon->name) != 0)
+                continue;
+            if (newcon->index >= 0 &&
+                newcon->index != c->index)
+                continue;
+            if (newcon->index < 0)
+                newcon->index = c->index;
+
+            if (_braille_register_console(newcon, c))
+                return 0;
+
+            if (newcon->setup &&
+                (err = newcon->setup(newcon, c->options)) != 0)
+                return err;
+        }
+        newcon->flags |= CON_ENABLED;
+        if (i == preferred_console)
+            newcon->flags |= CON_CONSDEV;
+        return 0;
+#endif
+    }
+
+    /*
+     * Some consoles, such as pstore and netconsole, can be enabled even
+     * without matching. Accept the pre-enabled consoles only when match()
+     * and setup() had a chance to be called.
+     */
+    if (newcon->flags & CON_ENABLED && c->user_specified == user_specified)
+        return 0;
+
+    return -ENOENT;
+}
+
+/* Try to enable the console unconditionally */
+static void try_enable_default_console(struct console *newcon)
+{
+    if (newcon->index < 0)
+        newcon->index = 0;
+
+    if (newcon->setup && newcon->setup(newcon, NULL) != 0)
+        return;
+
+    newcon->flags |= CON_ENABLED;
+
+    if (newcon->device)
+        newcon->flags |= CON_CONSDEV;
+}
+
+/*
  * The console driver calls this routine during kernel initialization
  * to register the console printing procedure with printk() and to
  * print any messages that were printed by the kernel before the
@@ -702,60 +756,56 @@ void console_unlock(void)
  */
 void register_console(struct console *newcon)
 {
-    unsigned long flags;
-    struct console *bcon = NULL;
     int err;
+    struct console *con;
+    bool bootcon_enabled = false;
+    bool realcon_enabled = false;
 
-    for_each_console(bcon) {
-        if (WARN(bcon == newcon, "console '%s%d' already registered\n",
-                 bcon->name, bcon->index))
+    for_each_console(con) {
+        if (WARN(con == newcon, "console '%s%d' already registered\n",
+                 con->name, con->index))
             return;
     }
 
-    /*
-     * before we register a new CON_BOOT console, make sure we don't
-     * already have a valid console
-     */
-    if (newcon->flags & CON_BOOT) {
-        for_each_console(bcon) {
-            if (!(bcon->flags & CON_BOOT)) {
-                pr_info("Too late to register bootconsole %s%d\n",
-                        newcon->name, newcon->index);
-                return;
-            }
-        }
+    for_each_console(con) {
+        if (con->flags & CON_BOOT)
+            bootcon_enabled = true;
+        else
+            realcon_enabled = true;
     }
 
-    if (console_drivers && console_drivers->flags & CON_BOOT)
-        bcon = console_drivers;
-
-    if (!has_preferred_console || bcon || !console_drivers)
-        has_preferred_console = preferred_console >= 0;
+    /* Do not register boot consoles when there already is a real one. */
+    if (newcon->flags & CON_BOOT && realcon_enabled) {
+        pr_info("Too late to register bootconsole %s%d\n",
+                newcon->name, newcon->index);
+        return;
+    }
 
     /*
-     *  See if we want to use this console driver. If we
-     *  didn't select a console we take the first one
-     *  that registers here.
+     * See if we want to enable this console driver by default.
+     *
+     * Nope when a console is preferred by the command line, device
+     * tree, or SPCR.
+     *
+     * The first real console with tty binding (driver) wins. More
+     * consoles might get enabled before the right one is found.
+     *
+     * Note that a console with tty binding will have CON_CONSDEV
+     * flag set and will be first in the list.
      */
-    if (!has_preferred_console) {
-        if (newcon->index < 0)
-            newcon->index = 0;
-        if (newcon->setup == NULL ||
-            newcon->setup(newcon, NULL) == 0) {
-            newcon->flags |= CON_ENABLED;
-            if (newcon->device) {
-                newcon->flags |= CON_CONSDEV;
-                has_preferred_console = true;
-            }
+    if (preferred_console < 0) {
+        if (!console_drivers || !console_drivers->device ||
+            console_drivers->flags & CON_BOOT) {
+            try_enable_default_console(newcon);
         }
     }
 
     /* See if this console matches one we selected on the command line */
-    err = try_enable_new_console(newcon, true);
+    err = try_enable_preferred_console(newcon, true);
 
     /* If not, try to match against the platform default(s) */
     if (err == -ENOENT)
-        err = try_enable_new_console(newcon, false);
+        err = try_enable_preferred_console(newcon, false);
 
     /* printk() messages are not printed to the Braille console. */
     if (err || newcon->flags & CON_BRL)
@@ -767,8 +817,10 @@ void register_console(struct console *newcon)
      * the real console are the same physical device, it's annoying to
      * see the beginning boot messages twice
      */
-    if (bcon && ((newcon->flags & (CON_CONSDEV | CON_BOOT)) == CON_CONSDEV))
+    if (bootcon_enabled &&
+        ((newcon->flags & (CON_CONSDEV | CON_BOOT)) == CON_CONSDEV)) {
         newcon->flags &= ~CON_PRINTBUFFER;
+    }
 
     /*
      *  Put this console in the list - keep the
@@ -794,9 +846,7 @@ void register_console(struct console *newcon)
         /*
          * console_unlock(); will print out the buffered messages
          * for us.
-         */
-        logbuf_lock_irqsave(flags);
-        /*
+         *
          * We're about to replay the log buffer.  Only do this to the
          * just-registered console to avoid excessive message spam to
          * the already-registered consoles.
@@ -807,11 +857,12 @@ void register_console(struct console *newcon)
          */
         exclusive_console = newcon;
         exclusive_console_stop_seq = console_seq;
-        console_seq = syslog_seq;
-        console_idx = syslog_idx;
-        logbuf_unlock_irqrestore(flags);
-    }
 
+        /* Get a consistent copy of @syslog_seq. */
+        mutex_lock(&syslog_lock);
+        console_seq = syslog_seq;
+        mutex_unlock(&syslog_lock);
+    }
     console_unlock();
     //console_sysfs_notify();
 
@@ -823,17 +874,17 @@ void register_console(struct console *newcon)
      * went to the bootconsole (that they do not see on the real console)
      */
     pr_info("%sconsole [%s%d] enabled\n",
-        (newcon->flags & CON_BOOT) ? "boot" : "" ,
-        newcon->name, newcon->index);
-    if (bcon &&
+            (newcon->flags & CON_BOOT) ? "boot" : "" ,
+            newcon->name, newcon->index);
+    if (bootcon_enabled &&
         ((newcon->flags & (CON_CONSDEV | CON_BOOT)) == CON_CONSDEV) &&
         !keep_bootcon) {
         /* We need to iterate through all boot consoles, to make
          * sure we print everything out, before we unregister them.
          */
-        for_each_console(bcon)
-            if (bcon->flags & CON_BOOT)
-                unregister_console(bcon);
+        for_each_console(con)
+            if (con->flags & CON_BOOT)
+                unregister_console(con);
     }
 }
 EXPORT_SYMBOL(register_console);
@@ -1030,171 +1081,183 @@ static u32 truncate_msg(u16 *text_len, u16 *trunc_msg_len,
     return msg_used_size(*text_len + *trunc_msg_len, 0, pad_len);
 }
 
-/* insert record into the buffer, discard old ones, update heads */
-static int
-log_store(u32 caller_id, int facility, int level,
-          enum log_flags flags, u64 ts_nsec,
-          const char *dict, u16 dict_len,
-          const char *text, u16 text_len)
+/*
+ * Enter recursion tracking. Interrupts are disabled to simplify tracking.
+ * The caller must check the boolean return value to see if the recursion is
+ * allowed. On failure, interrupts are not disabled.
+ *
+ * @recursion_ptr must be a variable of type (u8 *) and is the same variable
+ * that is passed to printk_exit_irqrestore().
+ */
+#define printk_enter_irqsave(recursion_ptr, flags)  \
+({                          \
+    bool success = true;                \
+                            \
+    typecheck(u8 *, recursion_ptr);         \
+    local_irq_save(flags);              \
+    (recursion_ptr) = __printk_recursion_counter(); \
+    if (*(recursion_ptr) > PRINTK_MAX_RECURSION) {  \
+        local_irq_restore(flags);       \
+        success = false;            \
+    } else {                    \
+        (*(recursion_ptr))++;           \
+    }                       \
+    success;                    \
+})
+
+/* Exit recursion tracking, restoring interrupts. */
+#define printk_exit_irqrestore(recursion_ptr, flags)    \
+do {                        \
+    typecheck(u8 *, recursion_ptr);     \
+    (*(recursion_ptr))--;           \
+    local_irq_restore(flags);       \
+} while (0)
+
+/*
+ * Return a pointer to the dedicated counter for the CPU+context of the
+ * caller.
+ */
+static u8 *__printk_recursion_counter(void)
 {
-    struct printk_log *msg;
-    u32 size, pad_len;
-    u16 trunc_msg_len = 0;
-
-    /* number of '\0' padding bytes to next message */
-    size = msg_used_size(text_len, dict_len, &pad_len);
-
-    if (log_make_free_space(size)) {
-        /* truncate the message if it is too long for empty buffer */
-        size = truncate_msg(&text_len, &trunc_msg_len,
-                            &dict_len, &pad_len);
-        /* survive when the log buffer is too small for trunc_msg */
-        if (log_make_free_space(size))
-            return 0;
-    }
-
-    if (log_next_idx + size + sizeof(struct printk_log) > log_buf_len) {
-        /*
-         * This message + an additional empty header does not fit
-         * at the end of the buffer.
-         * Add an empty header with len == 0 to signify a wrap around.
-         */
-        memset(log_buf + log_next_idx, 0, sizeof(struct printk_log));
-        log_next_idx = 0;
-    }
-
-    /* fill message */
-    msg = (struct printk_log *)(log_buf + log_next_idx);
-    memcpy(log_text(msg), text, text_len);
-    msg->text_len = text_len;
-    if (trunc_msg_len) {
-        memcpy(log_text(msg) + text_len, trunc_msg, trunc_msg_len);
-        msg->text_len += trunc_msg_len;
-    }
-    memcpy(log_dict(msg), dict, dict_len);
-    msg->dict_len = dict_len;
-    msg->facility = facility;
-    msg->level = level & 7;
-    msg->flags = flags & 0x1f;
-    if (ts_nsec > 0) {
-        msg->ts_nsec = ts_nsec;
-    } else {
-        msg->ts_nsec = 0;
-        //msg->ts_nsec = local_clock();
-    }
-
-    memset(log_dict(msg) + dict_len, 0, pad_len);
-    msg->len = size;
-
-    /* insert message */
-    log_next_idx += msg->len;
-    log_next_seq++;
-
-    return msg->text_len;
+    if (printk_percpu_data_ready())
+        return this_cpu_ptr(&printk_count);
+    return &printk_count_early;
 }
 
-static size_t
-log_output(int facility, int level, enum log_flags lflags,
-           const char *dict, size_t dictlen,
-           char *text, size_t text_len)
+/**
+ * printk_parse_prefix - Parse level and control flags.
+ *
+ * @text:     The terminated text message.
+ * @level:    A pointer to the current level value, will be updated.
+ * @flags:    A pointer to the current printk_info flags, will be updated.
+ *
+ * @level may be NULL if the caller is not interested in the parsed value.
+ * Otherwise the variable pointed to by @level must be set to
+ * LOGLEVEL_DEFAULT in order to be updated with the parsed value.
+ *
+ * @flags may be NULL if the caller is not interested in the parsed value.
+ * Otherwise the variable pointed to by @flags will be OR'd with the parsed
+ * value.
+ *
+ * Return: The length of the parsed level and control flags.
+ */
+u16 printk_parse_prefix(const char *text, int *level,
+                        enum printk_info_flags *flags)
 {
-    const u32 caller_id = printk_caller_id();
+    u16 prefix_len = 0;
+    int kern_level;
 
-#if 0
-    /*
-     * If an earlier line was buffered, and we're a continuation
-     * write from the same context, try to add it to the buffer.
-     */
-    if (cont.len) {
-        if (cont.caller_id == caller_id && (lflags & LOG_CONT)) {
-            if (cont_add(caller_id, facility, level, lflags, text, text_len))
-                return text_len;
+    while (*text) {
+        kern_level = printk_get_level(text);
+        if (!kern_level)
+            break;
+
+        switch (kern_level) {
+        case '0' ... '7':
+            if (level && *level == LOGLEVEL_DEFAULT)
+                *level = kern_level - '0';
+            break;
+        case 'c':   /* KERN_CONT */
+            if (flags)
+                *flags |= LOG_CONT;
         }
-        /* Otherwise, make sure it's flushed */
-        cont_flush();
+
+        prefix_len += 2;
+        text += 2;
     }
-#endif
 
-    /* Skip empty continuation lines that couldn't be added - they just flush */
-    if (!text_len && (lflags & LOG_CONT))
-        return 0;
-
-#if 0
-    /* If it doesn't end in a newline, try to buffer the current line */
-    if (!(lflags & LOG_NEWLINE)) {
-        if (cont_add(caller_id, facility, level, lflags, text, text_len))
-            return text_len;
-    }
-#endif
-
-    /* Store it in the record log */
-    return log_store(caller_id, facility, level, lflags, 0,
-                     dict, dictlen, text, text_len);
+    return prefix_len;
 }
 
-/* Must be called under logbuf_lock. */
+__printf(4, 0)
 int vprintk_store(int facility, int level,
-                  const char *dict, size_t dictlen,
+                  const struct dev_printk_info *dev_info,
                   const char *fmt, va_list args)
 {
-    static char textbuf[LOG_LINE_MAX];
-    char *text = textbuf;
-    size_t text_len;
-    enum log_flags lflags = 0;
+    int ret = 0;
+    u64 ts_nsec;
+    u16 text_len;
+    va_list args2;
+    u16 reserve_size;
+    u8 *recursion_ptr;
+    char prefix_buf[8];
+    u16 trunc_msg_len = 0;
+    unsigned long irqflags;
+    struct printk_record r;
+    struct prb_reserved_entry e;
+    enum printk_info_flags flags = 0;
+    const u32 caller_id = printk_caller_id();
 
     /*
-     * The printf needs to come first; we need the syslog
-     * prefix which might be passed-in as a parameter.
+     * Since the duration of printk() can vary depending on the message
+     * and state of the ringbuffer, grab the timestamp now so that it is
+     * close to the call of printk(). This provides a more deterministic
+     * timestamp with respect to the caller.
      */
-    text_len = vscnprintf(text, sizeof(textbuf), fmt, args);
+    //ts_nsec = local_clock();
 
-    /* mark and strip a trailing newline */
-    if (text_len && text[text_len-1] == '\n') {
-        text_len--;
-        lflags |= LOG_NEWLINE;
-    }
+    if (!printk_enter_irqsave(recursion_ptr, irqflags))
+        return 0;
 
-    /* strip kernel syslog prefix and extract log level or control flags */
-    if (facility == 0) {
-        int kern_level;
+    /*
+     * The sprintf needs to come first since the syslog prefix might be
+     * passed in as a parameter. An extra byte must be reserved so that
+     * later the vscnprintf() into the reserved buffer has room for the
+     * terminating '\0', which is not counted by vsnprintf().
+     */
+    va_copy(args2, args);
+    reserve_size = vsnprintf(&prefix_buf[0], sizeof(prefix_buf), fmt, args2) + 1;
+    va_end(args2);
 
-        while ((kern_level = printk_get_level(text)) != 0) {
-            switch (kern_level) {
-            case '0' ... '7':
-                if (level == LOGLEVEL_DEFAULT)
-                    level = kern_level - '0';
-                break;
-            case 'c':   /* KERN_CONT */
-                lflags |= LOG_CONT;
-            }
+    if (reserve_size > LOG_LINE_MAX)
+        reserve_size = LOG_LINE_MAX;
 
-            text_len -= 2;
-            text += 2;
-        }
-    }
+    /* Extract log level or control flags. */
+    if (facility == 0)
+        printk_parse_prefix(&prefix_buf[0], &level, &flags);
 
     if (level == LOGLEVEL_DEFAULT)
         level = default_message_loglevel;
 
-    if (dict)
-        lflags |= LOG_NEWLINE;
+    if (dev_info)
+        flags |= LOG_NEWLINE;
 
-    return log_output(facility, level, lflags,
-                      dict, dictlen, text, text_len);
+    if (flags & LOG_CONT) {
+        prb_rec_init_wr(&r, reserve_size);
+        if (prb_reserve_in_last(&e, prb, &r, caller_id, LOG_LINE_MAX)) {
+            text_len = printk_sprint(&r.text_buf[r.info->text_len],
+                                     reserve_size, facility, &flags, fmt, args);
+            r.info->text_len += text_len;
+
+            if (flags & LOG_NEWLINE) {
+                r.info->flags |= LOG_NEWLINE;
+                prb_final_commit(&e);
+            } else {
+                prb_commit(&e);
+            }
+
+            ret = text_len;
+            goto out;
+        }
+    }
+
+    panic("%s: END!\n", __func__);
 }
 
 asmlinkage int
 vprintk_emit(int facility, int level,
-             const char *dict, size_t dictlen,
+             const struct dev_printk_info *dev_info,
              const char *fmt, va_list args)
 {
     int printed_len;
-    bool in_sched = false, pending_output;
-    unsigned long flags;
-    u64 curr_log_seq;
+    bool in_sched = false;
 
     /* Suppress unimportant messages after panic happens */
     if (unlikely(suppress_printk))
+        return 0;
+
+    if (unlikely(suppress_panic_printk) &&
+        atomic_read(&panic_cpu) != raw_smp_processor_id())
         return 0;
 
     if (level == LOGLEVEL_SCHED) {
@@ -1204,15 +1267,10 @@ vprintk_emit(int facility, int level,
 
     //printk_delay();
 
-    /* This stops the holder of console_sem just where we want him */
-    logbuf_lock_irqsave(flags);
-    curr_log_seq = log_next_seq;
-    printed_len = vprintk_store(facility, level, dict, dictlen, fmt, args);
-    pending_output = (curr_log_seq != log_next_seq);
-    logbuf_unlock_irqrestore(flags);
+    printed_len = vprintk_store(facility, level, dev_info, fmt, args);
 
     /* If called from the scheduler, we can not call up(). */
-    if (!in_sched && pending_output) {
+    if (!in_sched) {
         /*
          * Disable preemption to avoid being preempted while holding
          * console_sem which would prevent anyone from printing to
@@ -1229,15 +1287,23 @@ vprintk_emit(int facility, int level,
         preempt_enable();
     }
 
-    /*
-    if (pending_output)
-        wake_up_klogd();
-        */
+    //wake_up_klogd();
     return printed_len;
 }
 
 int vprintk_default(const char *fmt, va_list args)
 {
-    return vprintk_emit(0, LOGLEVEL_DEFAULT, NULL, 0, fmt, args);
+    return vprintk_emit(0, LOGLEVEL_DEFAULT, NULL, fmt, args);
 }
 EXPORT_SYMBOL_GPL(vprintk_default);
+
+void defer_console_output(void)
+{
+    if (!printk_percpu_data_ready())
+        return;
+
+    preempt_disable();
+    this_cpu_or(printk_pending, PRINTK_PENDING_OUTPUT);
+    //irq_work_queue(this_cpu_ptr(&wake_up_klogd_work));
+    preempt_enable();
+}

@@ -86,8 +86,11 @@ do {                                    \
     }                               \
 } while (0)
 
+#define this_cpu_read(pcp)      __pcpu_size_call_return(this_cpu_read_, pcp)
 #define this_cpu_add(pcp, val)  __pcpu_size_call(this_cpu_add_, pcp, val)
 #define this_cpu_sub(pcp, val)  this_cpu_add(pcp, -(typeof(pcp))(val))
+
+#define this_cpu_or(pcp, val)   __pcpu_size_call(this_cpu_or_, pcp, val)
 
 #define this_cpu_inc(pcp)       this_cpu_add(pcp, 1)
 #define this_cpu_dec(pcp)       this_cpu_sub(pcp, 1)

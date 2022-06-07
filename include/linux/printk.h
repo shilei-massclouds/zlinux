@@ -164,4 +164,7 @@ static inline void console_verbose(void)
 
 extern const char linux_banner[];
 
+asmlinkage __printf(1, 0)
+int vprintk(const char *fmt, va_list args);
+
 #endif /* __KERNEL_PRINTK__ */
