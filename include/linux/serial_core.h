@@ -15,26 +15,20 @@
 #include <linux/spinlock.h>
 #include <linux/sched.h>
 //#include <linux/tty.h>
-//#include <linux/mutex.h>
+#include <linux/mutex.h>
 //#include <linux/sysrq.h>
 //#include <uapi/linux/serial_core.h>
 
 #define EARLYCON_USED_OR_UNUSED __used
 
-#define _OF_EARLYCON_DECLARE(_name, compat, fn, unique_id)  \
-static const struct earlycon_id unique_id \
-EARLYCON_USED_OR_UNUSED __initconst = { \
+#define OF_EARLYCON_DECLARE(_name, compat, fn) \
+static const struct earlycon_id __UNIQUE_ID(__earlycon_##_name) \
+EARLYCON_USED_OR_UNUSED __section("__earlycon_table")   \
+__aligned(__alignof__(struct earlycon_id)) = { \
     .name = __stringify(_name), \
     .compatible = compat,       \
     .setup = fn                 \
-}; \
-static const struct earlycon_id EARLYCON_USED_OR_UNUSED \
-__section(__earlycon_table) * const \
-__PASTE(__p, unique_id) = &unique_id
-
-#define OF_EARLYCON_DECLARE(_name, compat, fn) \
-    _OF_EARLYCON_DECLARE(_name, compat, fn, \
-                         __UNIQUE_ID(__earlycon_##_name))
+}
 
 #define EARLYCON_DECLARE(_name, fn) OF_EARLYCON_DECLARE(_name, "", fn)
 
@@ -58,13 +52,17 @@ struct earlycon_id {
     int (*setup)(struct earlycon_device *, const char *options);
 };
 
-extern const struct earlycon_id *__earlycon_table[];
-extern const struct earlycon_id *__earlycon_table_end[];
+extern const struct earlycon_id __earlycon_table[];
+extern const struct earlycon_id __earlycon_table_end[];
 
 int setup_earlycon(char *buf);
 
 void uart_console_write(struct uart_port *port,
                         const char *s, unsigned int count,
                         void (*putchar)(struct uart_port *, int));
+
+extern int
+of_setup_earlycon(const struct earlycon_id *match,
+                  unsigned long node, const char *options);
 
 #endif /* LINUX_SERIAL_CORE_H */

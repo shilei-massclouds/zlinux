@@ -794,3 +794,48 @@ void __init unflatten_device_tree(void)
     /* Get pointer to "/chosen" and "/aliases" nodes for use everywhere */
     of_alias_scan(early_init_dt_alloc_memory_arch);
 }
+
+int __init early_init_dt_scan_chosen_stdout(void)
+{
+    int l;
+    int offset;
+    const char *p, *q, *options = NULL;
+    const struct earlycon_id *match;
+    const void *fdt = initial_boot_params;
+
+    offset = fdt_path_offset(fdt, "/chosen");
+    if (offset < 0)
+        offset = fdt_path_offset(fdt, "/chosen@0");
+    if (offset < 0)
+        return -ENOENT;
+
+    p = fdt_getprop(fdt, offset, "stdout-path", &l);
+    if (!p)
+        p = fdt_getprop(fdt, offset, "linux,stdout-path", &l);
+    if (!p || !l)
+        return -ENOENT;
+
+    q = strchrnul(p, ':');
+    if (*q != '\0')
+        options = q + 1;
+    l = q - p;
+
+    /* Get the node specified by stdout-path */
+    offset = fdt_path_offset_namelen(fdt, p, l);
+    if (offset < 0) {
+        pr_warn("earlycon: stdout-path %.*s not found\n", l, p);
+        return 0;
+    }
+
+    for (match = __earlycon_table; match < __earlycon_table_end; match++) {
+        if (!match->compatible[0])
+            continue;
+
+        if (fdt_node_check_compatible(fdt, offset, match->compatible))
+            continue;
+
+        if (of_setup_earlycon(match, offset, options) == 0)
+            return 0;
+    }
+    return -ENODEV;
+}

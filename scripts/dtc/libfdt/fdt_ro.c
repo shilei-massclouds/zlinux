@@ -393,3 +393,33 @@ int fdt_path_offset(const void *fdt, const char *path)
 {
     return fdt_path_offset_namelen(fdt, path, strlen(path));
 }
+
+int fdt_stringlist_contains(const char *strlist, int listlen, const char *str)
+{
+    int len = strlen(str);
+    const char *p;
+
+    while (listlen >= len) {
+        if (memcmp(str, strlist, len+1) == 0)
+            return 1;
+        p = memchr(strlist, '\0', listlen);
+        if (!p)
+            return 0; /* malformed strlist.. */
+        listlen -= (p-strlist) + 1;
+        strlist = p + 1;
+    }
+    return 0;
+}
+
+int fdt_node_check_compatible(const void *fdt, int nodeoffset,
+                              const char *compatible)
+{
+    const void *prop;
+    int len;
+
+    prop = fdt_getprop(fdt, nodeoffset, "compatible", &len);
+    if (!prop)
+        return len;
+
+    return !fdt_stringlist_contains(prop, len, compatible);
+}

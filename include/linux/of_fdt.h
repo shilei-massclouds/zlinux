@@ -12,6 +12,8 @@ extern void unflatten_device_tree(void);
 
 extern const char *of_flat_dt_get_machine_name(void);
 
+extern int early_init_dt_scan_chosen_stdout(void);
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* _LINUX_OF_FDT_H */

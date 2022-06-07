@@ -208,4 +208,41 @@ int fdt_first_subnode(const void *fdt, int offset);
  */
 int fdt_next_subnode(const void *fdt, int offset);
 
+/**
+ * fdt_path_offset_namelen - find a tree node by its full path
+ * @fdt: pointer to the device tree blob
+ * @path: full path of the node to locate
+ * @namelen: number of characters of path to consider
+ *
+ * Identical to fdt_path_offset(), but only consider the first namelen
+ * characters of path as the path name.
+ *
+ * Return: offset of the node or negative libfdt error value otherwise
+ */
+int fdt_path_offset_namelen(const void *fdt, const char *path, int namelen);
+
+/**
+ * fdt_node_check_compatible - check a node's compatible property
+ * @fdt: pointer to the device tree blob
+ * @nodeoffset: offset of a tree node
+ * @compatible: string to match against
+ *
+ * fdt_node_check_compatible() returns 0 if the given node contains a
+ * @compatible property with the given string as one of its elements,
+ * it returns non-zero otherwise, or on error.
+ *
+ * returns:
+ *  0, if the node has a 'compatible' property listing the given string
+ *  1, if the node has a 'compatible' property, but it does not list
+ *      the given string
+ *  -FDT_ERR_NOTFOUND, if the given node has no 'compatible' property
+ *  -FDT_ERR_BADOFFSET, if nodeoffset does not refer to a BEGIN_NODE tag
+ *  -FDT_ERR_BADMAGIC,
+ *  -FDT_ERR_BADVERSION,
+ *  -FDT_ERR_BADSTATE,
+ *  -FDT_ERR_BADSTRUCTURE, standard meanings
+ */
+int fdt_node_check_compatible(const void *fdt, int nodeoffset,
+                              const char *compatible);
+
 #endif /* LIBFDT_H */

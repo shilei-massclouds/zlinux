@@ -73,6 +73,13 @@ earlycon_init(struct earlycon_device *device, const char *name)
 #endif
 }
 
+int __init
+of_setup_earlycon(const struct earlycon_id *match,
+                  unsigned long node, const char *options)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
 static int __init
 register_earlycon(char *buf, const struct earlycon_id *match)
 {
@@ -103,7 +110,7 @@ register_earlycon(char *buf, const struct earlycon_id *match)
 
 int __init setup_earlycon(char *buf)
 {
-    const struct earlycon_id **p_match;
+    const struct earlycon_id *match;
     bool empty_compatible = true;
 
     if (!buf || !buf[0])
@@ -113,9 +120,7 @@ int __init setup_earlycon(char *buf)
         return -EALREADY;
 
 again:
-    for (p_match = __earlycon_table; p_match < __earlycon_table_end;
-         p_match++) {
-        const struct earlycon_id *match = *p_match;
+    for (match = __earlycon_table; match < __earlycon_table_end; match++) {
         size_t len = strlen(match->name);
 
         if (strncmp(buf, match->name, len))
@@ -149,8 +154,10 @@ static int __init param_setup_earlycon(char *buf)
     int err;
 
     /* Just 'earlycon' is a valid param for devicetree and ACPI SPCR. */
-    if (!buf || !buf[0])
-        panic("no param value for earlycon!");
+    if (!buf || !buf[0]) {
+        if (!buf)
+            return early_init_dt_scan_chosen_stdout();
+    }
 
     err = setup_earlycon(buf);
     if (err == -ENOENT || err == -EALREADY)
