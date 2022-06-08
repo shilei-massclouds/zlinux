@@ -152,11 +152,11 @@ static enum desc_state desc_read(struct prb_desc_ring *desc_ring,
                                  unsigned long id, struct prb_desc *desc_out,
                                  u64 *seq_out, u32 *caller_id_out)
 {
+    enum desc_state d_state;
+    unsigned long state_val;
     struct printk_info *info = to_info(desc_ring, id);
     struct prb_desc *desc = to_desc(desc_ring, id);
     atomic_long_t *state_var = &desc->state_var;
-    enum desc_state d_state;
-    unsigned long state_val;
 
     /* Check the descriptor state. */
     state_val = atomic_long_read(state_var); /* LMM(desc_read:A) */
@@ -430,8 +430,8 @@ static bool data_push_tail(struct printk_ringbuffer *rb, unsigned long lpos)
              */
             smp_rmb(); /* LMM(data_push_tail:B) */
 
-            tail_lpos_new = atomic_long_read(&data_ring->tail_lpos
-                            ); /* LMM(data_push_tail:C) */
+            tail_lpos_new = atomic_long_read(&data_ring->tail_lpos);
+            /* LMM(data_push_tail:C) */
             if (tail_lpos_new == tail_lpos)
                 return false;
 
@@ -447,7 +447,7 @@ static bool data_push_tail(struct printk_ringbuffer *rb, unsigned long lpos)
          * data_push_tail:A.
          */
         if (atomic_long_try_cmpxchg(&data_ring->tail_lpos, &tail_lpos,
-                        next_lpos)) { /* LMM(data_push_tail:D) */
+                                    next_lpos)) { /* LMM(data_push_tail:D) */
             break;
         }
     }
@@ -483,10 +483,10 @@ static char *
 data_alloc(struct printk_ringbuffer *rb, unsigned int size,
            struct prb_data_blk_lpos *blk_lpos, unsigned long id)
 {
-    struct prb_data_ring *data_ring = &rb->text_data_ring;
-    struct prb_data_block *blk;
     unsigned long begin_lpos;
     unsigned long next_lpos;
+    struct prb_data_block *blk;
+    struct prb_data_ring *data_ring = &rb->text_data_ring;
 
     if (size == 0) {
         /* Specify a data-less block. */
@@ -811,11 +811,11 @@ bool prb_reserve_in_last(struct prb_reserved_entry *e,
                          u32 caller_id,
                          unsigned int max_size)
 {
-    struct prb_desc_ring *desc_ring = &rb->desc_ring;
-    struct printk_info *info;
-    unsigned int data_size;
-    struct prb_desc *d;
     unsigned long id;
+    struct prb_desc *d;
+    unsigned int data_size;
+    struct printk_info *info;
+    struct prb_desc_ring *desc_ring = &rb->desc_ring;
 
     local_irq_save(e->irqflags);
 
@@ -1021,9 +1021,9 @@ static u64 prb_first_seq(struct printk_ringbuffer *rb)
  */
 static bool desc_push_tail(struct printk_ringbuffer *rb, unsigned long tail_id)
 {
-    struct prb_desc_ring *desc_ring = &rb->desc_ring;
-    enum desc_state d_state;
     struct prb_desc desc;
+    enum desc_state d_state;
+    struct prb_desc_ring *desc_ring = &rb->desc_ring;
 
     d_state = desc_read(desc_ring, tail_id, &desc, NULL, NULL);
 
@@ -1075,8 +1075,8 @@ static bool desc_push_tail(struct printk_ringbuffer *rb, unsigned long tail_id)
      * equal to @head_id so there is no risk of pushing the tail past the
      * head.
      */
-    d_state = desc_read(desc_ring, DESC_ID(tail_id + 1), &desc,
-                NULL, NULL); /* LMM(desc_push_tail:A) */
+    d_state = desc_read(desc_ring, DESC_ID(tail_id + 1), &desc, NULL, NULL);
+    /* LMM(desc_push_tail:A) */
 
     if (d_state == desc_finalized || d_state == desc_reusable) {
         /*
@@ -1118,23 +1118,23 @@ static bool desc_push_tail(struct printk_ringbuffer *rb, unsigned long tail_id)
          * not in an allowed tail state. But if the tail has since
          * been moved by another CPU, then it does not matter.
          */
-        if (atomic_long_read(&desc_ring->tail_id) == tail_id) /* LMM(desc_push_tail:D) */
+        /* LMM(desc_push_tail:D) */
+        if (atomic_long_read(&desc_ring->tail_id) == tail_id)
             return false;
     }
 
     return true;
 }
 
-
 /* Reserve a new descriptor, invalidating the oldest if necessary. */
 static bool desc_reserve(struct printk_ringbuffer *rb, unsigned long *id_out)
 {
-    struct prb_desc_ring *desc_ring = &rb->desc_ring;
-    unsigned long prev_state_val;
-    unsigned long id_prev_wrap;
-    struct prb_desc *desc;
-    unsigned long head_id;
     unsigned long id;
+    unsigned long head_id;
+    struct prb_desc *desc;
+    unsigned long id_prev_wrap;
+    unsigned long prev_state_val;
+    struct prb_desc_ring *desc_ring = &rb->desc_ring;
 
     head_id = atomic_long_read(&desc_ring->head_id); /* LMM(desc_reserve:A) */
     do {
@@ -1165,11 +1165,10 @@ static bool desc_reserve(struct printk_ringbuffer *rb, unsigned long *id_out)
          */
         smp_rmb(); /* LMM(desc_reserve:B) */
 
-        if (id_prev_wrap == atomic_long_read(&desc_ring->tail_id
-                            )) { /* LMM(desc_reserve:C) */
+        if (id_prev_wrap == atomic_long_read(&desc_ring->tail_id)) {
+            /* LMM(desc_reserve:C) */
             /*
-             * Make space for the new descriptor by
-             * advancing the tail.
+             * Make space for the new descriptor by advancing the tail.
              */
             if (!desc_push_tail(rb, id_prev_wrap))
                 return false;
@@ -1239,7 +1238,8 @@ static bool desc_reserve(struct printk_ringbuffer *rb, unsigned long *id_out)
      * This pairs with desc_read:D.
      */
     if (!atomic_long_try_cmpxchg(&desc->state_var, &prev_state_val,
-            DESC_SV(id, desc_reserved))) { /* LMM(desc_reserve:F) */
+                                 DESC_SV(id, desc_reserved))) {
+        /* LMM(desc_reserve:F) */
         WARN_ON_ONCE(1);
         return false;
     }
@@ -1295,11 +1295,11 @@ static void desc_make_final(struct prb_desc_ring *desc_ring, unsigned long id)
 bool prb_reserve(struct prb_reserved_entry *e, struct printk_ringbuffer *rb,
                  struct printk_record *r)
 {
-    struct prb_desc_ring *desc_ring = &rb->desc_ring;
-    struct printk_info *info;
-    struct prb_desc *d;
-    unsigned long id;
     u64 seq;
+    unsigned long id;
+    struct prb_desc *d;
+    struct printk_info *info;
+    struct prb_desc_ring *desc_ring = &rb->desc_ring;
 
     if (!data_check_size(&rb->text_data_ring, r->text_buf_size))
         goto fail;
@@ -1566,7 +1566,7 @@ static int prb_read(struct printk_ringbuffer *rb, u64 seq,
 
     /* Copy text data. If it fails, this is a data-less record. */
     if (!copy_data(&rb->text_data_ring, &desc.text_blk_lpos, info->text_len,
-               r->text_buf, r->text_buf_size, line_count)) {
+                   r->text_buf, r->text_buf_size, line_count)) {
         return -ENOENT;
     }
 

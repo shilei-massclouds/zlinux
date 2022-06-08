@@ -18,8 +18,8 @@
 #define FAILED_LPOS         0x1
 #define NO_LPOS             0x3
 
-#define FAILED_BLK_LPOS \
-{               \
+#define FAILED_BLK_LPOS     \
+{                           \
     .begin  = FAILED_LPOS,  \
     .next   = FAILED_LPOS,  \
 }
@@ -54,43 +54,43 @@
  * Note: The specified external buffer must be of the size:
  *       2 ^ (descbits + avgtextbits)
  */
-#define _DEFINE_PRINTKRB(name, descbits, avgtextbits, text_buf)         \
-static struct prb_desc _##name##_descs[_DESCS_COUNT(descbits)] = {              \
-    /* the initial head and tail */                             \
-    [_DESCS_COUNT(descbits) - 1] = {                            \
-        /* reusable */                                  \
-        .state_var  = ATOMIC_INIT(DESC0_SV(descbits)),              \
-        /* no associated data block */                          \
-        .text_blk_lpos  = FAILED_BLK_LPOS,                      \
-    },                                          \
-};                                              \
-static struct printk_info _##name##_infos[_DESCS_COUNT(descbits)] = {               \
-    /* this will be the first record reserved by a writer */                \
-    [0] = {                                         \
-        /* will be incremented to 0 on the first reservation */             \
-        .seq = -(u64)_DESCS_COUNT(descbits),                        \
-    },                                          \
-    /* the initial head and tail */                             \
-    [_DESCS_COUNT(descbits) - 1] = {                            \
-        /* reports the first seq value during the bootstrap phase */            \
-        .seq = 0,                                   \
-    },                                          \
-};                                              \
-static struct printk_ringbuffer name = {                            \
-    .desc_ring = {                                      \
-        .count_bits = descbits,                         \
+#define _DEFINE_PRINTKRB(name, descbits, avgtextbits, text_buf)     \
+static struct prb_desc _##name##_descs[_DESCS_COUNT(descbits)] = {  \
+    /* the initial head and tail */                                 \
+    [_DESCS_COUNT(descbits) - 1] = {                                \
+        /* reusable */                                              \
+        .state_var = ATOMIC_INIT(DESC0_SV(descbits)),               \
+        /* no associated data block */                              \
+        .text_blk_lpos = FAILED_BLK_LPOS,                           \
+    },                                                              \
+};                                                                  \
+static struct printk_info _##name##_infos[_DESCS_COUNT(descbits)] = {   \
+    /* this will be the first record reserved by a writer */            \
+    [0] = {                                                             \
+        /* will be incremented to 0 on the first reservation */         \
+        .seq = -(u64)_DESCS_COUNT(descbits),                            \
+    },                                                                  \
+    /* the initial head and tail */                                     \
+    [_DESCS_COUNT(descbits) - 1] = {                                    \
+        /* reports the first seq value during the bootstrap phase */    \
+        .seq = 0,                                                       \
+    },                                                                  \
+};                                                                      \
+static struct printk_ringbuffer name = {                        \
+    .desc_ring = {                                              \
+        .count_bits = descbits,                                 \
         .descs      = &_##name##_descs[0],                      \
         .infos      = &_##name##_infos[0],                      \
-        .head_id    = ATOMIC_INIT(DESC0_ID(descbits)),              \
-        .tail_id    = ATOMIC_INIT(DESC0_ID(descbits)),              \
-        .last_finalized_id = ATOMIC_INIT(DESC0_ID(descbits)),               \
-    },                                          \
-    .text_data_ring = {                                 \
-        .size_bits  = (avgtextbits) + (descbits),                   \
-        .data       = text_buf,                         \
-        .head_lpos  = ATOMIC_LONG_INIT(BLK0_LPOS((avgtextbits) + (descbits))),  \
-        .tail_lpos  = ATOMIC_LONG_INIT(BLK0_LPOS((avgtextbits) + (descbits))),  \
-    },                                          \
+        .head_id    = ATOMIC_INIT(DESC0_ID(descbits)),          \
+        .tail_id    = ATOMIC_INIT(DESC0_ID(descbits)),          \
+        .last_finalized_id = ATOMIC_INIT(DESC0_ID(descbits)),   \
+    },                                                          \
+    .text_data_ring = {                                         \
+        .size_bits  = (avgtextbits) + (descbits),               \
+        .data       = text_buf,                                 \
+        .head_lpos  = ATOMIC_LONG_INIT(BLK0_LPOS((avgtextbits) + (descbits))), \
+        .tail_lpos  = ATOMIC_LONG_INIT(BLK0_LPOS((avgtextbits) + (descbits))), \
+    },                                                          \
     .fail           = ATOMIC_LONG_INIT(0),                      \
 }
 
@@ -153,7 +153,7 @@ struct prb_data_blk_lpos {
  * @state_var: A bitwise combination of descriptor ID and descriptor state.
  */
 struct prb_desc {
-    atomic_long_t           state_var;
+    atomic_long_t               state_var;
     struct prb_data_blk_lpos    text_blk_lpos;
 };
 
