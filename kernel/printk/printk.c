@@ -21,6 +21,9 @@
 #define PREFIX_MAX      32
 #define LOG_LINE_MAX    (1024 - PREFIX_MAX)
 
+/* the maximum size of a formatted record (i.e. with prefix added per line) */
+#define CONSOLE_LOG_MAX     1024
+
 /*
  * Delayed printk version, for scheduler-internal messages:
  */
@@ -146,6 +149,8 @@ static bool console_waiter;
  */
 static DEFINE_PER_CPU(u8, printk_count);
 static u8 printk_count_early;
+
+static unsigned long console_dropped;
 
 /*
  * Recursion is limited to keep the output sane. printk() should not require
@@ -512,6 +517,251 @@ msg_print_text(const struct printk_log *msg,
     return len;
 }
 
+static bool __read_mostly ignore_loglevel;
+
+static bool suppress_message_printing(int level)
+{
+    return (level >= console_loglevel && !ignore_loglevel);
+}
+
+static ssize_t info_print_ext_header(char *buf, size_t size,
+                                     struct printk_info *info)
+{
+    u64 ts_usec = info->ts_nsec;
+    char caller[20];
+    caller[0] = '\0';
+
+    do_div(ts_usec, 1000);
+
+    return scnprintf(buf, size, "%u,%llu,%llu,%c%s;",
+                     (info->facility << 3) | info->level, info->seq,
+                     ts_usec, info->flags & LOG_CONT ? 'c' : '-', caller);
+}
+
+static void append_char(char **pp, char *e, char c)
+{
+    if (*pp < e)
+        *(*pp)++ = c;
+}
+
+static ssize_t
+msg_add_ext_text(char *buf, size_t size,
+                 const char *text, size_t text_len, unsigned char endc)
+{
+    size_t i;
+    char *p = buf, *e = buf + size;
+
+    /* escape non-printable characters */
+    for (i = 0; i < text_len; i++) {
+        unsigned char c = text[i];
+
+        if (c < ' ' || c >= 127 || c == '\\')
+            p += scnprintf(p, e - p, "\\x%02x", c);
+        else
+            append_char(&p, e, c);
+    }
+    append_char(&p, e, endc);
+
+    return p - buf;
+}
+
+static ssize_t
+msg_add_dict_text(char *buf, size_t size, const char *key, const char *val)
+{
+    ssize_t len;
+    size_t val_len = strlen(val);
+
+    if (!val_len)
+        return 0;
+
+    len = msg_add_ext_text(buf, size, "", 0, ' ');  /* dict prefix */
+    len += msg_add_ext_text(buf + len, size - len, key, strlen(key), '=');
+    len += msg_add_ext_text(buf + len, size - len, val, val_len, '\n');
+
+    return len;
+}
+
+static ssize_t msg_print_ext_body(char *buf, size_t size,
+                                  char *text, size_t text_len,
+                                  struct dev_printk_info *dev_info)
+{
+    ssize_t len;
+
+    len = msg_add_ext_text(buf, size, text, text_len, '\n');
+
+    if (!dev_info)
+        goto out;
+
+    len += msg_add_dict_text(buf + len, size - len, "SUBSYSTEM",
+                             dev_info->subsystem);
+    len += msg_add_dict_text(buf + len, size - len, "DEVICE",
+                             dev_info->device);
+out:
+    return len;
+}
+
+static size_t
+info_print_prefix(const struct printk_info  *info, bool syslog,
+                  bool time, char *buf)
+{
+    size_t len = 0;
+
+#if 0
+    if (syslog)
+        len = print_syslog((info->facility << 3) | info->level, buf);
+
+    if (time)
+        len += print_time(info->ts_nsec, buf + len);
+#endif
+
+    if (time) {
+        buf[len++] = ' ';
+        buf[len] = '\0';
+    }
+
+    return len;
+}
+
+/*
+ * Prepare the record for printing. The text is shifted within the given
+ * buffer to avoid a need for another one. The following operations are
+ * done:
+ *
+ *   - Add prefix for each line.
+ *   - Drop truncated lines that no longer fit into the buffer.
+ *   - Add the trailing newline that has been removed in vprintk_store().
+ *   - Add a string terminator.
+ *
+ * Since the produced string is always terminated, the maximum possible
+ * return value is @r->text_buf_size - 1;
+ *
+ * Return: The length of the updated/prepared text, including the added
+ * prefixes and the newline. The terminator is not counted. The dropped
+ * line(s) are not counted.
+ */
+static size_t
+record_print_text(struct printk_record *r, bool syslog, bool time)
+{
+    size_t text_len = r->info->text_len;
+    size_t buf_size = r->text_buf_size;
+    char *text = r->text_buf;
+    char prefix[PREFIX_MAX];
+    bool truncated = false;
+    size_t prefix_len;
+    size_t line_len;
+    size_t len = 0;
+    char *next;
+
+    /*
+     * If the message was truncated because the buffer was not large
+     * enough, treat the available text as if it were the full text.
+     */
+    if (text_len > buf_size)
+        text_len = buf_size;
+
+    prefix_len = info_print_prefix(r->info, syslog, time, prefix);
+
+    /*
+     * @text_len: bytes of unprocessed text
+     * @line_len: bytes of current line _without_ newline
+     * @text:     pointer to beginning of current line
+     * @len:      number of bytes prepared in r->text_buf
+     */
+    for (;;) {
+        next = memchr(text, '\n', text_len);
+        if (next) {
+            line_len = next - text;
+        } else {
+            /* Drop truncated line(s). */
+            if (truncated)
+                break;
+            line_len = text_len;
+        }
+
+        /*
+         * Truncate the text if there is not enough space to add the
+         * prefix and a trailing newline and a terminator.
+         */
+        if (len + prefix_len + text_len + 1 + 1 > buf_size) {
+            /* Drop even the current line if no space. */
+            if (len + prefix_len + line_len + 1 + 1 > buf_size)
+                break;
+
+            text_len = buf_size - len - prefix_len - 1 - 1;
+            truncated = true;
+        }
+
+        memmove(text + prefix_len, text, text_len);
+        memcpy(text, prefix, prefix_len);
+
+        /*
+         * Increment the prepared length to include the text and
+         * prefix that were just moved+copied. Also increment for the
+         * newline at the end of this line. If this is the last line,
+         * there is no newline, but it will be added immediately below.
+         */
+        len += prefix_len + line_len + 1;
+        if (text_len == line_len) {
+            /*
+             * This is the last line. Add the trailing newline
+             * removed in vprintk_store().
+             */
+            text[prefix_len + line_len] = '\n';
+            break;
+        }
+
+        /*
+         * Advance beyond the added prefix and the related line with
+         * its newline.
+         */
+        text += prefix_len + line_len + 1;
+
+        /*
+         * The remaining text has only decreased by the line with its
+         * newline.
+         *
+         * Note that @text_len can become zero. It happens when @text
+         * ended with a newline (either due to truncation or the
+         * original string ending with "\n\n"). The loop is correctly
+         * repeated and (if not truncated) an empty line with a prefix
+         * will be prepared.
+         */
+        text_len -= line_len + 1;
+    }
+
+    /*
+     * If a buffer was provided, it will be terminated. Space for the
+     * string terminator is guaranteed to be available. The terminator is
+     * not counted in the return value.
+     */
+    if (buf_size > 0)
+        r->text_buf[len] = 0;
+
+    return len;
+}
+
+/*
+ * Return true when this CPU should unlock console_sem without pushing all
+ * messages to the console. This reduces the chance that the console is
+ * locked when the panic CPU tries to use it.
+ */
+static bool abandon_console_lock_in_panic(void)
+{
+    return false;
+#if 0
+    if (!panic_in_progress())
+        return false;
+
+    /*
+     * We can use raw_smp_processor_id() here because it is impossible for
+     * the task to be migrated to the panic_cpu, or away from it. If
+     * panic_cpu has already been set, and we're not currently executing on
+     * that CPU, then we never will be.
+     */
+    return atomic_read(&panic_cpu) != raw_smp_processor_id();
+#endif
+}
+
 /**
  * console_unlock - unlock the console system
  *
@@ -528,15 +778,21 @@ msg_print_text(const struct printk_log *msg,
  */
 void console_unlock(void)
 {
-    static char ext_text[CONSOLE_EXT_LOG_MAX];
-    static char text[LOG_LINE_MAX + PREFIX_MAX];
     unsigned long flags;
+    struct printk_info info;
+    struct printk_record r;
     bool do_cond_resched, retry;
+    u64 __maybe_unused next_seq;
+    static int panic_console_dropped;
+    static char text[CONSOLE_LOG_MAX];
+    static char ext_text[CONSOLE_EXT_LOG_MAX];
 
     if (console_suspended) {
         up_console_sem();
         return;
     }
+
+    prb_rec_init_rd(&r, &info, text, sizeof(text));
 
     /*
      * Console drivers are called with interrupts disabled, so
@@ -550,7 +806,7 @@ void console_unlock(void)
      *
      * console_trylock() is not able to detect the preemptive
      * context reliably. Therefore the value must be stored before
-     * and cleared after the the "again" goto label.
+     * and cleared after the "again" goto label.
      */
     do_cond_resched = console_may_schedule;
 
@@ -569,40 +825,34 @@ void console_unlock(void)
     }
 
     for (;;) {
-        struct printk_log *msg;
-        size_t ext_len = 0;
         size_t len;
+        int handover;
+        size_t ext_len = 0;
 
-        printk_safe_enter_irqsave(flags);
-        raw_spin_lock(&logbuf_lock);
-        if (console_seq < log_first_seq) {
-            len = snprintf(text, sizeof(text),
-                           "** %llu printk messages dropped **\n",
-                           log_first_seq - console_seq);
-
-            /* messages are gone, move to first one */
-            console_seq = log_first_seq;
-            console_idx = log_first_idx;
-        } else {
-            len = 0;
-        }
-// skip:
-        if (console_seq == log_next_seq)
+ skip:
+        if (!prb_read_valid(prb, console_seq, &r))
             break;
 
-        msg = log_from_idx(console_idx);
+        if (console_seq != r.info->seq) {
+            console_dropped += r.info->seq - console_seq;
+            console_seq = r.info->seq;
 #if 0
-        if (suppress_message_printing(msg->level)) {
+            if (panic_in_progress() && panic_console_dropped++ > 10) {
+                suppress_panic_printk = 1;
+                pr_warn_once("Too many dropped messages. Suppress messages on non-panic CPUs to prevent livelock.\n");
+            }
+#endif
+        }
+
+        if (suppress_message_printing(r.info->level)) {
             /*
              * Skip record we have buffered and already printed
              * directly to the console when we received it, and
              * record that has level above the console loglevel.
              */
-            console_idx = log_next(console_idx);
             console_seq++;
             goto skip;
         }
-#endif
 
         /* Output to all consoles once old messages replayed. */
         if (unlikely(exclusive_console &&
@@ -610,49 +860,54 @@ void console_unlock(void)
             exclusive_console = NULL;
         }
 
-        len += msg_print_text(msg, console_msg_format & MSG_FORMAT_SYSLOG,
-                              printk_time, text + len, sizeof(text) - len);
-#if 0
+        /*
+         * Handle extended console text first because later
+         * record_print_text() will modify the record buffer in-place.
+         */
         if (nr_ext_console_drivers) {
-            ext_len = msg_print_ext_header(ext_text,
-                        sizeof(ext_text),
-                        msg, console_seq);
+            ext_len = info_print_ext_header(ext_text, sizeof(ext_text), r.info);
             ext_len += msg_print_ext_body(ext_text + ext_len,
-                        sizeof(ext_text) - ext_len,
-                        log_dict(msg), msg->dict_len,
-                        log_text(msg), msg->text_len);
+                                          sizeof(ext_text) - ext_len,
+                                          &r.text_buf[0],
+                                          r.info->text_len,
+                                          &r.info->dev_info);
         }
-#endif
-        console_idx = log_next(console_idx);
+        len = record_print_text(&r, console_msg_format & MSG_FORMAT_SYSLOG,
+                                printk_time);
         console_seq++;
-
-        raw_spin_unlock(&logbuf_lock);
 
         /*
          * While actively printing out messages, if another printk()
          * were to occur on another CPU, it may wait for this one to
          * finish. This task can not be preempted if there is a
          * waiter waiting to take over.
+         *
+         * Interrupts are disabled because the hand over to a waiter
+         * must not be interrupted until the hand over is completed
+         * (@console_waiter is cleared).
          */
+        printk_safe_enter_irqsave(flags);
         console_lock_spinning_enable();
 
         call_console_drivers(ext_text, ext_len, text, len);
 
-        if (console_lock_spinning_disable_and_check()) {
-            printk_safe_exit_irqrestore(flags);
-            return;
-        }
-
+        handover = console_lock_spinning_disable_and_check();
         printk_safe_exit_irqrestore(flags);
+        if (handover)
+            return;
+
+        /* Allow panic_cpu to take over the consoles safely */
+        if (abandon_console_lock_in_panic())
+            break;
 
         if (do_cond_resched)
             cond_resched();
     }
 
+    /* Get consistent value of the next-to-be-used sequence number. */
+    next_seq = console_seq;
+
     console_locked = 0;
-
-    raw_spin_unlock(&logbuf_lock);
-
     up_console_sem();
 
     /*
@@ -661,12 +916,8 @@ void console_unlock(void)
      * there's a new owner and the console_unlock() from them will do the
      * flush, no worries.
      */
-    raw_spin_lock(&logbuf_lock);
-    retry = console_seq != log_next_seq;
-    raw_spin_unlock(&logbuf_lock);
-    printk_safe_exit_irqrestore(flags);
-
-    if (retry && console_trylock())
+    retry = prb_read_valid(prb, next_seq, NULL);
+    if (retry && !abandon_console_lock_in_panic() && console_trylock())
         goto again;
 }
 

@@ -232,4 +232,30 @@ bool prb_reserve_in_last(struct prb_reserved_entry *e,
 void prb_commit(struct prb_reserved_entry *e);
 void prb_final_commit(struct prb_reserved_entry *e);
 
+/* Reader Interface */
+
+/**
+ * prb_rec_init_rd() - Initialize a buffer for reading records.
+ *
+ * @r:             The record to initialize.
+ * @info:          A buffer to store record meta-data.
+ * @text_buf:      A buffer to store text data.
+ * @text_buf_size: The size of @text_buf.
+ *
+ * Initialize all the fields that a reader is interested in. All arguments
+ * (except @r) are optional. Only record data for arguments that are
+ * non-NULL or non-zero will be read.
+ */
+static inline void prb_rec_init_rd(struct printk_record *r,
+                                   struct printk_info *info,
+                                   char *text_buf, unsigned int text_buf_size)
+{
+    r->info = info;
+    r->text_buf = text_buf;
+    r->text_buf_size = text_buf_size;
+}
+
+bool prb_read_valid(struct printk_ringbuffer *rb, u64 seq,
+                    struct printk_record *r);
+
 #endif /* _KERNEL_PRINTK_RINGBUFFER_H */

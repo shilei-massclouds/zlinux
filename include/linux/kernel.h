@@ -162,4 +162,7 @@ extern atomic_t panic_cpu;
  */
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]) + __must_be_array(arr))
 
+extern __printf(3, 4)
+int scnprintf(char *buf, size_t size, const char *fmt, ...);
+
 #endif /* _LINUX_KERNEL_H */

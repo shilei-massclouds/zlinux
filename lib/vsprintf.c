@@ -1240,3 +1240,26 @@ int vscnprintf(char *buf, size_t size, const char *fmt, va_list args)
     return 0;
 }
 EXPORT_SYMBOL(vscnprintf);
+
+/**
+ * scnprintf - Format a string and place it in a buffer
+ * @buf: The buffer to place the result into
+ * @size: The size of the buffer, including the trailing null space
+ * @fmt: The format string to use
+ * @...: Arguments for the format string
+ *
+ * The return value is the number of characters written into @buf not including
+ * the trailing '\0'. If @size is == 0 the function returns 0.
+ */
+int scnprintf(char *buf, size_t size, const char *fmt, ...)
+{
+    int i;
+    va_list args;
+
+    va_start(args, fmt);
+    i = vscnprintf(buf, size, fmt, args);
+    va_end(args);
+
+    return i;
+}
+EXPORT_SYMBOL(scnprintf);

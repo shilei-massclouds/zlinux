@@ -967,6 +967,50 @@ void prb_final_commit(struct prb_reserved_entry *e)
     atomic_long_set(&desc_ring->last_finalized_id, e->id);
 }
 
+/* Get the sequence number of the tail descriptor. */
+static u64 prb_first_seq(struct printk_ringbuffer *rb)
+{
+    u64 seq;
+    unsigned long id;
+    struct prb_desc desc;
+    enum desc_state d_state;
+    struct prb_desc_ring *desc_ring = &rb->desc_ring;
+
+    for (;;) {
+        id = atomic_long_read(&rb->desc_ring.tail_id); /* LMM(prb_first_seq:A) */
+
+        d_state = desc_read(desc_ring, id, &desc, &seq, NULL); /* LMM(prb_first_seq:B) */
+
+        /*
+         * This loop will not be infinite because the tail is
+         * _always_ in the finalized or reusable state.
+         */
+        if (d_state == desc_finalized || d_state == desc_reusable)
+            break;
+
+        /*
+         * Guarantee the last state load from desc_read() is before
+         * reloading @tail_id in order to see a new tail in the case
+         * that the descriptor has been recycled. This pairs with
+         * desc_reserve:D.
+         *
+         * Memory barrier involvement:
+         *
+         * If prb_first_seq:B reads from desc_reserve:F, then
+         * prb_first_seq:A reads from desc_push_tail:B.
+         *
+         * Relies on:
+         *
+         * MB from desc_push_tail:B to desc_reserve:F
+         *    matching
+         * RMB prb_first_seq:B to prb_first_seq:A
+         */
+        smp_rmb(); /* LMM(prb_first_seq:C) */
+    }
+
+    return seq;
+}
+
 /*
  * Advance the desc ring tail. This function advances the tail by one
  * descriptor, thus invalidating the oldest descriptor. Before advancing
@@ -1368,4 +1412,229 @@ void prb_commit(struct prb_reserved_entry *e)
     head_id = atomic_long_read(&desc_ring->head_id); /* LMM(prb_commit:A) */
     if (head_id != e->id)
         desc_make_final(desc_ring, e->id);
+}
+
+/*
+ * This is an extended version of desc_read(). It gets a copy of a specified
+ * descriptor. However, it also verifies that the record is finalized and has
+ * the sequence number @seq. On success, 0 is returned.
+ *
+ * Error return values:
+ * -EINVAL: A finalized record with sequence number @seq does not exist.
+ * -ENOENT: A finalized record with sequence number @seq exists, but its data
+ *          is not available. This is a valid record, so readers should
+ *          continue with the next record.
+ */
+static int desc_read_finalized_seq(struct prb_desc_ring *desc_ring,
+                                   unsigned long id, u64 seq,
+                                   struct prb_desc *desc_out)
+{
+    struct prb_data_blk_lpos *blk_lpos = &desc_out->text_blk_lpos;
+    enum desc_state d_state;
+    u64 s;
+
+    d_state = desc_read(desc_ring, id, desc_out, &s, NULL);
+
+    /*
+     * An unexpected @id (desc_miss) or @seq mismatch means the record
+     * does not exist. A descriptor in the reserved or committed state
+     * means the record does not yet exist for the reader.
+     */
+    if (d_state == desc_miss ||
+        d_state == desc_reserved ||
+        d_state == desc_committed ||
+        s != seq) {
+        return -EINVAL;
+    }
+
+    /*
+     * A descriptor in the reusable state may no longer have its data
+     * available; report it as existing but with lost data. Or the record
+     * may actually be a record with lost data.
+     */
+    if (d_state == desc_reusable ||
+        (blk_lpos->begin == FAILED_LPOS && blk_lpos->next == FAILED_LPOS)) {
+        return -ENOENT;
+    }
+
+    return 0;
+}
+
+/*
+ * Count the number of lines in provided text. All text has at least 1 line
+ * (even if @text_size is 0). Each '\n' processed is counted as an additional
+ * line.
+ */
+static unsigned int count_lines(const char *text, unsigned int text_size)
+{
+    const char *next = text;
+    unsigned int line_count = 1;
+    unsigned int next_size = text_size;
+
+    while (next_size) {
+        next = memchr(next, '\n', next_size);
+        if (!next)
+            break;
+        line_count++;
+        next++;
+        next_size = text_size - (next - text);
+    }
+
+    return line_count;
+}
+
+/*
+ * Given @blk_lpos, copy an expected @len of data into the provided buffer.
+ * If @line_count is provided, count the number of lines in the data.
+ *
+ * This function (used by readers) performs strict validation on the data
+ * size to possibly detect bugs in the writer code. A WARN_ON_ONCE() is
+ * triggered if an internal error is detected.
+ */
+static bool copy_data(struct prb_data_ring *data_ring,
+                      struct prb_data_blk_lpos *blk_lpos, u16 len, char *buf,
+                      unsigned int buf_size, unsigned int *line_count)
+{
+    const char *data;
+    unsigned int data_size;
+
+    /* Caller might not want any data. */
+    if ((!buf || !buf_size) && !line_count)
+        return true;
+
+    data = get_data(data_ring, blk_lpos, &data_size);
+    if (!data)
+        return false;
+
+    /*
+     * Actual cannot be less than expected. It can be more than expected
+     * because of the trailing alignment padding.
+     *
+     * Note that invalid @len values can occur because the caller loads
+     * the value during an allowed data race.
+     */
+    if (data_size < (unsigned int)len)
+        return false;
+
+    /* Caller interested in the line count? */
+    if (line_count)
+        *line_count = count_lines(data, len);
+
+    /* Caller interested in the data content? */
+    if (!buf || !buf_size)
+        return true;
+
+    data_size = min_t(u16, buf_size, len);
+
+    memcpy(&buf[0], data, data_size); /* LMM(copy_data:A) */
+    return true;
+}
+
+/*
+ * Copy the ringbuffer data from the record with @seq to the provided
+ * @r buffer. On success, 0 is returned.
+ *
+ * See desc_read_finalized_seq() for error return values.
+ */
+static int prb_read(struct printk_ringbuffer *rb, u64 seq,
+                    struct printk_record *r, unsigned int *line_count)
+{
+    struct prb_desc_ring *desc_ring = &rb->desc_ring;
+    struct printk_info *info = to_info(desc_ring, seq);
+    struct prb_desc *rdesc = to_desc(desc_ring, seq);
+    atomic_long_t *state_var = &rdesc->state_var;
+    struct prb_desc desc;
+    unsigned long id;
+    int err;
+
+    /* Extract the ID, used to specify the descriptor to read. */
+    id = DESC_ID(atomic_long_read(state_var));
+
+    /* Get a local copy of the correct descriptor (if available). */
+    err = desc_read_finalized_seq(desc_ring, id, seq, &desc);
+
+    /*
+     * If @r is NULL, the caller is only interested in the availability
+     * of the record.
+     */
+    if (err || !r)
+        return err;
+
+    /* If requested, copy meta data. */
+    if (r->info)
+        memcpy(r->info, info, sizeof(*(r->info)));
+
+    /* Copy text data. If it fails, this is a data-less record. */
+    if (!copy_data(&rb->text_data_ring, &desc.text_blk_lpos, info->text_len,
+               r->text_buf, r->text_buf_size, line_count)) {
+        return -ENOENT;
+    }
+
+    /* Ensure the record is still finalized and has the same @seq. */
+    return desc_read_finalized_seq(desc_ring, id, seq, &desc);
+}
+
+/*
+ * Non-blocking read of a record. Updates @seq to the last finalized record
+ * (which may have no data available).
+ *
+ * See the description of prb_read_valid() and prb_read_valid_info()
+ * for details.
+ */
+static bool _prb_read_valid(struct printk_ringbuffer *rb, u64 *seq,
+                            struct printk_record *r, unsigned int *line_count)
+{
+    u64 tail_seq;
+    int err;
+
+    while ((err = prb_read(rb, *seq, r, line_count))) {
+        tail_seq = prb_first_seq(rb);
+
+        if (*seq < tail_seq) {
+            /*
+             * Behind the tail. Catch up and try again. This
+             * can happen for -ENOENT and -EINVAL cases.
+             */
+            *seq = tail_seq;
+
+        } else if (err == -ENOENT) {
+            /* Record exists, but no data available. Skip. */
+            (*seq)++;
+
+        } else {
+            /* Non-existent/non-finalized record. Must stop. */
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/**
+ * prb_read_valid() - Non-blocking read of a requested record or (if gone)
+ *                    the next available record.
+ *
+ * @rb:  The ringbuffer to read from.
+ * @seq: The sequence number of the record to read.
+ * @r:   A record data buffer to store the read record to.
+ *
+ * This is the public function available to readers to read a record.
+ *
+ * The reader provides the @info and @text_buf buffers of @r to be
+ * filled in. Any of the buffer pointers can be set to NULL if the reader
+ * is not interested in that data. To ensure proper initialization of @r,
+ * prb_rec_init_rd() should be used.
+ *
+ * Context: Any context.
+ * Return: true if a record was read, otherwise false.
+ *
+ * On success, the reader must check r->info.seq to see which record was
+ * actually read. This allows the reader to detect dropped records.
+ *
+ * Failure means @seq refers to a not yet written record.
+ */
+bool prb_read_valid(struct printk_ringbuffer *rb, u64 seq,
+                    struct printk_record *r)
+{
+    return _prb_read_valid(rb, &seq, r, NULL);
 }
