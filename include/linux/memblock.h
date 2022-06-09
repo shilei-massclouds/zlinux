@@ -151,13 +151,7 @@ int memblock_remove(phys_addr_t base, phys_addr_t size);
 int memblock_add(phys_addr_t base, phys_addr_t size);
 int memblock_reserve(phys_addr_t base, phys_addr_t size);
 
-extern void __memblock_dump_all(void);
-
-static inline void memblock_dump_all(void)
-{
-    if (memblock_debug)
-        __memblock_dump_all();
-}
+void memblock_dump_all(void);
 
 static inline bool memblock_is_nomap(struct memblock_region *m)
 {

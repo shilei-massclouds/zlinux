@@ -71,8 +71,6 @@ static inline void set_max_mapnr(unsigned long limit)
 
 void free_area_init(unsigned long *max_zone_pfn);
 
-static inline void setup_nr_node_ids(void) {}
-
 extern void get_pfn_range_for_nid(unsigned int nid,
                                   unsigned long *start_pfn, unsigned long *end_pfn);
 

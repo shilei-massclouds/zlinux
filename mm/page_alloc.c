@@ -182,6 +182,10 @@ unsigned long totalreserve_pages __read_mostly;
 DEFINE_STATIC_KEY_MAYBE(CONFIG_INIT_ON_ALLOC_DEFAULT_ON, init_on_alloc);
 EXPORT_SYMBOL(init_on_alloc);
 
+/* movable_zone is the "real" zone pages in ZONE_MOVABLE are taken from */
+int movable_zone;
+EXPORT_SYMBOL(movable_zone);
+
 static inline unsigned int order_to_pindex(int migratetype, int order)
 {
     int base = order;
@@ -325,7 +329,8 @@ zone_absent_pages_in_node(int nid, unsigned long zone_type,
 
 static void __init
 calculate_node_totalpages(struct pglist_data *pgdat,
-                          unsigned long node_start_pfn, unsigned long node_end_pfn)
+                          unsigned long node_start_pfn,
+                          unsigned long node_end_pfn)
 {
     enum zone_type i;
     unsigned long realtotalpages = 0, totalpages = 0;
@@ -822,6 +827,39 @@ static void __init memmap_init(void)
     //init_unavailable_range(hole_pfn, end_pfn, zone_id, nid);
 }
 
+/*
+ * This finds a zone that can be used for ZONE_MOVABLE pages. The
+ * assumption is made that zones within a node are ordered in monotonic
+ * increasing memory addresses so that the "highest" populated zone is used
+ */
+static void __init find_usable_zone_for_movable(void)
+{
+    int zone_index;
+    for (zone_index = MAX_NR_ZONES - 1; zone_index >= 0; zone_index--) {
+        if (zone_index == ZONE_MOVABLE)
+            continue;
+
+        if (arch_zone_highest_possible_pfn[zone_index] >
+            arch_zone_lowest_possible_pfn[zone_index])
+            break;
+    }
+
+    VM_BUG_ON(zone_index == -1);
+    movable_zone = zone_index;
+}
+
+/*
+ * Find the PFN the Movable zone begins in each node. Kernel memory
+ * is spread evenly between nodes as long as the nodes have enough
+ * memory. When they don't, some nodes will have more kernelcore than
+ * others
+ */
+static void __init find_zone_movable_pfns_for_nodes(void)
+{
+    /* Need to find movable_zone earlier when movable_node is specified. */
+    find_usable_zone_for_movable();
+}
+
 /**
  * free_area_init - Initialise all pg_data_t and zone data
  * @max_zone_pfn: an array of max PFNs for each zone
@@ -868,7 +906,7 @@ void __init free_area_init(unsigned long *max_zone_pfn)
 
     /* Find the PFNs that ZONE_MOVABLE begins at in each node */
     memset(zone_movable_pfn, 0, sizeof(zone_movable_pfn));
-    //find_zone_movable_pfns_for_nodes();
+    find_zone_movable_pfns_for_nodes();
 
     /* Print out the zone ranges */
     pr_info("Zone ranges:\n");
@@ -904,7 +942,6 @@ void __init free_area_init(unsigned long *max_zone_pfn)
     }
 
     /* Initialise every node */
-    setup_nr_node_ids();
     for_each_node(nid) {
         pg_data_t *pgdat = NODE_DATA(nid);
         free_area_init_node(nid);

@@ -632,6 +632,12 @@ void __init_memblock __memblock_dump_all(void)
     memblock_dump(&memblock.reserved);
 }
 
+void __init_memblock memblock_dump_all(void)
+{
+    if (memblock_debug)
+        __memblock_dump_all();
+}
+
 phys_addr_t __init
 memblock_alloc_range_nid(phys_addr_t size, phys_addr_t align,
                          phys_addr_t start, phys_addr_t end,

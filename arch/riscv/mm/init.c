@@ -809,6 +809,7 @@ void __init paging_init(void)
 void __init misc_mem_init(void)
 {
     zone_sizes_init();
+    memblock_dump_all();
 }
 
 void __init mem_init(void)

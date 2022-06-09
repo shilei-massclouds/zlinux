@@ -69,10 +69,10 @@ void __init setup_arch(char **cmdline_p)
     else
         pr_err("No DTB found in kernel mappings\n");
 
-    printk("%s: ================== PILOT ==================\n", __func__);
-#if 0
     misc_mem_init();
 
+    printk("%s: ================== PILOT ==================\n", __func__);
+#if 0
     init_resources();
     sbi_init();
 
