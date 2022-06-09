@@ -2,9 +2,25 @@
 #ifndef _LINUX_MM_TYPES_H
 #define _LINUX_MM_TYPES_H
 
-#include <linux/log2.h>
+#include <linux/mm_types_task.h>
+
+//#include <linux/auxvec.h>
+#include <linux/kref.h>
+#include <linux/list.h>
+#include <linux/spinlock.h>
+/*
+#include <linux/rbtree.h>
+#include <linux/rwsem.h>
+#include <linux/completion.h>
+*/
+#include <linux/cpumask.h>
+//#include <linux/uprobes.h>
 #include <linux/rcupdate.h>
 #include <linux/page-flags-layout.h>
+//#include <linux/workqueue.h>
+#include <linux/seqlock.h>
+
+//#include <asm/mmu.h>
 
 #define _struct_page_alignment
 
@@ -66,7 +82,16 @@ struct page {
             /* For both global and memcg */
             struct list_head deferred_list;
         };
-
+        struct {    /* Page table pages */
+            unsigned long _pt_pad_1;    /* compound_head */
+            pgtable_t pmd_huge_pte; /* protected by page->ptl */
+            unsigned long _pt_pad_2;    /* mapping */
+            union {
+                struct mm_struct *pt_mm; /* x86 pgds only */
+                atomic_t pt_frag_refcount; /* powerpc */
+            };
+            spinlock_t ptl;
+        };
 
         /** @rcu_head: You can use this to free a page by RCU. */
         struct rcu_head rcu_head;

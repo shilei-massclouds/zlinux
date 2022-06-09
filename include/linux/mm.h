@@ -309,4 +309,62 @@ void setup_initial_init_mm(void *start_code, void *end_code,
 
 #define offset_in_page(p)       ((unsigned long)(p) & ~PAGE_MASK)
 
+#if USE_SPLIT_PTE_PTLOCKS
+
+static inline spinlock_t *ptlock_ptr(struct page *page)
+{
+    return &page->ptl;
+}
+
+static inline bool ptlock_init(struct page *page)
+{
+    /*
+     * prep_new_page() initialize page->private (and therefore page->ptl)
+     * with 0. Make sure nobody took it in use in between.
+     *
+     * It can happen if arch try to use slab for page table allocation:
+     * slab code uses page->slab_cache, which share storage with page->ptl.
+     */
+    VM_BUG_ON_PAGE(*(unsigned long *)&page->ptl, page);
+    spin_lock_init(ptlock_ptr(page));
+    return true;
+}
+
+#else /* !USE_SPLIT_PTE_PTLOCKS */
+
+static inline bool ptlock_init(struct page *page) { return true; }
+
+#endif /* USE_SPLIT_PTE_PTLOCKS */
+
+#if USE_SPLIT_PMD_PTLOCKS
+
+static inline bool pmd_ptlock_init(struct page *page)
+{
+    return ptlock_init(page);
+}
+
+#else /* !USE_SPLIT_PMD_PTLOCKS */
+
+static inline bool pmd_ptlock_init(struct page *page) { return true; }
+
+#endif /* USE_SPLIT_PMD_PTLOCKS */
+
+static inline bool pgtable_pte_page_ctor(struct page *page)
+{
+    if (!ptlock_init(page))
+        return false;
+    __SetPageTable(page);
+    inc_lruvec_page_state(page, NR_PAGETABLE);
+    return true;
+}
+
+static inline bool pgtable_pmd_page_ctor(struct page *page)
+{
+    if (!pmd_ptlock_init(page))
+        return false;
+    __SetPageTable(page);
+    inc_lruvec_page_state(page, NR_PAGETABLE);
+    return true;
+}
+
 #endif /* _LINUX_MM_H */

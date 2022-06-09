@@ -252,6 +252,11 @@ static __always_inline void __ClearPage##uname(struct page *page)   \
 }
 
 /*
+ * Marks pages in use as page tables.
+ */
+PAGE_TYPE_OPS(Table, table)
+
+/*
  * PageBuddy() indicates that the page is free and in the buddy system
  * (see mm/page_alloc.c).
  */

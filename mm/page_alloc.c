@@ -2759,6 +2759,22 @@ void free_pages(unsigned long addr, unsigned int order)
 }
 EXPORT_SYMBOL(free_pages);
 
+/*
+ * Common helper functions. Never use with __GFP_HIGHMEM because the returned
+ * address cannot represent highmem pages. Use alloc_pages and then kmap if
+ * you need to access high mem.
+ */
+unsigned long __get_free_pages(gfp_t gfp_mask, unsigned int order)
+{
+    struct page *page;
+
+    page = alloc_pages(gfp_mask & ~__GFP_HIGHMEM, order);
+    if (!page)
+        return 0;
+    return (unsigned long) page_address(page);
+}
+EXPORT_SYMBOL(__get_free_pages);
+
 void __init mem_init_print_info(void)
 {
     panic("%s: NO implementation!\n", __func__);

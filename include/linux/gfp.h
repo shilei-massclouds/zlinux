@@ -309,4 +309,8 @@ static inline bool gfpflags_allow_blocking(const gfp_t gfp_flags)
     return !!(gfp_flags & __GFP_DIRECT_RECLAIM);
 }
 
+extern unsigned long __get_free_pages(gfp_t gfp_mask, unsigned int order);
+
+#define __get_free_page(gfp_mask) __get_free_pages((gfp_mask), 0)
+
 #endif /* __LINUX_GFP_H */

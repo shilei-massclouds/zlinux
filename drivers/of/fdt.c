@@ -191,8 +191,7 @@ void __init __weak early_init_dt_add_memory_arch(u64 base, u64 size)
     const u64 phys_offset = MIN_MEMBLOCK_ADDR;
 
     if (size < PAGE_SIZE - (base & ~PAGE_MASK)) {
-        pr_warn("Ignoring memory block 0x%llx - 0x%llx\n",
-                base, base + size);
+        pr_warn("Ignoring memory block 0x%llx - 0x%llx\n", base, base + size);
         return;
     }
 
@@ -203,8 +202,7 @@ void __init __weak early_init_dt_add_memory_arch(u64 base, u64 size)
     size &= PAGE_MASK;
 
     if (base > MAX_MEMBLOCK_ADDR) {
-        pr_warn("Ignoring memory block 0x%llx - 0x%llx\n",
-                base, base + size);
+        pr_warn("Ignoring memory block 0x%llx - 0x%llx\n", base, base + size);
         return;
     }
 
@@ -215,13 +213,11 @@ void __init __weak early_init_dt_add_memory_arch(u64 base, u64 size)
     }
 
     if (base + size < phys_offset) {
-        pr_warn("Ignoring memory block 0x%llx - 0x%llx\n",
-                base, base + size);
+        pr_warn("Ignoring memory block 0x%llx - 0x%llx\n", base, base + size);
         return;
     }
     if (base < phys_offset) {
-        pr_warn("Ignoring memory range 0x%llx - 0x%llx\n",
-                base, phys_offset);
+        pr_warn("Ignoring memory range 0x%llx - 0x%llx\n", base, phys_offset);
         size -= phys_offset - base;
         base = phys_offset;
     }
@@ -353,7 +349,7 @@ early_init_dt_reserve_memory_arch(phys_addr_t base,
                                   phys_addr_t size, bool nomap)
 {
     if (nomap)
-        return memblock_remove(base, size);
+        panic("%s: NOT support 'nomap'!\n", __func__);
     return memblock_reserve(base, size);
 }
 
@@ -378,46 +374,89 @@ static int __init __reserved_mem_check_root(unsigned long node)
     prop = of_get_flat_dt_prop(node, "ranges", NULL);
     if (!prop)
         return -EINVAL;
+
     return 0;
 }
 
-/**
- * fdt_scan_reserved_mem() - scan a single FDT node for reserved memory
+/*
+ * __reserved_mem_reserve_reg() - reserve all memory described in 'reg' property
  */
 static int __init
-__fdt_scan_reserved_mem(unsigned long node, const char *uname,
-                        int depth, void *data)
+__reserved_mem_reserve_reg(unsigned long node, const char *uname)
 {
-    //int err;
-    static int found;
+    int len;
+    bool nomap;
+    int first = 1;
+    const __be32 *prop;
+    phys_addr_t base, size;
+    int t_len = (dt_root_addr_cells + dt_root_size_cells) * sizeof(__be32);
 
-    if (!found && depth == 1 && strcmp(uname, "reserved-memory") == 0) {
-        if (__reserved_mem_check_root(node) != 0) {
-            pr_err("Reserved memory: unsupported node format, ignoring\n");
-            /* break scan */
-            return 1;
-        }
-        found = 1;
-        /* scan next node */
-        return 0;
-    } else if (!found) {
-        /* scan next node */
-        return 0;
-    } else if (found && depth < 2) {
-        /* scanning of /reserved-memory has been finished */
-        return 1;
+    prop = of_get_flat_dt_prop(node, "reg", &len);
+    if (!prop)
+        return -ENOENT;
+
+    if (len && len % t_len != 0) {
+        pr_err("Reserved memory: invalid reg property in '%s', skipping node.\n",
+               uname);
+        return -EINVAL;
     }
 
-    if (!of_fdt_device_is_available(initial_boot_params, node))
-        return 0;
+    nomap = of_get_flat_dt_prop(node, "no-map", NULL) != NULL;
 
-    /*
-    err = __reserved_mem_reserve_reg(node, uname);
-    if (err == -ENOENT && of_get_flat_dt_prop(node, "size", NULL))
-        fdt_reserved_mem_save_node(node, uname, 0, 0);
-    */
+    while (len >= t_len) {
+        base = dt_mem_next_cell(dt_root_addr_cells, &prop);
+        size = dt_mem_next_cell(dt_root_size_cells, &prop);
 
-    /* scan next node */
+        if (size && early_init_dt_reserve_memory_arch(base, size, nomap) == 0) {
+            pr_info("Reserved memory: reserved region for node '%s': "
+                    "base %pa, size %lu MiB\n",
+                    uname, &base, (unsigned long)(size / SZ_1M));
+        }
+        else {
+            pr_info("Reserved memory: failed to reserve memory for node '%s': "
+                    "base %pa, size %lu MiB\n",
+                    uname, &base, (unsigned long)(size / SZ_1M));
+        }
+
+        len -= t_len;
+        if (first) {
+            fdt_reserved_mem_save_node(node, uname, base, size);
+            first = 0;
+        }
+    }
+    return 0;
+}
+
+/*
+ * fdt_scan_reserved_mem() - scan a single FDT node for reserved memory
+ */
+static int __init fdt_scan_reserved_mem(void)
+{
+    int node, child;
+    const void *fdt = initial_boot_params;
+
+    node = fdt_path_offset(fdt, "/reserved-memory");
+    if (node < 0)
+        return -ENODEV;
+
+    if (__reserved_mem_check_root(node) != 0) {
+        pr_err("Reserved memory: unsupported node format, ignoring\n");
+        return -EINVAL;
+    }
+
+    fdt_for_each_subnode(child, fdt, node) {
+        int err;
+        const char *uname;
+
+        if (!of_fdt_device_is_available(fdt, child))
+            continue;
+
+        uname = fdt_get_name(fdt, child, NULL);
+
+        err = __reserved_mem_reserve_reg(child, uname);
+        if (err == -ENOENT && of_get_flat_dt_prop(child, "size", NULL))
+            fdt_reserved_mem_save_node(child, uname, 0, 0);
+    }
     return 0;
 }
 
@@ -441,11 +480,12 @@ void __init early_init_fdt_scan_reserved_mem(void)
         fdt_get_mem_rsv(initial_boot_params, n, &base, &size);
         if (!size)
             break;
-        early_init_dt_reserve_memory_arch(base, size, false);
+
+        panic("%s: find memreserve\n", __func__);
     }
 
-    of_scan_flat_dt(__fdt_scan_reserved_mem, NULL);
-    //fdt_init_reserved_mem();
+    fdt_scan_reserved_mem();
+    fdt_init_reserved_mem();
 }
 
 static void * __init early_init_dt_alloc_memory_arch(u64 size, u64 align)

@@ -158,7 +158,6 @@ extern uintptr_t _dtb_early_pa;
 
 extern pgd_t swapper_pg_dir[];
 
-void setup_bootmem(void);
 void paging_init(void);
 void misc_mem_init(void);
 

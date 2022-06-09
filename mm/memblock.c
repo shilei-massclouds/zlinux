@@ -1214,3 +1214,26 @@ static int __init early_memblock(char *p)
     return 0;
 }
 early_param("memblock", early_memblock);
+
+static int __init_memblock
+memblock_search(struct memblock_type *type, phys_addr_t addr)
+{
+    unsigned int left = 0, right = type->cnt;
+
+    do {
+        unsigned int mid = (right + left) / 2;
+
+        if (addr < type->regions[mid].base)
+            right = mid;
+        else if (addr >= (type->regions[mid].base + type->regions[mid].size))
+            left = mid + 1;
+        else
+            return mid;
+    } while (left < right);
+    return -1;
+}
+
+bool __init_memblock memblock_is_memory(phys_addr_t addr)
+{
+    return memblock_search(&memblock.memory, addr) != -1;
+}

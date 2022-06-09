@@ -94,8 +94,6 @@ static phys_addr_t memory_limit;
 
 static phys_addr_t dma32_phys_limit __initdata;
 
-static bool mmu_enabled;
-
 struct pt_alloc_ops pt_ops __initdata;
 
 #define pgd_next_t p4d_t
@@ -124,27 +122,6 @@ void __set_fixmap(enum fixed_addresses idx, phys_addr_t phys, pgprot_t prot)
     }
 }
 
-static pte_t *__init get_pte_virt(phys_addr_t pa)
-{
-    if (mmu_enabled) {
-        clear_fixmap(FIX_PTE);
-        return (pte_t *)set_fixmap_offset(FIX_PTE, pa);
-    } else {
-        return (pte_t *)((uintptr_t)pa);
-    }
-}
-
-static phys_addr_t __init alloc_pte(void)
-{
-    /*
-     * We only create PMD or PGD early mappings so we
-     * should never reach here with MMU disabled.
-     */
-    BUG_ON(!mmu_enabled);
-
-    return memblock_phys_alloc(PAGE_SIZE, PAGE_SIZE);
-}
-
 static void __init
 create_pte_mapping(pte_t *ptep, uintptr_t va, phys_addr_t pa,
                    phys_addr_t sz, pgprot_t prot)
@@ -155,24 +132,6 @@ create_pte_mapping(pte_t *ptep, uintptr_t va, phys_addr_t pa,
 
     if (pte_none(ptep[pte_idx]))
         ptep[pte_idx] = pfn_pte(PFN_DOWN(pa), prot);
-}
-
-static pmd_t *__init get_pmd_virt(phys_addr_t pa)
-{
-    if (mmu_enabled) {
-        clear_fixmap(FIX_PMD);
-        return (pmd_t *)set_fixmap_offset(FIX_PMD, pa);
-    } else {
-        return (pmd_t *)((uintptr_t)pa);
-    }
-}
-
-static phys_addr_t __init alloc_pmd(void)
-{
-    if (mmu_enabled)
-        return memblock_phys_alloc(PAGE_SIZE, PAGE_SIZE);
-
-    return (uintptr_t)early_pmd;
 }
 
 static void __init
@@ -656,14 +615,12 @@ asmlinkage void __init setup_vm(uintptr_t dtb_pa)
     pt_ops_set_fixmap();
 }
 
-void __init setup_bootmem(void)
+static void __init setup_bootmem(void)
 {
     phys_addr_t phys_ram_end;
-    phys_addr_t __maybe_unused max_mapped_addr;
     phys_addr_t vmlinux_start = __pa_symbol(&_start);
     phys_addr_t vmlinux_end = __pa_symbol(&_end);
 
-    printk("%s: step1\n", __func__);
     memblock_enforce_memory_limit(memory_limit);
 
     /*
@@ -676,12 +633,17 @@ void __init setup_bootmem(void)
      */
     vmlinux_end = (vmlinux_end + PMD_SIZE - 1) & PMD_MASK;
 
+    /*
+     * Reserve from the start of the kernel to the end of the kernel
+     */
     memblock_reserve(vmlinux_start, vmlinux_end - vmlinux_start);
 
     phys_ram_end = memblock_end_of_DRAM();
+    phys_ram_base = memblock_start_of_DRAM();
 
     min_low_pfn = PFN_UP(phys_ram_base);
     max_low_pfn = max_pfn = PFN_DOWN(phys_ram_end);
+    high_memory = (void *)(__va(PFN_PHYS(max_low_pfn)));
 
     dma32_phys_limit = min(4UL * SZ_1G, (unsigned long)PFN_PHYS(max_low_pfn));
     set_max_mapnr(max_low_pfn - ARCH_PFN_OFFSET);
@@ -689,60 +651,141 @@ void __init setup_bootmem(void)
     //reserve_initrd_mem();
 
     /*
-     * If DTB is built in, no need to reserve its memblock.
-     * Otherwise, do reserve it but avoid using
-     * early_init_fdt_reserve_self() since __pa() does
-     * not work for DTB pointers that are fixmap addresses
+     * In case the DTB is not located in a memory region we won't
+     * be able to locate it later on via the linear mapping and
+     * get a segfault when accessing it via __va(dtb_early_pa).
+     * To avoid this situation copy DTB to a memory region.
+     * Note that memblock_phys_alloc will also reserve DTB region.
      */
-    memblock_reserve(dtb_early_pa, fdt_totalsize(dtb_early_va));
+    if (!memblock_is_memory(dtb_early_pa)) {
+        panic("%s: dtb_early_pa (%lx) is not IN memory yet!\n",
+              __func__, dtb_early_pa);
+    } else {
+        memblock_reserve(dtb_early_pa, fdt_totalsize(dtb_early_va));
+    }
 
     early_init_fdt_scan_reserved_mem();
     memblock_allow_resize();
 }
 
+static phys_addr_t __init alloc_pte_late(uintptr_t va)
+{
+    unsigned long vaddr;
+
+    vaddr = __get_free_page(GFP_KERNEL);
+    BUG_ON(!vaddr || !pgtable_pte_page_ctor(virt_to_page(vaddr)));
+
+    return __pa(vaddr);
+}
+
+static phys_addr_t alloc_p4d_late(uintptr_t va)
+{
+    unsigned long vaddr;
+
+    vaddr = __get_free_page(GFP_KERNEL);
+    BUG_ON(!vaddr);
+    return __pa(vaddr);
+}
+
+static phys_addr_t alloc_pud_late(uintptr_t va)
+{
+    unsigned long vaddr;
+
+    vaddr = __get_free_page(GFP_KERNEL);
+    BUG_ON(!vaddr);
+    return __pa(vaddr);
+}
+
+static phys_addr_t __init alloc_pmd_late(uintptr_t va)
+{
+    unsigned long vaddr;
+
+    vaddr = __get_free_page(GFP_KERNEL);
+    BUG_ON(!vaddr || !pgtable_pmd_page_ctor(virt_to_page(vaddr)));
+
+    return __pa(vaddr);
+}
+
+static inline pte_t *__init get_pte_virt_late(phys_addr_t pa)
+{
+    return (pte_t *) __va(pa);
+}
+
+static pmd_t *__init get_pmd_virt_late(phys_addr_t pa)
+{
+    return (pmd_t *) __va(pa);
+}
+
+static pud_t *__init get_pud_virt_late(phys_addr_t pa)
+{
+    return (pud_t *)__va(pa);
+}
+
+static p4d_t *__init get_p4d_virt_late(phys_addr_t pa)
+{
+    return (p4d_t *)__va(pa);
+}
+
+/*
+ * MMU is enabled and page table setup is complete, so from now, we can use
+ * generic page allocation functions to setup page table.
+ */
+void __init pt_ops_set_late(void)
+{
+    pt_ops.alloc_pte = alloc_pte_late;
+    pt_ops.get_pte_virt = get_pte_virt_late;
+    pt_ops.alloc_pmd = alloc_pmd_late;
+    pt_ops.get_pmd_virt = get_pmd_virt_late;
+    pt_ops.alloc_pud = alloc_pud_late;
+    pt_ops.get_pud_virt = get_pud_virt_late;
+    pt_ops.alloc_p4d = alloc_p4d_late;
+    pt_ops.get_p4d_virt = get_p4d_virt_late;
+}
+
 static void __init setup_vm_final(void)
 {
-#if 0
+    u64 i;
     uintptr_t va, map_size;
     phys_addr_t pa, start, end;
-    struct memblock_region *reg;
-
-    /* Set mmu_enabled flag */
-    mmu_enabled = true;
 
     /* Setup swapper PGD for fixmap */
     create_pgd_mapping(swapper_pg_dir, FIXADDR_START,
                        __pa_symbol(fixmap_pgd_next),
                        PGDIR_SIZE, PAGE_TABLE);
 
-    /* Map all memory banks */
-    for_each_memblock(memory, reg) {
-        start = reg->base;
-        end = start + reg->size;
-
+    /* Map all memory banks in the linear mapping */
+    for_each_mem_range(i, &start, &end) {
         if (start >= end)
             break;
-        if (memblock_is_nomap(reg))
-            continue;
+
         if (start <= __pa(PAGE_OFFSET) && __pa(PAGE_OFFSET) < end)
             start = __pa(PAGE_OFFSET);
+        if (end >= __pa(PAGE_OFFSET) + memory_limit)
+            end = __pa(PAGE_OFFSET) + memory_limit;
 
         map_size = best_map_size(start, end - start);
         for (pa = start; pa < end; pa += map_size) {
             va = (uintptr_t)__va(pa);
-            create_pgd_mapping(swapper_pg_dir, va, pa,
-                               map_size, PAGE_KERNEL_EXEC);
+
+            create_pgd_mapping(swapper_pg_dir, va, pa, map_size,
+                               pgprot_from_va(va));
         }
     }
+
+    create_kernel_page_table(swapper_pg_dir, false);
+
 
     /* Clear fixmap PTE and PMD mappings */
     clear_fixmap(FIX_PTE);
     clear_fixmap(FIX_PMD);
+    clear_fixmap(FIX_PUD);
+    clear_fixmap(FIX_P4D);
 
     /* Move to swapper page table */
     csr_write(CSR_SATP, PFN_DOWN(__pa_symbol(swapper_pg_dir)) | satp_mode);
     local_flush_tlb_all();
-#endif
+
+    pt_ops_set_late();
 }
 
 static void __init zone_sizes_init(void)

@@ -102,4 +102,10 @@ node_page_state_add(long x, struct pglist_data *pgdat,
     atomic_long_add(x, &vm_node_stat[item]);
 }
 
+static inline void inc_lruvec_page_state(struct page *page,
+                                         enum node_stat_item idx)
+{
+    mod_lruvec_page_state(page, idx, 1);
+}
+
 #endif /* _LINUX_VMSTAT_H */

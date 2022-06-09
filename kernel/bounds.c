@@ -10,16 +10,15 @@
 #include <linux/page-flags.h>
 #include <linux/mmzone.h>
 #include <linux/kbuild.h>
-/*
 #include <linux/log2.h>
 #include <linux/spinlock_types.h>
-*/
 
 int main(void)
 {
     /* The enum constants to put into include/generated/bounds.h */
     DEFINE(NR_PAGEFLAGS, __NR_PAGEFLAGS);
     DEFINE(MAX_NR_ZONES, __MAX_NR_ZONES);
+    DEFINE(SPINLOCK_SIZE, sizeof(spinlock_t));
     /* End of constants */
 
     return 0;

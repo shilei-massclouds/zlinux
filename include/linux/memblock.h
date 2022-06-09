@@ -43,6 +43,7 @@ enum memblock_flags {
     MEMBLOCK_HOTPLUG    = 0x1,  /* hotpluggable region */
     MEMBLOCK_MIRROR     = 0x2,  /* mirrored region */
     MEMBLOCK_NOMAP      = 0x4,  /* don't add to kernel direct mapping */
+    MEMBLOCK_DRIVER_MANAGED = 0x8,  /* always detected via a driver */
 };
 
 /**
@@ -320,6 +321,19 @@ memblock_alloc_from(phys_addr_t size, phys_addr_t align, phys_addr_t min_addr)
     return memblock_alloc_try_nid(size, align, min_addr,
                                   MEMBLOCK_ALLOC_ACCESSIBLE, NUMA_NO_NODE);
 }
+
+bool memblock_is_memory(phys_addr_t addr);
+
+/**
+ * for_each_mem_range - iterate through memory areas.
+ * @i: u64 used as loop variable
+ * @p_start: ptr to phys_addr_t for start address of the range, can be %NULL
+ * @p_end: ptr to phys_addr_t for end address of the range, can be %NULL
+ */
+#define for_each_mem_range(i, p_start, p_end) \
+    __for_each_mem_range(i, &memblock.memory, NULL, NUMA_NO_NODE, \
+                         MEMBLOCK_HOTPLUG | MEMBLOCK_DRIVER_MANAGED, \
+                         p_start, p_end, NULL)
 
 #endif /* __KERNEL__ */
 

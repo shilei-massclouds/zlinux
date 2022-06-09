@@ -11,4 +11,8 @@
 #define OF_ROOT_NODE_ADDR_CELLS_DEFAULT 1
 #define OF_ROOT_NODE_SIZE_CELLS_DEFAULT 1
 
+void fdt_init_reserved_mem(void);
+void fdt_reserved_mem_save_node(unsigned long node, const char *uname,
+                                phys_addr_t base, phys_addr_t size);
+
 #endif /* _LINUX_OF_PRIVATE_H */

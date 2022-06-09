@@ -63,15 +63,14 @@ void __init setup_arch(char **cmdline_p)
     efi_init();
 #endif
     paging_init();
-    printk("l4(%d) l5(%d)\n", pgtable_l4_enabled, pgtable_l5_enabled);
-    printk("%s: ================== PILOT ==================\n", __func__);
 
-#if 0
-    if (early_init_dt_verify(__va(XIP_FIXUP(dtb_early_pa))))
+    if (early_init_dt_verify(__va(dtb_early_pa)))
         unflatten_device_tree();
     else
         pr_err("No DTB found in kernel mappings\n");
 
+    printk("%s: ================== PILOT ==================\n", __func__);
+#if 0
     misc_mem_init();
 
     init_resources();
