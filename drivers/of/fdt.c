@@ -600,44 +600,38 @@ static void populate_properties(const void *blob,
             pp->length = len;
             pp->value  = pp + 1;
             *pprev     = pp;
-            pprev      = &pp->next;
             memcpy(pp->value, ps, len - 1);
             ((char *)pp->value)[len - 1] = 0;
-            /*
             pr_debug("fixed up name for %s -> %s\n",
                      nodename, (char *)pp->value);
-                     */
         }
     }
-
-    if (!dryrun)
-        *pprev = NULL;
 }
 
-static bool populate_node(const void *blob, int offset, void **mem,
-                          struct device_node *dad, struct device_node **pnp,
-                          bool dryrun)
+static int populate_node(const void *blob, int offset, void **mem,
+                         struct device_node *dad, struct device_node **pnp,
+                         bool dryrun)
 {
     struct device_node *np;
     const char *pathp;
-    unsigned int l, allocl;
+    int len;
 
-    pathp = fdt_get_name(blob, offset, &l);
+    pathp = fdt_get_name(blob, offset, &len);
     if (!pathp) {
         *pnp = NULL;
-        return false;
+        return len;
     }
 
-    allocl = ++l;
+    len++;
 
-    np = unflatten_dt_alloc(mem, sizeof(struct device_node) + allocl,
+    np = unflatten_dt_alloc(mem, sizeof(struct device_node) + len,
                             __alignof__(struct device_node));
     if (!dryrun) {
         char *fn;
         of_node_init(np);
         np->full_name = fn = ((char *)np) + sizeof(*np);
 
-        memcpy(fn, pathp, l);
+        memcpy(fn, pathp, len);
 
         if (dad != NULL) {
             np->parent = dad;
@@ -758,14 +752,34 @@ static int unflatten_dt_nodes(const void *blob,
     return mem - base;
 }
 
+/**
+ * __unflatten_device_tree - create tree of device_nodes from flat blob
+ * @blob: The blob to expand
+ * @dad: Parent device node
+ * @mynodes: The device_node tree created by the call
+ * @dt_alloc: An allocator that provides a virtual address to memory
+ * for the resulting tree
+ * @detached: if true set OF_DETACHED on @mynodes
+ *
+ * unflattens a device-tree, creating the tree of struct device_node. It also
+ * fills the "name" and "type" pointers of the nodes so the normal device-tree
+ * walking functions can be used.
+ *
+ * Return: NULL on failure or the memory chunk containing the unflattened
+ * device tree on success.
+ */
 void *__unflatten_device_tree(const void *blob,
                               struct device_node *dad,
                               struct device_node **mynodes,
                               void *(*dt_alloc)(u64 size, u64 align),
                               bool detached)
 {
+    int ret;
     int size;
     void *mem;
+
+    if (mynodes)
+        *mynodes = NULL;
 
     pr_debug(" -> unflatten_device_tree()\n");
 
@@ -786,7 +800,7 @@ void *__unflatten_device_tree(const void *blob,
 
     /* First pass, scan for size */
     size = unflatten_dt_nodes(blob, NULL, dad, NULL);
-    if (size < 0)
+    if (size <= 0)
         return NULL;
 
     size = ALIGN(size, 4);
@@ -804,12 +818,16 @@ void *__unflatten_device_tree(const void *blob,
     pr_debug("  unflattening %p...\n", mem);
 
     /* Second pass, do actual unflattening */
-    unflatten_dt_nodes(blob, mem, dad, mynodes);
+    ret = unflatten_dt_nodes(blob, mem, dad, mynodes);
+
     if (be32_to_cpup(mem + size) != 0xdeadbeef)
         pr_warn("End of tree marker overwritten: %08x\n",
                 be32_to_cpup(mem + size));
 
-    if (detached && mynodes) {
+    if (ret <= 0)
+        return NULL;
+
+    if (detached && mynodes && *mynodes) {
         of_node_set_flag(*mynodes, OF_DETACHED);
         pr_debug("unflattened tree is detached\n");
     }
