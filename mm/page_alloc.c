@@ -775,6 +775,50 @@ memmap_init_range(unsigned long size, int nid, unsigned long zone,
     }
 }
 
+/*
+ * Only struct pages that correspond to ranges defined by memblock.memory
+ * are zeroed and initialized by going through __init_single_page() during
+ * memmap_init_zone_range().
+ *
+ * But, there could be struct pages that correspond to holes in
+ * memblock.memory. This can happen because of the following reasons:
+ * - physical memory bank size is not necessarily the exact multiple of the
+ *   arbitrary section size
+ * - early reserved memory may not be listed in memblock.memory
+ * - memory layouts defined with memmap= kernel parameter may not align
+ *   nicely with memmap sections
+ *
+ * Explicitly initialize those struct pages so that:
+ * - PG_Reserved is set
+ * - zone and node links point to zone and node that span the page if the
+ *   hole is in the middle of a zone
+ * - zone and node links point to adjacent zone/node if the hole falls on
+ *   the zone boundary; the pages in such holes will be prepended to the
+ *   zone/node above the hole except for the trailing pages in the last
+ *   section that will be appended to the zone/node below.
+ */
+static void __init init_unavailable_range(unsigned long spfn,
+                                          unsigned long epfn,
+                                          int zone, int node)
+{
+    unsigned long pfn;
+    u64 pgcnt = 0;
+
+    for (pfn = spfn; pfn < epfn; pfn++) {
+        if (!pfn_valid(ALIGN_DOWN(pfn, pageblock_nr_pages))) {
+            pfn = ALIGN_DOWN(pfn, pageblock_nr_pages) + pageblock_nr_pages - 1;
+            continue;
+        }
+        __init_single_page(pfn_to_page(pfn), pfn, zone, node);
+        __SetPageReserved(pfn_to_page(pfn));
+        pgcnt++;
+    }
+
+    if (pgcnt)
+        pr_info("On node %d, zone %s: %lld pages in unavailable ranges",
+                node, zone_names[zone], pgcnt);
+}
+
 static void __init
 memmap_init_zone_range(struct zone *zone,
                        unsigned long start_pfn,
@@ -794,21 +838,17 @@ memmap_init_zone_range(struct zone *zone,
     memmap_init_range(end_pfn - start_pfn, nid, zone_id, start_pfn,
                       zone_end_pfn, MEMINIT_EARLY, NULL, MIGRATE_MOVABLE);
 
-    //panic("%s: (%lx, %lx) END\n", __func__, start_pfn, end_pfn);
-#if 0
     if (*hole_pfn < start_pfn)
         init_unavailable_range(*hole_pfn, start_pfn, zone_id, nid);
 
     *hole_pfn = end_pfn;
-#endif
 }
 
 static void __init memmap_init(void)
 {
     unsigned long start_pfn, end_pfn;
     unsigned long hole_pfn = 0;
-    //int i, j, zone_id = 0, nid;
-    int i, j, nid;
+    int i, j, zone_id = 0, nid;
 
     for_each_mem_pfn_range(i, MAX_NUMNODES, &start_pfn, &end_pfn, &nid) {
         struct pglist_data *node = NODE_DATA(nid);
@@ -820,11 +860,11 @@ static void __init memmap_init(void)
                 continue;
 
             memmap_init_zone_range(zone, start_pfn, end_pfn, &hole_pfn);
-            //zone_id = j;
+            zone_id = j;
         }
     }
 
-    //init_unavailable_range(hole_pfn, end_pfn, zone_id, nid);
+    init_unavailable_range(hole_pfn, end_pfn, zone_id, nid);
 }
 
 /*
@@ -2358,6 +2398,10 @@ __free_one_page(struct page *page, unsigned long pfn,
          * We don't want to hit this code for the more frequent
          * low-order merging.
          */
+
+        buddy_pfn = __find_buddy_pfn(pfn, order);
+        buddy = page + (buddy_pfn - pfn);
+
         max_order = order + 1;
         goto continue_merging;
     }
