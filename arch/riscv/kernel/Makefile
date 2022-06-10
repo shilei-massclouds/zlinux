@@ -13,6 +13,7 @@ obj-y	+= smp.o
 obj-y   += smpboot.o
 obj-y   += cpu_ops.o
 obj-y   += process.o
+obj-y	+= cpu_ops_sbi.o
 obj-y	+= cpu_ops_spinwait.o
 
 obj-$(CONFIG_RISCV_SBI)	+= sbi.o

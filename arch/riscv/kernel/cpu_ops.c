@@ -1,6 +1,29 @@
 // SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (c) 2020 Western Digital Corporation or its affiliates.
+ */
 
+#include <linux/errno.h>
 #include <linux/mm.h>
+#include <linux/of.h>
 #include <linux/string.h>
 #include <linux/sched.h>
-#include <linux/threads.h>
+#include <asm/cpu_ops.h>
+#include <asm/sbi.h>
+#include <asm/smp.h>
+
+const struct cpu_operations *cpu_ops[NR_CPUS] __ro_after_init;
+
+extern const struct cpu_operations cpu_ops_sbi;
+extern const struct cpu_operations cpu_ops_spinwait;
+
+void __init cpu_set_ops(int cpuid)
+{
+    if (sbi_probe_extension(SBI_EXT_HSM) > 0) {
+        if (!cpuid)
+            pr_info("SBI HSM extension detected\n");
+        cpu_ops[cpuid] = &cpu_ops_sbi;
+    } else {
+        cpu_ops[cpuid] = &cpu_ops_spinwait;
+    }
+}

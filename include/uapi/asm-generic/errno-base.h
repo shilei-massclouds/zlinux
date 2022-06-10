@@ -2,6 +2,7 @@
 #ifndef _ASM_GENERIC_ERRNO_BASE_H
 #define _ASM_GENERIC_ERRNO_BASE_H
 
+#define EPERM       1   /* Operation not permitted */
 #define ENOENT      2   /* No such file or directory */
 #define EINTR       4   /* Interrupted system call */
 #define E2BIG       7   /* Argument list too long */

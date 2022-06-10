@@ -9,6 +9,11 @@
 
 #include <linux/types.h>
 
+#define SBI_SPEC_VERSION_DEFAULT        0x1
+#define SBI_SPEC_VERSION_MAJOR_SHIFT    24
+#define SBI_SPEC_VERSION_MAJOR_MASK     0x7f
+#define SBI_SPEC_VERSION_MINOR_MASK     0xffffff
+
 enum sbi_ext_id {
     SBI_EXT_0_1_SET_TIMER = 0x0,
     SBI_EXT_0_1_CONSOLE_PUTCHAR = 0x1,
@@ -26,11 +31,71 @@ enum sbi_ext_id {
     SBI_EXT_HSM = 0x48534D,
 };
 
+enum sbi_ext_base_fid {
+    SBI_EXT_BASE_GET_SPEC_VERSION = 0,
+    SBI_EXT_BASE_GET_IMP_ID,
+    SBI_EXT_BASE_GET_IMP_VERSION,
+    SBI_EXT_BASE_PROBE_EXT,
+    SBI_EXT_BASE_GET_MVENDORID,
+    SBI_EXT_BASE_GET_MARCHID,
+    SBI_EXT_BASE_GET_MIMPID,
+};
+
+enum sbi_ext_hsm_fid {
+    SBI_EXT_HSM_HART_START = 0,
+    SBI_EXT_HSM_HART_STOP,
+    SBI_EXT_HSM_HART_STATUS,
+    SBI_EXT_HSM_HART_SUSPEND,
+};
+
+/* SBI return error codes */
+#define SBI_SUCCESS             0
+#define SBI_ERR_FAILURE         -1
+#define SBI_ERR_NOT_SUPPORTED   -2
+#define SBI_ERR_INVALID_PARAM   -3
+#define SBI_ERR_DENIED          -4
+#define SBI_ERR_INVALID_ADDRESS -5
+#define SBI_ERR_ALREADY_AVAILABLE -6
+#define SBI_ERR_ALREADY_STARTED -7
+#define SBI_ERR_ALREADY_STOPPED -8
+
 struct sbiret {
     long error;
     long value;
 };
 
+extern unsigned long sbi_spec_version;
+
 void sbi_console_putchar(int ch);
+
+void sbi_init(void);
+
+struct sbiret sbi_ecall(int ext, int fid, unsigned long arg0,
+                        unsigned long arg1, unsigned long arg2,
+                        unsigned long arg3, unsigned long arg4,
+                        unsigned long arg5);
+
+/* Check if current SBI specification version is 0.1 or not */
+static inline int sbi_spec_is_0_1(void)
+{
+    return (sbi_spec_version == SBI_SPEC_VERSION_DEFAULT) ? 1 : 0;
+}
+
+/* Get the major version of SBI */
+static inline unsigned long sbi_major_version(void)
+{
+    return (sbi_spec_version >> SBI_SPEC_VERSION_MAJOR_SHIFT) &
+        SBI_SPEC_VERSION_MAJOR_MASK;
+}
+
+/* Get the minor version of SBI */
+static inline unsigned long sbi_minor_version(void)
+{
+    return sbi_spec_version & SBI_SPEC_VERSION_MINOR_MASK;
+}
+
+int sbi_probe_extension(int ext);
+
+int sbi_err_map_linux_errno(int err);
 
 #endif /* _ASM_RISCV_SBI_H */

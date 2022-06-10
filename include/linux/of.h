@@ -137,4 +137,10 @@ extern int of_property_read_string(const struct device_node *np,
                                    const char *propname,
                                    const char **out_string);
 
+#define for_each_of_cpu_node(cpu) \
+    for (cpu = of_get_next_cpu_node(NULL); cpu != NULL; \
+         cpu = of_get_next_cpu_node(cpu))
+
+extern struct device_node *of_get_next_cpu_node(struct device_node *prev);
+
 #endif /* _LINUX_OF_H */

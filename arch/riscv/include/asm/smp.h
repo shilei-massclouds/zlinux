@@ -26,4 +26,6 @@ extern unsigned long __cpuid_to_hartid_map[NR_CPUS];
  */
 #define raw_smp_processor_id() (current_thread_info()->cpu)
 
+void __init setup_smp(void);
+
 #endif /* _ASM_RISCV_SMP_H */

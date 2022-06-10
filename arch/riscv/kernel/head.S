@@ -90,6 +90,37 @@ relocate_enable_mmu:
 
     ret
 
+.global secondary_start_sbi
+secondary_start_sbi:
+    /* Mask all interrupts */
+    csrw CSR_IE, zero
+    csrw CSR_IP, zero
+
+    /* Load the global pointer */
+    .option push
+    .option norelax
+        la gp, __global_pointer$
+    .option pop
+
+    /*
+     * Disable FPU to detect illegal usage of
+     * floating point in kernel space
+     */
+    li t0, SR_FS
+    csrc CSR_STATUS, t0
+
+    /* Set trap vector to spin forever to help debug */
+    la a3, .Lsecondary_park
+    csrw CSR_TVEC, a3
+
+    /* a0 contains the hartid & a1 contains boot data */
+    li a2, SBI_HART_BOOT_TASK_PTR_OFFSET
+    add a2, a2, a1
+    REG_L tp, (a2)
+    li a3, SBI_HART_BOOT_STACK_PTR_OFFSET
+    add a3, a3, a1
+    REG_L sp, (a3)
+
 .Lsecondary_start_common:
     /* Enable virtual memory and relocate to virtual address */
     la a0, swapper_pg_dir

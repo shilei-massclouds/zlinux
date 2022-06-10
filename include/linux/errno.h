@@ -4,4 +4,6 @@
 
 #include <uapi/linux/errno.h>
 
+#define ENOTSUPP    524 /* Operation is not supported */
+
 #endif /* _LINUX_ERRNO_H */

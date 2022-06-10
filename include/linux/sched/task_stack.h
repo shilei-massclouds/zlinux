@@ -9,6 +9,16 @@
 #include <linux/sched.h>
 #include <linux/magic.h>
 
+/*
+ * When accessing the stack of a non-current task that might exit, use
+ * try_get_task_stack() instead.  task_stack_page will return a pointer
+ * that could get freed out from under you.
+ */
+static inline void *task_stack_page(const struct task_struct *task)
+{
+    return task->stack;
+}
+
 static inline unsigned long *end_of_stack(const struct task_struct *task)
 {
     return task->stack;

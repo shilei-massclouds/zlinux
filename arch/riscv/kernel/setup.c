@@ -71,13 +71,16 @@ void __init setup_arch(char **cmdline_p)
 
     misc_mem_init();
 
-    printk("%s: ================== PILOT ==================\n", __func__);
 #if 0
     init_resources();
+#endif
+
     sbi_init();
 
     setup_smp();
 
+    printk("%s: ================== PILOT ==================\n", __func__);
+#if 0
     riscv_fill_hwcap();
 #endif
 }
