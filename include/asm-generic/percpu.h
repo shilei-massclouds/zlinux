@@ -104,6 +104,19 @@ do {                                            \
 #define this_cpu_read_8(pcp)        this_cpu_generic_read(pcp)
 #endif
 
+#ifndef this_cpu_write_1
+#define this_cpu_write_1(pcp, val)  this_cpu_generic_to_op(pcp, val, =)
+#endif
+#ifndef this_cpu_write_2
+#define this_cpu_write_2(pcp, val)  this_cpu_generic_to_op(pcp, val, =)
+#endif
+#ifndef this_cpu_write_4
+#define this_cpu_write_4(pcp, val)  this_cpu_generic_to_op(pcp, val, =)
+#endif
+#ifndef this_cpu_write_8
+#define this_cpu_write_8(pcp, val)  this_cpu_generic_to_op(pcp, val, =)
+#endif
+
 #ifndef this_cpu_add_1
 #define this_cpu_add_1(pcp, val)    this_cpu_generic_to_op(pcp, val, +=)
 #endif

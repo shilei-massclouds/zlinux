@@ -13,6 +13,10 @@
  */
 #include <asm/string.h>
 
+#ifndef __HAVE_ARCH_STRCPY
+extern char * strcpy(char *,const char *);
+#endif
+
 #ifndef __HAVE_ARCH_STRCMP
 extern int strcmp(const char *,const char *);
 #endif

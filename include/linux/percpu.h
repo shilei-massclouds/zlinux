@@ -67,12 +67,8 @@ extern void __percpu *__alloc_percpu(size_t size, size_t align) __alloc_size(1);
 
 extern void free_percpu(void __percpu *__pdata);
 
+typedef int (pcpu_fc_cpu_to_node_fn_t)(int cpu);
 typedef int (pcpu_fc_cpu_distance_fn_t)(unsigned int from, unsigned int to);
-
-typedef void *
-(*pcpu_fc_alloc_fn_t)(unsigned int cpu, size_t size, size_t align);
-
-typedef void (*pcpu_fc_free_fn_t)(void *ptr, size_t size);
 
 #define alloc_percpu(type) \
     (typeof(type) __percpu *)__alloc_percpu(sizeof(type), __alignof__(type))

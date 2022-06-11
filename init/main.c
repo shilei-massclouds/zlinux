@@ -17,9 +17,12 @@
 #include <linux/sched/task_stack.h>
 #include <linux/mm.h>
 #include <linux/slab.h>
+#include <linux/memblock.h>
 
 #include <asm/setup.h>
 #include "z_tests.h"
+
+#define bootconfig_found false
 
 /*
  * Debug helper: via this flag we know that we are in 'early bootup code'
@@ -37,6 +40,18 @@ EXPORT_SYMBOL(system_state);
 
 /* Untouched command line saved by arch-specific code. */
 char __initdata boot_command_line[COMMAND_LINE_SIZE];
+
+/* Untouched saved command line (eg. for /proc) */
+char *saved_command_line;
+
+/* Command line for parameter parsing */
+static char *static_command_line;
+
+/* Untouched extra command line */
+static char *extra_command_line;
+
+/* Extra init arguments */
+static char *extra_init_args;
 
 static int __ref kernel_init(void *unused)
 {
@@ -73,6 +88,58 @@ static void __init mm_init(void)
     kmem_cache_init();
 }
 
+/*
+ * We need to store the untouched command line for future reference.
+ * We also need to store the touched command line since the parameter
+ * parsing is performed in place, and we should allow a component to
+ * store reference of name/value for future reference.
+ */
+static void __init setup_command_line(char *command_line)
+{
+    size_t len, xlen = 0, ilen = 0;
+
+    if (extra_command_line)
+        xlen = strlen(extra_command_line);
+    if (extra_init_args)
+        ilen = strlen(extra_init_args) + 4; /* for " -- " */
+
+    len = xlen + strlen(boot_command_line) + 1;
+
+    saved_command_line = memblock_alloc(len + ilen, SMP_CACHE_BYTES);
+    if (!saved_command_line)
+        panic("%s: Failed to allocate %zu bytes\n", __func__, len + ilen);
+
+    static_command_line = memblock_alloc(len, SMP_CACHE_BYTES);
+    if (!static_command_line)
+        panic("%s: Failed to allocate %zu bytes\n", __func__, len);
+
+    if (xlen) {
+        /*
+         * We have to put extra_command_line before boot command
+         * lines because there could be dashes (separator of init
+         * command line) in the command lines.
+         */
+        strcpy(saved_command_line, extra_command_line);
+        strcpy(static_command_line, extra_command_line);
+    }
+    strcpy(saved_command_line + xlen, boot_command_line);
+    strcpy(static_command_line + xlen, command_line);
+
+    if (ilen) {
+        /*
+         * Append supplemental init boot args to saved_command_line
+         * so that user can check what command line options passed
+         * to init.
+         * The order should always be
+         * " -- "[bootconfig init-param][cmdline init-param]
+         */
+        len = strlen(saved_command_line);
+        strcpy(saved_command_line + len, " -- ");
+        len += 4;
+        strcpy(saved_command_line + len, extra_init_args);
+    }
+}
+
 asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 {
     char *command_line;
@@ -98,9 +165,13 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
     setup_command_line(command_line);
     setup_nr_cpu_ids();
 
-    printk("%s: ================== PILOT ==================\n", __func__);
     setup_per_cpu_areas();
+#if 0
+    smp_prepare_boot_cpu(); /* arch-specific boot-cpu hooks */
+#endif
+    boot_cpu_hotplug_init();
 
+    printk("%s: ================== PILOT ==================\n", __func__);
     build_all_zonelists(NULL);
 
     mm_init();

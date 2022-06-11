@@ -2,8 +2,6 @@
 #ifndef _LINUX_MEMBLOCK_H
 #define _LINUX_MEMBLOCK_H
 
-#ifdef __KERNEL__
-
 /*
  * Logical memory blocks.
  *
@@ -12,7 +10,6 @@
 
 #include <linux/init.h>
 #include <linux/mm.h>
-#include <linux/numa.h>
 #include <asm/dma.h>
 
 /* Flags for memblock allocation APIs */
@@ -188,8 +185,8 @@ void *memblock_alloc_try_nid(phys_addr_t size, phys_addr_t align,
                              phys_addr_t min_addr, phys_addr_t max_addr,
                              int nid);
 
-static inline void * __init
-memblock_alloc(phys_addr_t size,  phys_addr_t align)
+static __always_inline void *
+memblock_alloc(phys_addr_t size, phys_addr_t align)
 {
     return memblock_alloc_try_nid(size, align, MEMBLOCK_LOW_LIMIT,
                                   MEMBLOCK_ALLOC_ACCESSIBLE, NUMA_NO_NODE);
@@ -328,7 +325,5 @@ bool memblock_is_memory(phys_addr_t addr);
     __for_each_mem_range(i, &memblock.memory, NULL, NUMA_NO_NODE, \
                          MEMBLOCK_HOTPLUG | MEMBLOCK_DRIVER_MANAGED, \
                          p_start, p_end, NULL)
-
-#endif /* __KERNEL__ */
 
 #endif /* _LINUX_MEMBLOCK_H */

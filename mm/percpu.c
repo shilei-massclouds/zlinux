@@ -396,17 +396,6 @@ pcpu_next_md_free_region(struct pcpu_chunk *chunk, int *bit_off, int *bits)
     }
 }
 
-static void * __init
-pcpu_dfl_fc_alloc(unsigned int cpu, size_t size, size_t align)
-{
-    return memblock_alloc_from(size, align, __pa(MAX_DMA_ADDRESS));
-}
-
-static void __init pcpu_dfl_fc_free(void *ptr, size_t size)
-{
-    memblock_free(ptr, size);
-}
-
 /**
  * pcpu_alloc_alloc_info - allocate percpu allocation info
  * @nr_groups: the number of groups
@@ -1374,6 +1363,18 @@ pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai, void *base_addr)
     pcpu_base_addr = base_addr;
 }
 
+static void * __init pcpu_fc_alloc(unsigned int cpu, size_t size, size_t align,
+                   pcpu_fc_cpu_to_node_fn_t cpu_to_nd_fn)
+{
+    const unsigned long goal = __pa(MAX_DMA_ADDRESS);
+    return memblock_alloc_from(size, align, goal);
+}
+
+static void __init pcpu_fc_free(void *ptr, size_t size)
+{
+    memblock_free(ptr, size);
+}
+
 /**
  * pcpu_embed_first_chunk - embed the first percpu chunk into bootmem
  * @reserved_size: the size of reserved percpu area in bytes
@@ -1409,8 +1410,7 @@ pcpu_setup_first_chunk(const struct pcpu_alloc_info *ai, void *base_addr)
 int __init pcpu_embed_first_chunk(size_t reserved_size, size_t dyn_size,
                                   size_t atom_size,
                                   pcpu_fc_cpu_distance_fn_t cpu_distance_fn,
-                                  pcpu_fc_alloc_fn_t alloc_fn,
-                                  pcpu_fc_free_fn_t free_fn)
+                                  pcpu_fc_cpu_to_node_fn_t cpu_to_nd_fn)
 {
     struct pcpu_alloc_info *ai;
     size_t size_sum, areas_size;
@@ -1445,7 +1445,8 @@ int __init pcpu_embed_first_chunk(size_t reserved_size, size_t dyn_size,
         BUG_ON(cpu == NR_CPUS);
 
         /* allocate space for the whole group */
-        ptr = alloc_fn(cpu, gi->nr_units * ai->unit_size, atom_size);
+        ptr = pcpu_fc_alloc(cpu, gi->nr_units * ai->unit_size, atom_size,
+                            cpu_to_nd_fn);
         if (!ptr) {
             rc = -ENOMEM;
             goto out_free_areas;
@@ -1477,12 +1478,12 @@ int __init pcpu_embed_first_chunk(size_t reserved_size, size_t dyn_size,
         for (i = 0; i < gi->nr_units; i++, ptr += ai->unit_size) {
             if (gi->cpu_map[i] == NR_CPUS) {
                 /* unused unit, free whole */
-                free_fn(ptr, ai->unit_size);
+                pcpu_fc_free(ptr, ai->unit_size);
                 continue;
             }
             /* copy and return the unused part */
             memcpy(ptr, __per_cpu_load, ai->static_size);
-            free_fn(ptr + size_sum, ai->unit_size - size_sum);
+            pcpu_fc_free(ptr + size_sum, ai->unit_size - size_sum);
         }
     }
 
@@ -1501,7 +1502,8 @@ int __init pcpu_embed_first_chunk(size_t reserved_size, size_t dyn_size,
  out_free_areas:
     for (group = 0; group < ai->nr_groups; group++)
         if (areas[group])
-            free_fn(areas[group], ai->groups[group].nr_units * ai->unit_size);
+            pcpu_fc_free(areas[group],
+                         ai->groups[group].nr_units * ai->unit_size);
 
  out_free:
     pcpu_free_alloc_info(ai);
@@ -1510,6 +1512,14 @@ int __init pcpu_embed_first_chunk(size_t reserved_size, size_t dyn_size,
     return rc;
 }
 
+/**
+ * setup_per_cpu_areas - setup percpu areas
+ *
+ * Arch code has already allocated and initialized percpu areas.  All
+ * this function has to do is to teach the determined layout to the
+ * dynamic percpu allocator, which happens to be more complex than
+ * creating whole new ones using helpers.
+ */
 void __init setup_per_cpu_areas(void)
 {
     int rc;
@@ -1520,9 +1530,8 @@ void __init setup_per_cpu_areas(void)
      * Always reserve area for module percpu variables.  That's
      * what the legacy allocator did.
      */
-    rc = pcpu_embed_first_chunk(PERCPU_MODULE_RESERVE,
-                                PERCPU_DYNAMIC_RESERVE, PAGE_SIZE, NULL,
-                                pcpu_dfl_fc_alloc, pcpu_dfl_fc_free);
+    rc = pcpu_embed_first_chunk(PERCPU_MODULE_RESERVE, PERCPU_DYNAMIC_RESERVE,
+                                PAGE_SIZE, NULL, NULL);
     if (rc < 0)
         panic("Failed to initialize percpu areas.");
 

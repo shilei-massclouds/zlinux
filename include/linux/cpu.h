@@ -17,8 +17,10 @@
 //#include <linux/node.h>
 #include <linux/compiler.h>
 #include <linux/cpumask.h>
-//#include <linux/cpuhotplug.h>
+#include <linux/cpuhotplug.h>
 
 extern void boot_cpu_init(void);
+
+extern void boot_cpu_hotplug_init(void);
 
 #endif /* _LINUX_CPU_H_ */
