@@ -92,6 +92,13 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
     pr_notice("%s", linux_banner);
     setup_arch(&command_line);
 
+#if 0
+    setup_boot_config();
+#endif
+    setup_command_line(command_line);
+    setup_nr_cpu_ids();
+
+    printk("%s: ================== PILOT ==================\n", __func__);
     setup_per_cpu_areas();
 
     build_all_zonelists(NULL);

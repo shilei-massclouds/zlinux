@@ -439,3 +439,51 @@ int of_n_addr_cells(struct device_node *np)
     return of_bus_n_addr_cells(np);
 }
 EXPORT_SYMBOL(of_n_addr_cells);
+
+/**
+ *  __of_device_is_available - check if a device is available for use
+ *
+ *  @device: Node to check for availability, with locks already held
+ *
+ *  Return: True if the status property is absent or set to "okay" or "ok",
+ *  false otherwise
+ */
+static bool __of_device_is_available(const struct device_node *device)
+{
+    const char *status;
+    int statlen;
+
+    if (!device)
+        return false;
+
+    status = __of_get_property(device, "status", &statlen);
+    if (status == NULL)
+        return true;
+
+    if (statlen > 0) {
+        if (!strcmp(status, "okay") || !strcmp(status, "ok"))
+            return true;
+    }
+
+    return false;
+}
+
+/**
+ *  of_device_is_available - check if a device is available for use
+ *
+ *  @device: Node to check for availability
+ *
+ *  Return: True if the status property is absent or set to "okay" or "ok",
+ *  false otherwise
+ */
+bool of_device_is_available(const struct device_node *device)
+{
+    unsigned long flags;
+    bool res;
+
+    raw_spin_lock_irqsave(&devtree_lock, flags);
+    res = __of_device_is_available(device);
+    raw_spin_unlock_irqrestore(&devtree_lock, flags);
+    return res;
+}
+EXPORT_SYMBOL(of_device_is_available);

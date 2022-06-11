@@ -69,6 +69,10 @@ extern __kernel_size_t strcspn(const char *,const char *);
 extern __kernel_size_t strnlen(const char *,__kernel_size_t);
 #endif
 
+#ifndef __HAVE_ARCH_STRCASECMP
+extern int strcasecmp(const char *s1, const char *s2);
+#endif
+
 extern char * __must_check skip_spaces(const char *);
 
 /**

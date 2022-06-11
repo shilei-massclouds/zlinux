@@ -30,6 +30,8 @@ static inline int isdigit(int c)
 /* Note: isspace() must return false for %NUL-terminator */
 #define isspace(c)  ((__ismask(c)&(_S)) != 0)
 #define isxdigit(c) ((__ismask(c)&(_D|_X)) != 0)
+#define islower(c)  ((__ismask(c)&(_L)) != 0)
+#define isupper(c)  ((__ismask(c)&(_U)) != 0)
 
 /*
  * Fast implementation of tolower() for internal usage.
@@ -39,5 +41,22 @@ static inline char _tolower(const char c)
 {
     return c | 0x20;
 }
+
+static inline unsigned char __tolower(unsigned char c)
+{
+    if (isupper(c))
+        c -= 'A'-'a';
+    return c;
+}
+
+static inline unsigned char __toupper(unsigned char c)
+{
+    if (islower(c))
+        c -= 'a'-'A';
+    return c;
+}
+
+#define tolower(c) __tolower(c)
+#define toupper(c) __toupper(c)
 
 #endif /* _LINUX_CTYPE_H */

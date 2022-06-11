@@ -79,7 +79,6 @@ void __init setup_arch(char **cmdline_p)
 
     setup_smp();
 
-    printk("%s: ================== PILOT ==================\n", __func__);
 #if 0
     riscv_fill_hwcap();
 #endif

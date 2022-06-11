@@ -47,13 +47,15 @@
  */
 asmlinkage __visible void smp_callin(void)
 {
-    panic("%s: Not implement!\n", __func__);
+    panic("%s: NO implementation!\n", __func__);
 }
 
 void __init setup_smp(void)
 {
     int hart;
     struct device_node *dn;
+    int cpuid = 1;
+    bool found_boot_cpu = false;
 
     cpu_set_ops(0);
 
@@ -62,24 +64,30 @@ void __init setup_smp(void)
         if (hart < 0)
             continue;
 
-#if 0
         if (hart == cpuid_to_hartid_map(0)) {
             BUG_ON(found_boot_cpu);
             found_boot_cpu = 1;
-            early_map_cpu_to_node(0, of_node_to_nid(dn));
             continue;
         }
         if (cpuid >= NR_CPUS) {
-            pr_warn("Invalid cpuid [%d] for hartid [%d]\n",
-                cpuid, hart);
+            pr_warn("Invalid cpuid [%d] for hartid [%d]\n", cpuid, hart);
             continue;
         }
 
         cpuid_to_hartid_map(cpuid) = hart;
-        early_map_cpu_to_node(cpuid, of_node_to_nid(dn));
         cpuid++;
-#endif
     }
 
-    panic("%s: Not implement!\n", __func__);
+    BUG_ON(!found_boot_cpu);
+
+    if (cpuid > nr_cpu_ids)
+        pr_warn("Total number of cpus [%d] is greater than nr_cpus option value [%d]\n",
+                cpuid, nr_cpu_ids);
+
+    for (cpuid = 1; cpuid < nr_cpu_ids; cpuid++) {
+        if (cpuid_to_hartid_map(cpuid) != INVALID_HARTID) {
+            cpu_set_ops(cpuid);
+            set_cpu_possible(cpuid, true);
+        }
+    }
 }
