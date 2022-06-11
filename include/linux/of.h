@@ -143,4 +143,18 @@ extern int of_property_read_string(const struct device_node *np,
 
 extern struct device_node *of_get_next_cpu_node(struct device_node *prev);
 
+extern bool of_node_name_eq(const struct device_node *np, const char *name);
+
+extern u64 of_get_cpu_hwid(struct device_node *cpun, unsigned int thread);
+
+extern int of_device_is_compatible(const struct device_node *device,
+                                   const char *);
+
+extern bool of_device_is_available(const struct device_node *device);
+
+const char *of_prop_next_string(struct property *prop, const char *cur);
+
+extern int of_n_addr_cells(struct device_node *np);
+extern int of_n_size_cells(struct device_node *np);
+
 #endif /* _LINUX_OF_H */

@@ -52,16 +52,17 @@ asmlinkage __visible void smp_callin(void)
 
 void __init setup_smp(void)
 {
+    int hart;
     struct device_node *dn;
 
     cpu_set_ops(0);
 
     for_each_of_cpu_node(dn) {
-#if 0
         hart = riscv_of_processor_hartid(dn);
         if (hart < 0)
             continue;
 
+#if 0
         if (hart == cpuid_to_hartid_map(0)) {
             BUG_ON(found_boot_cpu);
             found_boot_cpu = 1;

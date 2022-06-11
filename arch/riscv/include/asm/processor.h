@@ -14,6 +14,9 @@
 
 #ifndef __ASSEMBLY__
 
+struct device_node;
+int riscv_of_processor_hartid(struct device_node *node);
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* _ASM_RISCV_PROCESSOR_H */
