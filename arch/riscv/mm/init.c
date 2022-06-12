@@ -3,19 +3,31 @@
 #include <linux/init.h>
 #include <linux/mm.h>
 #include <linux/memblock.h>
+//#include <linux/initrd.h>
+#include <linux/swap.h>
+#include <linux/swiotlb.h>
 #include <linux/sizes.h>
-#include <linux/export.h>
-
-#include <linux/kernel.h>
 #include <linux/of_fdt.h>
+#include <linux/of_reserved_mem.h>
 #include <linux/libfdt.h>
+#if 0
+#include <linux/set_memory.h>
+#include <linux/dma-map-ops.h>
+#include <linux/crash_dump.h>
+#include <linux/hugetlb.h>
+#endif
 
 #include <asm/fixmap.h>
 #include <asm/tlbflush.h>
 #include <asm/sections.h>
-#include <asm/page.h>
-#include <asm/string.h>
-#include <asm/csr.h>
+#if 0
+#include <asm/soc.h>
+#endif
+#include <asm/io.h>
+#if 0
+#include <asm/ptdump.h>
+#include <asm/numa.h>
+#endif
 
 #include "../kernel/head.h"
 
@@ -812,10 +824,45 @@ void __init misc_mem_init(void)
     memblock_dump_all();
 }
 
+static inline void print_mlk(char *name, unsigned long b, unsigned long t)
+{
+    pr_notice("%12s : 0x%08lx - 0x%08lx   (%4ld kB)\n",
+              name, b, t, (((t) - (b)) >> 10));
+}
+
+static inline void print_mlm(char *name, unsigned long b, unsigned long t)
+{
+    pr_notice("%12s : 0x%08lx - 0x%08lx   (%4ld MB)\n",
+              name, b, t, (((t) - (b)) >> 20));
+}
+
+static void __init print_vm_layout(void)
+{
+    pr_notice("Virtual kernel memory layout:\n");
+    print_mlk("fixmap", (unsigned long)FIXADDR_START,
+              (unsigned long)FIXADDR_TOP);
+    print_mlm("pci io", (unsigned long)PCI_IO_START,
+              (unsigned long)PCI_IO_END);
+    print_mlm("vmemmap", (unsigned long)VMEMMAP_START,
+              (unsigned long)VMEMMAP_END);
+    print_mlm("vmalloc", (unsigned long)VMALLOC_START,
+              (unsigned long)VMALLOC_END);
+    print_mlm("lowmem", (unsigned long)PAGE_OFFSET,
+              (unsigned long)high_memory);
+    print_mlm("kernel", (unsigned long)KERNEL_LINK_ADDR,
+              (unsigned long)ADDRESS_SPACE_END);
+}
+
 void __init mem_init(void)
 {
     BUG_ON(!mem_map);
 
-    high_memory = (void *)(__va(PFN_PHYS(max_low_pfn)));
+    if (swiotlb_force == SWIOTLB_FORCE || max_pfn > PFN_DOWN(dma32_phys_limit))
+        swiotlb_init(1);
+    else
+        swiotlb_force = SWIOTLB_NO_FORCE;
+
     memblock_free_all();
+
+    print_vm_layout();
 }

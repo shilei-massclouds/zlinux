@@ -65,9 +65,13 @@ static const char *panic_later, *panic_param;
 
 static int __ref kernel_init(void *unused)
 {
+    system_state = SYSTEM_FREEING_INITMEM;
+
     z_tests();
 
     panic("%s: END!\n", __func__);
+
+    system_state = SYSTEM_RUNNING;
 }
 
 noinline void __ref rest_init(void)
@@ -82,11 +86,30 @@ noinline void __ref rest_init(void)
     pid = kernel_thread(kernel_init, NULL, CLONE_FS);
 
     panic("%s: pid(%d) END!\n", __func__, pid);
+
+    /*
+     * Enable might_sleep() and smp_processor_id() checks.
+     * They cannot be enabled earlier because with CONFIG_PREEMPTION=y
+     * kernel_thread() would trigger might_sleep() splats. With
+     * CONFIG_PREEMPT_VOLUNTARY=y the init task might have scheduled
+     * already, but it's stuck on the kthreadd_done completion.
+     */
+    system_state = SYSTEM_SCHEDULING;
 }
 
 void __init __weak arch_call_rest_init(void)
 {
     rest_init();
+}
+
+/* Report memory auto-initialization states for this boot. */
+static void __init report_meminit(void)
+{
+    pr_info("mem auto-init: stack:off, heap alloc:%s, heap free:%s\n",
+            want_init_on_alloc(GFP_KERNEL) ? "on" : "off",
+            want_init_on_free() ? "on" : "off");
+    if (want_init_on_free())
+        pr_info("mem auto-init: clearing system memory may take some time...\n");
 }
 
 /*
@@ -101,13 +124,19 @@ static void __init mm_init(void)
 #if 0
     page_ext_init_flatmem();
     init_mem_debugging_and_hardening();
-    kfence_alloc_pool();
-    report_meminit();
-    stack_depot_early_init();
 #endif
+    report_meminit();
     mem_init();
     mem_init_print_info();
     kmem_cache_init();
+    /*
+     * page_owner must be initialized after buddy is ready, and also after
+     * slab is ready so that stack_depot_init() works properly
+     */
+#if 0
+    page_ext_init_flatmem_late();
+    vmalloc_init();
+#endif
 
     panic("%s: END!\n", __func__);
 }

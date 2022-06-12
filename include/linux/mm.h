@@ -206,6 +206,12 @@ static inline bool want_init_on_alloc(gfp_t flags)
     return flags & __GFP_ZERO;
 }
 
+DECLARE_STATIC_KEY_MAYBE(CONFIG_INIT_ON_FREE_DEFAULT_ON, init_on_free);
+static inline bool want_init_on_free(void)
+{
+    return static_branch_maybe(CONFIG_INIT_ON_FREE_DEFAULT_ON, &init_on_free);
+}
+
 static inline u8 page_kasan_tag(const struct page *page)
 {
     return 0xff;
@@ -308,6 +314,10 @@ void setup_initial_init_mm(void *start_code, void *end_code,
 #define offset_in_page(p)       ((unsigned long)(p) & ~PAGE_MASK)
 
 #if USE_SPLIT_PTE_PTLOCKS
+#if ALLOC_SPLIT_PTLOCKS
+#error "NOT SUPPORT ALLOC_SPLIT_PTLOCKS!"
+#else /* ALLOC_SPLIT_PTLOCKS */
+#endif /* ALLOC_SPLIT_PTLOCKS */
 
 static inline spinlock_t *ptlock_ptr(struct page *page)
 {
@@ -329,9 +339,7 @@ static inline bool ptlock_init(struct page *page)
 }
 
 #else /* !USE_SPLIT_PTE_PTLOCKS */
-
-static inline bool ptlock_init(struct page *page) { return true; }
-
+#error "NO USE_SPLIT_PTE_PTLOCKS!"
 #endif /* USE_SPLIT_PTE_PTLOCKS */
 
 #if USE_SPLIT_PMD_PTLOCKS
@@ -342,9 +350,7 @@ static inline bool pmd_ptlock_init(struct page *page)
 }
 
 #else /* !USE_SPLIT_PMD_PTLOCKS */
-
-static inline bool pmd_ptlock_init(struct page *page) { return true; }
-
+#error "NO USE_SPLIT_PMD_PTLOCKS!"
 #endif /* USE_SPLIT_PMD_PTLOCKS */
 
 static inline bool pgtable_pte_page_ctor(struct page *page)

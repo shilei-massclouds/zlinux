@@ -20,6 +20,10 @@
 /* We are using top down, so it is safe to use 0 here */
 #define MEMBLOCK_LOW_LIMIT 0
 
+#ifndef ARCH_LOW_ADDRESS_LIMIT
+#define ARCH_LOW_ADDRESS_LIMIT  0xffffffffUL
+#endif
+
 extern unsigned long max_low_pfn;
 extern unsigned long min_low_pfn;
 
@@ -311,6 +315,12 @@ memblock_alloc_from(phys_addr_t size, phys_addr_t align, phys_addr_t min_addr)
 {
     return memblock_alloc_try_nid(size, align, min_addr,
                                   MEMBLOCK_ALLOC_ACCESSIBLE, NUMA_NO_NODE);
+}
+
+static inline void *memblock_alloc_low(phys_addr_t size, phys_addr_t align)
+{
+    return memblock_alloc_try_nid(size, align, MEMBLOCK_LOW_LIMIT,
+                                  ARCH_LOW_ADDRESS_LIMIT, NUMA_NO_NODE);
 }
 
 bool memblock_is_memory(phys_addr_t addr);
