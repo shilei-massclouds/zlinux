@@ -8,6 +8,13 @@
 #include <linux/moduleparam.h>
 #include <linux/err.h>
 #include <linux/irqflags.h>
+#include <linux/mutex.h>
+
+/* Protects all built-in parameters, modules use their own param_lock */
+static DEFINE_MUTEX(param_lock);
+
+/* Use the module's mutex, or if built-in use the built-in mutex */
+#define KPARAM_MUTEX(mod)   (&param_lock)
 
 static char dash2underscore(char c)
 {
@@ -32,6 +39,19 @@ bool parameq(const char *a, const char *b)
     return parameqn(a, b, strlen(a)+1);
 }
 
+static bool param_check_unsafe(const struct kernel_param *kp)
+{
+    if (kp->flags & KERNEL_PARAM_FL_HWPARAM)
+        return false;
+
+    if (kp->flags & KERNEL_PARAM_FL_UNSAFE) {
+        panic("Setting dangerous option %s - tainting kernel\n", kp->name);
+        //add_taint(TAINT_USER, LOCKDEP_STILL_OK);
+    }
+
+    return true;
+}
+
 static int
 parse_one(char *param,
           char *val,
@@ -44,19 +64,16 @@ parse_one(char *param,
           int (*handle_unknown)(char *param, char *val,
                                 const char *doing, void *arg))
 {
-#if 0
-    unsigned int i;
     int err;
+    unsigned int i;
 
     /* Find parameter */
     for (i = 0; i < num_params; i++) {
         if (parameq(param, params[i].name)) {
-            if (params[i].level < min_level ||
-                params[i].level > max_level)
+            if (params[i].level < min_level || params[i].level > max_level)
                 return 0;
             /* No one handled NULL, so do it here. */
-            if (!val &&
-                !(params[i].ops->flags & KERNEL_PARAM_OPS_FL_NOARG))
+            if (!val && !(params[i].ops->flags & KERNEL_PARAM_OPS_FL_NOARG))
                 return -EINVAL;
             pr_debug("handling %s with %p\n", param, params[i].ops->set);
             kernel_param_lock(params[i].mod);
@@ -68,7 +85,6 @@ parse_one(char *param,
             return err;
         }
     }
-#endif
 
     if (handle_unknown) {
         return handle_unknown(param, val, doing, arg);
@@ -133,3 +149,16 @@ parse_args(const char *doing,
 
     return err;
 }
+
+void kernel_param_lock(struct module *mod)
+{
+    mutex_lock(KPARAM_MUTEX(mod));
+}
+
+void kernel_param_unlock(struct module *mod)
+{
+    mutex_unlock(KPARAM_MUTEX(mod));
+}
+
+EXPORT_SYMBOL(kernel_param_lock);
+EXPORT_SYMBOL(kernel_param_unlock);

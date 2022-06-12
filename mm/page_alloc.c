@@ -2090,13 +2090,13 @@ static void zoneref_set_zone(struct zone *zone, struct zoneref *zoneref)
 static int build_zonerefs_node(pg_data_t *pgdat, struct zoneref *zonerefs)
 {
     struct zone *zone;
-    enum zone_type zone_type = MAX_NR_ZONES;
     int nr_zones = 0;
+    enum zone_type zone_type = MAX_NR_ZONES;
 
     do {
         zone_type--;
         zone = pgdat->node_zones + zone_type;
-        if (managed_zone(zone)) {
+        if (populated_zone(zone)) {
             zoneref_set_zone(zone, &zonerefs[nr_zones++]);
         }
     } while (zone_type);
@@ -2104,17 +2104,45 @@ static int build_zonerefs_node(pg_data_t *pgdat, struct zoneref *zonerefs)
     return nr_zones;
 }
 
+/*
+ * Build zonelists ordered by zone and nodes within zones.
+ * This results in conserving DMA zone[s] until all Normal memory is
+ * exhausted, but results in overflowing to remote node while memory
+ * may still exist in local DMA zone.
+ */
+
 static void build_zonelists(pg_data_t *pgdat)
 {
     int nr_zones;
-    //int node, local_node;
+    int node, local_node;
     struct zoneref *zonerefs;
 
-    //local_node = pgdat->node_id;
+    local_node = pgdat->node_id;
 
     zonerefs = pgdat->node_zonelists[ZONELIST_FALLBACK]._zonerefs;
     nr_zones = build_zonerefs_node(pgdat, zonerefs);
     zonerefs += nr_zones;
+
+    /*
+     * Now we build the zonelist so that it contains the zones
+     * of all the other nodes.
+     * We don't want to pressure a particular node, so when
+     * building the zones for node N, we make sure that the
+     * zones coming right after the local ones are those from
+     * node N+1 (modulo N)
+     */
+    for (node = local_node + 1; node < MAX_NUMNODES; node++) {
+        if (!node_online(node))
+            continue;
+        nr_zones = build_zonerefs_node(NODE_DATA(node), zonerefs);
+        zonerefs += nr_zones;
+    }
+    for (node = 0; node < local_node; node++) {
+        if (!node_online(node))
+            continue;
+        nr_zones = build_zonerefs_node(NODE_DATA(node), zonerefs);
+        zonerefs += nr_zones;
+    }
 
     zonerefs->zone = NULL;
     zonerefs->zone_idx = 0;
@@ -2136,6 +2164,10 @@ static void __build_all_zonelists(void *data)
     if (self && !node_online(self->node_id)) {
         build_zonelists(self);
     } else {
+        /*
+         * All possible nodes have pgdat preallocated
+         * in free_area_init
+         */
         for_each_online_node(nid) {
             pg_data_t *pgdat = NODE_DATA(nid);
 
@@ -2193,6 +2225,38 @@ build_all_zonelists_init(void)
                            &per_cpu(boot_zonestats, cpu));
 }
 
+/**
+ * nr_free_zone_pages - count number of pages beyond high watermark
+ * @offset: The zone index of the highest zone
+ *
+ * nr_free_zone_pages() counts the number of pages which are beyond the
+ * high watermark within all zones at or below a given zone index.  For each
+ * zone, the number of pages is calculated as:
+ *
+ *     nr_free_zone_pages = managed_pages - high_pages
+ *
+ * Return: number of pages beyond high watermark.
+ */
+static unsigned long nr_free_zone_pages(int offset)
+{
+    struct zoneref *z;
+    struct zone *zone;
+
+    /* Just pick one node, since fallback list is circular */
+    unsigned long sum = 0;
+
+    struct zonelist *zonelist = node_zonelist(numa_node_id(), GFP_KERNEL);
+
+    for_each_zone_zonelist(zone, z, zonelist, offset) {
+        unsigned long size = zone_managed_pages(zone);
+        unsigned long high = high_wmark_pages(zone);
+        if (size > high)
+            sum += size - high;
+    }
+
+    return sum;
+}
+
 /*
  * unless system_state == SYSTEM_BOOTING.
  *
@@ -2201,7 +2265,7 @@ build_all_zonelists_init(void)
  */
 void __ref build_all_zonelists(pg_data_t *pgdat)
 {
-    //unsigned long vm_total_pages;
+    unsigned long vm_total_pages;
 
     if (system_state == SYSTEM_BOOTING) {
         build_all_zonelists_init();
@@ -2209,7 +2273,6 @@ void __ref build_all_zonelists(pg_data_t *pgdat)
         __build_all_zonelists(pgdat);
         /* cpuset refresh routine should be here */
     }
-#if 0
     /* Get the number of free pages beyond high watermark in all zones. */
     vm_total_pages = nr_free_zone_pages(gfp_zone(GFP_HIGHUSER_MOVABLE));
     /*
@@ -2225,10 +2288,9 @@ void __ref build_all_zonelists(pg_data_t *pgdat)
         page_group_by_mobility_disabled = 0;
 
     pr_info("Built %u zonelists, mobility grouping %s.  Total pages: %ld\n",
-        nr_online_nodes,
-        page_group_by_mobility_disabled ? "off" : "on",
-        vm_total_pages);
-#endif
+            nr_online_nodes,
+            page_group_by_mobility_disabled ? "off" : "on",
+            vm_total_pages);
 }
 
 /*

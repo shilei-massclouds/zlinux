@@ -164,8 +164,12 @@
 #define GFP_KERNEL  (__GFP_RECLAIM | __GFP_IO | __GFP_FS)
 #define GFP_NOWAIT  (__GFP_KSWAPD_RECLAIM)
 
+#define GFP_USER    (__GFP_RECLAIM | __GFP_IO | __GFP_FS | __GFP_HARDWALL)
 #define GFP_DMA     __GFP_DMA
 #define GFP_DMA32   __GFP_DMA32
+
+#define GFP_HIGHUSER (GFP_USER | __GFP_HIGHMEM)
+#define GFP_HIGHUSER_MOVABLE (GFP_HIGHUSER | __GFP_MOVABLE)
 
 /*
  * gfp_allowed_mask is set to GFP_BOOT_MASK during early boot to restrict what

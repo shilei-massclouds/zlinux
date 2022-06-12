@@ -53,6 +53,16 @@ static char *extra_command_line;
 /* Extra init arguments */
 static char *extra_init_args;
 
+/*
+ * Boot command-line arguments
+ */
+#define MAX_INIT_ARGS CONFIG_INIT_ENV_ARG_LIMIT
+#define MAX_INIT_ENVS CONFIG_INIT_ENV_ARG_LIMIT
+
+static const char *argv_init[MAX_INIT_ARGS+2] = { "init", NULL, };
+const char *envp_init[MAX_INIT_ENVS+2] = { "HOME=/", "TERM=linux", NULL, };
+static const char *panic_later, *panic_param;
+
 static int __ref kernel_init(void *unused)
 {
     z_tests();
@@ -84,8 +94,22 @@ void __init __weak arch_call_rest_init(void)
  */
 static void __init mm_init(void)
 {
+    /*
+     * page_ext requires contiguous pages,
+     * bigger than MAX_ORDER unless SPARSEMEM.
+     */
+#if 0
+    page_ext_init_flatmem();
+    init_mem_debugging_and_hardening();
+    kfence_alloc_pool();
+    report_meminit();
+    stack_depot_early_init();
+#endif
     mem_init();
+    mem_init_print_info();
     kmem_cache_init();
+
+    panic("%s: END!\n", __func__);
 }
 
 /*
@@ -140,9 +164,167 @@ static void __init setup_command_line(char *command_line)
     }
 }
 
+/* Change NUL term back to "=", to make "param" the whole string. */
+static void __init repair_env_string(char *param, char *val)
+{
+    if (val) {
+        /* param=val or param="val"? */
+        if (val == param+strlen(param)+1)
+            val[-1] = '=';
+        else if (val == param+strlen(param)+2) {
+            val[-2] = '=';
+            memmove(val-1, val, strlen(val)+1);
+        } else
+            BUG();
+    }
+}
+
+static bool __init obsolete_checksetup(char *line)
+{
+    const struct obs_kernel_param *p;
+    bool had_early_param = false;
+
+    p = __setup_start;
+    do {
+        int n = strlen(p->str);
+        if (parameqn(line, p->str, n)) {
+            if (p->early) {
+                /* Already done in parse_early_param?
+                 * (Needs exact match on param part).
+                 * Keep iterating, as we can have early
+                 * params and __setups of same names 8( */
+                if (line[n] == '\0' || line[n] == '=')
+                    had_early_param = true;
+            } else if (!p->setup_func) {
+                pr_warn("Parameter %s is obsolete, ignored\n", p->str);
+                return true;
+            } else if (p->setup_func(line + n))
+                return true;
+        }
+        p++;
+    } while (p < __setup_end);
+
+    return had_early_param;
+}
+
+/* Anything after -- gets handed straight to init. */
+static int __init set_init_arg(char *param, char *val,
+                               const char *unused, void *arg)
+{
+    unsigned int i;
+
+    if (panic_later)
+        return 0;
+
+    repair_env_string(param, val);
+
+    for (i = 0; argv_init[i]; i++) {
+        if (i == MAX_INIT_ARGS) {
+            panic_later = "init";
+            panic_param = param;
+            return 0;
+        }
+    }
+    argv_init[i] = param;
+    return 0;
+}
+
+/*
+ * Unknown boot options get handed to init, unless they look like
+ * unused parameters (modprobe will find them in /proc/cmdline).
+ */
+static int __init unknown_bootoption(char *param, char *val,
+                                     const char *unused, void *arg)
+{
+    size_t len = strlen(param);
+
+    repair_env_string(param, val);
+
+    /* Handle obsolete-style parameters */
+    if (obsolete_checksetup(param))
+        return 0;
+
+    /* Unused module parameter. */
+    if (strnchr(param, len, '.'))
+        return 0;
+
+    if (panic_later)
+        return 0;
+
+    if (val) {
+        /* Environment option */
+        unsigned int i;
+        for (i = 0; envp_init[i]; i++) {
+            if (i == MAX_INIT_ENVS) {
+                panic_later = "env";
+                panic_param = param;
+            }
+            if (!strncmp(param, envp_init[i], len+1))
+                break;
+        }
+        envp_init[i] = param;
+    } else {
+        /* Command line option */
+        unsigned int i;
+        for (i = 0; argv_init[i]; i++) {
+            if (i == MAX_INIT_ARGS) {
+                panic_later = "init";
+                panic_param = param;
+            }
+        }
+        argv_init[i] = param;
+    }
+    return 0;
+}
+
+static void __init print_unknown_bootoptions(void)
+{
+    char *unknown_options;
+    char *end;
+    const char *const *p;
+    size_t len;
+
+    if (panic_later || (!argv_init[1] && !envp_init[2]))
+        return;
+
+    /*
+     * Determine how many options we have to print out, plus a space
+     * before each
+     */
+    len = 1; /* null terminator */
+    for (p = &argv_init[1]; *p; p++) {
+        len++;
+        len += strlen(*p);
+    }
+    for (p = &envp_init[2]; *p; p++) {
+        len++;
+        len += strlen(*p);
+    }
+
+    unknown_options = memblock_alloc(len, SMP_CACHE_BYTES);
+    if (!unknown_options) {
+        pr_err("%s: Failed to allocate %zu bytes\n",
+            __func__, len);
+        return;
+    }
+    end = unknown_options;
+
+    for (p = &argv_init[1]; *p; p++)
+        end += sprintf(end, " %s", *p);
+    for (p = &envp_init[2]; *p; p++)
+        end += sprintf(end, " %s", *p);
+
+    /* Start at unknown_options[1] to skip the initial space */
+    pr_notice("Unknown kernel command line parameters \"%s\", "
+              "will be passed to user space.\n",
+              &unknown_options[1]);
+    memblock_free(unknown_options, len);
+}
+
 asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 {
     char *command_line;
+    char *after_dashes;
 
     set_task_stack_end_magic(&init_task);
     smp_setup_processor_id();
@@ -171,11 +353,45 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 #endif
     boot_cpu_hotplug_init();
 
-    printk("%s: ================== PILOT ==================\n", __func__);
     build_all_zonelists(NULL);
+#if 0
+    page_alloc_init();
+#endif
 
+    pr_notice("Kernel command line: %s\n", saved_command_line);
+
+#if 0
+    /* parameters may set static keys */
+    jump_label_init();
+#endif
+    parse_early_param();
+    after_dashes = parse_args("Booting kernel",
+                              static_command_line, __start___param,
+                              __stop___param - __start___param,
+                              -1, -1, NULL, &unknown_bootoption);
+
+    print_unknown_bootoptions();
+    if (!IS_ERR_OR_NULL(after_dashes))
+        parse_args("Setting init args", after_dashes, NULL, 0, -1, -1,
+                   NULL, set_init_arg);
+    if (extra_init_args)
+        parse_args("Setting extra init args", extra_init_args,
+                   NULL, 0, -1, -1, NULL, set_init_arg);
+
+#if 0
+    /*
+     * These use large bootmem allocations and must precede
+     * kmem_cache_init()
+     */
+    setup_log_buf(0);
+    vfs_caches_init_early();
+    sort_main_extable();
+    trap_init();
+#endif
     mm_init();
+    printk("%s: ================== PILOT ==================\n", __func__);
 
+    ///////////////////
     setup_per_cpu_pageset();
 
     early_boot_irqs_disabled = false;

@@ -519,6 +519,36 @@ extern struct zone *next_zone(struct zone *zone);
 #define get_pageblock_migratetype(page) \
     get_pfnblock_flags_mask(page, page_to_pfn(page), MIGRATETYPE_MASK)
 
+/**
+ * for_each_zone_zonelist_nodemask - helper macro to iterate over valid zones in a zonelist at or below a given zone index and within a nodemask
+ * @zone: The current zone in the iterator
+ * @z: The current pointer within zonelist->_zonerefs being iterated
+ * @zlist: The zonelist being iterated
+ * @highidx: The zone index of the highest zone to return
+ * @nodemask: Nodemask allowed by the allocator
+ *
+ * This iterator iterates though all zones at or below a given zone index and
+ * within a given nodemask
+ */
+#define for_each_zone_zonelist_nodemask(zone, z, zlist, highidx, nodemask) \
+    for (z = first_zones_zonelist(zlist, highidx, nodemask),    \
+         zone = zonelist_zone(z);                               \
+         zone;                                                  \
+         z = next_zones_zonelist(++z, highidx, nodemask),       \
+         zone = zonelist_zone(z))
+
+/**
+ * for_each_zone_zonelist - helper macro to iterate over valid zones in a zonelist at or below a given zone index
+ * @zone: The current zone in the iterator
+ * @z: The current pointer within zonelist->zones being iterated
+ * @zlist: The zonelist being iterated
+ * @highidx: The zone index of the highest zone to return
+ *
+ * This iterator iterates though all zones at or below a given zone index.
+ */
+#define for_each_zone_zonelist(zone, z, zlist, highidx) \
+    for_each_zone_zonelist_nodemask(zone, z, zlist, highidx, NULL)
+
 #endif /* !__GENERATING_BOUNDS_H */
 #endif /* !__ASSEMBLY__ */
 

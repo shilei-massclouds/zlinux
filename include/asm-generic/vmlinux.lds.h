@@ -238,7 +238,14 @@
     /* Kernel symbol table: strings */  \
     __ksymtab_strings : AT(ADDR(__ksymtab_strings) - LOAD_OFFSET) { \
         *(__ksymtab_strings)                    \
-    }       \
+    }                                           \
+                                                \
+    /* Built-in module parameters. */           \
+    __param : AT(ADDR(__param) - LOAD_OFFSET) { \
+        __start___param = .;                    \
+        KEEP(*(__param))                        \
+        __stop___param = .;                     \
+    }                                           \
             \
     NOTES   \
             \

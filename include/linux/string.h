@@ -77,6 +77,10 @@ extern __kernel_size_t strnlen(const char *,__kernel_size_t);
 extern int strcasecmp(const char *s1, const char *s2);
 #endif
 
+#ifndef __HAVE_ARCH_STRNCHR
+extern char * strnchr(const char *, size_t, int);
+#endif
+
 extern char * __must_check skip_spaces(const char *);
 
 /**
