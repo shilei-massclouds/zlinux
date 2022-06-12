@@ -1107,13 +1107,59 @@ __free_memory_core(phys_addr_t start, phys_addr_t end)
     return end_pfn - start_pfn;
 }
 
+/**
+ * memblock_setclr_flag - set or clear flag for a memory region
+ * @base: base address of the region
+ * @size: size of the region
+ * @set: set or clear the flag
+ * @flag: the flag to update
+ *
+ * This function isolates region [@base, @base + @size), and sets/clears flag
+ *
+ * Return: 0 on success, -errno on failure.
+ */
+static int __init_memblock
+memblock_setclr_flag(phys_addr_t base, phys_addr_t size, int set, int flag)
+{
+    int i, ret, start_rgn, end_rgn;
+    struct memblock_type *type = &memblock.memory;
+
+    ret = memblock_isolate_range(type, base, size, &start_rgn, &end_rgn);
+    if (ret)
+        return ret;
+
+    for (i = start_rgn; i < end_rgn; i++) {
+        struct memblock_region *r = &type->regions[i];
+
+        if (set)
+            r->flags |= flag;
+        else
+            r->flags &= ~flag;
+    }
+
+    memblock_merge_regions(type);
+    return 0;
+}
+
+/**
+ * memblock_clear_hotplug - Clear flag MEMBLOCK_HOTPLUG for a specified region.
+ * @base: the base phys addr of the region
+ * @size: the size of the region
+ *
+ * Return: 0 on success, -errno on failure.
+ */
+int __init_memblock memblock_clear_hotplug(phys_addr_t base, phys_addr_t size)
+{
+    return memblock_setclr_flag(base, size, 0, MEMBLOCK_HOTPLUG);
+}
+
 static unsigned long __init free_low_memory_core_early(void)
 {
     u64 i;
     phys_addr_t start, end;
     unsigned long count = 0;
 
-    //memblock_clear_hotplug(0, -1);
+    memblock_clear_hotplug(0, -1);
 
     memmap_init_reserved_pages();
 
