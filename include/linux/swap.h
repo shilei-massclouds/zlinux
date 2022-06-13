@@ -26,6 +26,9 @@ struct reclaim_state {
     unsigned long reclaimed_slab;
 };
 
+/* Definition of global_zone_page_state not available yet */
+#define nr_free_pages() global_zone_page_state(NR_FREE_PAGES)
+
 #ifdef __KERNEL__
 
 #endif /* __KERNEL__*/

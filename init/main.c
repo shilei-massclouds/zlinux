@@ -137,8 +137,6 @@ static void __init mm_init(void)
     page_ext_init_flatmem_late();
     vmalloc_init();
 #endif
-
-    panic("%s: END!\n", __func__);
 }
 
 /*
@@ -418,23 +416,14 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
     trap_init();
 #endif
     mm_init();
-    printk("%s: ================== PILOT ==================\n", __func__);
 
-    ///////////////////
     setup_per_cpu_pageset();
 
     early_boot_irqs_disabled = false;
     local_irq_enable();
 
-    /* TEST: kmalloc */
-    {
-        struct page *p;
-        printk("%s: kmalloc ...\n", __func__);
-        p = kmalloc(64, GFP_KERNEL);
-        printk("%s: kfree (%pa)...\n", __func__, &p);
-        kfree(p);
-        panic("%s: alloc/free page\n", __func__);
-    }
+    kmem_cache_init_late();
+    printk("%s: ================== PILOT ==================\n", __func__);
 
     /* Do the rest non-__init'ed, we're now alive */
     arch_call_rest_init();

@@ -148,4 +148,6 @@ struct kmem_cache *
 create_kmalloc_cache(const char *name, unsigned int size, slab_flags_t flags,
                      unsigned int useroffset, unsigned int usersize);
 
+extern struct mutex slab_mutex;
+
 #endif /* MM_SLAB_H */

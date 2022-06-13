@@ -261,4 +261,15 @@ list_splice(const struct list_head *list, struct list_head *head)
          !list_entry_is_head(pos, head, member);                \
          pos = n, n = list_next_entry(n, member))
 
+/**
+ * list_for_each_entry  -   iterate over list of given type
+ * @pos:    the type * to use as a loop cursor.
+ * @head:   the head for your list.
+ * @member: the name of the list_head within the struct.
+ */
+#define list_for_each_entry(pos, head, member)                  \
+    for (pos = list_first_entry(head, typeof(*pos), member);    \
+         !list_entry_is_head(pos, head, member);                \
+         pos = list_next_entry(pos, member))
+
 #endif /* _LINUX_LIST_H */

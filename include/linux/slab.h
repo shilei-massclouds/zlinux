@@ -390,4 +390,6 @@ static inline void *kmem_cache_zalloc(struct kmem_cache *k, gfp_t flags)
     return kmem_cache_alloc(k, flags | __GFP_ZERO);
 }
 
+void __init kmem_cache_init_late(void);
+
 #endif  /* _LINUX_SLAB_H */

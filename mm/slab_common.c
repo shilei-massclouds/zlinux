@@ -38,6 +38,8 @@
 enum slab_state slab_state;
 LIST_HEAD(slab_caches);
 
+DEFINE_MUTEX(slab_mutex);
+
 struct kmem_cache *
 kmalloc_caches[NR_KMALLOC_TYPES][KMALLOC_SHIFT_HIGH + 1] __ro_after_init =
 { /* initialization for https://bugs.llvm.org/show_bug.cgi?id=42570 */ };

@@ -38,6 +38,30 @@ unsigned int nr_cpu_ids __read_mostly = NR_CPUS;
 EXPORT_SYMBOL(nr_cpu_ids);
 
 /**
+ * smp_call_function_many(): Run a function on a set of CPUs.
+ * @mask: The set of cpus to run on (only runs on online subset).
+ * @func: The function to run. This must be fast and non-blocking.
+ * @info: An arbitrary pointer to pass to the function.
+ * @wait: Bitmask that controls the operation. If %SCF_WAIT is set, wait
+ *        (atomically) until function has completed on other CPUs. If
+ *        %SCF_RUN_LOCAL is set, the function will also be run locally
+ *        if the local CPU is set in the @cpumask.
+ *
+ * If @wait is true, then returns once @func has returned.
+ *
+ * You must not call this function with disabled interrupts or from a
+ * hardware interrupt handler or from a bottom half handler. Preemption
+ * must be disabled when calling this function.
+ */
+void smp_call_function_many(const struct cpumask *mask,
+                            smp_call_func_t func, void *info, bool wait)
+{
+    panic("%s: NO implementation!\n", __func__);
+    //smp_call_function_many_cond(mask, func, info, wait * SCF_WAIT, NULL);
+}
+EXPORT_SYMBOL(smp_call_function_many);
+
+/**
  * smp_call_function(): Run a function on all other CPUs.
  * @func: The function to run. This must be fast and non-blocking.
  * @info: An arbitrary pointer to pass to the function.
@@ -54,12 +78,9 @@ EXPORT_SYMBOL(nr_cpu_ids);
  */
 void smp_call_function(smp_call_func_t func, void *info, int wait)
 {
-    panic("%s: END!\n", __func__);
-#if 0
     preempt_disable();
     smp_call_function_many(cpu_online_mask, func, info, wait);
     preempt_enable();
-#endif
 }
 EXPORT_SYMBOL(smp_call_function);
 

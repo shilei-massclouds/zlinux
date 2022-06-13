@@ -105,6 +105,8 @@
 /* chunks in slots below this are subject to being sidelined on failed alloc */
 #define PCPU_SLOT_FAIL_THRESHOLD    3
 
+#define PCPU_EMPTY_POP_PAGES_HIGH   4
+
 /* default addr <-> pcpu_ptr mapping, override in asm/percpu.h if necessary */
 #ifndef __addr_to_pcpu_ptr
 #define __addr_to_pcpu_ptr(addr) \
@@ -1810,6 +1812,119 @@ static void pcpu_reintegrate_chunk(struct pcpu_chunk *chunk)
 }
 
 /**
+ * pcpu_block_update_hint_free - updates the block hints on the free path
+ * @chunk: chunk of interest
+ * @bit_off: chunk offset
+ * @bits: size of request
+ *
+ * Updates metadata for the allocation path.  This avoids a blind block
+ * refresh by making use of the block contig hints.  If this fails, it scans
+ * forward and backward to determine the extent of the free area.  This is
+ * capped at the boundary of blocks.
+ *
+ * A chunk update is triggered if a page becomes free, a block becomes free,
+ * or the free spans across blocks.  This tradeoff is to minimize iterating
+ * over the block metadata to update chunk_md->contig_hint.
+ * chunk_md->contig_hint may be off by up to a page, but it will never be more
+ * than the available space.  If the contig hint is contained in one block, it
+ * will be accurate.
+ */
+static void
+pcpu_block_update_hint_free(struct pcpu_chunk *chunk, int bit_off, int bits)
+{
+    int nr_empty_pages = 0;
+    struct pcpu_block_md *s_block, *e_block, *block;
+    int s_index, e_index;   /* block indexes of the freed allocation */
+    int s_off, e_off;   /* block offsets of the freed allocation */
+    int start, end;     /* start and end of the whole free area */
+
+    /*
+     * Calculate per block offsets.
+     * The calculation uses an inclusive range, but the resulting offsets
+     * are [start, end).  e_index always points to the last block in the
+     * range.
+     */
+    s_index = pcpu_off_to_block_index(bit_off);
+    e_index = pcpu_off_to_block_index(bit_off + bits - 1);
+    s_off = pcpu_off_to_block_off(bit_off);
+    e_off = pcpu_off_to_block_off(bit_off + bits - 1) + 1;
+
+    s_block = chunk->md_blocks + s_index;
+    e_block = chunk->md_blocks + e_index;
+
+    /*
+     * Check if the freed area aligns with the block->contig_hint.
+     * If it does, then the scan to find the beginning/end of the
+     * larger free area can be avoided.
+     *
+     * start and end refer to beginning and end of the free area
+     * within each their respective blocks.  This is not necessarily
+     * the entire free area as it may span blocks past the beginning
+     * or end of the block.
+     */
+    start = s_off;
+    if (s_off == s_block->contig_hint + s_block->contig_hint_start) {
+        start = s_block->contig_hint_start;
+    } else {
+        /*
+         * Scan backwards to find the extent of the free area.
+         * find_last_bit returns the starting bit, so if the start bit
+         * is returned, that means there was no last bit and the
+         * remainder of the chunk is free.
+         */
+        int l_bit = find_last_bit(pcpu_index_alloc_map(chunk, s_index), start);
+        start = (start == l_bit) ? 0 : l_bit + 1;
+    }
+
+    end = e_off;
+    if (e_off == e_block->contig_hint_start)
+        end = e_block->contig_hint_start + e_block->contig_hint;
+    else
+        end = find_next_bit(pcpu_index_alloc_map(chunk, e_index),
+                    PCPU_BITMAP_BLOCK_BITS, end);
+
+    /* update s_block */
+    e_off = (s_index == e_index) ? end : PCPU_BITMAP_BLOCK_BITS;
+    if (!start && e_off == PCPU_BITMAP_BLOCK_BITS)
+        nr_empty_pages++;
+    pcpu_block_update(s_block, start, e_off);
+
+    /* freeing in the same block */
+    if (s_index != e_index) {
+        /* update e_block */
+        if (end == PCPU_BITMAP_BLOCK_BITS)
+            nr_empty_pages++;
+        pcpu_block_update(e_block, 0, end);
+
+        /* reset md_blocks in the middle */
+        nr_empty_pages += (e_index - s_index - 1);
+        for (block = s_block + 1; block < e_block; block++) {
+            block->first_free = 0;
+            block->scan_hint = 0;
+            block->contig_hint_start = 0;
+            block->contig_hint = PCPU_BITMAP_BLOCK_BITS;
+            block->left_free = PCPU_BITMAP_BLOCK_BITS;
+            block->right_free = PCPU_BITMAP_BLOCK_BITS;
+        }
+    }
+
+    if (nr_empty_pages)
+        pcpu_update_empty_pages(chunk, nr_empty_pages);
+
+    /*
+     * Refresh chunk metadata when the free makes a block free or spans
+     * across blocks.  The contig_hint may be off by up to a page, but if
+     * the contig_hint is contained in a block, it will be accurate with
+     * the else condition below.
+     */
+    if (((end - start) >= PCPU_BITMAP_BLOCK_BITS) || s_index != e_index)
+        pcpu_chunk_refresh_hint(chunk, true);
+    else
+        pcpu_block_update(&chunk->chunk_md,
+                          pcpu_block_off_to_off(s_index, start), end);
+}
+
+/**
  * pcpu_free_area - frees the corresponding offset
  * @chunk: chunk of interest
  * @off: addr offset into chunk
@@ -1822,7 +1937,32 @@ static void pcpu_reintegrate_chunk(struct pcpu_chunk *chunk)
  */
 static int pcpu_free_area(struct pcpu_chunk *chunk, int off)
 {
-    panic("%s: NO implementation!\n", __func__);
+    int bit_off, bits, end, oslot, freed;
+    struct pcpu_block_md *chunk_md = &chunk->chunk_md;
+
+    oslot = pcpu_chunk_slot(chunk);
+
+    bit_off = off / PCPU_MIN_ALLOC_SIZE;
+
+    /* find end index */
+    end = find_next_bit(chunk->bound_map, pcpu_chunk_map_bits(chunk),
+                        bit_off + 1);
+    bits = end - bit_off;
+    bitmap_clear(chunk->alloc_map, bit_off, bits);
+
+    freed = bits * PCPU_MIN_ALLOC_SIZE;
+
+    /* update metadata */
+    chunk->free_bytes += freed;
+
+    /* update first free bit */
+    chunk_md->first_free = min(chunk_md->first_free, bit_off);
+
+    pcpu_block_update_hint_free(chunk, bit_off, bits);
+
+    pcpu_chunk_relocate(chunk, oslot);
+
+    return freed;
 }
 
 /**
@@ -2063,6 +2203,73 @@ void __percpu *__alloc_percpu(size_t size, size_t align)
 EXPORT_SYMBOL_GPL(__alloc_percpu);
 
 /**
+ * pcpu_addr_in_chunk - check if the address is served from this chunk
+ * @chunk: chunk of interest
+ * @addr: percpu address
+ *
+ * RETURNS:
+ * True if the address is served from this chunk.
+ */
+static bool pcpu_addr_in_chunk(struct pcpu_chunk *chunk, void *addr)
+{
+    void *start_addr, *end_addr;
+
+    if (!chunk)
+        return false;
+
+    start_addr = chunk->base_addr + chunk->start_offset;
+    end_addr = chunk->base_addr + chunk->nr_pages * PAGE_SIZE - chunk->end_offset;
+
+    return addr >= start_addr && addr < end_addr;
+}
+
+/* obtain pointer to a chunk from a page struct */
+static struct pcpu_chunk *pcpu_get_page_chunk(struct page *page)
+{
+    return (struct pcpu_chunk *)page->index;
+}
+
+/**
+ * pcpu_chunk_addr_search - determine chunk containing specified address
+ * @addr: address for which the chunk needs to be determined.
+ *
+ * This is an internal function that handles all but static allocations.
+ * Static percpu address values should never be passed into the allocator.
+ *
+ * RETURNS:
+ * The address of the found chunk.
+ */
+static struct pcpu_chunk *pcpu_chunk_addr_search(void *addr)
+{
+    /* is it in the dynamic region (first chunk)? */
+    if (pcpu_addr_in_chunk(pcpu_first_chunk, addr))
+        return pcpu_first_chunk;
+
+    /* is it in the reserved region? */
+    if (pcpu_addr_in_chunk(pcpu_reserved_chunk, addr))
+        return pcpu_reserved_chunk;
+
+    /*
+     * The address is relative to unit0 which might be unused and
+     * thus unmapped.  Offset the address to the unit space of the
+     * current processor before looking it up in the vmalloc
+     * space.  Note that any possible cpu id can be used here, so
+     * there's no need to worry about preemption or cpu hotplug.
+     */
+    addr += pcpu_unit_offsets[raw_smp_processor_id()];
+    return pcpu_get_page_chunk(pcpu_addr_to_page(addr));
+}
+
+static void pcpu_isolate_chunk(struct pcpu_chunk *chunk)
+{
+    if (!chunk->isolated) {
+        chunk->isolated = true;
+        pcpu_nr_empty_pop_pages -= chunk->nr_empty_pop_pages;
+    }
+    list_move(&chunk->list, &pcpu_chunk_lists[pcpu_to_depopulate_slot]);
+}
+
+/**
  * free_percpu - free percpu area
  * @ptr: pointer to area to free
  *
@@ -2073,19 +2280,15 @@ EXPORT_SYMBOL_GPL(__alloc_percpu);
  */
 void free_percpu(void __percpu *ptr)
 {
-#if 0
     void *addr;
     struct pcpu_chunk *chunk;
     unsigned long flags;
     int size, off;
     bool need_balance = false;
-#endif
 
     if (!ptr)
         return;
 
-    panic("%s: END\n", __func__);
-#if 0
     addr = __pcpu_ptr_to_addr(ptr);
 
     spin_lock_irqsave(&pcpu_lock, flags);
@@ -2094,8 +2297,6 @@ void free_percpu(void __percpu *ptr)
     off = addr - chunk->base_addr;
 
     size = pcpu_free_area(chunk, off);
-
-    pcpu_memcg_free_hook(chunk, off, size);
 
     /*
      * If there are more than one fully free chunks, wake up grim reaper.
@@ -2115,10 +2316,9 @@ void free_percpu(void __percpu *ptr)
         need_balance = true;
     }
 
-    trace_percpu_free_percpu(chunk->base_addr, off, ptr);
-
     spin_unlock_irqrestore(&pcpu_lock, flags);
 
+#if 0
     if (need_balance)
         pcpu_schedule_balance_work();
 #endif

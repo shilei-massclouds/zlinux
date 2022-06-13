@@ -371,4 +371,15 @@ static inline bool pgtable_pmd_page_ctor(struct page *page)
     return true;
 }
 
+static inline unsigned long get_num_physpages(void)
+{
+    int nid;
+    unsigned long phys_pages = 0;
+
+    for_each_online_node(nid)
+        phys_pages += node_present_pages(nid);
+
+    return phys_pages;
+}
+
 #endif /* _LINUX_MM_H */

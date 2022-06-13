@@ -327,6 +327,9 @@ typedef struct pglist_data {
     atomic_long_t vm_stat[NR_VM_NODE_STAT_ITEMS];
 } pg_data_t;
 
+#define node_present_pages(nid) (NODE_DATA(nid)->node_present_pages)
+#define node_spanned_pages(nid) (NODE_DATA(nid)->node_spanned_pages)
+
 extern struct pglist_data contig_page_data;
 static inline struct pglist_data *NODE_DATA(int nid)
 {

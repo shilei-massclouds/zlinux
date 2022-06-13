@@ -1370,12 +1370,14 @@ static int do_tune_cpucache(struct kmem_cache *cachep, int limit,
 
     prev = cachep->cpu_cache;
     cachep->cpu_cache = cpu_cache;
+#if 0
     /*
      * Without a previous cpu_cache there's no need to synchronize remote
      * cpus, so skip the IPIs.
      */
     if (prev)
         kick_all_cpus_sync();
+#endif
 
     cachep->batchcount = batchcount;
     cachep->limit = limit;
@@ -1666,3 +1668,23 @@ void *__kmalloc(size_t size, gfp_t flags)
     return __do_kmalloc(size, flags, _RET_IP_);
 }
 EXPORT_SYMBOL(__kmalloc);
+
+void __init kmem_cache_init_late(void)
+{
+    struct kmem_cache *cachep;
+
+    /* 6) resize the head arrays to their final sizes */
+    mutex_lock(&slab_mutex);
+    list_for_each_entry(cachep, &slab_caches, list)
+        if (enable_cpucache(cachep, GFP_NOWAIT))
+            BUG();
+    mutex_unlock(&slab_mutex);
+
+    /* Done! */
+    slab_state = FULL;
+
+    /*
+     * The reap timers are started later, with a module init call: That part
+     * of the kernel is not yet operational.
+     */
+}
