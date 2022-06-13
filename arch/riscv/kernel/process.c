@@ -23,3 +23,12 @@
 unsigned long __stack_chk_guard __read_mostly;
 EXPORT_SYMBOL(__stack_chk_guard);
 #endif
+
+int arch_dup_task_struct(struct task_struct *dst, struct task_struct *src)
+{
+#if 0
+    fstate_save(src, task_pt_regs(src));
+#endif
+    *dst = *src;
+    return 0;
+}

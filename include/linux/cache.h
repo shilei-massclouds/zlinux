@@ -65,6 +65,11 @@
 #define __cacheline_aligned_in_smp __cacheline_aligned
 #endif
 
+#ifndef ____cacheline_aligned_in_smp
+#define ____cacheline_aligned_in_smp ____cacheline_aligned
+#endif
+
+
 #ifndef CONFIG_ARCH_HAS_CACHE_LINE_SIZE
 #define cache_line_size()   L1_CACHE_BYTES
 #endif

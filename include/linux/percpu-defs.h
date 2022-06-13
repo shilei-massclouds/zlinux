@@ -17,6 +17,15 @@
 #ifndef _LINUX_PERCPU_DEFS_H
 #define _LINUX_PERCPU_DEFS_H
 
+#ifdef MODULE
+#define PER_CPU_SHARED_ALIGNED_SECTION ""
+#define PER_CPU_ALIGNED_SECTION ""
+#else
+#define PER_CPU_SHARED_ALIGNED_SECTION "..shared_aligned"
+#define PER_CPU_ALIGNED_SECTION "..shared_aligned"
+#endif
+#define PER_CPU_FIRST_SECTION "..first"
+
 #define EXPORT_PER_CPU_SYMBOL(var) EXPORT_SYMBOL(var)
 #define EXPORT_PER_CPU_SYMBOL_GPL(var) EXPORT_SYMBOL_GPL(var)
 
@@ -179,6 +188,10 @@ do {                                    \
 ({                                      \
     raw_cpu_write(pcp, val);            \
 })
+
+#define DEFINE_PER_CPU_SHARED_ALIGNED(type, name)           \
+    DEFINE_PER_CPU_SECTION(type, name, PER_CPU_SHARED_ALIGNED_SECTION) \
+    ____cacheline_aligned_in_smp
 
 #endif /* __ASSEMBLY__ */
 

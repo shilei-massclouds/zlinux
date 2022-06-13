@@ -44,9 +44,9 @@
 //#include <linux/mutex.h>
 /*
 #include <linux/time.h>
-#include <linux/kernel_stat.h>
 #include <linux/wait.h>
 */
+#include <linux/kernel_stat.h>
 #include <linux/kthread.h>
 /*
 #include <uapi/linux/sched/types.h>
@@ -79,6 +79,21 @@
 
 #include "tree.h"
 #include "rcu.h"
+
+/*
+ * The rcu_scheduler_active variable is initialized to the value
+ * RCU_SCHEDULER_INACTIVE and transitions RCU_SCHEDULER_INIT just before the
+ * first task is spawned.  So when this variable is RCU_SCHEDULER_INACTIVE,
+ * RCU can assume that there is but one task, allowing RCU to (for example)
+ * optimize synchronize_rcu() to a simple barrier().  When this variable
+ * is RCU_SCHEDULER_INIT, RCU must actually do all the hard work required
+ * to detect real grace periods.  This variable is also used to suppress
+ * boot-time false positives from lockdep-RCU error checking.  Finally, it
+ * transitions from RCU_SCHEDULER_INIT to RCU_SCHEDULER_RUNNING after RCU
+ * is fully initialized, including all of its kthreads having been spawned.
+ */
+int rcu_scheduler_active __read_mostly;
+EXPORT_SYMBOL_GPL(rcu_scheduler_active);
 
 /**
  * call_rcu() - Queue an RCU callback for invocation after a grace period.
@@ -182,3 +197,20 @@ void synchronize_rcu(void)
 #endif
 }
 EXPORT_SYMBOL_GPL(synchronize_rcu);
+
+/*
+ * This function is invoked towards the end of the scheduler's
+ * initialization process.  Before this is called, the idle task might
+ * contain synchronous grace-period primitives (during which time, this idle
+ * task is booting the system, and such primitives are no-ops).  After this
+ * function is called, any synchronous grace-period primitives are run as
+ * expedited, with the requesting task driving the grace period forward.
+ * A later core_initcall() rcu_set_runtime_mode() will switch to full
+ * runtime RCU functionality.
+ */
+void rcu_scheduler_starting(void)
+{
+    WARN_ON(num_online_cpus() != 1);
+    WARN_ON(nr_context_switches() > 0);
+    rcu_scheduler_active = RCU_SCHEDULER_INIT;
+}

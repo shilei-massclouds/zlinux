@@ -17,6 +17,19 @@
 #include <linux/mm_types.h>
 #include <asm/ptrace.h>
 
+/*
+ * NOTE! "signal_struct" does not have its own
+ * locking, because a shared signal_struct always
+ * implies a shared sighand_struct, so locking
+ * sighand_struct is always a proper superset of
+ * the locking of signal_struct.
+ */
+struct signal_struct {
+    unsigned int flags; /* see SIGNAL_* flags below */
+} __randomize_layout;
+
+#define SIGNAL_UNKILLABLE   0x00000040 /* for init: ignore fatal signals */
+
 static inline int signal_pending(struct task_struct *p)
 {
 #if 0

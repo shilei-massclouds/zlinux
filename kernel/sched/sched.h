@@ -2,88 +2,107 @@
 /*
  * Scheduler internal types and methods:
  */
-#include <linux/sched.h>
+#ifndef _KERNEL_SCHED_SCHED_H
+#define _KERNEL_SCHED_SCHED_H
 
-/*
+#if 0
+#include <linux/sched/affinity.h>
 #include <linux/sched/autogroup.h>
-#include <linux/sched/clock.h>
-#include <linux/sched/coredump.h>
 #include <linux/sched/cpufreq.h>
-#include <linux/sched/cputime.h>
 #include <linux/sched/deadline.h>
-*/
-#include <linux/sched/debug.h>
-/*
-#include <linux/sched/hotplug.h>
-#include <linux/sched/idle.h>
-#include <linux/sched/init.h>
-#include <linux/sched/isolation.h>
-#include <linux/sched/jobctl.h>
 #include <linux/sched/loadavg.h>
 #include <linux/sched/mm.h>
-#include <linux/sched/nohz.h>
-#include <linux/sched/numa_balancing.h>
-#include <linux/sched/prio.h>
-#include <linux/sched/rt.h>
-*/
+#include <linux/sched/rseq_api.h>
 #include <linux/sched/signal.h>
-/*
 #include <linux/sched/smt.h>
 #include <linux/sched/stat.h>
 #include <linux/sched/sysctl.h>
-*/
-#include <linux/sched/task.h>
-//#include <linux/sched/task_stack.h>
-//#include <linux/sched/topology.h>
+#include <linux/sched/task_flags.h>
+#include <linux/sched/topology.h>
+#endif
+#include <linux/sched.h>
+#include <linux/sched/debug.h>
 #include <linux/sched/wake_q.h>
-/*
-#include <linux/sched/user.h>
-#include <linux/sched/xacct.h>
+#include <linux/sched/task.h>
 
-#include <uapi/linux/sched/types.h>
-
-#include <linux/binfmts.h>
-*/
-#include <linux/bitops.h>
-#include <linux/compat.h>
-/*
-#include <linux/context_tracking.h>
+#if 0
+#include <linux/atomic.h>
+#include <linux/bitmap.h>
+#include <linux/bug.h>
+#include <linux/capability.h>
+#include <linux/cgroup_api.h>
+#include <linux/cgroup.h>
 #include <linux/cpufreq.h>
-#include <linux/cpuidle.h>
-#include <linux/cpuset.h>
+#include <linux/cpumask_api.h>
 #include <linux/ctype.h>
-#include <linux/debugfs.h>
-#include <linux/delayacct.h>
-#include <linux/energy_model.h>
-*/
-#include <linux/init_task.h>
-/*
-#include <linux/kprobes.h>
+#include <linux/file.h>
+#include <linux/fs_api.h>
+#include <linux/hrtimer_api.h>
+#include <linux/interrupt.h>
+#include <linux/irq_work.h>
+#include <linux/jiffies.h>
+#include <linux/kref_api.h>
 #include <linux/kthread.h>
-#include <linux/membarrier.h>
-#include <linux/migrate.h>
-#include <linux/mmu_context.h>
-#include <linux/nmi.h>
+#include <linux/ktime_api.h>
+#include <linux/lockdep_api.h>
+#include <linux/lockdep.h>
+#include <linux/minmax.h>
+#include <linux/module.h>
+#include <linux/mutex_api.h>
+#include <linux/plist.h>
+#include <linux/poll.h>
 #include <linux/proc_fs.h>
-#include <linux/prefetch.h>
 #include <linux/profile.h>
 #include <linux/psi.h>
-#include <linux/ratelimit.h>
-#include <linux/rcupdate_wait.h>
-#include <linux/security.h>
+#include <linux/rcupdate.h>
+#include <linux/seq_file.h>
+#include <linux/seqlock.h>
+#include <linux/softirq.h>
+#include <linux/spinlock_api.h>
+#include <linux/static_key.h>
 #include <linux/stop_machine.h>
-#include <linux/suspend.h>
-#include <linux/swait.h>
+#include <linux/syscalls_api.h>
 #include <linux/syscalls.h>
-#include <linux/task_work.h>
-#include <linux/tsacct_kern.h>
-*/
+#include <linux/tick.h>
+#include <linux/topology.h>
+#include <linux/types.h>
+#include <linux/u64_stats_sync_api.h>
+#include <linux/uaccess.h>
+#include <linux/wait_api.h>
+#include <linux/wait_bit.h>
+#include <linux/workqueue_api.h>
+#endif
+#include <linux/mm.h>
 
-//#include <asm/tlb.h>
+//#include "../workqueue_internal.h"
 
-/*
+//#include <linux/static_key.h>
+
+#if 0
 #include "cpupri.h"
 #include "cpudeadline.h"
+#endif
 
-#include <trace/events/sched.h>
-*/
+#define cpu_rq(cpu)     (&per_cpu(runqueues, (cpu)))
+
+/*
+ * This is the main, per-CPU runqueue data structure.
+ *
+ * Locking rule: those places that want to lock multiple runqueues
+ * (such as the load balancing or the thread migration code), lock
+ * acquire operations must be ordered by ascending &runqueue.
+ */
+struct rq {
+    /* runqueue lock: */
+    raw_spinlock_t      __lock;
+
+    /*
+     * nr_running and cpu_load should be in the same cacheline because
+     * remote CPUs use both these fields when doing load calculation.
+     */
+    unsigned int        nr_running;
+
+    u64                 nr_switches;
+};
+
+#endif /* _KERNEL_SCHED_SCHED_H */

@@ -20,6 +20,9 @@
 #include <linux/percpu-refcount.h>
 */
 
+/* DEBUG: Perform (expensive) checks on alloc/free */
+#define SLAB_CONSISTENCY_CHECKS ((slab_flags_t __force)0x00000100U)
+
 /* DEBUG: Red zone objs in a cache */
 #define SLAB_RED_ZONE           ((slab_flags_t __force)0x00000400U)
 
@@ -34,18 +37,31 @@
 /* Use GFP_DMA32 memory */
 #define SLAB_CACHE_DMA32        ((slab_flags_t __force)0x00008000U)
 
+/* Panic if kmem_cache_create() fails */
+#define SLAB_PANIC              ((slab_flags_t __force)0x00040000U)
+
 /* DEBUG: Store the last owner for bug hunting */
 #define SLAB_STORE_USER         ((slab_flags_t __force)0x00010000U)
 
 /* The following flags affect the page allocator grouping pages by mobility */
 /* Objects are reclaimable */
 #define SLAB_RECLAIM_ACCOUNT    ((slab_flags_t __force)0x00020000U)
+#define SLAB_TEMPORARY          SLAB_RECLAIM_ACCOUNT    /* Objects are short-lived */
 
 /* Defer freeing slabs to RCU */
 #define SLAB_TYPESAFE_BY_RCU    ((slab_flags_t __force)0x00080000U)
 
+/* Spread some memory over cpuset */
+#define SLAB_MEM_SPREAD         ((slab_flags_t __force)0x00100000U)
+
+/* Trace allocations and frees */
+#define SLAB_TRACE              ((slab_flags_t __force)0x00200000U)
+
 /* Avoid kmemleak tracing */
 #define SLAB_NOLEAKTRACE        ((slab_flags_t __force)0x00800000U)
+
+#define SLAB_ACCOUNT        0
+#define SLAB_DEBUG_OBJECTS  0
 
 #define ARCH_KMALLOC_MINALIGN __alignof__(unsigned long long)
 
@@ -391,5 +407,11 @@ static inline void *kmem_cache_zalloc(struct kmem_cache *k, gfp_t flags)
 }
 
 void __init kmem_cache_init_late(void);
+
+struct kmem_cache *
+kmem_cache_create_usercopy(const char *name, unsigned int size,
+                           unsigned int align, slab_flags_t flags,
+                           unsigned int useroffset, unsigned int usersize,
+                           void (*ctor)(void *));
 
 #endif  /* _LINUX_SLAB_H */

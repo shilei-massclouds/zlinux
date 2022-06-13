@@ -2,9 +2,46 @@
 #ifndef _LINUX_SCHED_H
 #define _LINUX_SCHED_H
 
+/*
+ * Define 'struct task_struct' and provide the main scheduler
+ * APIs (schedule(), wakeup variants, etc.)
+ */
+
 #include <uapi/linux/sched.h>
+
+#include <asm/current.h>
+
+#include <linux/pid.h>
+#if 0
+#include <linux/sem.h>
+#include <linux/shm.h>
+#endif
+#include <linux/mutex.h>
+#if 0
+#include <linux/plist.h>
+#include <linux/hrtimer.h>
+#include <linux/irqflags.h>
+#include <linux/seccomp.h>
+#endif
+#include <linux/nodemask.h>
+#include <linux/rcupdate.h>
 #include <linux/refcount.h>
-#include <asm/thread_info.h>
+#if 0
+#include <linux/resource.h>
+#include <linux/latencytop.h>
+#include <linux/sched/prio.h>
+#include <linux/sched/types.h>
+#include <linux/signal_types.h>
+#include <linux/syscall_user_dispatch.h>
+#endif
+#include <linux/mm_types_task.h>
+#if 0
+#include <linux/task_io_accounting.h>
+#include <linux/posix-timers.h>
+#include <linux/rseq.h>
+#include <linux/seqlock.h>
+#include <asm/kmap_size.h>
+#endif
 
 /* Used in tsk->state: */
 #define TASK_RUNNING            0x0000
@@ -70,6 +107,9 @@ struct task_struct {
     /* A live task holds one reference: */
     refcount_t stack_refcount;
 
+    /* Signal handlers: */
+    struct signal_struct *signal;
+
     struct wake_q_node wake_q;
 
     /* VM state: */
@@ -83,6 +123,9 @@ struct task_struct {
      * - lock it with task_lock()
      */
     char comm[TASK_COMM_LEN];
+
+    /* CPU-specific state of this task: */
+    struct thread_struct        thread;
 };
 
 extern unsigned long init_stack[THREAD_SIZE / sizeof(unsigned long)];

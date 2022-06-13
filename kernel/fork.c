@@ -110,6 +110,7 @@
 #include <linux/kernel.h>
 #include <linux/numa.h>
 #include <linux/pid.h>
+#include <linux/sched/signal.h>
 
 static struct kmem_cache *task_struct_cachep;
 
@@ -123,13 +124,16 @@ static inline void free_task_struct(struct task_struct *tsk)
     kmem_cache_free(task_struct_cachep, tsk);
 }
 
+static int alloc_thread_stack_node(struct task_struct *tsk, int node)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
 static struct task_struct *
 dup_task_struct(struct task_struct *orig, int node)
 {
-    //int err;
-    //unsigned long *stack;
+    int err;
     struct task_struct *tsk;
-    struct vm_struct *stack_vm_area __maybe_unused;
 
     if (node == NUMA_NO_NODE)
         node = tsk_fork_get_node(orig);
@@ -137,20 +141,19 @@ dup_task_struct(struct task_struct *orig, int node)
     if (!tsk)
         return NULL;
 
-#if 0
-    stack = alloc_thread_stack_node(tsk, node);
-    if (!stack)
+    err = arch_dup_task_struct(tsk, orig);
+    if (err)
         goto free_tsk;
 
-    if (memcg_charge_kernel_stack(tsk))
-        goto free_stack;
-
-    stack_vm_area = task_stack_vm_area(tsk);
-
-    err = arch_dup_task_struct(tsk, orig);
-#endif
+    err = alloc_thread_stack_node(tsk, node);
+    if (err)
+        goto free_tsk;
 
     panic("%s: END!\n", __func__);
+
+ free_tsk:
+    free_task_struct(tsk);
+    return NULL;
 }
 
 /*
@@ -165,14 +168,115 @@ static __latent_entropy struct task_struct *
 copy_process(struct pid *pid, int trace, int node,
              struct kernel_clone_args *args)
 {
-    //int pidfd = -1, retval;
-    int retval;
+    int pidfd = -1, retval;
     struct task_struct *p;
+    //struct multiprocess_signals delayed;
+    struct file *pidfile = NULL;
+    u64 clone_flags = args->flags;
+    //struct nsproxy *nsp = current->nsproxy;
+
+    /*
+     * Don't allow sharing the root directory with processes in a different
+     * namespace
+     */
+    if ((clone_flags & (CLONE_NEWNS|CLONE_FS)) == (CLONE_NEWNS|CLONE_FS))
+        return ERR_PTR(-EINVAL);
+
+    if ((clone_flags & (CLONE_NEWUSER|CLONE_FS)) == (CLONE_NEWUSER|CLONE_FS))
+        return ERR_PTR(-EINVAL);
+
+    /*
+     * Thread groups must share signals as well, and detached threads
+     * can only be started up within the thread group.
+     */
+    if ((clone_flags & CLONE_THREAD) && !(clone_flags & CLONE_SIGHAND))
+        return ERR_PTR(-EINVAL);
+
+    /*
+     * Shared signal handlers imply shared VM. By way of the above,
+     * thread groups also imply shared VM. Blocking this case allows
+     * for various simplifications in other code.
+     */
+    if ((clone_flags & CLONE_SIGHAND) && !(clone_flags & CLONE_VM))
+        return ERR_PTR(-EINVAL);
+
+    /*
+     * Siblings of global init remain as zombies on exit since they are
+     * not reaped by their parent (swapper). To solve this and to avoid
+     * multi-rooted process trees, prevent global and container-inits
+     * from creating siblings.
+     */
+    if ((clone_flags & CLONE_PARENT) &&
+        current->signal->flags & SIGNAL_UNKILLABLE)
+        return ERR_PTR(-EINVAL);
+
+    /*
+     * If the new process will be in a different pid or user namespace
+     * do not allow it to share a thread group with the forking task.
+     */
+#if 0
+    if (clone_flags & CLONE_THREAD) {
+        if ((clone_flags & (CLONE_NEWUSER | CLONE_NEWPID)) ||
+            (task_active_pid_ns(current) != nsp->pid_ns_for_children))
+            return ERR_PTR(-EINVAL);
+    }
+
+    /*
+     * If the new process will be in a different time namespace
+     * do not allow it to share VM or a thread group with the forking task.
+     */
+    if (clone_flags & (CLONE_THREAD | CLONE_VM)) {
+        if (nsp->time_ns != nsp->time_ns_for_children)
+            return ERR_PTR(-EINVAL);
+    }
+#endif
+
+    if (clone_flags & CLONE_PIDFD) {
+        /*
+         * - CLONE_DETACHED is blocked so that we can potentially
+         *   reuse it later for CLONE_PIDFD.
+         * - CLONE_THREAD is blocked until someone really needs it.
+         */
+        if (clone_flags & (CLONE_DETACHED | CLONE_THREAD))
+            return ERR_PTR(-EINVAL);
+    }
+
+#if 0
+    /*
+     * Force any signals received before this point to be delivered
+     * before the fork happens.  Collect up signals sent to multiple
+     * processes that happen during the fork and delay them so that
+     * they appear to happen after the fork.
+     */
+    sigemptyset(&delayed.signal);
+    INIT_HLIST_NODE(&delayed.node);
+
+    spin_lock_irq(&current->sighand->siglock);
+    if (!(clone_flags & CLONE_THREAD))
+        hlist_add_head(&delayed.node, &current->signal->multiprocess);
+    recalc_sigpending();
+    spin_unlock_irq(&current->sighand->siglock);
+    retval = -ERESTARTNOINTR;
+    if (task_sigpending(current))
+        goto fork_out;
+#endif
 
     retval = -ENOMEM;
     p = dup_task_struct(current, node);
     if (!p)
         goto fork_out;
+
+    if (args->io_thread) {
+        panic("%s: NO support for io_thread\n", __func__);
+#if 0
+        /*
+         * Mark us an IO worker, and block any signal that isn't
+         * fatal or STOP
+         */
+        p->flags |= PF_IO_WORKER;
+        siginitsetinv(&p->blocked, sigmask(SIGKILL)|sigmask(SIGSTOP));
+#endif
+    }
 
     panic("%s: END!\n", __func__);
 
@@ -188,14 +292,14 @@ fork_out:
  *
  * args->exit_signal is expected to be checked for sanity by the caller.
  */
-long _do_fork(struct kernel_clone_args *args)
+pid_t kernel_clone(struct kernel_clone_args *args)
 {
-    //long nr;
-    //struct pid *pid;
+    pid_t nr;
+    int trace = 0;
+    struct pid *pid;
     struct task_struct *p;
     //struct completion vfork;
-    int trace = 0;
-    //u64 clone_flags = args->flags;
+    u64 clone_flags = args->flags;
 
     /*
      * For legacy clone() calls, CLONE_PIDFD uses the parent_tid argument
@@ -225,14 +329,13 @@ long _do_fork(struct kernel_clone_args *args)
 pid_t kernel_thread(int (*fn)(void *), void *arg, unsigned long flags)
 {
     struct kernel_clone_args args = {
-        .flags      = ((lower_32_bits(flags) | CLONE_VM |
-                        CLONE_UNTRACED) & ~CSIGNAL),
-        .exit_signal    = (lower_32_bits(flags) & CSIGNAL),
+        .flags = ((lower_32_bits(flags) | CLONE_VM | CLONE_UNTRACED) & ~CSIGNAL),
+        .exit_signal = (lower_32_bits(flags) & CSIGNAL),
         .stack      = (unsigned long)fn,
         .stack_size = (unsigned long)arg,
     };
 
-    return _do_fork(&args);
+    return kernel_clone(&args);
 }
 
 void __put_task_struct(struct task_struct *tsk)
@@ -265,4 +368,36 @@ void set_task_stack_end_magic(struct task_struct *tsk)
 
     stackend = end_of_stack(tsk);
     *stackend = STACK_END_MAGIC;    /* for overflow detection */
+}
+
+static void task_struct_whitelist(unsigned long *offset, unsigned long *size)
+{
+    /* Fetch thread_struct whitelist for the architecture. */
+    arch_thread_struct_whitelist(offset, size);
+
+    /*
+     * Handle zero-sized whitelist or empty thread_struct, otherwise
+     * adjust offset to position of thread_struct in task_struct.
+     */
+    if (unlikely(*size == 0))
+        *offset = 0;
+    else
+        *offset += offsetof(struct task_struct, thread);
+}
+
+void __init fork_init(void)
+{
+#ifndef ARCH_MIN_TASKALIGN
+#define ARCH_MIN_TASKALIGN  0
+#endif
+
+    unsigned long useroffset, usersize;
+    int align = max_t(int, L1_CACHE_BYTES, ARCH_MIN_TASKALIGN);
+
+    /* create a slab on which task_structs can be allocated */
+    task_struct_whitelist(&useroffset, &usersize);
+    task_struct_cachep = kmem_cache_create_usercopy("task_struct",
+                                                    arch_task_struct_size, align,
+                                                    SLAB_PANIC|SLAB_ACCOUNT,
+                                                    useroffset, usersize, NULL);
 }

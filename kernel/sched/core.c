@@ -26,6 +26,8 @@
 #include "smp.h"
 #endif
 
+DEFINE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
+
 /**
  * wake_up_process - Wake up a specific process
  * @p: The process to be woken up.
@@ -135,4 +137,15 @@ void wake_up_q(struct wake_q_head *head)
         wake_up_process(task);
         put_task_struct(task);
     }
+}
+
+unsigned long long nr_context_switches(void)
+{
+    int i;
+    unsigned long long sum = 0;
+
+    for_each_possible_cpu(i)
+        sum += cpu_rq(i)->nr_switches;
+
+    return sum;
 }

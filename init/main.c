@@ -18,6 +18,8 @@
 #include <linux/mm.h>
 #include <linux/slab.h>
 #include <linux/memblock.h>
+#include <linux/rcupdate.h>
+#include <linux/kernel_stat.h>
 
 #include <asm/setup.h>
 #include "z_tests.h"
@@ -65,18 +67,24 @@ static const char *panic_later, *panic_param;
 
 static int __ref kernel_init(void *unused)
 {
+    panic("%s: BEGIN!\n", __func__);
+
     system_state = SYSTEM_FREEING_INITMEM;
+
+    /* */
+
+    system_state = SYSTEM_RUNNING;
 
     z_tests();
 
     panic("%s: END!\n", __func__);
-
-    system_state = SYSTEM_RUNNING;
 }
 
 noinline void __ref rest_init(void)
 {
     int pid;
+
+    rcu_scheduler_starting();
 
     /*
      * We need to spawn init first so that it obtains pid 1, however
@@ -428,7 +436,7 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
     /* Do the rest non-__init'ed, we're now alive */
     arch_call_rest_init();
 
-    panic("%s: NOT implemented!", __func__);
+    prevent_tail_call_optimization();
 }
 
 /* Check for early params. */

@@ -9,4 +9,8 @@
 #ifndef __LINUX_RCU_H
 #define __LINUX_RCU_H
 
+#define RCU_SCHEDULER_INACTIVE  0
+#define RCU_SCHEDULER_INIT      1
+#define RCU_SCHEDULER_RUNNING   2
+
 #endif /* __LINUX_RCU_H */

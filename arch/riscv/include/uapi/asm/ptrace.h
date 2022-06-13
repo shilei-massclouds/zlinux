@@ -10,6 +10,11 @@
 
 #include <linux/types.h>
 
+struct __riscv_d_ext_state {
+    __u64 f[32];
+    __u32 fcsr;
+};
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* _UAPI_ASM_RISCV_PTRACE_H */

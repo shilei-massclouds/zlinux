@@ -18,6 +18,31 @@
 #include <linux/sched/mm.h>
 */
 
+/* Legal flag mask for kmem_cache_create(), for various configurations */
+#define SLAB_CORE_FLAGS (SLAB_HWCACHE_ALIGN | SLAB_CACHE_DMA | \
+                         SLAB_CACHE_DMA32 | SLAB_PANIC | \
+                         SLAB_TYPESAFE_BY_RCU | SLAB_DEBUG_OBJECTS )
+
+#define SLAB_CACHE_FLAGS (SLAB_MEM_SPREAD | SLAB_NOLEAKTRACE | \
+                          SLAB_RECLAIM_ACCOUNT | SLAB_TEMPORARY | \
+                          SLAB_ACCOUNT)
+
+/* Common flags available with current configuration */
+#define CACHE_CREATE_MASK (SLAB_CORE_FLAGS | SLAB_DEBUG_FLAGS | SLAB_CACHE_FLAGS)
+
+/* Common flags permitted for kmem_cache_create */
+#define SLAB_FLAGS_PERMITTED (SLAB_CORE_FLAGS | \
+                              SLAB_RED_ZONE | \
+                              SLAB_POISON | \
+                              SLAB_STORE_USER | \
+                              SLAB_TRACE | \
+                              SLAB_CONSISTENCY_CHECKS | \
+                              SLAB_MEM_SPREAD | \
+                              SLAB_NOLEAKTRACE | \
+                              SLAB_RECLAIM_ACCOUNT | \
+                              SLAB_TEMPORARY | \
+                              SLAB_ACCOUNT)
+
 /*
  * State of the slab allocator.
  *
