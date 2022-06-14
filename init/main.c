@@ -433,6 +433,8 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
     kmem_cache_init_late();
     printk("%s: ================== PILOT ==================\n", __func__);
 
+    fork_init();
+
     /* Do the rest non-__init'ed, we're now alive */
     arch_call_rest_init();
 

@@ -94,4 +94,8 @@ static inline const char *kbasename(const char *path)
     return tail ? tail + 1 : path;
 }
 
+extern void kfree_const(const void *x);
+
+extern const char *kstrdup_const(const char *s, gfp_t gfp);
+
 #endif /* _LINUX_STRING_H_ */

@@ -30,13 +30,13 @@
 #include <linux/rtmutex.h>
 */
 #include <linux/init.h>
+#include <linux/vmalloc.h>
+#include <linux/module.h>
 /*
 #include <linux/unistd.h>
-#include <linux/module.h>
-#include <linux/vmalloc.h>
+#include <linux/mempolicy.h>
 #include <linux/completion.h>
 #include <linux/personality.h>
-#include <linux/mempolicy.h>
 #include <linux/sem.h>
 #include <linux/file.h>
 #include <linux/fdtable.h>
@@ -112,6 +112,13 @@
 #include <linux/pid.h>
 #include <linux/sched/signal.h>
 
+/*
+ * vmalloc() is a bit slow, and calling vfree() enough times will force a TLB
+ * flush.  Try to minimize the number of calls by caching stacks.
+ */
+#define NR_CACHED_STACKS 2
+static DEFINE_PER_CPU(struct vm_struct *, cached_stacks[NR_CACHED_STACKS]);
+
 static struct kmem_cache *task_struct_cachep;
 
 static inline struct task_struct *alloc_task_struct_node(int node)
@@ -126,6 +133,54 @@ static inline void free_task_struct(struct task_struct *tsk)
 
 static int alloc_thread_stack_node(struct task_struct *tsk, int node)
 {
+    int i;
+    void *stack;
+    struct vm_struct *vm;
+
+    for (i = 0; i < NR_CACHED_STACKS; i++) {
+        struct vm_struct *s;
+
+        s = this_cpu_xchg(cached_stacks[i], NULL);
+
+        if (!s)
+            continue;
+
+        stack = s->addr;
+
+        /* Clear stale pointers from reused stack. */
+        memset(stack, 0, THREAD_SIZE);
+
+        tsk->stack_vm_area = s;
+        tsk->stack = stack;
+        return 0;
+    }
+
+#if 0
+    /*
+     * Allocated stacks are cached and later reused by new threads,
+     * so memcg accounting is performed manually on assigning/releasing
+     * stacks to tasks. Drop __GFP_ACCOUNT.
+     */
+    stack = __vmalloc_node_range(THREAD_SIZE, THREAD_ALIGN,
+                                 VMALLOC_START, VMALLOC_END,
+                                 THREADINFO_GFP & ~__GFP_ACCOUNT,
+                                 PAGE_KERNEL,
+                                 0, node, __builtin_return_address(0));
+    if (!stack)
+        return -ENOMEM;
+
+    vm = find_vm_area(stack);
+
+    /*
+     * We can't call find_vm_area() in interrupt context, and
+     * free_thread_stack() can be called in interrupt context,
+     * so cache the vm_struct.
+     */
+    tsk->stack_vm_area = vm;
+    stack = stack;
+    tsk->stack = stack;
+    return 0;
+#endif
     panic("%s: NO implementation!\n", __func__);
 }
 

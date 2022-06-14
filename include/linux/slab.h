@@ -62,6 +62,7 @@
 
 #define SLAB_ACCOUNT        0
 #define SLAB_DEBUG_OBJECTS  0
+#define SLAB_FAILSLAB       0
 
 #define ARCH_KMALLOC_MINALIGN __alignof__(unsigned long long)
 
@@ -413,5 +414,18 @@ kmem_cache_create_usercopy(const char *name, unsigned int size,
                            unsigned int align, slab_flags_t flags,
                            unsigned int useroffset, unsigned int usersize,
                            void (*ctor)(void *));
+
+/*
+ * kmalloc_track_caller is a special version of kmalloc that records the
+ * calling function of the routine calling it for slab leak tracking instead
+ * of just the calling function (confusing, eh?).
+ * It's useful when the call to kmalloc comes from a widely-used standard
+ * allocator where we care about the real place the memory allocation
+ * request comes from.
+ */
+extern void *
+__kmalloc_track_caller(size_t size, gfp_t flags, unsigned long caller);
+#define kmalloc_track_caller(size, flags) \
+    __kmalloc_track_caller(size, flags, _RET_IP_)
 
 #endif  /* _LINUX_SLAB_H */

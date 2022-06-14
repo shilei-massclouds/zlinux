@@ -18,4 +18,18 @@ extern char __start_rodata[], __end_rodata[];
 extern char _start[], _end[];
 extern char __per_cpu_load[], __per_cpu_start[], __per_cpu_end[];
 
+/**
+ * is_kernel_rodata - checks if the pointer address is located in the
+ *                    .rodata section
+ *
+ * @addr: address to check
+ *
+ * Returns: true if the address is located in .rodata, false otherwise.
+ */
+static inline bool is_kernel_rodata(unsigned long addr)
+{
+    return addr >= (unsigned long)__start_rodata &&
+        addr < (unsigned long)__end_rodata;
+}
+
 #endif /* _ASM_GENERIC_SECTIONS_H_ */

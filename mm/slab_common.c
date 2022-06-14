@@ -35,6 +35,21 @@
 
 #include "slab.h"
 
+/*
+ * Set of flags that will prevent slab merging
+ */
+#define SLAB_NEVER_MERGE \
+    (SLAB_RED_ZONE | SLAB_POISON | SLAB_STORE_USER | SLAB_TRACE | \
+     SLAB_TYPESAFE_BY_RCU | SLAB_NOLEAKTRACE | SLAB_FAILSLAB)
+
+#define SLAB_MERGE_SAME \
+    (SLAB_RECLAIM_ACCOUNT | SLAB_CACHE_DMA | SLAB_CACHE_DMA32 | SLAB_ACCOUNT)
+
+/*
+ * Merge control. If this is set then no merging of slab caches will occur.
+ */
+static bool slab_nomerge = false;
+
 enum slab_state slab_state;
 LIST_HEAD(slab_caches);
 
@@ -396,6 +411,52 @@ void __init create_kmalloc_caches(slab_flags_t flags)
     slab_state = UP;
 }
 
+static struct kmem_cache *
+create_cache(const char *name, unsigned int object_size, unsigned int align,
+             slab_flags_t flags, unsigned int useroffset,
+             unsigned int usersize, void (*ctor)(void *),
+             struct kmem_cache *root_cache)
+{
+    int err;
+    struct kmem_cache *s;
+
+    if (WARN_ON(useroffset + usersize > object_size))
+        useroffset = usersize = 0;
+
+    err = -ENOMEM;
+    s = kmem_cache_zalloc(kmem_cache, GFP_KERNEL);
+    if (!s)
+        goto out;
+
+    s->name = name;
+    s->size = s->object_size = object_size;
+    s->align = align;
+    s->ctor = ctor;
+    s->useroffset = useroffset;
+    s->usersize = usersize;
+
+    err = __kmem_cache_create(s, flags);
+    if (err)
+        goto out_free_cache;
+
+    s->refcount = 1;
+    list_add(&s->list, &slab_caches);
+
+ out:
+    if (err)
+        return ERR_PTR(err);
+    return s;
+
+ out_free_cache:
+    kmem_cache_free(kmem_cache, s);
+    goto out;
+}
+
+static inline int kmem_cache_sanity_check(const char *name, unsigned int size)
+{
+    return 0;
+}
+
 /**
  * kmem_cache_create_usercopy - Create a cache with a region suitable
  * for copying to userspace
@@ -436,12 +497,10 @@ kmem_cache_create_usercopy(const char *name, unsigned int size,
 
     mutex_lock(&slab_mutex);
 
-#if 0
     err = kmem_cache_sanity_check(name, size);
     if (err) {
         goto out_unlock;
     }
-#endif
 
     /* Refuse requests with allocator specific flags */
     if (flags & ~SLAB_FLAGS_PERMITTED) {
@@ -496,3 +555,73 @@ kmem_cache_create_usercopy(const char *name, unsigned int size,
     return s;
 }
 EXPORT_SYMBOL(kmem_cache_create_usercopy);
+
+struct kmem_cache *
+find_mergeable(unsigned int size, unsigned int align, slab_flags_t flags,
+               const char *name, void (*ctor)(void *))
+{
+    struct kmem_cache *s;
+
+    if (slab_nomerge)
+        return NULL;
+
+    if (ctor)
+        return NULL;
+
+    size = ALIGN(size, sizeof(void *));
+    align = calculate_alignment(flags, align, size);
+    size = ALIGN(size, align);
+    flags = kmem_cache_flags(size, flags, name);
+
+    if (flags & SLAB_NEVER_MERGE)
+        return NULL;
+
+    list_for_each_entry_reverse(s, &slab_caches, list) {
+        if (slab_unmergeable(s))
+            continue;
+
+        if (size > s->size)
+            continue;
+
+        if ((flags & SLAB_MERGE_SAME) != (s->flags & SLAB_MERGE_SAME))
+            continue;
+        /*
+         * Check if alignment is compatible.
+         * Courtesy of Adrian Drzewiecki
+         */
+        if ((s->size & ~(align - 1)) != s->size)
+            continue;
+
+        if (s->size - size >= sizeof(void *))
+            continue;
+
+        if (align && (align > s->align || s->align % align))
+            continue;
+
+        return s;
+    }
+    return NULL;
+}
+
+/*
+ * Find a mergeable slab cache
+ */
+int slab_unmergeable(struct kmem_cache *s)
+{
+    if (slab_nomerge || (s->flags & SLAB_NEVER_MERGE))
+        return 1;
+
+    if (s->ctor)
+        return 1;
+
+    if (s->usersize)
+        return 1;
+
+    /*
+     * We may have set a slab to be unmergeable during bootstrap.
+     */
+    if (s->refcount < 0)
+        return 1;
+
+    return 0;
+}

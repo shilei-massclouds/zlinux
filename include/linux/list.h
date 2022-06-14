@@ -83,6 +83,14 @@ static inline void INIT_LIST_HEAD(struct list_head *list)
 #define list_next_entry(pos, member) \
     list_entry((pos)->member.next, typeof(*(pos)), member)
 
+/**
+ * list_prev_entry - get the prev element in list
+ * @pos:    the type * to cursor
+ * @member: the name of the list_head within the struct.
+ */
+#define list_prev_entry(pos, member) \
+    list_entry((pos)->member.prev, typeof(*(pos)), member)
+
 static inline bool
 __list_add_valid(struct list_head *new,
                  struct list_head *prev,
@@ -271,5 +279,16 @@ list_splice(const struct list_head *list, struct list_head *head)
     for (pos = list_first_entry(head, typeof(*pos), member);    \
          !list_entry_is_head(pos, head, member);                \
          pos = list_next_entry(pos, member))
+
+/**
+ * list_for_each_entry_reverse - iterate backwards over list of given type.
+ * @pos:    the type * to use as a loop cursor.
+ * @head:   the head for your list.
+ * @member: the name of the list_head within the struct.
+ */
+#define list_for_each_entry_reverse(pos, head, member)      \
+    for (pos = list_last_entry(head, typeof(*pos), member); \
+         !list_entry_is_head(pos, head, member);            \
+         pos = list_prev_entry(pos, member))
 
 #endif /* _LINUX_LIST_H */

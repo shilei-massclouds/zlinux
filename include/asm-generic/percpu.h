@@ -49,6 +49,15 @@ extern unsigned long __per_cpu_offset[NR_CPUS];
     *raw_cpu_ptr(&(pcp));           \
 })
 
+#define raw_cpu_generic_xchg(pcp, nval)     \
+({                                          \
+    typeof(pcp) *__p = raw_cpu_ptr(&(pcp)); \
+    typeof(pcp) __ret;                      \
+    __ret = *__p;                           \
+    *__p = nval;                            \
+    __ret;                                  \
+})
+
 #define raw_cpu_generic_to_op(pcp, val, op) \
 do {                                        \
     *raw_cpu_ptr(&(pcp)) op val;            \
@@ -89,6 +98,16 @@ do {                                            \
     else                                \
         __ret = __this_cpu_generic_read_noirq(pcp);     \
     __ret;                              \
+})
+
+#define this_cpu_generic_xchg(pcp, nval)        \
+({                                              \
+    typeof(pcp) __ret;                          \
+    unsigned long __flags;                      \
+    raw_local_irq_save(__flags);                \
+    __ret = raw_cpu_generic_xchg(pcp, nval);    \
+    raw_local_irq_restore(__flags);             \
+    __ret;                                      \
 })
 
 #ifndef this_cpu_read_1
@@ -154,6 +173,19 @@ do {                                            \
 #endif
 #ifndef this_cpu_or_8
 #define this_cpu_or_8(pcp, val)     this_cpu_generic_to_op(pcp, val, |=)
+#endif
+
+#ifndef this_cpu_xchg_1
+#define this_cpu_xchg_1(pcp, nval)  this_cpu_generic_xchg(pcp, nval)
+#endif
+#ifndef this_cpu_xchg_2
+#define this_cpu_xchg_2(pcp, nval)  this_cpu_generic_xchg(pcp, nval)
+#endif
+#ifndef this_cpu_xchg_4
+#define this_cpu_xchg_4(pcp, nval)  this_cpu_generic_xchg(pcp, nval)
+#endif
+#ifndef this_cpu_xchg_8
+#define this_cpu_xchg_8(pcp, nval)  this_cpu_generic_xchg(pcp, nval)
 #endif
 
 #ifndef raw_cpu_read_1

@@ -124,6 +124,8 @@ struct task_struct {
      */
     char comm[TASK_COMM_LEN];
 
+    struct vm_struct *stack_vm_area;
+
     /* CPU-specific state of this task: */
     struct thread_struct        thread;
 };

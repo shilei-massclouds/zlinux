@@ -43,4 +43,6 @@ static inline void put_task_struct(struct task_struct *t)
         __put_task_struct(t);
 }
 
+extern void fork_init(void);
+
 #endif /* _LINUX_SCHED_TASK_H */

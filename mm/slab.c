@@ -1688,3 +1688,34 @@ void __init kmem_cache_init_late(void)
      * of the kernel is not yet operational.
      */
 }
+
+struct kmem_cache *
+__kmem_cache_alias(const char *name, unsigned int size, unsigned int align,
+                   slab_flags_t flags, void (*ctor)(void *))
+{
+    struct kmem_cache *cachep;
+
+    cachep = find_mergeable(size, align, flags, name, ctor);
+    if (cachep) {
+        cachep->refcount++;
+
+        /*
+         * Adjust the object sizes so that we clear
+         * the complete object on kzalloc.
+         */
+        cachep->object_size = max_t(int, cachep->object_size, size);
+    }
+    return cachep;
+}
+
+slab_flags_t kmem_cache_flags(unsigned int object_size,
+                              slab_flags_t flags, const char *name)
+{
+    return flags;
+}
+
+void *__kmalloc_track_caller(size_t size, gfp_t flags, unsigned long caller)
+{
+    return __do_kmalloc(size, flags, caller);
+}
+EXPORT_SYMBOL(__kmalloc_track_caller);
