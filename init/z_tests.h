@@ -4,6 +4,8 @@
 #ifndef __INIT_Z_TESTS_H
 #define __INIT_Z_TESTS_H
 
+int z_tests_early(void);
+
 int z_tests(void);
 
 #endif /* __INIT_Z_TESTS_H */

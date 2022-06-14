@@ -84,6 +84,8 @@ noinline void __ref rest_init(void)
 {
     int pid;
 
+    z_tests_early();
+
     rcu_scheduler_starting();
 
     /*
