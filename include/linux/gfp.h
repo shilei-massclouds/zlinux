@@ -36,6 +36,7 @@
 
 #define ___GFP_HARDWALL     0x100000u
 #define ___GFP_THISNODE     0x200000u
+#define ___GFP_ACCOUNT      0x400000u
 #define ___GFP_ZEROTAGS     0x800000u
 
 #define __GFP_IO    ((__force gfp_t)___GFP_IO)
@@ -117,6 +118,7 @@
 #define __GFP_WRITE         ((__force gfp_t)___GFP_WRITE)
 #define __GFP_HARDWALL      ((__force gfp_t)___GFP_HARDWALL)
 #define __GFP_THISNODE      ((__force gfp_t)___GFP_THISNODE)
+#define __GFP_ACCOUNT       ((__force gfp_t)___GFP_ACCOUNT)
 
 /**
  * DOC: Action modifiers
@@ -162,6 +164,7 @@
 #define __GFP_BITS_MASK     ((__force gfp_t)((1 << __GFP_BITS_SHIFT) - 1))
 
 #define GFP_KERNEL  (__GFP_RECLAIM | __GFP_IO | __GFP_FS)
+#define GFP_KERNEL_ACCOUNT (GFP_KERNEL | __GFP_ACCOUNT)
 #define GFP_NOWAIT  (__GFP_KSWAPD_RECLAIM)
 
 #define GFP_USER    (__GFP_RECLAIM | __GFP_IO | __GFP_FS | __GFP_HARDWALL)

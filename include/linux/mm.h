@@ -382,4 +382,7 @@ static inline unsigned long get_num_physpages(void)
     return phys_pages;
 }
 
+extern __printf(3, 4)
+void warn_alloc(gfp_t gfp_mask, nodemask_t *nodemask, const char *fmt, ...);
+
 #endif /* _LINUX_MM_H */

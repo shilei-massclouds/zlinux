@@ -169,8 +169,18 @@ struct folio {
 #define STRUCT_PAGE_MAX_SHIFT   (order_base_2(sizeof(struct page)))
 
 struct mm_struct {
-    unsigned long start_code, end_code, start_data, end_data;
-    unsigned long start_brk, brk, start_stack;
+    struct {
+        pgd_t *pgd;
+
+        unsigned long start_code, end_code, start_data, end_data;
+        unsigned long start_brk, brk, start_stack;
+    } __randomize_layout;
+
+    /*
+     * The mm_cpumask needs to be at the end of mm_struct, because it
+     * is dynamically sized based on nr_cpu_ids.
+     */
+    unsigned long cpu_bitmap[];
 };
 
 extern struct mm_struct init_mm;

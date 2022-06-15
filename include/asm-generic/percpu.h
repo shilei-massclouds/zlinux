@@ -58,6 +58,16 @@ extern unsigned long __per_cpu_offset[NR_CPUS];
     __ret;                                  \
 })
 
+#define raw_cpu_generic_cmpxchg(pcp, oval, nval)    \
+({                                                  \
+    typeof(pcp) *__p = raw_cpu_ptr(&(pcp));         \
+    typeof(pcp) __ret;                              \
+    __ret = *__p;                                   \
+    if (__ret == (oval))                            \
+        *__p = nval;                                \
+    __ret;                                          \
+})
+
 #define raw_cpu_generic_to_op(pcp, val, op) \
 do {                                        \
     *raw_cpu_ptr(&(pcp)) op val;            \
@@ -212,6 +222,36 @@ do {                                            \
 #endif
 #ifndef raw_cpu_write_8
 #define raw_cpu_write_8(pcp, val)   raw_cpu_generic_to_op(pcp, val, =)
+#endif
+
+#ifndef raw_cpu_xchg_1
+#define raw_cpu_xchg_1(pcp, nval)   raw_cpu_generic_xchg(pcp, nval)
+#endif
+#ifndef raw_cpu_xchg_2
+#define raw_cpu_xchg_2(pcp, nval)   raw_cpu_generic_xchg(pcp, nval)
+#endif
+#ifndef raw_cpu_xchg_4
+#define raw_cpu_xchg_4(pcp, nval)   raw_cpu_generic_xchg(pcp, nval)
+#endif
+#ifndef raw_cpu_xchg_8
+#define raw_cpu_xchg_8(pcp, nval)   raw_cpu_generic_xchg(pcp, nval)
+#endif
+
+#ifndef raw_cpu_cmpxchg_1
+#define raw_cpu_cmpxchg_1(pcp, oval, nval) \
+    raw_cpu_generic_cmpxchg(pcp, oval, nval)
+#endif
+#ifndef raw_cpu_cmpxchg_2
+#define raw_cpu_cmpxchg_2(pcp, oval, nval) \
+    raw_cpu_generic_cmpxchg(pcp, oval, nval)
+#endif
+#ifndef raw_cpu_cmpxchg_4
+#define raw_cpu_cmpxchg_4(pcp, oval, nval) \
+    raw_cpu_generic_cmpxchg(pcp, oval, nval)
+#endif
+#ifndef raw_cpu_cmpxchg_8
+#define raw_cpu_cmpxchg_8(pcp, oval, nval) \
+    raw_cpu_generic_cmpxchg(pcp, oval, nval)
 #endif
 
 #endif /* _ASM_GENERIC_PERCPU_H_ */

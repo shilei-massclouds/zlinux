@@ -155,7 +155,6 @@ static int alloc_thread_stack_node(struct task_struct *tsk, int node)
         return 0;
     }
 
-#if 0
     /*
      * Allocated stacks are cached and later reused by new threads,
      * so memcg accounting is performed manually on assigning/releasing
@@ -169,6 +168,7 @@ static int alloc_thread_stack_node(struct task_struct *tsk, int node)
     if (!stack)
         return -ENOMEM;
 
+#if 0
     vm = find_vm_area(stack);
 
     /*

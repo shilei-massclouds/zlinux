@@ -96,4 +96,149 @@ static inline unsigned long _pud_pfn(pud_t pud)
     return pud_val(pud) >> _PAGE_PFN_SHIFT;
 }
 
+static inline void set_pud(pud_t *pudp, pud_t pud)
+{
+    *pudp = pud;
+}
+
+static inline void set_p4d(p4d_t *p4dp, p4d_t p4d)
+{
+    if (pgtable_l4_enabled)
+        *p4dp = p4d;
+    else
+        set_pud((pud_t *)p4dp, (pud_t){ p4d_val(p4d) });
+}
+
+static inline void set_pgd(pgd_t *pgdp, pgd_t pgd)
+{
+    if (pgtable_l5_enabled)
+        *pgdp = pgd;
+    else
+        set_p4d((p4d_t *)pgdp, (p4d_t){ pgd_val(pgd) });
+}
+
+static inline int pgd_none(pgd_t pgd)
+{
+    if (pgtable_l5_enabled)
+        return (pgd_val(pgd) == 0);
+
+    return 0;
+}
+
+static inline int pgd_present(pgd_t pgd)
+{
+    if (pgtable_l5_enabled)
+        return (pgd_val(pgd) & _PAGE_PRESENT);
+
+    return 1;
+}
+
+static inline int pgd_bad(pgd_t pgd)
+{
+    if (pgtable_l5_enabled)
+        return !pgd_present(pgd);
+
+    return 0;
+}
+
+static inline void pgd_clear(pgd_t *pgd)
+{
+    if (pgtable_l5_enabled)
+        set_pgd(pgd, __pgd(0));
+}
+
+static inline int p4d_none(p4d_t p4d)
+{
+    if (pgtable_l4_enabled)
+        return (p4d_val(p4d) == 0);
+
+    return 0;
+}
+
+static inline int p4d_present(p4d_t p4d)
+{
+    if (pgtable_l4_enabled)
+        return (p4d_val(p4d) & _PAGE_PRESENT);
+
+    return 1;
+}
+
+static inline int p4d_bad(p4d_t p4d)
+{
+    if (pgtable_l4_enabled)
+        return !p4d_present(p4d);
+
+    return 0;
+}
+
+static inline void p4d_clear(p4d_t *p4d)
+{
+    if (pgtable_l4_enabled)
+        set_p4d(p4d, __p4d(0));
+}
+
+static inline unsigned long pmd_page_vaddr(pmd_t pmd)
+{
+    return (unsigned long)pfn_to_virt(pmd_val(pmd) >> _PAGE_PFN_SHIFT);
+}
+
+static inline pmd_t *pud_pgtable(pud_t pud)
+{
+    return (pmd_t *)pfn_to_virt(pud_val(pud) >> _PAGE_PFN_SHIFT);
+}
+
+static inline pud_t *p4d_pgtable(p4d_t p4d)
+{
+    if (pgtable_l4_enabled)
+        return (pud_t *)pfn_to_virt(p4d_val(p4d) >> _PAGE_PFN_SHIFT);
+
+    return (pud_t *)pud_pgtable((pud_t) { p4d_val(p4d) });
+}
+
+static inline p4d_t *pgd_pgtable(pgd_t pgd)
+{
+    if (pgtable_l5_enabled)
+        return (p4d_t *)pfn_to_virt(pgd_val(pgd) >> _PAGE_PFN_SHIFT);
+
+    return (p4d_t *)p4d_pgtable((p4d_t) { pgd_val(pgd) });
+}
+
+#define p4d_offset p4d_offset
+static inline p4d_t *p4d_offset(pgd_t *pgd, unsigned long address)
+{
+    if (pgtable_l5_enabled)
+        return pgd_pgtable(*pgd) + p4d_index(address);
+
+    return (p4d_t *)pgd;
+}
+
+static inline int pud_none(pud_t pud)
+{
+    return (pud_val(pud) == 0);
+}
+
+static inline int pud_present(pud_t pud)
+{
+    return (pud_val(pud) & _PAGE_PRESENT);
+}
+
+static inline int pud_bad(pud_t pud)
+{
+    return !pud_present(pud);
+}
+
+static inline void pud_clear(pud_t *pudp)
+{
+    set_pud(pudp, __pud(0));
+}
+
+#define pmd_ERROR(e) \
+    pr_err("%s:%d: bad pmd %016lx.\n", __FILE__, __LINE__, pmd_val(e))
+
+#define pud_ERROR(e) \
+    pr_err("%s:%d: bad pud %016lx.\n", __FILE__, __LINE__, pud_val(e))
+
+#define p4d_ERROR(e) \
+    pr_err("%s:%d: bad p4d %016lx.\n", __FILE__, __LINE__, p4d_val(e))
+
 #endif /* _ASM_RISCV_PGTABLE_64_H */

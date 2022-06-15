@@ -106,6 +106,11 @@ do { \
 
 #define nmi_count() (preempt_count() & NMI_MASK)
 
+#define hardirq_count() (preempt_count() & HARDIRQ_MASK)
+#define softirq_count() (preempt_count() & SOFTIRQ_MASK)
+
+#define irq_count() (nmi_count() | hardirq_count() | softirq_count())
+
 /*
  * Macros to retrieve the current execution context:
  *
@@ -115,5 +120,13 @@ do { \
  * in_task()        - We're in task context
  */
 #define in_nmi()    (nmi_count())
+
+/*
+ * The following macros are deprecated and should not be used in new code:
+ * in_irq()       - Obsolete version of in_hardirq()
+ * in_softirq()   - We have BH disabled, or are processing softirqs
+ * in_interrupt() - We're in NMI,IRQ,SoftIRQ context or have BH disabled
+ */
+#define in_interrupt()  (irq_count())
 
 #endif /* __LINUX_PREEMPT_H */

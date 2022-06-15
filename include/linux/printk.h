@@ -8,6 +8,11 @@
 #include <linux/linkage.h>
 #include <linux/cache.h>
 
+struct va_format {
+    const char *fmt;
+    va_list *va;
+};
+
 /* printk's without a loglevel use this.. */
 #define MESSAGE_LOGLEVEL_DEFAULT CONFIG_MESSAGE_LOGLEVEL_DEFAULT
 

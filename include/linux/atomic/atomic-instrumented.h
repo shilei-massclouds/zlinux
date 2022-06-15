@@ -144,4 +144,16 @@ atomic_long_try_cmpxchg(atomic_long_t *v, long *old, long new)
     return arch_atomic_long_try_cmpxchg(v, old, new);
 }
 
+static __always_inline long
+atomic_long_xchg(atomic_long_t *v, long i)
+{
+    return arch_atomic_long_xchg(v, i);
+}
+
+static __always_inline long
+atomic_long_add_return(long i, atomic_long_t *v)
+{
+    return arch_atomic_long_add_return(i, v);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */

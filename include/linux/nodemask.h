@@ -9,6 +9,24 @@
 
 typedef struct { DECLARE_BITMAP(bits, MAX_NUMNODES); } nodemask_t;
 
+/**
+ * nodemask_pr_args - printf args to output a nodemask
+ * @maskp: nodemask to be printed
+ *
+ * Can be used to provide arguments for '%*pb[l]' when printing a nodemask.
+ */
+#define nodemask_pr_args(maskp) \
+    __nodemask_pr_numnodes(maskp), __nodemask_pr_bits(maskp)
+
+static inline unsigned int __nodemask_pr_numnodes(const nodemask_t *m)
+{
+    return m ? MAX_NUMNODES : 0;
+}
+static inline const unsigned long *__nodemask_pr_bits(const nodemask_t *m)
+{
+    return m ? m->bits : NULL;
+}
+
 #define for_each_node_state(node, __state) \
     for ( (node) = 0; (node) == 0; (node) = 1)
 

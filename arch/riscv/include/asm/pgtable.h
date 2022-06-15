@@ -82,11 +82,6 @@ struct pt_alloc_ops {
     phys_addr_t (*alloc_p4d)(uintptr_t va);
 };
 
-static inline int pmd_none(pmd_t pmd)
-{
-    return (pmd_val(pmd) == 0);
-}
-
 static inline pgd_t pfn_pgd(unsigned long pfn, pgprot_t prot)
 {
     return __pgd((pfn << _PAGE_PFN_SHIFT) | pgprot_val(prot));
@@ -160,6 +155,41 @@ extern pgd_t swapper_pg_dir[];
 
 void paging_init(void);
 void misc_mem_init(void);
+
+#define pgd_ERROR(e) \
+    pr_err("%s:%d: bad pgd " PTE_FMT ".\n", __FILE__, __LINE__, pgd_val(e))
+
+#define __HAVE_ARCH_PTEP_GET_AND_CLEAR
+static inline pte_t ptep_get_and_clear(struct mm_struct *mm,
+                                       unsigned long address, pte_t *ptep)
+{
+    return __pte(atomic_long_xchg((atomic_long_t *)ptep, 0));
+}
+
+static inline int pmd_none(pmd_t pmd)
+{
+    return (pmd_val(pmd) == 0);
+}
+
+static inline int pmd_present(pmd_t pmd)
+{
+    return (pmd_val(pmd) & (_PAGE_PRESENT | _PAGE_PROT_NONE));
+}
+
+static inline int pmd_bad(pmd_t pmd)
+{
+    return !pmd_present(pmd) || (pmd_val(pmd) & _PAGE_LEAF);
+}
+
+static inline void set_pmd(pmd_t *pmdp, pmd_t pmd)
+{
+    *pmdp = pmd;
+}
+
+static inline void pmd_clear(pmd_t *pmdp)
+{
+    set_pmd(pmdp, __pmd(0));
+}
 
 #endif /* !__ASSEMBLY__ */
 

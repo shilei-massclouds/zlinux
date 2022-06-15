@@ -1,4 +1,4 @@
-mmu-$(CONFIG_MMU) := memory.o
+mmu-$(CONFIG_MMU) := memory.o vmalloc.o pgtable-generic.o
 
 obj-y := mmzone.o vmstat.o percpu.o page-writeback.o slab_common.o util.o \
 	$(mmu-y)

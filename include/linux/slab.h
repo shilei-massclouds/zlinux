@@ -428,4 +428,32 @@ __kmalloc_track_caller(size_t size, gfp_t flags, unsigned long caller);
 #define kmalloc_track_caller(size, flags) \
     __kmalloc_track_caller(size, flags, _RET_IP_)
 
+struct kmem_cache *kmem_cache_create(const char *name, unsigned int size,
+                                     unsigned int align, slab_flags_t flags,
+                                     void (*ctor)(void *));
+
+/**
+ * kzalloc_node - allocate zeroed memory from a particular memory node.
+ * @size: how many bytes of memory are required.
+ * @flags: the type of memory to allocate (see kmalloc).
+ * @node: memory node from which to allocate
+ */
+static inline __alloc_size(1) void *
+kzalloc_node(size_t size, gfp_t flags, int node)
+{
+    return kmalloc_node(size, flags | __GFP_ZERO, node);
+}
+
+/*
+ * Please use this macro to create slab caches. Simply specify the
+ * name of the structure and maybe some flags that are listed above.
+ *
+ * The alignment of the struct determines object alignment. If you
+ * f.e. add ____cacheline_aligned_in_smp to the struct declaration
+ * then the objects will be properly aligned in SMP configurations.
+ */
+#define KMEM_CACHE(__struct, __flags) \
+    kmem_cache_create(#__struct, sizeof(struct __struct), \
+                      __alignof__(struct __struct), (__flags), NULL)
+
 #endif  /* _LINUX_SLAB_H */

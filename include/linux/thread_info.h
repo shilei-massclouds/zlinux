@@ -19,6 +19,8 @@
 
 #ifdef __KERNEL__
 
+#define THREADINFO_GFP  (GFP_KERNEL_ACCOUNT | __GFP_ZERO)
+
 #endif /* __KERNEL__ */
 
 #endif /* _LINUX_THREAD_INFO_H */

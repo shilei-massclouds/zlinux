@@ -192,6 +192,10 @@ do {                                    \
 
 #define raw_cpu_read(pcp)       __pcpu_size_call_return(raw_cpu_read_, pcp)
 #define raw_cpu_write(pcp, val) __pcpu_size_call(raw_cpu_write_, pcp, val)
+#define raw_cpu_xchg(pcp, nval) \
+    __pcpu_size_call_return2(raw_cpu_xchg_, pcp, nval)
+#define raw_cpu_cmpxchg(pcp, oval, nval) \
+    __pcpu_size_call_return2(raw_cpu_cmpxchg_, pcp, oval, nval)
 
 /*
  * Operations for contexts that are safe from preemption/interrupts.  These
@@ -205,6 +209,16 @@ do {                                    \
 #define __this_cpu_write(pcp, val)      \
 ({                                      \
     raw_cpu_write(pcp, val);            \
+})
+
+#define __this_cpu_xchg(pcp, nval)  \
+({                                  \
+    raw_cpu_xchg(pcp, nval);        \
+})
+
+#define __this_cpu_cmpxchg(pcp, oval, nval) \
+({                                          \
+    raw_cpu_cmpxchg(pcp, oval, nval);       \
 })
 
 #define DEFINE_PER_CPU_SHARED_ALIGNED(type, name)           \

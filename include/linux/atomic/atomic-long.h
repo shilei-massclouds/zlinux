@@ -80,4 +80,16 @@ arch_atomic_long_try_cmpxchg(atomic_long_t *v, long *old, long new)
     return arch_atomic64_try_cmpxchg(v, (s64 *)old, new);
 }
 
+static __always_inline long
+arch_atomic_long_xchg(atomic_long_t *v, long i)
+{
+    return arch_atomic64_xchg(v, i);
+}
+
+static __always_inline long
+arch_atomic_long_add_return(long i, atomic_long_t *v)
+{
+    return arch_atomic64_add_return(i, v);
+}
+
 #endif /* _LINUX_ATOMIC_LONG_H */

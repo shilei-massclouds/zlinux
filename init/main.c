@@ -20,6 +20,7 @@
 #include <linux/memblock.h>
 #include <linux/rcupdate.h>
 #include <linux/kernel_stat.h>
+#include <linux/vmalloc.h>
 
 #include <asm/setup.h>
 #include "z_tests.h"
@@ -145,8 +146,8 @@ static void __init mm_init(void)
      */
 #if 0
     page_ext_init_flatmem_late();
-    vmalloc_init();
 #endif
+    vmalloc_init();
 }
 
 /*

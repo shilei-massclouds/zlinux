@@ -1,5 +1,19 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/mm_types.h>
+#include <linux/rbtree.h>
+//#include <linux/rwsem.h>
+#include <linux/spinlock.h>
+#include <linux/list.h>
+#include <linux/cpumask.h>
+//#include <linux/mman.h>
+#include <linux/pgtable.h>
+
+#include <linux/atomic.h>
+#if 0
+#include <linux/user_namespace.h>
+#include <linux/ioasid.h>
+#include <asm/mmu.h>
+#endif
 
 /*
  * For dynamically allocated mm_structs, there is a dynamically sized cpumask
@@ -12,6 +26,8 @@
  * and size this cpu_bitmask to NR_CPUS.
  */
 struct mm_struct init_mm = {
+    .pgd        = swapper_pg_dir,
+    .cpu_bitmap = CPU_BITS_NONE,
 };
 
 void setup_initial_init_mm(void *start_code, void *end_code,

@@ -19,6 +19,8 @@
 #define PAGE_OFFSET_L4  _AC(0xffffaf8000000000, UL)
 #define PAGE_OFFSET_L3  _AC(0xffffffd800000000, UL)
 
+#define PTE_FMT "%016lx"
+
 #ifndef __ASSEMBLY__
 
 #define clear_page(pgaddr)  memset((pgaddr), 0, PAGE_SIZE)

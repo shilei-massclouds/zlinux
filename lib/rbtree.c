@@ -154,8 +154,7 @@ __rb_insert(struct rb_node *node, struct rb_root *root,
                 WRITE_ONCE(parent->rb_left, tmp);
                 WRITE_ONCE(node->rb_right, parent);
                 if (tmp)
-                    rb_set_parent_color(tmp, parent,
-                                RB_BLACK);
+                    rb_set_parent_color(tmp, parent, RB_BLACK);
                 rb_set_parent_color(parent, node, RB_RED);
                 augment_rotate(parent, node);
                 parent = node;
@@ -391,3 +390,26 @@ void rb_erase(struct rb_node *node, struct rb_root *root)
         ____rb_erase_color(rebalance, root, dummy_rotate);
 }
 EXPORT_SYMBOL(rb_erase);
+
+/*
+ * Augmented rbtree manipulation functions.
+ *
+ * This instantiates the same __always_inline functions as in the non-augmented
+ * case, but this time with user-defined callbacks.
+ */
+
+void __rb_insert_augmented(struct rb_node *node, struct rb_root *root,
+                           void (*augment_rotate)(struct rb_node *old,
+                                                  struct rb_node *new))
+{
+    __rb_insert(node, root, augment_rotate);
+}
+EXPORT_SYMBOL(__rb_insert_augmented);
+
+/* Non-inline version for rb_erase_augmented() use */
+void __rb_erase_color(struct rb_node *parent, struct rb_root *root,
+    void (*augment_rotate)(struct rb_node *old, struct rb_node *new))
+{
+    ____rb_erase_color(parent, root, augment_rotate);
+}
+EXPORT_SYMBOL(__rb_erase_color);

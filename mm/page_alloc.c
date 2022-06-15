@@ -2968,3 +2968,31 @@ void __init mem_init_print_info(void)
             (init_data_size + init_code_size) >> 10, bss_size >> 10,
             K(physpages - totalram_pages() - totalcma_pages), K(totalcma_pages));
 }
+
+void warn_alloc(gfp_t gfp_mask, nodemask_t *nodemask, const char *fmt, ...)
+{
+    struct va_format vaf;
+    va_list args;
+    //static DEFINE_RATELIMIT_STATE(nopage_rs, 10*HZ, 1);
+
+#if 0
+    if ((gfp_mask & __GFP_NOWARN) ||
+         !__ratelimit(&nopage_rs) ||
+         ((gfp_mask & __GFP_DMA) && !has_managed_dma()))
+        return;
+#endif
+
+    va_start(args, fmt);
+    vaf.fmt = fmt;
+    vaf.va = &args;
+    pr_warn("%s: %pV, mode:%#x(%pGg), nodemask=%*pbl",
+            current->comm, &vaf, gfp_mask, &gfp_mask,
+            nodemask_pr_args(nodemask));
+    va_end(args);
+
+    pr_cont("\n");
+#if 0
+    dump_stack();
+    warn_alloc_show_mem(gfp_mask, nodemask);
+#endif
+}

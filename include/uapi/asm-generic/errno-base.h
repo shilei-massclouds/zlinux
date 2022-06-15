@@ -8,6 +8,7 @@
 #define E2BIG       7   /* Argument list too long */
 #define ENOMEM      12  /* Out of memory */
 #define EFAULT      14  /* Bad address */
+#define EBUSY       16  /* Device or resource busy */
 #define ENODEV      19  /* No such device */
 #define EINVAL      22  /* Invalid argument */
 #define ENOSPC      28  /* No space left on device */

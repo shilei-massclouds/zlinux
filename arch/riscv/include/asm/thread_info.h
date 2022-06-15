@@ -8,7 +8,7 @@
 #define THREAD_SIZE_ORDER (2)
 #define THREAD_SIZE (PAGE_SIZE << THREAD_SIZE_ORDER)
 
-#define THREAD_ALIGN            (2 * THREAD_SIZE)
+#define THREAD_ALIGN    (2 * THREAD_SIZE)
 
 #ifndef __ASSEMBLY__
 

@@ -50,3 +50,13 @@ signed long __sched schedule_timeout(signed long timeout)
     panic("%s: NOT-implemented!\n", __func__);
     return 0;
 }
+
+signed long __sched schedule_timeout_uninterruptible(signed long timeout)
+{
+    panic("%s: NO implemented!\n", __func__);
+#if 0
+    __set_current_state(TASK_UNINTERRUPTIBLE);
+    return schedule_timeout(timeout);
+#endif
+}
+EXPORT_SYMBOL(schedule_timeout_uninterruptible);

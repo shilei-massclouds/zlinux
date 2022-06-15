@@ -168,4 +168,119 @@ __rb_erase_augmented(struct rb_node *node, struct rb_root *root,
     return rebalance;
 }
 
+/*
+ * Template for declaring augmented rbtree callbacks (generic case)
+ *
+ * RBSTATIC:    'static' or empty
+ * RBNAME:      name of the rb_augment_callbacks structure
+ * RBSTRUCT:    struct type of the tree nodes
+ * RBFIELD:     name of struct rb_node field within RBSTRUCT
+ * RBAUGMENTED: name of field within RBSTRUCT holding data for subtree
+ * RBCOMPUTE:   name of function that recomputes the RBAUGMENTED data
+ */
+
+#define RB_DECLARE_CALLBACKS(RBSTATIC, RBNAME,              \
+                 RBSTRUCT, RBFIELD, RBAUGMENTED, RBCOMPUTE) \
+static inline void                          \
+RBNAME ## _propagate(struct rb_node *rb, struct rb_node *stop)      \
+{                                   \
+    while (rb != stop) {                        \
+        RBSTRUCT *node = rb_entry(rb, RBSTRUCT, RBFIELD);   \
+        if (RBCOMPUTE(node, true))              \
+            break;                      \
+        rb = rb_parent(&node->RBFIELD);             \
+    }                               \
+}                                   \
+static inline void                          \
+RBNAME ## _copy(struct rb_node *rb_old, struct rb_node *rb_new)     \
+{                                   \
+    RBSTRUCT *old = rb_entry(rb_old, RBSTRUCT, RBFIELD);        \
+    RBSTRUCT *new = rb_entry(rb_new, RBSTRUCT, RBFIELD);        \
+    new->RBAUGMENTED = old->RBAUGMENTED;                \
+}                                   \
+static void                             \
+RBNAME ## _rotate(struct rb_node *rb_old, struct rb_node *rb_new)   \
+{                                   \
+    RBSTRUCT *old = rb_entry(rb_old, RBSTRUCT, RBFIELD);        \
+    RBSTRUCT *new = rb_entry(rb_new, RBSTRUCT, RBFIELD);        \
+    new->RBAUGMENTED = old->RBAUGMENTED;                \
+    RBCOMPUTE(old, false);                      \
+}                                   \
+RBSTATIC const struct rb_augment_callbacks RBNAME = {           \
+    .propagate = RBNAME ## _propagate,              \
+    .copy = RBNAME ## _copy,                    \
+    .rotate = RBNAME ## _rotate                 \
+};
+
+/*
+ * Template for declaring augmented rbtree callbacks,
+ * computing RBAUGMENTED scalar as max(RBCOMPUTE(node)) for all subtree nodes.
+ *
+ * RBSTATIC:    'static' or empty
+ * RBNAME:      name of the rb_augment_callbacks structure
+ * RBSTRUCT:    struct type of the tree nodes
+ * RBFIELD:     name of struct rb_node field within RBSTRUCT
+ * RBTYPE:      type of the RBAUGMENTED field
+ * RBAUGMENTED: name of RBTYPE field within RBSTRUCT holding data for subtree
+ * RBCOMPUTE:   name of function that returns the per-node RBTYPE scalar
+ */
+
+#define RB_DECLARE_CALLBACKS_MAX(RBSTATIC, RBNAME, RBSTRUCT, RBFIELD, \
+                                 RBTYPE, RBAUGMENTED, RBCOMPUTE)          \
+static inline bool RBNAME ## _compute_max(RBSTRUCT *node, bool exit)          \
+{                                         \
+    RBSTRUCT *child;                              \
+    RBTYPE max = RBCOMPUTE(node);                         \
+    if (node->RBFIELD.rb_left) {                          \
+        child = rb_entry(node->RBFIELD.rb_left, RBSTRUCT, RBFIELD);   \
+        if (child->RBAUGMENTED > max)                     \
+            max = child->RBAUGMENTED;                 \
+    }                                     \
+    if (node->RBFIELD.rb_right) {                         \
+        child = rb_entry(node->RBFIELD.rb_right, RBSTRUCT, RBFIELD);  \
+        if (child->RBAUGMENTED > max)                     \
+            max = child->RBAUGMENTED;                 \
+    }                                     \
+    if (exit && node->RBAUGMENTED == max)                     \
+        return true;                              \
+    node->RBAUGMENTED = max;                          \
+    return false;                                 \
+}                                         \
+RB_DECLARE_CALLBACKS(RBSTATIC, RBNAME,                        \
+             RBSTRUCT, RBFIELD, RBAUGMENTED, RBNAME ## _compute_max)
+
+extern void __rb_insert_augmented(struct rb_node *node, struct rb_root *root,
+                                  void (*augment_rotate)(struct rb_node *old,
+                                                         struct rb_node *new));
+
+/*
+ * Fixup the rbtree and update the augmented information when rebalancing.
+ *
+ * On insertion, the user must update the augmented information on the path
+ * leading to the inserted node, then call rb_link_node() as usual and
+ * rb_insert_augmented() instead of the usual rb_insert_color() call.
+ * If rb_insert_augmented() rebalances the rbtree, it will callback into
+ * a user provided function to update the augmented information on the
+ * affected subtrees.
+ */
+static inline void
+rb_insert_augmented(struct rb_node *node, struct rb_root *root,
+                    const struct rb_augment_callbacks *augment)
+{
+    __rb_insert_augmented(node, root, augment->rotate);
+}
+
+extern void __rb_erase_color(struct rb_node *parent, struct rb_root *root,
+                             void (*augment_rotate)(struct rb_node *old,
+                                                    struct rb_node *new));
+
+static __always_inline void
+rb_erase_augmented(struct rb_node *node, struct rb_root *root,
+                   const struct rb_augment_callbacks *augment)
+{
+    struct rb_node *rebalance = __rb_erase_augmented(node, root, augment);
+    if (rebalance)
+        __rb_erase_color(rebalance, root, augment->rotate);
+}
+
 #endif  /* _LINUX_RBTREE_AUGMENTED_H */

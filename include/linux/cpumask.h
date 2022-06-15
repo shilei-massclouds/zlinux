@@ -69,6 +69,11 @@ extern struct cpumask __cpu_active_mask;
 #define for_each_online_cpu(cpu)   for_each_cpu((cpu), cpu_online_mask)
 #define for_each_present_cpu(cpu)  for_each_cpu((cpu), cpu_present_mask)
 
+#define CPU_BITS_NONE \
+{                     \
+    [0 ... BITS_TO_LONGS(NR_CPUS)-1] = 0UL \
+}
+
 static inline void cpu_max_bits_warn(unsigned int cpu, unsigned int bits)
 {
     WARN_ON_ONCE(cpu >= bits);

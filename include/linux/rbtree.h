@@ -29,7 +29,27 @@
 
 #define RB_EMPTY_ROOT(root)  (READ_ONCE((root)->rb_node) == NULL)
 
+/* 'empty' nodes are nodes that are known not to be inserted in an rbtree */
+#define RB_EMPTY_NODE(node) \
+    ((node)->__rb_parent_color == (unsigned long)(node))
+#define RB_CLEAR_NODE(node) \
+    ((node)->__rb_parent_color = (unsigned long)(node))
+
 extern void rb_insert_color(struct rb_node *, struct rb_root *);
 extern void rb_erase(struct rb_node *, struct rb_root *);
+
+static inline void rb_link_node(struct rb_node *node, struct rb_node *parent,
+                                struct rb_node **rb_link)
+{
+    node->__rb_parent_color = (unsigned long)parent;
+    node->rb_left = node->rb_right = NULL;
+
+    *rb_link = node;
+}
+
+#define rb_entry_safe(ptr, type, member) \
+    ({ typeof(ptr) ____ptr = (ptr); \
+       ____ptr ? rb_entry(____ptr, type, member) : NULL; \
+    })
 
 #endif  /* _LINUX_RBTREE_H */
