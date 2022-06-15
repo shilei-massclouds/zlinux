@@ -208,6 +208,7 @@ dup_task_struct(struct task_struct *orig, int node)
 
  free_tsk:
     free_task_struct(tsk);
+    panic("%s: ERROR!\n", __func__);
     return NULL;
 }
 

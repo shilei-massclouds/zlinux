@@ -1090,6 +1090,7 @@ __vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
         return NULL;
     }
 
+    panic("%s: END!\n", __func__);
 }
 
 /**
