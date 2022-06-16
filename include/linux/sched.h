@@ -121,6 +121,11 @@ struct task_struct {
     cpumask_t       *user_cpus_ptr;
     cpumask_t       cpus_mask;
 
+    union {
+        refcount_t      rcu_users;
+        struct rcu_head rcu;
+    };
+
     /*
      * executable name, excluding path.
      *

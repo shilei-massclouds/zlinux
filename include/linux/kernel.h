@@ -24,6 +24,7 @@
 
 #define might_resched() do { } while (0)
 #define might_sleep() do { might_resched(); } while (0)
+#define might_sleep_if(cond) do { if (cond) might_sleep(); } while (0)
 
 static inline void
 ___might_sleep(const char *file, int line, int preempt_offset) { }

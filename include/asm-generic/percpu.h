@@ -120,6 +120,16 @@ do {                                            \
     __ret;                                      \
 })
 
+#define this_cpu_generic_cmpxchg(pcp, oval, nval)   \
+({                                                  \
+    typeof(pcp) __ret;                              \
+    unsigned long __flags;                          \
+    raw_local_irq_save(__flags);                    \
+    __ret = raw_cpu_generic_cmpxchg(pcp, oval, nval);   \
+    raw_local_irq_restore(__flags);                 \
+    __ret;                                          \
+})
+
 #ifndef this_cpu_read_1
 #define this_cpu_read_1(pcp)        this_cpu_generic_read(pcp)
 #endif
@@ -196,6 +206,23 @@ do {                                            \
 #endif
 #ifndef this_cpu_xchg_8
 #define this_cpu_xchg_8(pcp, nval)  this_cpu_generic_xchg(pcp, nval)
+#endif
+
+#ifndef this_cpu_cmpxchg_1
+#define this_cpu_cmpxchg_1(pcp, oval, nval) \
+    this_cpu_generic_cmpxchg(pcp, oval, nval)
+#endif
+#ifndef this_cpu_cmpxchg_2
+#define this_cpu_cmpxchg_2(pcp, oval, nval) \
+    this_cpu_generic_cmpxchg(pcp, oval, nval)
+#endif
+#ifndef this_cpu_cmpxchg_4
+#define this_cpu_cmpxchg_4(pcp, oval, nval) \
+    this_cpu_generic_cmpxchg(pcp, oval, nval)
+#endif
+#ifndef this_cpu_cmpxchg_8
+#define this_cpu_cmpxchg_8(pcp, oval, nval) \
+    this_cpu_generic_cmpxchg(pcp, oval, nval)
 #endif
 
 #ifndef raw_cpu_read_1

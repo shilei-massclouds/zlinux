@@ -112,6 +112,11 @@
 #include <linux/pid.h>
 #include <linux/sched/signal.h>
 
+struct vm_stack {
+    struct rcu_head rcu;
+    struct vm_struct *stack_vm_area;
+};
+
 /*
  * vmalloc() is a bit slow, and calling vfree() enough times will force a TLB
  * flush.  Try to minimize the number of calls by caching stacks.
@@ -190,6 +195,50 @@ static void account_kernel_stack(struct task_struct *tsk, int account)
                               account * (PAGE_SIZE / 1024));
 }
 
+void exit_task_stack_account(struct task_struct *tsk)
+{
+    account_kernel_stack(tsk, -1);
+}
+
+static bool try_release_thread_stack_to_cache(struct vm_struct *vm)
+{
+    unsigned int i;
+
+    for (i = 0; i < NR_CACHED_STACKS; i++) {
+        if (this_cpu_cmpxchg(cached_stacks[i], NULL, vm) != NULL)
+            continue;
+        return true;
+    }
+    return false;
+}
+
+static void thread_stack_free_rcu(struct rcu_head *rh)
+{
+    struct vm_stack *vm_stack = container_of(rh, struct vm_stack, rcu);
+
+    if (try_release_thread_stack_to_cache(vm_stack->stack_vm_area))
+        return;
+
+    vfree(vm_stack);
+}
+
+static void thread_stack_delayed_free(struct task_struct *tsk)
+{
+    struct vm_stack *vm_stack = tsk->stack;
+
+    vm_stack->stack_vm_area = tsk->stack_vm_area;
+    call_rcu(&vm_stack->rcu, thread_stack_free_rcu);
+}
+
+static void free_thread_stack(struct task_struct *tsk)
+{
+    if (!try_release_thread_stack_to_cache(tsk->stack_vm_area))
+        thread_stack_delayed_free(tsk);
+
+    tsk->stack = NULL;
+    tsk->stack_vm_area = NULL;
+}
+
 static struct task_struct *
 dup_task_struct(struct task_struct *orig, int node)
 {
@@ -234,11 +283,31 @@ dup_task_struct(struct task_struct *orig, int node)
         tsk->cpus_ptr = &tsk->cpus_mask;
     dup_user_cpus_ptr(tsk, orig, node);
 
-    panic("%s: END!\n", __func__);
+    /*
+     * One for the user space visible state that goes away when reaped.
+     * One for the scheduler.
+     */
+    refcount_set(&tsk->rcu_users, 2);
+    /* One for the rcu users */
+    refcount_set(&tsk->usage, 1);
+
+#if 0
+    tsk->splice_pipe = NULL;
+    tsk->task_frag.page = NULL;
+#endif
+    tsk->wake_q.next = NULL;
+#if 0
+    tsk->worker_private = NULL;
+#endif
+
+    return tsk;
+
+ free_stack:
+    exit_task_stack_account(tsk);
+    free_thread_stack(tsk);
 
  free_tsk:
     free_task_struct(tsk);
-    panic("%s: ERROR!\n", __func__);
     return NULL;
 }
 

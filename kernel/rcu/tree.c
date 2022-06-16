@@ -138,7 +138,6 @@ EXPORT_SYMBOL_GPL(rcu_scheduler_active);
 void call_rcu(struct rcu_head *head, rcu_callback_t func)
 {
     panic("%s: END\n", __func__);
-    //__call_rcu(head, func);
 }
 EXPORT_SYMBOL_GPL(call_rcu);
 

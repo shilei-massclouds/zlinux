@@ -145,6 +145,36 @@ static void __vfree(const void *addr)
         __vunmap(addr, 1);
 }
 
+/**
+ * vfree - Release memory allocated by vmalloc()
+ * @addr:  Memory base address
+ *
+ * Free the virtually continuous memory area starting at @addr, as obtained
+ * from one of the vmalloc() family of APIs.  This will usually also free the
+ * physical memory underlying the virtual allocation, but that memory is
+ * reference counted, so it will not be freed until the last user goes away.
+ *
+ * If @addr is NULL, no operation is performed.
+ *
+ * Context:
+ * May sleep if called *not* from interrupt context.
+ * Must not be called in NMI context (strictly speaking, it could be
+ * if we have CONFIG_ARCH_HAVE_NMI_SAFE_CMPXCHG, but making the calling
+ * conventions for vfree() arch-dependent would be a really bad idea).
+ */
+void vfree(const void *addr)
+{
+    BUG_ON(in_nmi());
+
+    might_sleep_if(!in_interrupt());
+
+    if (!addr)
+        return;
+
+    __vfree(addr);
+}
+EXPORT_SYMBOL(vfree);
+
 /*
  * lazy_max_pages is the maximum amount of virtual address space we gather up
  * before attempting to purge with a TLB flush.

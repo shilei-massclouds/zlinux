@@ -124,6 +124,9 @@ do {                                    \
 #define this_cpu_xchg(pcp, nval) \
     __pcpu_size_call_return2(this_cpu_xchg_, pcp, nval)
 
+#define this_cpu_cmpxchg(pcp, oval, nval) \
+    __pcpu_size_call_return2(this_cpu_cmpxchg_, pcp, oval, nval)
+
 /*
  * Base implementations of per-CPU variable declarations and definitions, where
  * the section in which the variable is to be placed is provided by the

@@ -74,6 +74,8 @@ extern struct vm_struct *find_vm_area(const void *addr);
 
 void free_vm_area(struct vm_struct *area);
 
+extern void vfree(const void *addr);
+
 /*
  *  Lowlevel-APIs (not for driver use!)
  */
