@@ -848,6 +848,17 @@ static void setup_vmalloc_vm(struct vm_struct *vm, struct vmap_area *va,
     spin_unlock(&vmap_area_lock);
 }
 
+static void clear_vm_uninitialized_flag(struct vm_struct *vm)
+{
+    /*
+     * Before removing VM_UNINITIALIZED,
+     * we should make sure that vm has proper values.
+     * Pair with smp_rmb() in show_numa_info().
+     */
+    smp_wmb();
+    vm->flags &= ~VM_UNINITIALIZED;
+}
+
 static struct vm_struct *
 __get_vm_area_node(unsigned long size, unsigned long align,
                    unsigned long shift, unsigned long flags,
@@ -1407,7 +1418,19 @@ __vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
             schedule_timeout_uninterruptible(1);
     } while (nofail && (ret < 0));
 
-    panic("%s: END!\n", __func__);
+    if ((gfp_mask & (__GFP_FS | __GFP_IO)) == __GFP_IO)
+        memalloc_nofs_restore(flags);
+    else if ((gfp_mask & (__GFP_FS | __GFP_IO)) == 0)
+        memalloc_noio_restore(flags);
+
+    if (ret < 0) {
+        warn_alloc(gfp_mask, NULL,
+                   "vmalloc error: size %lu, failed to map pages",
+                   area->nr_pages * PAGE_SIZE);
+        goto fail;
+    }
+
+    return area->addr;
 
  fail:
     __vfree(area->addr);
@@ -1484,7 +1507,14 @@ __vmalloc_node_range(unsigned long size, unsigned long align,
     if (!ret)
         goto fail;
 
-    panic("%s: END!\n", __func__);
+    /*
+     * In this function, newly allocated vm_struct has VM_UNINITIALIZED
+     * flag. It means that vm_struct is not fully initialized.
+     * Now, it is fully initialized, so remove this flag here.
+     */
+    clear_vm_uninitialized_flag(area);
+
+    return area->addr;
 
  fail:
     if (shift > PAGE_SHIFT) {
