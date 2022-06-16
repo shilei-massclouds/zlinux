@@ -433,6 +433,24 @@ copy_process(struct pid *pid, int trace, int node,
 #endif
     }
 
+    p->set_child_tid = (clone_flags & CLONE_CHILD_SETTID) ?
+        args->child_tid : NULL;
+    /*
+     * Clear TID on mm_release()?
+     */
+    p->clear_child_tid = (clone_flags & CLONE_CHILD_CLEARTID) ?
+        args->child_tid : NULL;
+
+#if 0
+    rt_mutex_init_task(p);
+#endif
+
+#if 0
+    retval = copy_creds(p, clone_flags);
+    if (retval < 0)
+        goto bad_fork_free;
+#endif
+
     panic("%s: END!\n", __func__);
 
 fork_out:

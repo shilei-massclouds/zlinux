@@ -19,6 +19,10 @@
 #define CLONE_PARENT_SETTID 0x00100000  /* set the TID in the parent */
 #define CLONE_DETACHED      0x00400000  /* Unused, ignored */
 #define CLONE_UNTRACED      0x00800000  /* set if the tracing process can't force CLONE_PTRACE on this clone */
+
+#define CLONE_CHILD_SETTID      0x01000000  /* set the TID in the child */
+#define CLONE_CHILD_CLEARTID    0x00200000  /* clear the TID in the child */
+
 #define CLONE_NEWUSER       0x10000000  /* New user namespace */
 #define CLONE_NEWPID        0x20000000  /* New pid namespace */
 
