@@ -8,6 +8,7 @@
 #define _ASM_RISCV_SBI_H
 
 #include <linux/types.h>
+#include <linux/cpumask.h>
 
 #define SBI_SPEC_VERSION_DEFAULT        0x1
 #define SBI_SPEC_VERSION_MAJOR_SHIFT    24
@@ -39,6 +40,16 @@ enum sbi_ext_base_fid {
     SBI_EXT_BASE_GET_MVENDORID,
     SBI_EXT_BASE_GET_MARCHID,
     SBI_EXT_BASE_GET_MIMPID,
+};
+
+enum sbi_ext_rfence_fid {
+    SBI_EXT_RFENCE_REMOTE_FENCE_I = 0,
+    SBI_EXT_RFENCE_REMOTE_SFENCE_VMA,
+    SBI_EXT_RFENCE_REMOTE_SFENCE_VMA_ASID,
+    SBI_EXT_RFENCE_REMOTE_HFENCE_GVMA_VMID,
+    SBI_EXT_RFENCE_REMOTE_HFENCE_GVMA,
+    SBI_EXT_RFENCE_REMOTE_HFENCE_VVMA_ASID,
+    SBI_EXT_RFENCE_REMOTE_HFENCE_VVMA,
 };
 
 enum sbi_ext_hsm_fid {
@@ -97,5 +108,7 @@ static inline unsigned long sbi_minor_version(void)
 int sbi_probe_extension(int ext);
 
 int sbi_err_map_linux_errno(int err);
+
+int sbi_remote_fence_i(const struct cpumask *cpu_mask);
 
 #endif /* _ASM_RISCV_SBI_H */

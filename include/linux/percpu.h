@@ -5,7 +5,7 @@
 //#include <linux/mmdebug.h>
 #include <linux/preempt.h>
 #include <linux/smp.h>
-//#include <linux/cpumask.h>
+#include <linux/cpumask.h>
 #include <linux/printk.h>
 #include <linux/pfn.h>
 #include <linux/init.h>

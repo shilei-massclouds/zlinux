@@ -9,7 +9,7 @@
 
 #include <linux/errno.h>
 #include <linux/types.h>
-//#include <linux/list.h>
+#include <linux/list.h>
 #include <linux/cpumask.h>
 #include <linux/init.h>
 //#include <linux/smp_types.h>

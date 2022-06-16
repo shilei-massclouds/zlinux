@@ -138,4 +138,6 @@ extern int wake_up_process(struct task_struct *tsk);
 
 extern void schedule_preempt_disabled(void);
 
+extern long schedule_timeout_uninterruptible(long timeout);
+
 #endif /* _LINUX_SCHED_H */

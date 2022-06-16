@@ -317,12 +317,24 @@ void setup_initial_init_mm(void *start_code, void *end_code,
 #if ALLOC_SPLIT_PTLOCKS
 #error "NOT SUPPORT ALLOC_SPLIT_PTLOCKS!"
 #else /* ALLOC_SPLIT_PTLOCKS */
-#endif /* ALLOC_SPLIT_PTLOCKS */
+static inline void ptlock_cache_init(void)
+{
+}
+
+static inline bool ptlock_alloc(struct page *page)
+{
+    return true;
+}
+
+static inline void ptlock_free(struct page *page)
+{
+}
 
 static inline spinlock_t *ptlock_ptr(struct page *page)
 {
     return &page->ptl;
 }
+#endif /* ALLOC_SPLIT_PTLOCKS */
 
 static inline bool ptlock_init(struct page *page)
 {
@@ -344,9 +356,25 @@ static inline bool ptlock_init(struct page *page)
 
 #if USE_SPLIT_PMD_PTLOCKS
 
+static struct page *pmd_to_page(pmd_t *pmd)
+{
+    unsigned long mask = ~(PTRS_PER_PMD * sizeof(pmd_t) - 1);
+    return virt_to_page((void *)((unsigned long) pmd & mask));
+}
+
+static inline spinlock_t *pmd_lockptr(struct mm_struct *mm, pmd_t *pmd)
+{
+    return ptlock_ptr(pmd_to_page(pmd));
+}
+
 static inline bool pmd_ptlock_init(struct page *page)
 {
     return ptlock_init(page);
+}
+
+static inline void pmd_ptlock_free(struct page *page)
+{
+    ptlock_free(page);
 }
 
 #else /* !USE_SPLIT_PMD_PTLOCKS */
@@ -384,5 +412,68 @@ static inline unsigned long get_num_physpages(void)
 
 extern __printf(3, 4)
 void warn_alloc(gfp_t gfp_mask, nodemask_t *nodemask, const char *fmt, ...);
+
+
+int __p4d_alloc(struct mm_struct *mm, pgd_t *pgd, unsigned long address);
+int __pud_alloc(struct mm_struct *mm, p4d_t *p4d, unsigned long address);
+int __pmd_alloc(struct mm_struct *mm, pud_t *pud, unsigned long address);
+
+int __pte_alloc_kernel(pmd_t *pmd);
+
+static inline void pgtable_pmd_page_dtor(struct page *page)
+{
+    pmd_ptlock_free(page);
+    __ClearPageTable(page);
+    dec_lruvec_page_state(page, NR_PAGETABLE);
+}
+
+static inline void mm_inc_nr_pmds(struct mm_struct *mm)
+{
+    atomic_long_add(PTRS_PER_PMD * sizeof(pmd_t), &mm->pgtables_bytes);
+}
+
+static inline void mm_dec_nr_pmds(struct mm_struct *mm)
+{
+    atomic_long_sub(PTRS_PER_PMD * sizeof(pmd_t), &mm->pgtables_bytes);
+}
+
+static inline void mm_inc_nr_ptes(struct mm_struct *mm)
+{
+    atomic_long_add(PTRS_PER_PTE * sizeof(pte_t), &mm->pgtables_bytes);
+}
+
+static inline void mm_dec_nr_ptes(struct mm_struct *mm)
+{
+    atomic_long_sub(PTRS_PER_PTE * sizeof(pte_t), &mm->pgtables_bytes);
+}
+
+static inline void mm_inc_nr_puds(struct mm_struct *mm)
+{
+    atomic_long_add(PTRS_PER_PUD * sizeof(pud_t), &mm->pgtables_bytes);
+}
+
+static inline void mm_dec_nr_puds(struct mm_struct *mm)
+{
+    atomic_long_sub(PTRS_PER_PUD * sizeof(pud_t), &mm->pgtables_bytes);
+}
+
+/*
+ * No scalability reason to split PUD locks yet, but follow the same pattern
+ * as the PMD locks to make it easier if we decide to.  The VM should not be
+ * considered ready to switch to split PUD locks yet; there may be places
+ * which need to be converted from page_table_lock.
+ */
+static inline spinlock_t *pud_lockptr(struct mm_struct *mm, pud_t *pud)
+{
+    return &mm->page_table_lock;
+}
+
+static inline spinlock_t *pud_lock(struct mm_struct *mm, pud_t *pud)
+{
+    spinlock_t *ptl = pud_lockptr(mm, pud);
+
+    spin_lock(ptl);
+    return ptl;
+}
 
 #endif /* _LINUX_MM_H */

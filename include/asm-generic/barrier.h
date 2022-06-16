@@ -27,6 +27,10 @@
 #define smp_rmb()   __smp_rmb()
 #endif
 
+#ifndef smp_wmb
+#define smp_wmb()   __smp_wmb()
+#endif
+
 #ifndef smp_store_mb
 #define smp_store_mb(var, value)  __smp_store_mb(var, value)
 #endif

@@ -3,3 +3,4 @@
 CFLAGS_init.o := -mcmodel=medany
 
 obj-y += init.o
+obj-y += cacheflush.o

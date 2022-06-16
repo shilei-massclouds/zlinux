@@ -32,6 +32,12 @@ arch_atomic_long_add(long i, atomic_long_t *v)
     arch_atomic64_add(i, v);
 }
 
+static __always_inline void
+arch_atomic_long_sub(long i, atomic_long_t *v)
+{
+    arch_atomic64_sub(i, v);
+}
+
 static __always_inline bool
 arch_atomic_long_try_cmpxchg_acquire(atomic_long_t *v, long *old, long new)
 {

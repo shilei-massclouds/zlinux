@@ -52,13 +52,13 @@
 
 #include <asm/io.h>
 #include <asm/mmu_context.h>
-#include <asm/pgalloc.h>
 #include <linux/uaccess.h>
 #include <asm/tlb.h>
 #include <asm/tlbflush.h>
 */
+#include <asm/pgalloc.h>
 
-//#include "pgalloc-track.h"
+#include "pgalloc-track.h"
 #include "internal.h"
 
 /* use the per-pgdat data instead for discontigmem - mbligh */
@@ -79,3 +79,86 @@ void *high_memory;
 EXPORT_SYMBOL(high_memory);
 
 unsigned long highest_memmap_pfn __read_mostly;
+
+/*
+ * Allocate p4d page table.
+ * We've already handled the fast-path in-line.
+ */
+int __p4d_alloc(struct mm_struct *mm, pgd_t *pgd, unsigned long address)
+{
+    p4d_t *new = p4d_alloc_one(mm, address);
+    if (!new)
+        return -ENOMEM;
+
+    spin_lock(&mm->page_table_lock);
+    if (pgd_present(*pgd)) {    /* Another has populated it */
+        p4d_free(mm, new);
+    } else {
+        smp_wmb(); /* See comment in pmd_install() */
+        pgd_populate(mm, pgd, new);
+    }
+    spin_unlock(&mm->page_table_lock);
+    return 0;
+}
+
+/*
+ * Allocate page upper directory.
+ * We've already handled the fast-path in-line.
+ */
+int __pud_alloc(struct mm_struct *mm, p4d_t *p4d, unsigned long address)
+{
+    pud_t *new = pud_alloc_one(mm, address);
+    if (!new)
+        return -ENOMEM;
+
+    spin_lock(&mm->page_table_lock);
+    if (!p4d_present(*p4d)) {
+        mm_inc_nr_puds(mm);
+        smp_wmb(); /* See comment in pmd_install() */
+        p4d_populate(mm, p4d, new);
+    } else  /* Another has populated it */
+        pud_free(mm, new);
+    spin_unlock(&mm->page_table_lock);
+    return 0;
+}
+
+/*
+ * Allocate page middle directory.
+ * We've already handled the fast-path in-line.
+ */
+int __pmd_alloc(struct mm_struct *mm, pud_t *pud, unsigned long address)
+{
+    spinlock_t *ptl;
+    pmd_t *new = pmd_alloc_one(mm, address);
+    if (!new)
+        return -ENOMEM;
+
+    ptl = pud_lock(mm, pud);
+    if (!pud_present(*pud)) {
+        mm_inc_nr_pmds(mm);
+        smp_wmb(); /* See comment in pmd_install() */
+        pud_populate(mm, pud, new);
+    } else {    /* Another has populated it */
+        pmd_free(mm, new);
+    }
+    spin_unlock(ptl);
+    return 0;
+}
+
+int __pte_alloc_kernel(pmd_t *pmd)
+{
+    pte_t *new = pte_alloc_one_kernel(&init_mm);
+    if (!new)
+        return -ENOMEM;
+
+    spin_lock(&init_mm.page_table_lock);
+    if (likely(pmd_none(*pmd))) {   /* Has another populated it ? */
+        smp_wmb(); /* See comment in pmd_install() */
+        pmd_populate_kernel(&init_mm, pmd, new);
+        new = NULL;
+    }
+    spin_unlock(&init_mm.page_table_lock);
+    if (new)
+        pte_free_kernel(&init_mm, new);
+    return 0;
+}

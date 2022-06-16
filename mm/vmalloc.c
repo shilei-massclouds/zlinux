@@ -44,7 +44,7 @@
 //#include <asm/shmparam.h>
 
 #include "internal.h"
-//#include "pgalloc-track.h"
+#include "pgalloc-track.h"
 
 enum fit_type {
     NOTHING_FIT = 0,
@@ -100,6 +100,50 @@ static DEFINE_PER_CPU(struct vmap_area *, ne_fit_preload_node);
 static struct rb_root purge_vmap_area_root = RB_ROOT;
 static LIST_HEAD(purge_vmap_area_list);
 static DEFINE_SPINLOCK(purge_vmap_area_lock);
+
+static atomic_long_t nr_vmalloc_pages;
+
+static inline unsigned int vm_area_page_order(struct vm_struct *vm)
+{
+    return 0;
+}
+
+static inline void set_vm_area_page_order(struct vm_struct *vm,
+                                          unsigned int order)
+{
+    BUG_ON(order != 0);
+}
+
+static void __vunmap(const void *addr, int deallocate_pages)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
+static inline void __vfree_deferred(const void *addr)
+{
+    panic("%s: NO implementation!\n", __func__);
+
+#if 0
+    /*
+     * Use raw_cpu_ptr() because this can be called from preemptible
+     * context. Preemption is absolutely fine here, because the llist_add()
+     * implementation is lockless, so it works even if we are adding to
+     * another cpu's list. schedule_work() should be fine with this too.
+     */
+    struct vfree_deferred *p = raw_cpu_ptr(&vfree_deferred);
+
+    if (llist_add((struct llist_node *)addr, &p->list))
+        schedule_work(&p->wq);
+#endif
+}
+
+static void __vfree(const void *addr)
+{
+    if (unlikely(in_interrupt()))
+        __vfree_deferred(addr);
+    else
+        __vunmap(addr, 1);
+}
 
 /*
  * lazy_max_pages is the maximum amount of virtual address space we gather up
@@ -1055,6 +1099,243 @@ void free_vm_area(struct vm_struct *area)
 }
 EXPORT_SYMBOL_GPL(free_vm_area);
 
+static inline unsigned int
+vm_area_alloc_pages(gfp_t gfp, int nid, unsigned int order,
+                    unsigned int nr_pages, struct page **pages)
+{
+    unsigned int nr_allocated = 0;
+    struct page *page;
+    int i;
+
+    /*
+     * For order-0 pages we make use of bulk allocator, if
+     * the page array is partly or not at all populated due
+     * to fails, fallback to a single page allocator that is
+     * more permissive.
+     */
+    if (!order) {
+        gfp_t bulk_gfp = gfp & ~__GFP_NOFAIL;
+
+        while (nr_allocated < nr_pages) {
+            unsigned int nr, nr_pages_request;
+
+            /*
+             * A maximum allowed request is hard-coded and is 100
+             * pages per call. That is done in order to prevent a
+             * long preemption off scenario in the bulk-allocator
+             * so the range is [1:100].
+             */
+            nr_pages_request = min(100U, nr_pages - nr_allocated);
+
+            nr = alloc_pages_bulk_array_node(bulk_gfp, nid, nr_pages_request,
+                                             pages + nr_allocated);
+
+            nr_allocated += nr;
+            cond_resched();
+
+            /*
+             * If zero or pages were obtained partly,
+             * fallback to a single page allocator.
+             */
+            if (nr != nr_pages_request)
+                break;
+        }
+    }
+
+    /* High-order pages or fallback path if "bulk" fails. */
+
+    while (nr_allocated < nr_pages) {
+#if 0
+        if (fatal_signal_pending(current))
+            break;
+#endif
+
+        if (nid == NUMA_NO_NODE)
+            page = alloc_pages(gfp, order);
+        else
+            page = alloc_pages_node(nid, gfp, order);
+        if (unlikely(!page))
+            break;
+        /*
+         * Higher order allocations must be able to be treated as
+         * indepdenent small pages by callers (as they can with
+         * small-page vmallocs). Some drivers do their own refcounting
+         * on vmalloc_to_page() pages, some use page->mapping,
+         * page->lru, etc.
+         */
+        if (order) {
+            panic("%s: order is NOT ZERO!\n", __func__);
+            //split_page(page, order);
+        }
+
+        /*
+         * Careful, we allocate and map page-order pages, but
+         * tracking is done per PAGE_SIZE page so as to keep the
+         * vm_struct APIs independent of the physical/mapped size.
+         */
+        for (i = 0; i < (1U << order); i++)
+            pages[nr_allocated + i] = page + i;
+
+        cond_resched();
+        nr_allocated += 1U << order;
+    }
+
+    return nr_allocated;
+}
+
+static int
+vmap_pages_pte_range(pmd_t *pmd, unsigned long addr, unsigned long end,
+                     pgprot_t prot, struct page **pages, int *nr,
+                     pgtbl_mod_mask *mask)
+{
+    pte_t *pte;
+
+    /*
+     * nr is a running index into the array which helps higher level
+     * callers keep track of where we're up to.
+     */
+
+    pte = pte_alloc_kernel_track(pmd, addr, mask);
+    if (!pte)
+        return -ENOMEM;
+    do {
+        struct page *page = pages[*nr];
+
+        if (WARN_ON(!pte_none(*pte)))
+            return -EBUSY;
+        if (WARN_ON(!page))
+            return -ENOMEM;
+        set_pte_at(&init_mm, addr, pte, mk_pte(page, prot));
+        (*nr)++;
+    } while (pte++, addr += PAGE_SIZE, addr != end);
+    *mask |= PGTBL_PTE_MODIFIED;
+    return 0;
+}
+
+static int
+vmap_pages_pmd_range(pud_t *pud, unsigned long addr, unsigned long end,
+                     pgprot_t prot, struct page **pages, int *nr,
+                     pgtbl_mod_mask *mask)
+{
+    pmd_t *pmd;
+    unsigned long next;
+
+    pmd = pmd_alloc_track(&init_mm, pud, addr, mask);
+    if (!pmd)
+        return -ENOMEM;
+    do {
+        next = pmd_addr_end(addr, end);
+        if (vmap_pages_pte_range(pmd, addr, next, prot, pages, nr, mask))
+            return -ENOMEM;
+    } while (pmd++, addr = next, addr != end);
+    return 0;
+}
+
+static int
+vmap_pages_pud_range(p4d_t *p4d, unsigned long addr, unsigned long end,
+                     pgprot_t prot, struct page **pages, int *nr,
+                     pgtbl_mod_mask *mask)
+{
+    pud_t *pud;
+    unsigned long next;
+
+    pud = pud_alloc_track(&init_mm, p4d, addr, mask);
+    if (!pud)
+        return -ENOMEM;
+    do {
+        next = pud_addr_end(addr, end);
+        if (vmap_pages_pmd_range(pud, addr, next, prot, pages, nr, mask))
+            return -ENOMEM;
+    } while (pud++, addr = next, addr != end);
+    return 0;
+}
+
+static int
+vmap_pages_p4d_range(pgd_t *pgd, unsigned long addr, unsigned long end,
+                     pgprot_t prot, struct page **pages, int *nr,
+                     pgtbl_mod_mask *mask)
+{
+    p4d_t *p4d;
+    unsigned long next;
+
+    p4d = p4d_alloc_track(&init_mm, pgd, addr, mask);
+    if (!p4d)
+        return -ENOMEM;
+    do {
+        next = p4d_addr_end(addr, end);
+        if (vmap_pages_pud_range(p4d, addr, next, prot, pages, nr, mask))
+            return -ENOMEM;
+    } while (p4d++, addr = next, addr != end);
+    return 0;
+}
+
+static int
+vmap_small_pages_range_noflush(unsigned long addr, unsigned long end,
+                               pgprot_t prot, struct page **pages)
+{
+    unsigned long start = addr;
+    pgd_t *pgd;
+    unsigned long next;
+    int err = 0;
+    int nr = 0;
+    pgtbl_mod_mask mask = 0;
+
+    BUG_ON(addr >= end);
+    pgd = pgd_offset_k(addr);
+    do {
+        next = pgd_addr_end(addr, end);
+        if (pgd_bad(*pgd))
+            mask |= PGTBL_PGD_MODIFIED;
+        err = vmap_pages_p4d_range(pgd, addr, next, prot, pages, &nr, &mask);
+        if (err)
+            return err;
+    } while (pgd++, addr = next, addr != end);
+
+    return 0;
+}
+
+/*
+ * vmap_pages_range_noflush is similar to vmap_pages_range, but does not
+ * flush caches.
+ *
+ * The caller is responsible for calling flush_cache_vmap() after this
+ * function returns successfully and before the addresses are accessed.
+ *
+ * This is an internal function only. Do not use outside mm/.
+ */
+int vmap_pages_range_noflush(unsigned long addr, unsigned long end,
+                             pgprot_t prot, struct page **pages,
+                             unsigned int page_shift)
+{
+    unsigned int i, nr = (end - addr) >> PAGE_SHIFT;
+
+    WARN_ON(page_shift < PAGE_SHIFT);
+
+    return vmap_small_pages_range_noflush(addr, end, prot, pages);
+}
+
+/**
+ * vmap_pages_range - map pages to a kernel virtual address
+ * @addr: start of the VM area to map
+ * @end: end of the VM area to map (non-inclusive)
+ * @prot: page protection flags to use
+ * @pages: pages to map (always PAGE_SIZE pages)
+ * @page_shift: maximum shift that the pages may be mapped with, @pages must
+ * be aligned and contiguous up to at least this shift.
+ *
+ * RETURNS:
+ * 0 on success, -errno on failure.
+ */
+static int vmap_pages_range(unsigned long addr, unsigned long end,
+                            pgprot_t prot, struct page **pages,
+                            unsigned int page_shift)
+{
+    int err;
+
+    err = vmap_pages_range_noflush(addr, end, prot, pages, page_shift);
+    return err;
+}
+
 static void *
 __vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
                     pgprot_t prot, unsigned int page_shift, int node)
@@ -1090,7 +1371,47 @@ __vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
         return NULL;
     }
 
+    set_vm_area_page_order(area, page_shift - PAGE_SHIFT);
+    page_order = vm_area_page_order(area);
+
+    area->nr_pages = vm_area_alloc_pages(gfp_mask | __GFP_NOWARN,
+                                         node, page_order,
+                                         nr_small_pages, area->pages);
+
+    atomic_long_add(area->nr_pages, &nr_vmalloc_pages);
+
+    /*
+     * If not enough pages were obtained to accomplish an
+     * allocation request, free them via __vfree() if any.
+     */
+    if (area->nr_pages != nr_small_pages) {
+        warn_alloc(gfp_mask, NULL, "vmalloc error: size %lu, "
+                   "page order %u, failed to allocate pages",
+                   area->nr_pages * PAGE_SIZE, page_order);
+        goto fail;
+    }
+
+    /*
+     * page tables allocations ignore external gfp mask, enforce it
+     * by the scope API
+     */
+    if ((gfp_mask & (__GFP_FS | __GFP_IO)) == __GFP_IO)
+        flags = memalloc_nofs_save();
+    else if ((gfp_mask & (__GFP_FS | __GFP_IO)) == 0)
+        flags = memalloc_noio_save();
+
+    do {
+        ret = vmap_pages_range(addr, addr + size, prot,
+                               area->pages, page_shift);
+        if (nofail && (ret < 0))
+            schedule_timeout_uninterruptible(1);
+    } while (nofail && (ret < 0));
+
     panic("%s: END!\n", __func__);
+
+ fail:
+    __vfree(area->addr);
+    return NULL;
 }
 
 /**

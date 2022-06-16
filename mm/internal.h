@@ -63,7 +63,9 @@ struct alloc_context {
 
 extern unsigned long highest_memmap_pfn;
 
-#define ALLOC_HARDER         0x10 /* try to alloc harder */
+#define ALLOC_OOM           0x08
+
+#define ALLOC_HARDER        0x10 /* try to alloc harder */
 
 /* The GFP flags allowed during early boot */
 #define GFP_BOOT_MASK (__GFP_BITS_MASK & ~(__GFP_RECLAIM|__GFP_IO|__GFP_FS))

@@ -172,6 +172,11 @@ struct mm_struct {
     struct {
         pgd_t *pgd;
 
+        atomic_long_t pgtables_bytes;   /* PTE page table pages */
+
+        /* Protects page tables and some counters */
+        spinlock_t page_table_lock;
+
         unsigned long start_code, end_code, start_data, end_data;
         unsigned long start_brk, brk, start_stack;
     } __randomize_layout;

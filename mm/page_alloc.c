@@ -54,10 +54,10 @@
 #include <linux/memremap.h>
 #include <linux/nodemask.h>
 #include <linux/pfn.h>
+#include <linux/page-isolation.h>
 /*
 #include <linux/backing-dev.h>
 #include <linux/fault-inject.h>
-#include <linux/page-isolation.h>
 #include <linux/debugobjects.h>
 #include <linux/kmemleak.h>
 #include <linux/compaction.h>
@@ -2435,10 +2435,8 @@ __free_one_page(struct page *page, unsigned long pfn,
     //VM_BUG_ON_PAGE(page->flags & PAGE_FLAGS_CHECK_AT_PREP, page);
 
     VM_BUG_ON(migratetype == -1);
-#if 0
     if (likely(!is_migrate_isolate(migratetype)))
         __mod_zone_freepage_state(zone, 1 << order, migratetype);
-#endif
 
     VM_BUG_ON_PAGE(pfn & ((1 << order) - 1), page);
 
@@ -2968,6 +2966,198 @@ void __init mem_init_print_info(void)
             (init_data_size + init_code_size) >> 10, bss_size >> 10,
             K(physpages - totalram_pages() - totalcma_pages), K(totalcma_pages));
 }
+
+static inline long
+__zone_watermark_unusable_free(struct zone *z,
+                               unsigned int order, unsigned int alloc_flags)
+{
+    const bool alloc_harder = (alloc_flags & (ALLOC_HARDER|ALLOC_OOM));
+    long unusable_free = (1 << order) - 1;
+
+    /*
+     * If the caller does not have rights to ALLOC_HARDER then subtract
+     * the high-atomic reserves. This will over-estimate the size of the
+     * atomic reserve but it avoids a search.
+     */
+    if (likely(!alloc_harder))
+        unusable_free += z->nr_reserved_highatomic;
+
+    return unusable_free;
+}
+
+static inline bool
+zone_watermark_fast(struct zone *z, unsigned int order,
+                    unsigned long mark, int highest_zoneidx,
+                    unsigned int alloc_flags, gfp_t gfp_mask)
+{
+    long free_pages;
+
+    free_pages = zone_page_state(z, NR_FREE_PAGES);
+
+    /*
+     * Fast check for order-0 only. If this fails then the reserves
+     * need to be calculated.
+     */
+    if (!order) {
+        long fast_free;
+
+        fast_free = free_pages;
+        fast_free -= __zone_watermark_unusable_free(z, 0, alloc_flags);
+        if (fast_free > mark + z->lowmem_reserve[highest_zoneidx])
+            return true;
+    }
+
+    panic("%s: zone(%s) free_pages(%ld) END!\n", __func__, z->name, free_pages);
+}
+
+/*
+ * __alloc_pages_bulk - Allocate a number of order-0 pages to a list or array
+ * @gfp: GFP flags for the allocation
+ * @preferred_nid: The preferred NUMA node ID to allocate from
+ * @nodemask: Set of nodes to allocate from, may be NULL
+ * @nr_pages: The number of pages desired on the list or array
+ * @page_list: Optional list to store the allocated pages
+ * @page_array: Optional array to store the pages
+ *
+ * This is a batched version of the page allocator that attempts to
+ * allocate nr_pages quickly. Pages are added to page_list if page_list
+ * is not NULL, otherwise it is assumed that the page_array is valid.
+ *
+ * For lists, nr_pages is the number of pages that should be allocated.
+ *
+ * For arrays, only NULL elements are populated with pages and nr_pages
+ * is the maximum number of pages that will be stored in the array.
+ *
+ * Returns the number of pages on the list or array.
+ */
+unsigned long __alloc_pages_bulk(gfp_t gfp, int preferred_nid,
+                                 nodemask_t *nodemask, int nr_pages,
+                                 struct list_head *page_list,
+                                 struct page **page_array)
+{
+    struct page *page;
+    unsigned long flags;
+    struct zone *zone;
+    struct zoneref *z;
+    struct per_cpu_pages *pcp;
+    struct list_head *pcp_list;
+    struct alloc_context ac;
+    gfp_t alloc_gfp;
+    unsigned int alloc_flags = ALLOC_WMARK_LOW;
+    int nr_populated = 0, nr_account = 0;
+
+    /*
+     * Skip populated array elements to determine if any pages need
+     * to be allocated before disabling IRQs.
+     */
+    while (page_array && nr_populated < nr_pages && page_array[nr_populated])
+        nr_populated++;
+
+    /* No pages requested? */
+    if (unlikely(nr_pages <= 0))
+        goto out;
+
+    /* Already populated array? */
+    if (unlikely(page_array && nr_pages - nr_populated == 0))
+        goto out;
+
+    /* Use the single page allocator for one page. */
+    if (nr_pages - nr_populated == 1)
+        goto failed;
+
+    /* May set ALLOC_NOFRAGMENT, fragmentation will return 1 page. */
+    gfp &= gfp_allowed_mask;
+    alloc_gfp = gfp;
+    if (!prepare_alloc_pages(gfp, 0, preferred_nid,
+                             nodemask, &ac, &alloc_gfp, &alloc_flags))
+        goto out;
+    gfp = alloc_gfp;
+
+    /* Find an allowed local zone that meets the low watermark. */
+    for_each_zone_zonelist_nodemask(zone, z, ac.zonelist,
+                                    ac.highest_zoneidx, ac.nodemask) {
+        unsigned long mark;
+
+        if (nr_online_nodes > 1 && zone != ac.preferred_zoneref->zone &&
+            zone_to_nid(zone) != zone_to_nid(ac.preferred_zoneref->zone)) {
+            goto failed;
+        }
+
+        mark = wmark_pages(zone, alloc_flags & ALLOC_WMARK_MASK) + nr_pages;
+        if (zone_watermark_fast(zone, 0,  mark,
+                                zonelist_zone_idx(ac.preferred_zoneref),
+                                alloc_flags, gfp)) {
+            break;
+        }
+    }
+
+    /*
+     * If there are no allowed local zones that meets the watermarks then
+     * try to allocate a single page and reclaim if necessary.
+     */
+    if (unlikely(!zone))
+        goto failed;
+
+    /* Attempt the batch allocation */
+    local_lock_irqsave(&pagesets.lock, flags);
+    pcp = this_cpu_ptr(zone->per_cpu_pageset);
+    pcp_list = &pcp->lists[order_to_pindex(ac.migratetype, 0)];
+
+    while (nr_populated < nr_pages) {
+
+        /* Skip existing pages */
+        if (page_array && page_array[nr_populated]) {
+            nr_populated++;
+            continue;
+        }
+
+        page = __rmqueue_pcplist(zone, 0, ac.migratetype, alloc_flags,
+                                 pcp, pcp_list);
+        if (unlikely(!page)) {
+            /* Try and get at least one page */
+            if (!nr_populated)
+                goto failed_irq;
+            break;
+        }
+        nr_account++;
+
+        prep_new_page(page, 0, gfp, 0);
+        if (page_list)
+            list_add(&page->lru, page_list);
+        else
+            page_array[nr_populated] = page;
+        nr_populated++;
+    }
+
+    local_unlock_irqrestore(&pagesets.lock, flags);
+
+    //__count_zid_vm_events(PGALLOC, zone_idx(zone), nr_account);
+
+ out:
+    return nr_populated;
+
+ failed_irq:
+    local_unlock_irqrestore(&pagesets.lock, flags);
+
+ failed:
+    page = __alloc_pages(gfp, 0, preferred_nid, nodemask);
+    if (page) {
+        if (page_list)
+            list_add(&page->lru, page_list);
+        else
+            page_array[nr_populated] = page;
+        nr_populated++;
+    }
+
+    goto out;
+}
+EXPORT_SYMBOL_GPL(__alloc_pages_bulk);
+
+unsigned long get_zeroed_page(gfp_t gfp_mask)
+{
+    return __get_free_pages(gfp_mask | __GFP_ZERO, 0);
+}
+EXPORT_SYMBOL(get_zeroed_page);
 
 void warn_alloc(gfp_t gfp_mask, nodemask_t *nodemask, const char *fmt, ...)
 {

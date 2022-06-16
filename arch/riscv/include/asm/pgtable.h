@@ -98,6 +98,8 @@ static inline pte_t pfn_pte(unsigned long pfn, pgprot_t prot)
     return __pte((pfn << _PAGE_PFN_SHIFT) | pgprot_val(prot));
 }
 
+#define mk_pte(page, prot)  pfn_pte(page_to_pfn(page), prot)
+
 static inline int pte_present(pte_t pte)
 {
     return (pte_val(pte) & (_PAGE_PRESENT | _PAGE_PROT_NONE));
@@ -190,6 +192,14 @@ static inline void pmd_clear(pmd_t *pmdp)
 {
     set_pmd(pmdp, __pmd(0));
 }
+
+/* Yields the page frame number (PFN) of a page table entry */
+static inline unsigned long pte_pfn(pte_t pte)
+{
+    return (pte_val(pte) >> _PAGE_PFN_SHIFT);
+}
+
+#define pte_page(x)     pfn_to_page(pte_pfn(x))
 
 #endif /* !__ASSEMBLY__ */
 

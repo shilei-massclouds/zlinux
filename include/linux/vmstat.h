@@ -88,8 +88,7 @@ zone_page_state_add(long x, struct zone *zone, enum zone_stat_item item)
 void mod_node_page_state(struct pglist_data *, enum node_stat_item, long);
 
 static inline void
-mod_lruvec_page_state(struct page *page,
-                      enum node_stat_item idx, int val)
+mod_lruvec_page_state(struct page *page, enum node_stat_item idx, int val)
 {
     mod_node_page_state(page_pgdat(page), idx, val);
 }
@@ -102,10 +101,22 @@ node_page_state_add(long x, struct pglist_data *pgdat,
     atomic_long_add(x, &vm_node_stat[item]);
 }
 
-static inline void inc_lruvec_page_state(struct page *page,
-                                         enum node_stat_item idx)
+static inline void
+__mod_zone_freepage_state(struct zone *zone, int nr_pages, int migratetype)
+{
+    __mod_zone_page_state(zone, NR_FREE_PAGES, nr_pages);
+}
+
+static inline void
+inc_lruvec_page_state(struct page *page, enum node_stat_item idx)
 {
     mod_lruvec_page_state(page, idx, 1);
+}
+
+static inline void
+dec_lruvec_page_state(struct page *page, enum node_stat_item idx)
+{
+    mod_lruvec_page_state(page, idx, -1);
 }
 
 #endif /* _LINUX_VMSTAT_H */

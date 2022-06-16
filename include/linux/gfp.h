@@ -316,7 +316,24 @@ static inline bool gfpflags_allow_blocking(const gfp_t gfp_flags)
     return !!(gfp_flags & __GFP_DIRECT_RECLAIM);
 }
 
+unsigned long
+__alloc_pages_bulk(gfp_t gfp, int preferred_nid,
+                   nodemask_t *nodemask, int nr_pages,
+                   struct list_head *page_list, struct page **page_array);
+
+static inline unsigned long
+alloc_pages_bulk_array_node(gfp_t gfp, int nid,
+                            unsigned long nr_pages, struct page **page_array)
+{
+    if (nid == NUMA_NO_NODE)
+        nid = numa_mem_id();
+
+    return __alloc_pages_bulk(gfp, nid, NULL, nr_pages, NULL, page_array);
+}
+
 extern unsigned long __get_free_pages(gfp_t gfp_mask, unsigned int order);
+
+extern unsigned long get_zeroed_page(gfp_t gfp_mask);
 
 #define __get_free_page(gfp_mask) __get_free_pages((gfp_mask), 0)
 
