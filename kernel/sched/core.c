@@ -25,6 +25,7 @@
 #include "pelt.h"
 #include "smp.h"
 #endif
+#include <linux/slab.h>
 
 DEFINE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
 
@@ -148,4 +149,18 @@ unsigned long long nr_context_switches(void)
         sum += cpu_rq(i)->nr_switches;
 
     return sum;
+}
+
+int
+dup_user_cpus_ptr(struct task_struct *dst, struct task_struct *src, int node)
+{
+    if (!src->user_cpus_ptr)
+        return 0;
+
+    dst->user_cpus_ptr = kmalloc_node(cpumask_size(), GFP_KERNEL, node);
+    if (!dst->user_cpus_ptr)
+        return -ENOMEM;
+
+    cpumask_copy(dst->user_cpus_ptr, src->user_cpus_ptr);
+    return 0;
 }

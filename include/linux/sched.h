@@ -70,6 +70,8 @@
 
 static inline int _cond_resched(void) { return 0; }
 
+#define task_thread_info(task) (&(task)->thread_info)
+
 #define cond_resched() ({           \
     ___might_sleep(__FILE__, __LINE__, 0);  \
     _cond_resched();            \
@@ -115,6 +117,10 @@ struct task_struct {
     /* VM state: */
     struct reclaim_state *reclaim_state;
 
+    const cpumask_t *cpus_ptr;
+    cpumask_t       *user_cpus_ptr;
+    cpumask_t       cpus_mask;
+
     /*
      * executable name, excluding path.
      *
@@ -139,5 +145,18 @@ extern int wake_up_process(struct task_struct *tsk);
 extern void schedule_preempt_disabled(void);
 
 extern long schedule_timeout_uninterruptible(long timeout);
+
+static inline void clear_tsk_thread_flag(struct task_struct *tsk, int flag)
+{
+    clear_ti_thread_flag(task_thread_info(tsk), flag);
+}
+
+static inline void clear_tsk_need_resched(struct task_struct *tsk)
+{
+    clear_tsk_thread_flag(tsk, TIF_NEED_RESCHED);
+}
+
+extern int
+dup_user_cpus_ptr(struct task_struct *dst, struct task_struct *src, int node);
 
 #endif /* _LINUX_SCHED_H */

@@ -55,4 +55,13 @@ struct thread_info {
 
 #endif /* !__ASSEMBLY__ */
 
+/*
+ * thread information flags
+ * - these are process state flags that various assembly files may need to
+ *   access
+ * - pending work-to-be-done flags are in lowest half-word
+ * - other flags in upper half-word(s)
+ */
+#define TIF_NEED_RESCHED    3   /* rescheduling necessary */
+
 #endif /* _ASM_RISCV_THREAD_INFO_H */

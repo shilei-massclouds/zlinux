@@ -12,10 +12,10 @@
  * management can be a bitch. See 'mm/memory.c': 'copy_page_range()'
  */
 
+#include <linux/sched/mm.h>
 /*
 #include <linux/anon_inodes.h>
 #include <linux/sched/autogroup.h>
-#include <linux/sched/mm.h>
 #include <linux/sched/coredump.h>
 #include <linux/sched/user.h>
 #include <linux/sched/numa_balancing.h>
@@ -32,6 +32,11 @@
 #include <linux/init.h>
 #include <linux/vmalloc.h>
 #include <linux/module.h>
+#include <linux/mm.h>
+#include <linux/cpu.h>
+#include <linux/swap.h>
+#include <linux/jiffies.h>
+#include <linux/rcupdate.h>
 /*
 #include <linux/unistd.h>
 #include <linux/mempolicy.h>
@@ -46,26 +51,20 @@
 #include <linux/mman.h>
 #include <linux/mmu_notifier.h>
 #include <linux/fs.h>
-#include <linux/mm.h>
 #include <linux/vmacache.h>
 #include <linux/nsproxy.h>
 #include <linux/capability.h>
-#include <linux/cpu.h>
 #include <linux/cgroup.h>
 #include <linux/security.h>
 #include <linux/hugetlb.h>
 #include <linux/seccomp.h>
-#include <linux/swap.h>
 #include <linux/syscalls.h>
-#include <linux/jiffies.h>
 #include <linux/futex.h>
 #include <linux/compat.h>
 #include <linux/task_io_accounting_ops.h>
-#include <linux/rcupdate.h>
 #include <linux/ptrace.h>
 #include <linux/mount.h>
 #include <linux/audit.h>
-#include <linux/memcontrol.h>
 #include <linux/ftrace.h>
 #include <linux/proc_fs.h>
 #include <linux/profile.h>
@@ -106,6 +105,7 @@
 #include <asm/cacheflush.h>
 #include <asm/tlbflush.h>
 */
+#include <linux/memcontrol.h>
 #include <linux/kthread.h>
 #include <linux/kernel.h>
 #include <linux/numa.h>
@@ -168,7 +168,6 @@ static int alloc_thread_stack_node(struct task_struct *tsk, int node)
     if (!stack)
         return -ENOMEM;
 
-#if 0
     vm = find_vm_area(stack);
 
     /*
@@ -177,11 +176,18 @@ static int alloc_thread_stack_node(struct task_struct *tsk, int node)
      * so cache the vm_struct.
      */
     tsk->stack_vm_area = vm;
-    stack = stack;
     tsk->stack = stack;
     return 0;
-#endif
-    panic("%s: NO implementation!\n", __func__);
+}
+
+static void account_kernel_stack(struct task_struct *tsk, int account)
+{
+    struct vm_struct *vm = task_stack_vm_area(tsk);
+    int i;
+
+    for (i = 0; i < THREAD_SIZE / PAGE_SIZE; i++)
+        mod_lruvec_page_state(vm->pages[i], NR_KERNEL_STACK_KB,
+                              account * (PAGE_SIZE / 1024));
 }
 
 static struct task_struct *
@@ -203,6 +209,30 @@ dup_task_struct(struct task_struct *orig, int node)
     err = alloc_thread_stack_node(tsk, node);
     if (err)
         goto free_tsk;
+
+    refcount_set(&tsk->stack_refcount, 1);
+    account_kernel_stack(tsk, 1);
+
+#if 0
+    /*
+     * We must handle setting up seccomp filters once we're under
+     * the sighand lock in case orig has changed between now and
+     * then. Until then, filter must be NULL to avoid messing up
+     * the usage counts on the error path calling free_task.
+     */
+    tsk->seccomp.filter = NULL;
+#endif
+
+    setup_thread_stack(tsk, orig);
+    clear_tsk_need_resched(tsk);
+    set_task_stack_end_magic(tsk);
+
+#if 0
+    tsk->stack_canary = get_random_canary();
+#endif
+    if (orig->cpus_ptr == &orig->cpus_mask)
+        tsk->cpus_ptr = &tsk->cpus_mask;
+    dup_user_cpus_ptr(tsk, orig, node);
 
     panic("%s: END!\n", __func__);
 

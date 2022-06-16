@@ -70,6 +70,8 @@ void *
 __vmalloc_node(unsigned long size, unsigned long align, gfp_t gfp_mask,
                int node, const void *caller) __alloc_size(1);
 
+extern struct vm_struct *find_vm_area(const void *addr);
+
 void free_vm_area(struct vm_struct *area);
 
 /*

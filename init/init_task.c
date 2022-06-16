@@ -17,6 +17,8 @@ struct task_struct init_task __aligned(L1_CACHE_BYTES) = {
     .stack          = init_stack,
     .usage          = REFCOUNT_INIT(2),
     .flags          = PF_KTHREAD,
+    .cpus_ptr       = &init_task.cpus_mask,
+    .user_cpus_ptr  = NULL,
     .comm           = INIT_TASK_COMM,
 };
 EXPORT_SYMBOL(init_task);

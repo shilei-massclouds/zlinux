@@ -234,4 +234,12 @@ static inline bool cpu_possible(unsigned int cpu)
     return cpumask_test_cpu(cpu, cpu_possible_mask);
 }
 
+/**
+ * cpumask_size - size to allocate for a 'struct cpumask' in bytes
+ */
+static inline unsigned int cpumask_size(void)
+{
+    return BITS_TO_LONGS(nr_cpumask_bits) * sizeof(long);
+}
+
 #endif /* __LINUX_CPUMASK_H */

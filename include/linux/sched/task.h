@@ -45,4 +45,9 @@ static inline void put_task_struct(struct task_struct *t)
 
 extern void fork_init(void);
 
+static inline struct vm_struct *task_stack_vm_area(const struct task_struct *t)
+{
+    return t->stack_vm_area;
+}
+
 #endif /* _LINUX_SCHED_TASK_H */
