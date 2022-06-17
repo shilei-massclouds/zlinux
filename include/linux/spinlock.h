@@ -19,6 +19,9 @@
 #include <linux/spinlock_types.h>
 #include <asm/spinlock.h>
 
+#define raw_spin_lock_init(lock) \
+    do { *(lock) = __RAW_SPIN_LOCK_UNLOCKED(lock); } while (0)
+
 #define raw_spin_lock_irqsave(lock, flags)      \
     do {                                        \
         typecheck(unsigned long, flags);        \

@@ -444,6 +444,16 @@ kzalloc_node(size_t size, gfp_t flags, int node)
     return kmalloc_node(size, flags | __GFP_ZERO, node);
 }
 
+/**
+ * kzalloc - allocate memory. The memory is set to zero.
+ * @size: how many bytes of memory are required.
+ * @flags: the type of memory to allocate (see kmalloc).
+ */
+static inline __alloc_size(1) void *kzalloc(size_t size, gfp_t flags)
+{
+    return kmalloc(size, flags | __GFP_ZERO);
+}
+
 /*
  * Please use this macro to create slab caches. Simply specify the
  * name of the structure and maybe some flags that are listed above.

@@ -59,10 +59,16 @@
 /*
  * Per process flags
  */
+#define PF_IDLE             0x00000002  /* I am an IDLE thread */
+#define PF_WQ_WORKER        0x00000020  /* I'm a workqueue worker */
+#define PF_FORKNOEXEC       0x00000040  /* Forked but didn't exec */
+#define PF_SUPERPRIV        0x00000100  /* Used super-user privileges */
+#define PF_NPROC_EXCEEDED   0x00001000  /* set_user() noticed that RLIMIT_NPROC was exceeded */
 #define PF_MEMALLOC_NOFS    0x00040000  /* All allocation requests will inherit GFP_NOFS */
 #define PF_MEMALLOC_NOIO    0x00080000  /* All allocation requests will inherit GFP_NOIO */
 
 #define PF_KTHREAD          0x00200000  /* I am a kernel thread */
+#define PF_NO_SETAFFINITY   0x04000000  /* Userland is not allowed to meddle with cpus_mask */
 #define PF_MEMALLOC_PIN     0x10000000  /* Allocation context constrained to zones which allow long term pinning. */
 
 /* Task command name length: */
@@ -132,6 +138,11 @@ struct task_struct {
     /* CLONE_CHILD_CLEARTID: */
     int __user          *clear_child_tid;
 
+    /* PF_KTHREAD | PF_IO_WORKER */
+    void                *worker_private;
+
+    int pagefault_disabled;
+
     /*
      * executable name, excluding path.
      *
@@ -143,8 +154,38 @@ struct task_struct {
 
     struct vm_struct *stack_vm_area;
 
+    struct completion *vfork_done;
+
+    /*
+     * Pointers to the (original) parent process, youngest child, younger sibling,
+     * older sibling, respectively.  (p->father can be replaced with
+     * p->real_parent->pid)
+     */
+
+    /* Real parent process: */
+    struct task_struct __rcu    *real_parent;
+
+    /* Recipient of SIGCHLD, wait4() reports: */
+    struct task_struct __rcu    *parent;
+
+    /*
+     * Children/sibling form the list of natural children:
+     */
+    struct list_head        children;
+    struct list_head        sibling;
+
+    /* Protection against (de-)allocation: mm, files, fs, tty, keyrings, mems_allowed, mempolicy: */
+    spinlock_t alloc_lock;
+
+    /*
+     * Time slack values; these are used to round up poll() and
+     * select() etc timeout values. These are in nanoseconds.
+     */
+    u64 timer_slack_ns;
+    u64 default_timer_slack_ns;
+
     /* CPU-specific state of this task: */
-    struct thread_struct        thread;
+    struct thread_struct    thread;
 };
 
 extern unsigned long init_stack[THREAD_SIZE / sizeof(unsigned long)];

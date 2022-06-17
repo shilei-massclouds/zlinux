@@ -13,8 +13,15 @@
 #include <linux/types.h>
 
 /*
+ * The class key takes no space if lockdep is disabled:
+ */
+struct lock_class_key { };
+
+/*
  * The lockdep_map takes no space if lockdep is disabled:
  */
 struct lockdep_map { };
+
+struct pin_cookie { };
 
 #endif /* __LINUX_LOCKDEP_TYPES_H */

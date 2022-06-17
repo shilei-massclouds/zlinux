@@ -90,6 +90,7 @@
 #define __percpu
 #define __kernel
 #define __user
+#define __rcu
 
 /*
  * __unqual_scalar_typeof(x) - Declare an unqualified scalar type, leaving

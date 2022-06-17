@@ -126,6 +126,14 @@ static DEFINE_PER_CPU(struct vm_struct *, cached_stacks[NR_CACHED_STACKS]);
 
 static struct kmem_cache *task_struct_cachep;
 
+/*
+ * Protected counters by write_lock_irq(&tasklist_lock)
+ */
+unsigned long total_forks;  /* Handle normal Linux uptimes. */
+int nr_threads;             /* The idle threads do not count.. */
+
+static int max_threads;     /* tunable limit on nr_threads */
+
 static inline struct task_struct *alloc_task_struct_node(int node)
 {
     return kmem_cache_alloc_node(task_struct_cachep, GFP_KERNEL, node);
@@ -302,9 +310,11 @@ dup_task_struct(struct task_struct *orig, int node)
 
     return tsk;
 
+#if 0
  free_stack:
     exit_task_stack_account(tsk);
     free_thread_stack(tsk);
+#endif
 
  free_tsk:
     free_task_struct(tsk);
@@ -449,11 +459,74 @@ copy_process(struct pid *pid, int trace, int node,
     retval = copy_creds(p, clone_flags);
     if (retval < 0)
         goto bad_fork_free;
+
+    retval = -EAGAIN;
+    if (is_ucounts_overlimit(task_ucounts(p), UCOUNT_RLIMIT_NPROC, rlimit(RLIMIT_NPROC))) {
+        if (p->real_cred->user != INIT_USER &&
+            !capable(CAP_SYS_RESOURCE) && !capable(CAP_SYS_ADMIN))
+            goto bad_fork_cleanup_count;
+    }
+#endif
+    current->flags &= ~PF_NPROC_EXCEEDED;
+
+    /*
+     * If multiple threads are within copy_process(), then this check
+     * triggers too late. This doesn't hurt, the check is only there
+     * to stop root fork bombs.
+     */
+    retval = -EAGAIN;
+    if (data_race(nr_threads >= max_threads))
+        goto bad_fork_cleanup_count;
+
+    p->flags &= ~(PF_SUPERPRIV | PF_WQ_WORKER | PF_IDLE | PF_NO_SETAFFINITY);
+    p->flags |= PF_FORKNOEXEC;
+    INIT_LIST_HEAD(&p->children);
+    INIT_LIST_HEAD(&p->sibling);
+    p->vfork_done = NULL;
+    spin_lock_init(&p->alloc_lock);
+
+#if 0
+    init_sigpending(&p->pending);
+
+    p->utime = p->stime = p->gtime = 0;
+#endif
+
+#if 0
+    p->io_uring = NULL;
+    memset(&p->rss_stat, 0, sizeof(p->rss_stat));
+#endif
+
+    p->default_timer_slack_ns = current->timer_slack_ns;
+
+#if 0
+    posix_cputimers_init(&p->posix_cputimers);
+#endif
+
+#if 0
+    p->io_context = NULL;
+    cgroup_fork(p);
+#endif
+    if (p->flags & PF_KTHREAD) {
+        if (!set_kthread_struct(p))
+            goto bad_fork_cleanup_delayacct;
+    }
+
+    p->pagefault_disabled = 0;
+
+#if 0
+    RCU_INIT_POINTER(p->bpf_storage, NULL);
+    p->bpf_ctx = NULL;
 #endif
 
     panic("%s: END!\n", __func__);
 
-fork_out:
+ bad_fork_cleanup_delayacct:
+    //delayacct_tsk_free(p);
+ bad_fork_cleanup_count:
+    //dec_rlimit_ucounts(task_ucounts(p), UCOUNT_RLIMIT_NPROC, 1);
+    //exit_creds(p);
+ fork_out:
+    panic("%s: ERROR!\n", __func__);
     return ERR_PTR(retval);
 }
 
