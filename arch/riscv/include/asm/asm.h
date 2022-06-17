@@ -14,6 +14,7 @@
 
 #define REG_L   __ASM_STR(ld)
 #define REG_S   __ASM_STR(sd)
+#define REG_SC  __ASM_STR(sc.d)
 #define SZREG   __ASM_STR(8)
 #define LGREG   __ASM_STR(3)
 

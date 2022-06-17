@@ -224,6 +224,10 @@ do {                                    \
     raw_cpu_cmpxchg(pcp, oval, nval);       \
 })
 
+#define DECLARE_PER_CPU_SHARED_ALIGNED(type, name)          \
+    DECLARE_PER_CPU_SECTION(type, name, PER_CPU_SHARED_ALIGNED_SECTION) \
+    ____cacheline_aligned_in_smp
+
 #define DEFINE_PER_CPU_SHARED_ALIGNED(type, name)           \
     DEFINE_PER_CPU_SECTION(type, name, PER_CPU_SHARED_ALIGNED_SECTION) \
     ____cacheline_aligned_in_smp

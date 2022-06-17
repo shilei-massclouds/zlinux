@@ -45,9 +45,16 @@ static inline void put_task_struct(struct task_struct *t)
 
 extern void fork_init(void);
 
+extern int sched_fork(unsigned long clone_flags, struct task_struct *p);
+
+extern int copy_thread(unsigned long, unsigned long, unsigned long,
+                       struct task_struct *, unsigned long);
+
 static inline struct vm_struct *task_stack_vm_area(const struct task_struct *t)
 {
     return t->stack_vm_area;
 }
+
+extern asmlinkage void schedule_tail(struct task_struct *prev);
 
 #endif /* _LINUX_SCHED_TASK_H */

@@ -31,6 +31,11 @@
 
 #ifdef __ASSEMBLY__
 
+/* SYM_T_FUNC -- type used by assembler to mark functions */
+#ifndef SYM_T_FUNC
+#define SYM_T_FUNC STT_FUNC
+#endif
+
 #define ALIGN __ALIGN
 #define ALIGN_STR __ALIGN_STR
 
@@ -61,6 +66,14 @@
     SYM_ENTRY(name, linkage, align)
 #endif
 
+/* SYM_END -- use only if you have to */
+#ifndef SYM_END
+#define SYM_END(name, sym_type)             \
+    .type name sym_type ASM_NL              \
+    .set .L__sym_size_##name, .-name ASM_NL \
+    .size name, .L__sym_size_##name
+#endif
+
 /* SYM_ENTRY -- use only if you have to for non-paired symbols */
 #ifndef SYM_ENTRY
 #define SYM_ENTRY(name, linkage, align...) \
@@ -84,6 +97,23 @@
 #ifndef END
 /* deprecated, use SYM_FUNC_END, SYM_DATA_END, or SYM_END */
 #define END(name) .size name, .-name
+#endif
+
+/* If symbol 'name' is treated as a subroutine (gets called, and returns)
+ * then please use ENDPROC to mark 'name' as STT_FUNC for the benefit of
+ * static analysis tools such as stack depth analyzer.
+ */
+#ifndef ENDPROC
+/* deprecated, use SYM_FUNC_END */
+#define ENDPROC(name) SYM_FUNC_END(name)
+#endif
+
+/*
+ * SYM_FUNC_END -- the end of SYM_FUNC_START_LOCAL, SYM_FUNC_START,
+ * SYM_FUNC_START_WEAK, ...
+ */
+#ifndef SYM_FUNC_END
+#define SYM_FUNC_END(name) SYM_END(name, SYM_T_FUNC)
 #endif
 
 #endif /* __ASSEMBLY__ */

@@ -111,6 +111,18 @@
 #include <linux/numa.h>
 #include <linux/pid.h>
 #include <linux/sched/signal.h>
+#include <linux/math64.h>
+#include <uapi/linux/futex.h>
+
+/*
+ * Minimum number of threads to boot the kernel
+ */
+#define MIN_THREADS 20
+
+/*
+ * Maximum number of threads
+ */
+#define MAX_THREADS FUTEX_TID_MASK
 
 struct vm_stack {
     struct rcu_head rcu;
@@ -518,8 +530,63 @@ copy_process(struct pid *pid, int trace, int node,
     p->bpf_ctx = NULL;
 #endif
 
-    panic("%s: END!\n", __func__);
+    /* Perform scheduler related setup. Assign this task to a CPU. */
+    retval = sched_fork(clone_flags, p);
+    if (retval)
+        goto bad_fork_cleanup_policy;
 
+#if 0
+    retval = perf_event_init_task(p, clone_flags);
+    if (retval)
+        goto bad_fork_cleanup_policy;
+    retval = audit_alloc(p);
+    if (retval)
+        goto bad_fork_cleanup_perf;
+    /* copy all the process information */
+    shm_init_task(p);
+    retval = security_task_alloc(p, clone_flags);
+    if (retval)
+        goto bad_fork_cleanup_audit;
+    retval = copy_semundo(clone_flags, p);
+    if (retval)
+        goto bad_fork_cleanup_security;
+    retval = copy_files(clone_flags, p);
+    if (retval)
+        goto bad_fork_cleanup_semundo;
+    retval = copy_fs(clone_flags, p);
+    if (retval)
+        goto bad_fork_cleanup_files;
+    retval = copy_sighand(clone_flags, p);
+    if (retval)
+        goto bad_fork_cleanup_fs;
+    retval = copy_signal(clone_flags, p);
+    if (retval)
+        goto bad_fork_cleanup_sighand;
+    retval = copy_mm(clone_flags, p);
+    if (retval)
+        goto bad_fork_cleanup_signal;
+    retval = copy_namespaces(clone_flags, p);
+    if (retval)
+        goto bad_fork_cleanup_mm;
+    retval = copy_io(clone_flags, p);
+    if (retval)
+        goto bad_fork_cleanup_namespaces;
+#endif
+
+    retval = copy_thread(clone_flags, args->stack, args->stack_size,
+                         p, args->tls);
+    if (retval)
+        goto bad_fork_cleanup_io;
+
+    pr_info("%s: END!\n", __func__);
+    return p;
+
+ bad_fork_cleanup_io:
+#if 0
+    if (p->io_context)
+        exit_io_context(p);
+#endif
+ bad_fork_cleanup_policy:
  bad_fork_cleanup_delayacct:
     //delayacct_tsk_free(p);
  bad_fork_cleanup_count:
@@ -631,6 +698,30 @@ static void task_struct_whitelist(unsigned long *offset, unsigned long *size)
         *offset += offsetof(struct task_struct, thread);
 }
 
+/*
+ * set_max_threads
+ */
+static void set_max_threads(unsigned int max_threads_suggested)
+{
+    u64 threads;
+    unsigned long nr_pages = totalram_pages();
+
+    /*
+     * The number of threads shall be limited such that the thread
+     * structures may only consume a small part of the available memory.
+     */
+    if (fls64(nr_pages) + fls64(PAGE_SIZE) > 64)
+        threads = MAX_THREADS;
+    else
+        threads = div64_u64((u64) nr_pages * (u64) PAGE_SIZE,
+                            (u64) THREAD_SIZE * 8UL);
+
+    if (threads > max_threads_suggested)
+        threads = max_threads_suggested;
+
+    max_threads = clamp_t(u64, threads, MIN_THREADS, MAX_THREADS);
+}
+
 void __init fork_init(void)
 {
 #ifndef ARCH_MIN_TASKALIGN
@@ -646,4 +737,13 @@ void __init fork_init(void)
                                                     arch_task_struct_size, align,
                                                     SLAB_PANIC|SLAB_ACCOUNT,
                                                     useroffset, usersize, NULL);
+
+    set_max_threads(MAX_THREADS);
+
+#if 0
+    init_task.signal->rlim[RLIMIT_NPROC].rlim_cur = max_threads/2;
+    init_task.signal->rlim[RLIMIT_NPROC].rlim_max = max_threads/2;
+    init_task.signal->rlim[RLIMIT_SIGPENDING] =
+        init_task.signal->rlim[RLIMIT_NPROC];
+#endif
 }

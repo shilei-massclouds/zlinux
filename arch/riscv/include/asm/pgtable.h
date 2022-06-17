@@ -71,6 +71,9 @@
 
 #define PAGE_TABLE          __pgprot(_PAGE_TABLE)
 
+#define TASK_SIZE      (PGDIR_SIZE * PTRS_PER_PGD / 2)
+#define TASK_SIZE_MIN  (PGDIR_SIZE_L3 * PTRS_PER_PGD / 2)
+
 struct pt_alloc_ops {
     pte_t *(*get_pte_virt)(phys_addr_t pa);
     phys_addr_t (*alloc_pte)(uintptr_t va);

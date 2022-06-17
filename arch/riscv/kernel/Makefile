@@ -10,6 +10,7 @@ obj-y   += soc.o
 obj-y   += cpu.o
 obj-y   += entry.o
 obj-y   += setup.o
+obj-y   += signal.o
 obj-y	+= smp.o
 obj-y   += smpboot.o
 obj-y   += cpu_ops.o

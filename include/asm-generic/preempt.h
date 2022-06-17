@@ -16,6 +16,11 @@ static __always_inline volatile int *preempt_count_ptr(void)
     return &current_thread_info()->preempt_count;
 }
 
+static __always_inline void preempt_count_set(int pc)
+{
+    *preempt_count_ptr() = pc;
+}
+
 /*
  * The various preempt_count add/sub methods
  */

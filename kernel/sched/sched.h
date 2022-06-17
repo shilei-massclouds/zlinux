@@ -83,7 +83,10 @@
 #include "cpudeadline.h"
 #endif
 
+DECLARE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
+
 #define cpu_rq(cpu)     (&per_cpu(runqueues, (cpu)))
+#define this_rq()       this_cpu_ptr(&runqueues)
 
 /*
  * This is the main, per-CPU runqueue data structure.
@@ -103,6 +106,8 @@ struct rq {
     unsigned int        nr_running;
 
     u64                 nr_switches;
+
+    struct mm_struct    *prev_mm;
 };
 
 #endif /* _KERNEL_SCHED_SCHED_H */

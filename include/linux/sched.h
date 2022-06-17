@@ -52,6 +52,8 @@
 
 #define TASK_WAKEKILL           0x0100
 
+#define TASK_NEW                0x0800
+
 #define TASK_KILLABLE           (TASK_WAKEKILL | TASK_UNINTERRUPTIBLE)
 
 #define MAX_SCHEDULE_TIMEOUT    LONG_MAX
@@ -60,6 +62,7 @@
  * Per process flags
  */
 #define PF_IDLE             0x00000002  /* I am an IDLE thread */
+#define PF_IO_WORKER        0x00000010  /* Task is an IO worker */
 #define PF_WQ_WORKER        0x00000020  /* I'm a workqueue worker */
 #define PF_FORKNOEXEC       0x00000040  /* Forked but didn't exec */
 #define PF_SUPERPRIV        0x00000100  /* Used super-user privileges */
@@ -142,6 +145,8 @@ struct task_struct {
     void                *worker_private;
 
     int pagefault_disabled;
+
+    pid_t               pid;
 
     /*
      * executable name, excluding path.

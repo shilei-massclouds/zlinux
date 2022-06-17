@@ -12,6 +12,16 @@
 
 #include <asm/ptrace.h>
 
+/*
+ * This decides where the kernel will search for a free chunk of vm
+ * space during mmap's.
+ */
+#define TASK_UNMAPPED_BASE  PAGE_ALIGN(TASK_SIZE / 3)
+
+#define STACK_TOP       TASK_SIZE
+#define STACK_TOP_MAX   STACK_TOP
+#define STACK_ALIGN     16
+
 #ifndef __ASSEMBLY__
 
 struct task_struct;
@@ -21,7 +31,7 @@ struct pt_regs;
 struct thread_struct {
     /* Callee-saved registers */
     unsigned long ra;
-    unsigned long sp;   /* Kernel mode stack */
+    unsigned long sp;       /* Kernel mode stack */
     unsigned long s[12];    /* s[0]: frame pointer */
     struct __riscv_d_ext_state fstate;
     unsigned long bad_cause;
@@ -34,11 +44,15 @@ extern int arch_dup_task_struct(struct task_struct *dst, struct task_struct *src
 
 /* Whitelist the fstate from the task_struct for hardened usercopy */
 static inline void arch_thread_struct_whitelist(unsigned long *offset,
-                        unsigned long *size)
+                                                unsigned long *size)
 {
     *offset = offsetof(struct thread_struct, fstate);
     *size = sizeof_field(struct thread_struct, fstate);
 }
+
+#define task_pt_regs(tsk) \
+    ((struct pt_regs *)(task_stack_page(tsk) + THREAD_SIZE \
+                        - ALIGN(sizeof(struct pt_regs), STACK_ALIGN)))
 
 #endif /* !__ASSEMBLY__ */
 
