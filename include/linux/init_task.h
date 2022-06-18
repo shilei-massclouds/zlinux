@@ -10,4 +10,6 @@
 
 #define INIT_TASK_COMM "swapper"
 
+extern struct nsproxy init_nsproxy;
+
 #endif /* _LINUX__INIT_TASK_H */

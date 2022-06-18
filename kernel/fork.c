@@ -37,6 +37,7 @@
 #include <linux/swap.h>
 #include <linux/jiffies.h>
 #include <linux/rcupdate.h>
+#include <linux/nsproxy.h>
 /*
 #include <linux/unistd.h>
 #include <linux/mempolicy.h>
@@ -52,7 +53,6 @@
 #include <linux/mmu_notifier.h>
 #include <linux/fs.h>
 #include <linux/vmacache.h>
-#include <linux/nsproxy.h>
 #include <linux/capability.h>
 #include <linux/cgroup.h>
 #include <linux/security.h>
@@ -578,9 +578,22 @@ copy_process(struct pid *pid, int trace, int node,
     if (retval)
         goto bad_fork_cleanup_io;
 
+    if (pid != &init_struct_pid) {
+        pid = alloc_pid(p->nsproxy->pid_ns_for_children,
+                        args->set_tid, args->set_tid_size);
+        if (IS_ERR(pid)) {
+            retval = PTR_ERR(pid);
+            goto bad_fork_cleanup_thread;
+        }
+    }
+
     pr_info("%s: END!\n", __func__);
     return p;
 
+ bad_fork_cleanup_thread:
+#if 0
+    exit_thread(p);
+#endif
  bad_fork_cleanup_io:
 #if 0
     if (p->io_context)

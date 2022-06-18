@@ -121,6 +121,9 @@ struct task_struct {
     /* A live task holds one reference: */
     refcount_t stack_refcount;
 
+    /* Namespaces: */
+    struct nsproxy *nsproxy;
+
     /* Signal handlers: */
     struct signal_struct *signal;
 

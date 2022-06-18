@@ -124,4 +124,7 @@ static inline struct pid_namespace *ns_of_pid(struct pid *pid)
     return ns;
 }
 
+extern struct pid *
+alloc_pid(struct pid_namespace *ns, pid_t *set_tid, size_t set_tid_size);
+
 #endif /* _LINUX_PID_H */

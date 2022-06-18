@@ -5,6 +5,18 @@
 #include <linux/local_lock_internal.h>
 
 /**
+ * local_lock - Acquire a per CPU local lock
+ * @lock:   The lock variable
+ */
+#define local_lock(lock) __local_lock(lock)
+
+/**
+ * local_unlock - Release a per CPU local lock
+ * @lock:   The lock variable
+ */
+#define local_unlock(lock) __local_unlock(lock)
+
+/**
  * local_lock_irqsave - Acquire a per CPU local lock, save and disable
  *           interrupts
  * @lock:   The lock variable

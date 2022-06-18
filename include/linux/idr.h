@@ -27,7 +27,7 @@
     (ROOT_IS_IDR | (__force gfp_t)(1 << (ROOT_TAG_SHIFT + IDR_FREE)))
 
 #define IDR_INIT_BASE(name, base) {                 \
-    .idr_rt = RADIX_TREE_INIT(name, IDR_RT_MARKER), \
+    .idr_rt   = RADIX_TREE_INIT(name, IDR_RT_MARKER), \
     .idr_base = (base),                             \
     .idr_next = 0,                                  \
 }
@@ -39,6 +39,8 @@
  * A freshly-initialised IDR contains no IDs.
  */
 #define IDR_INIT(name)  IDR_INIT_BASE(name, 0)
+
+void idr_preload(gfp_t gfp_mask);
 
 struct idr {
     struct radix_tree_root  idr_rt;
@@ -60,6 +62,21 @@ static inline void idr_init_base(struct idr *idr, int base)
     idr->idr_base = base;
     idr->idr_next = 0;
 }
+
+/**
+ * idr_get_cursor - Return the current position of the cyclic allocator
+ * @idr: idr handle
+ *
+ * The value returned is the value that will be next returned from
+ * idr_alloc_cyclic() if it is free (otherwise the search will start from
+ * this position).
+ */
+static inline unsigned int idr_get_cursor(const struct idr *idr)
+{
+    return READ_ONCE(idr->idr_next);
+}
+
+int idr_alloc_cyclic(struct idr *, void *ptr, int start, int end, gfp_t);
 
 /**
  * idr_init() - Initialise an IDR.

@@ -24,6 +24,14 @@
 #define radix_tree_root     xarray
 #define radix_tree_node     xa_node
 
+struct radix_tree_preload {
+    local_lock_t lock;
+    unsigned nr;
+    /* nodes->parent points to next preallocated node */
+    struct radix_tree_node *nodes;
+};
+DECLARE_PER_CPU(struct radix_tree_preload, radix_tree_preloads);
+
 /* The IDR tag is stored in the low bits of xa_flags */
 #define ROOT_IS_IDR     ((__force gfp_t)4)
 /* The top bits of xa_flags are used to store the root tags */
@@ -32,5 +40,11 @@
 #define INIT_RADIX_TREE(root, mask) xa_init_flags(root, mask)
 
 #define RADIX_TREE_INIT(name, mask) XARRAY_INIT(name, mask)
+
+#define RADIX_TREE_MAX_TAGS XA_MAX_MARKS
+
+#define RADIX_TREE_MAP_SHIFT    XA_CHUNK_SHIFT
+#define RADIX_TREE_MAP_SIZE     (1UL << RADIX_TREE_MAP_SHIFT)
+#define RADIX_TREE_MAP_MASK     (RADIX_TREE_MAP_SIZE-1)
 
 #endif /* _LINUX_RADIX_TREE_H */

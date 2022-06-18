@@ -67,6 +67,8 @@ static const char *argv_init[MAX_INIT_ARGS+2] = { "init", NULL, };
 const char *envp_init[MAX_INIT_ENVS+2] = { "HOME=/", "TERM=linux", NULL, };
 static const char *panic_later, *panic_param;
 
+extern void radix_tree_init(void);
+
 static int __ref kernel_init(void *unused)
 {
     panic("%s: BEGIN!\n", __func__);
@@ -428,6 +430,20 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
     trap_init();
 #endif
     mm_init();
+
+#if 0
+    /*
+     * Set up the scheduler prior starting any interrupts (such as the
+     * timer interrupt). Full topology setup happens at smp_init()
+     * time - but meanwhile we still have a functioning scheduler.
+     */
+    sched_init();
+#endif
+
+    if (WARN(!irqs_disabled(),
+             "Interrupts were enabled *very* early, fixing it\n"))
+        local_irq_disable();
+    radix_tree_init();
 
     setup_per_cpu_pageset();
 
