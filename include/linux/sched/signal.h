@@ -26,6 +26,10 @@
  */
 struct signal_struct {
     unsigned int flags; /* see SIGNAL_* flags below */
+
+    /* PID/PID hash table linkage. */
+    struct pid *pids[PIDTYPE_MAX];
+
 } __randomize_layout;
 
 #define SIGNAL_UNKILLABLE   0x00000040 /* for init: ignore fatal signals */

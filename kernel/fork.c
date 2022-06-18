@@ -633,6 +633,20 @@ pid_t kernel_clone(struct kernel_clone_args *args)
     if (IS_ERR(p))
         return PTR_ERR(p);
 
+    pid = get_task_pid(p, PIDTYPE_PID);
+    nr = pid_vnr(pid);
+
+#if 0
+    if (clone_flags & CLONE_PARENT_SETTID)
+        put_user(nr, args->parent_tid);
+
+    if (clone_flags & CLONE_VFORK) {
+        p->vfork_done = &vfork;
+        init_completion(&vfork);
+        get_task_struct(p);
+    }
+#endif
+
     panic("%s: END!\n", __func__);
 }
 

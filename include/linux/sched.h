@@ -107,6 +107,9 @@ struct task_struct {
      */
     struct thread_info thread_info;
 
+    /* PID/PID hash table linkage. */
+    struct pid *thread_pid;
+
     unsigned int __state;
 
     void *stack;
@@ -211,6 +214,11 @@ static inline void clear_tsk_thread_flag(struct task_struct *tsk, int flag)
 static inline void clear_tsk_need_resched(struct task_struct *tsk)
 {
     clear_tsk_thread_flag(tsk, TIF_NEED_RESCHED);
+}
+
+static inline struct pid *task_pid(struct task_struct *task)
+{
+    return task->thread_pid;
 }
 
 extern int

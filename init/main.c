@@ -12,6 +12,7 @@
 #include <linux/moduleparam.h>
 #include <linux/cpu.h>
 #include <linux/percpu.h>
+#include <linux/pid_namespace.h>
 #include <linux/sched.h>
 #include <linux/sched/task.h>
 #include <linux/sched/task_stack.h>
@@ -434,9 +435,11 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
     local_irq_enable();
 
     kmem_cache_init_late();
-    printk("%s: ================== PILOT ==================\n", __func__);
+
+    pid_idr_init();
 
     fork_init();
+    printk("%s: ================== PILOT ==================\n", __func__);
 
     /* Do the rest non-__init'ed, we're now alive */
     arch_call_rest_init();

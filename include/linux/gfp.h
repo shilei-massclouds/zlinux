@@ -158,10 +158,9 @@
 
 #define GFP_ZONEMASK    (__GFP_DMA|__GFP_HIGHMEM|__GFP_DMA32|__GFP_MOVABLE)
 
-
 /* Room for N __GFP_FOO bits */
-#define __GFP_BITS_SHIFT    (25)
-#define __GFP_BITS_MASK     ((__force gfp_t)((1 << __GFP_BITS_SHIFT) - 1))
+#define __GFP_BITS_SHIFT (27)
+#define __GFP_BITS_MASK ((__force gfp_t)((1 << __GFP_BITS_SHIFT) - 1))
 
 #define GFP_KERNEL  (__GFP_RECLAIM | __GFP_IO | __GFP_FS)
 #define GFP_KERNEL_ACCOUNT (GFP_KERNEL | __GFP_ACCOUNT)

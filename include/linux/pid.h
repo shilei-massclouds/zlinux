@@ -2,9 +2,11 @@
 #ifndef _LINUX_PID_H
 #define _LINUX_PID_H
 
-//#include <linux/rculist.h>
-//#include <linux/wait.h>
+#include <linux/rculist.h>
+#include <linux/wait.h>
 #include <linux/refcount.h>
+
+struct pid_namespace;
 
 enum pid_type
 {
@@ -44,11 +46,22 @@ enum pid_type
  * processes.
  */
 
+/*
+ * struct upid is used to get the id of the struct pid, as it is
+ * seen in particular namespace. Later the struct pid is found with
+ * find_pid_ns() using the int nr and struct pid_namespace *ns.
+ */
+
+struct upid {
+    int nr;
+    struct pid_namespace *ns;
+};
+
 struct pid
 {
-#if 0
     refcount_t count;
     unsigned int level;
+#if 0
     spinlock_t lock;
     /* lists of tasks that use this pid */
     struct hlist_head tasks[PIDTYPE_MAX];
@@ -56,8 +69,59 @@ struct pid
     /* wait queue for pidfd notifications */
     wait_queue_head_t wait_pidfd;
     struct rcu_head rcu;
-    struct upid numbers[1];
 #endif
+    struct upid numbers[1];
 };
+
+extern struct pid *get_task_pid(struct task_struct *task, enum pid_type type);
+
+/*
+ * the helpers to get the pid's id seen from different namespaces
+ *
+ * pid_nr()    : global id, i.e. the id seen from the init namespace;
+ * pid_vnr()   : virtual id, i.e. the id seen from the pid namespace of
+ *               current.
+ * pid_nr_ns() : id seen from the ns specified.
+ *
+ * see also task_xid_nr() etc in include/linux/sched.h
+ */
+
+static inline pid_t pid_nr(struct pid *pid)
+{
+    pid_t nr = 0;
+    if (pid)
+        nr = pid->numbers[0].nr;
+    return nr;
+}
+
+pid_t pid_nr_ns(struct pid *pid, struct pid_namespace *ns);
+pid_t pid_vnr(struct pid *pid);
+
+extern struct pid init_struct_pid;
+
+static inline struct pid *get_pid(struct pid *pid)
+{
+    if (pid)
+        refcount_inc(&pid->count);
+    return pid;
+}
+
+/*
+ * ns_of_pid() returns the pid namespace in which the specified pid was
+ * allocated.
+ *
+ * NOTE:
+ *  ns_of_pid() is expected to be called for a process (task) that has
+ *  an attached 'struct pid' (see attach_pid(), detach_pid()) i.e @pid
+ *  is expected to be non-NULL. If @pid is NULL, caller should handle
+ *  the resulting NULL pid-ns.
+ */
+static inline struct pid_namespace *ns_of_pid(struct pid *pid)
+{
+    struct pid_namespace *ns = NULL;
+    if (pid)
+        ns = pid->numbers[pid->level].ns;
+    return ns;
+}
 
 #endif /* _LINUX_PID_H */
