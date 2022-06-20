@@ -40,8 +40,6 @@
  */
 #define IDR_INIT(name)  IDR_INIT_BASE(name, 0)
 
-void idr_preload(gfp_t gfp_mask);
-
 struct idr {
     struct radix_tree_root  idr_rt;
     unsigned int            idr_base;
@@ -76,6 +74,19 @@ static inline unsigned int idr_get_cursor(const struct idr *idr)
     return READ_ONCE(idr->idr_next);
 }
 
+/**
+ * idr_set_cursor - Set the current position of the cyclic allocator
+ * @idr: idr handle
+ * @val: new position
+ *
+ * The next call to idr_alloc_cyclic() will return @val if it is free
+ * (otherwise the search will start from this position).
+ */
+static inline void idr_set_cursor(struct idr *idr, unsigned int val)
+{
+    WRITE_ONCE(idr->idr_next, val);
+}
+
 int idr_alloc_cyclic(struct idr *, void *ptr, int start, int end, gfp_t);
 
 /**
@@ -89,5 +100,22 @@ static inline void idr_init(struct idr *idr)
 {
     idr_init_base(idr, 0);
 }
+
+int idr_alloc(struct idr *, void *ptr, int start, int end, gfp_t);
+
+void idr_preload(gfp_t gfp_mask);
+
+/**
+ * idr_preload_end - end preload section started with idr_preload()
+ *
+ * Each idr_preload() should be matched with an invocation of this
+ * function.  See idr_preload() for details.
+ */
+static inline void idr_preload_end(void)
+{
+    local_unlock(&radix_tree_preloads.lock);
+}
+
+void *idr_replace(struct idr *, void *, unsigned long id);
 
 #endif /* __IDR_H__ */

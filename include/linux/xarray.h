@@ -61,6 +61,26 @@ struct xarray {
 #define XA_MARK_LONGS       DIV_ROUND_UP(XA_CHUNK_SIZE, BITS_PER_LONG)
 
 /*
+ * xa_mk_internal() - Create an internal entry.
+ * @v: Value to turn into an internal entry.
+ *
+ * Internal entries are used for a number of purposes.  Entries 0-255 are
+ * used for sibling entries (only 0-62 are used by the current code).  256
+ * is used for the retry entry.  257 is used for the reserved / zero entry.
+ * Negative internal entries are used to represent errnos.  Node pointers
+ * are also tagged as internal entries in some situations.
+ *
+ * Context: Any context.
+ * Return: An XArray internal entry corresponding to this value.
+ */
+static inline void *xa_mk_internal(unsigned long v)
+{
+    return (void *)((v << 2) | 2);
+}
+
+#define XA_RETRY_ENTRY      xa_mk_internal(256)
+
+/*
  * @count is the count of every non-NULL element in the ->slots array
  * whether that is a value entry, a retry entry, a user pointer,
  * a sibling entry or a pointer to the next level of the tree.
@@ -107,6 +127,18 @@ static inline void xa_init_flags(struct xarray *xa, gfp_t flags)
     spin_lock_init(&xa->xa_lock);
     xa->xa_flags = flags;
     xa->xa_head = NULL;
+}
+
+/**
+ * xa_is_value() - Determine if an entry is a value.
+ * @entry: XArray entry.
+ *
+ * Context: Any context.
+ * Return: True if the entry is a value, false if it is a pointer.
+ */
+static inline bool xa_is_value(const void *entry)
+{
+    return (unsigned long)entry & 1;
 }
 
 #endif /* _LINUX_XARRAY_H */

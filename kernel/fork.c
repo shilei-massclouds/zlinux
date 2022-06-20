@@ -587,7 +587,10 @@ copy_process(struct pid *pid, int trace, int node,
         }
     }
 
-    pr_info("%s: END!\n", __func__);
+    /* ok, now we should be set up.. */
+    p->pid = pid_nr(pid);
+
+    pr_info("%s: pid(%d) END!\n", __func__, p->pid);
     return p;
 
  bad_fork_cleanup_thread:
@@ -660,7 +663,7 @@ pid_t kernel_clone(struct kernel_clone_args *args)
     }
 #endif
 
-    panic("%s: END!\n", __func__);
+    panic("%s: pid(%d) END!\n", __func__, nr);
 }
 
 /*

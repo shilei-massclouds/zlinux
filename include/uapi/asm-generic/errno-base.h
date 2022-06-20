@@ -10,6 +10,7 @@
 #define ENOMEM      12  /* Out of memory */
 #define EFAULT      14  /* Bad address */
 #define EBUSY       16  /* Device or resource busy */
+#define EEXIST      17  /* File exists */
 #define ENODEV      19  /* No such device */
 #define EINVAL      22  /* Invalid argument */
 #define ENOSPC      28  /* No space left on device */

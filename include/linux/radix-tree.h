@@ -24,6 +24,53 @@
 #define radix_tree_root     xarray
 #define radix_tree_node     xa_node
 
+/*
+ * The bottom two bits of the slot determine how the remaining bits in the
+ * slot are interpreted:
+ *
+ * 00 - data pointer
+ * 10 - internal entry
+ * x1 - value entry
+ *
+ * The internal entry may be a pointer to the next level in the tree, a
+ * sibling entry, or an indicator that the entry in this slot has been moved
+ * to another location in the tree and the lookup should be restarted.  While
+ * NULL fits the 'data pointer' pattern, it means that there is no entry in
+ * the tree for this index (no matter what level of the tree it is found at).
+ * This means that storing a NULL entry in the tree is the same as deleting
+ * the entry from the tree.
+ */
+#define RADIX_TREE_ENTRY_MASK       3UL
+#define RADIX_TREE_INTERNAL_NODE    2UL
+
+static inline bool radix_tree_is_internal_node(void *ptr)
+{
+    return ((unsigned long)ptr & RADIX_TREE_ENTRY_MASK) ==
+        RADIX_TREE_INTERNAL_NODE;
+}
+
+/**
+ * struct radix_tree_iter - radix tree iterator state
+ *
+ * @index:  index of current slot
+ * @next_index: one beyond the last index for this chunk
+ * @tags:   bit-mask for tag-iterating
+ * @node:   node that contains current slot
+ *
+ * This radix tree iterator works in terms of "chunks" of slots.  A chunk is a
+ * subinterval of slots contained within one radix tree leaf node.  It is
+ * described by a pointer to its first slot and a struct radix_tree_iter
+ * which holds the chunk's position in the tree and its size.  For tagged
+ * iteration radix_tree_iter also holds the slots' bit-mask for one chosen
+ * radix tree tag.
+ */
+struct radix_tree_iter {
+    unsigned long   index;
+    unsigned long   next_index;
+    unsigned long   tags;
+    struct radix_tree_node *node;
+};
+
 struct radix_tree_preload {
     local_lock_t lock;
     unsigned nr;
@@ -41,10 +88,68 @@ DECLARE_PER_CPU(struct radix_tree_preload, radix_tree_preloads);
 
 #define RADIX_TREE_INIT(name, mask) XARRAY_INIT(name, mask)
 
-#define RADIX_TREE_MAX_TAGS XA_MAX_MARKS
+#define RADIX_TREE_MAX_TAGS     XA_MAX_MARKS
+#define RADIX_TREE_TAG_LONGS    XA_MARK_LONGS
 
 #define RADIX_TREE_MAP_SHIFT    XA_CHUNK_SHIFT
 #define RADIX_TREE_MAP_SIZE     (1UL << RADIX_TREE_MAP_SHIFT)
 #define RADIX_TREE_MAP_MASK     (RADIX_TREE_MAP_SIZE-1)
+
+/**
+ * radix_tree_iter_init - initialize radix tree iterator
+ *
+ * @iter:   pointer to iterator state
+ * @start:  iteration starting index
+ * Returns: NULL
+ */
+static __always_inline void __rcu **
+radix_tree_iter_init(struct radix_tree_iter *iter, unsigned long start)
+{
+    /*
+     * Leave iter->tags uninitialized. radix_tree_next_chunk() will fill it
+     * in the case of a successful tagged chunk lookup.  If the lookup was
+     * unsuccessful or non-tagged then nobody cares about ->tags.
+     *
+     * Set index to zero to bypass next_index overflow protection.
+     * See the comment in radix_tree_next_chunk() for details.
+     */
+    iter->index = 0;
+    iter->next_index = start;
+    return NULL;
+}
+
+void __rcu **
+idr_get_free(struct radix_tree_root *root,
+             struct radix_tree_iter *iter, gfp_t gfp, unsigned long max);
+
+void radix_tree_iter_replace(struct radix_tree_root *,
+                             const struct radix_tree_iter *,
+                             void __rcu **slot, void *entry);
+
+void *radix_tree_tag_set(struct radix_tree_root *,
+                         unsigned long index, unsigned int tag);
+void *radix_tree_tag_clear(struct radix_tree_root *,
+                           unsigned long index, unsigned int tag);
+
+void radix_tree_iter_tag_clear(struct radix_tree_root *,
+                               const struct radix_tree_iter *iter,
+                               unsigned int tag);
+
+void *radix_tree_delete_item(struct radix_tree_root *, unsigned long, void *);
+
+static inline unsigned long
+__radix_tree_iter_add(struct radix_tree_iter *iter, unsigned long slots)
+{
+    return iter->index + slots;
+}
+
+void *__radix_tree_lookup(const struct radix_tree_root *, unsigned long index,
+                          struct radix_tree_node **nodep, void __rcu ***slotp);
+
+void __radix_tree_replace(struct radix_tree_root *, struct radix_tree_node *,
+                          void __rcu **slot, void *entry);
+
+int radix_tree_tag_get(const struct radix_tree_root *,
+                       unsigned long index, unsigned int tag);
 
 #endif /* _LINUX_RADIX_TREE_H */

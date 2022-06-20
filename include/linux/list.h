@@ -291,4 +291,6 @@ list_splice(const struct list_head *list, struct list_head *head)
          !list_entry_is_head(pos, head, member);            \
          pos = list_prev_entry(pos, member))
 
+#define INIT_HLIST_HEAD(ptr) ((ptr)->first = NULL)
+
 #endif /* _LINUX_LIST_H */

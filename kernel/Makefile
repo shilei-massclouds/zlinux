@@ -3,7 +3,7 @@
 # Makefile for the linux kernel.
 #
 
-obj-y = fork.o panic.o params.o cpu.o kthread.o pid.o nsproxy.o
+obj-y = fork.o panic.o params.o cpu.o kthread.o pid.o nsproxy.o pid_namespace.o
 
 obj-y += sched/
 obj-y += locking/

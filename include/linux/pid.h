@@ -61,10 +61,10 @@ struct pid
 {
     refcount_t count;
     unsigned int level;
-#if 0
     spinlock_t lock;
     /* lists of tasks that use this pid */
     struct hlist_head tasks[PIDTYPE_MAX];
+#if 0
     struct hlist_head inodes;
     /* wait queue for pidfd notifications */
     wait_queue_head_t wait_pidfd;

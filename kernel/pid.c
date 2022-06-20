@@ -149,6 +149,26 @@ pid_t pid_nr_ns(struct pid *pid, struct pid_namespace *ns)
 }
 EXPORT_SYMBOL_GPL(pid_nr_ns);
 
+/**
+ * idr_remove() - Remove an ID from the IDR.
+ * @idr: IDR handle.
+ * @id: Pointer ID.
+ *
+ * Removes this ID from the IDR.  If the ID was not previously in the IDR,
+ * this function returns %NULL.
+ *
+ * Since this function modifies the IDR, the caller should provide their
+ * own locking to ensure that concurrent modification of the same IDR is
+ * not possible.
+ *
+ * Return: The pointer formerly associated with this ID.
+ */
+void *idr_remove(struct idr *idr, unsigned long id)
+{
+    return radix_tree_delete_item(&idr->idr_rt, id - idr->idr_base, NULL);
+}
+EXPORT_SYMBOL_GPL(idr_remove);
+
 struct pid *
 alloc_pid(struct pid_namespace *ns, pid_t *set_tid, size_t set_tid_size)
 {
@@ -205,6 +225,8 @@ alloc_pid(struct pid_namespace *ns, pid_t *set_tid, size_t set_tid_size)
         spin_lock_irq(&pidmap_lock);
 
         if (tid) {
+            panic("%s: tid \n", __func__);
+#if 0
             nr = idr_alloc(&tmp->idr, NULL, tid, tid + 1, GFP_ATOMIC);
             /*
              * If ENOSPC is returned it means that the PID is
@@ -212,6 +234,7 @@ alloc_pid(struct pid_namespace *ns, pid_t *set_tid, size_t set_tid_size)
              */
             if (nr == -ENOSPC)
                 nr = -EEXIST;
+#endif
         } else {
             int pid_min = 1;
             /*
@@ -231,9 +254,69 @@ alloc_pid(struct pid_namespace *ns, pid_t *set_tid, size_t set_tid_size)
         spin_unlock_irq(&pidmap_lock);
         idr_preload_end();
 
+        if (nr < 0) {
+            retval = (nr == -ENOSPC) ? -EAGAIN : nr;
+            goto out_free;
+        }
+
+        pid->numbers[i].nr = nr;
+        pid->numbers[i].ns = tmp;
+        tmp = tmp->parent;
     }
 
-    panic("%s: level(%u) END!\n", __func__, ns->level);
+    /*
+     * ENOMEM is not the most obvious choice especially for the case
+     * where the child subreaper has already exited and the pid
+     * namespace denies the creation of any new processes. But ENOMEM
+     * is what we have exposed to userspace for a long time and it is
+     * documented behavior for pid namespaces. So we can't easily
+     * change it even if there were an error code better suited.
+     */
+    retval = -ENOMEM;
+
+    get_pid_ns(ns);
+    refcount_set(&pid->count, 1);
+    spin_lock_init(&pid->lock);
+    for (type = 0; type < PIDTYPE_MAX; ++type)
+        INIT_HLIST_HEAD(&pid->tasks[type]);
+
+#if 0
+    init_waitqueue_head(&pid->wait_pidfd);
+    INIT_HLIST_HEAD(&pid->inodes);
+#endif
+
+    upid = pid->numbers + ns->level;
+    spin_lock_irq(&pidmap_lock);
+    if (!(ns->pid_allocated & PIDNS_ADDING))
+        goto out_unlock;
+    for ( ; upid >= pid->numbers; --upid) {
+        /* Make the PID visible to find_pid_ns. */
+        idr_replace(&upid->ns->idr, pid, upid->nr);
+        upid->ns->pid_allocated++;
+    }
+    spin_unlock_irq(&pidmap_lock);
+
+    return pid;
+
+ out_unlock:
+    spin_unlock_irq(&pidmap_lock);
+    put_pid_ns(ns);
+
+ out_free:
+    spin_lock_irq(&pidmap_lock);
+    while (++i <= ns->level) {
+        upid = pid->numbers + i;
+        idr_remove(&upid->ns->idr, upid->nr);
+    }
+
+    /* On failure to allocate the first pid, reset the state */
+    if (ns->pid_allocated == PIDNS_ADDING)
+        idr_set_cursor(&ns->idr, 0);
+
+    spin_unlock_irq(&pidmap_lock);
+
+    kmem_cache_free(ns->pid_cachep, pid);
+    return ERR_PTR(retval);
 }
 
 void __init pid_idr_init(void)

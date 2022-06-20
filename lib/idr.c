@@ -6,6 +6,7 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/xarray.h>
+#include <linux/err.h>
 
 /**
  * idr_alloc_u32() - Allocate an ID.
@@ -98,3 +99,71 @@ int idr_alloc_cyclic(struct idr *idr, void *ptr, int start, int end, gfp_t gfp)
     return id;
 }
 EXPORT_SYMBOL(idr_alloc_cyclic);
+
+/**
+ * idr_alloc() - Allocate an ID.
+ * @idr: IDR handle.
+ * @ptr: Pointer to be associated with the new ID.
+ * @start: The minimum ID (inclusive).
+ * @end: The maximum ID (exclusive).
+ * @gfp: Memory allocation flags.
+ *
+ * Allocates an unused ID in the range specified by @start and @end.  If
+ * @end is <= 0, it is treated as one larger than %INT_MAX.  This allows
+ * callers to use @start + N as @end as long as N is within integer range.
+ *
+ * The caller should provide their own locking to ensure that two
+ * concurrent modifications to the IDR are not possible.  Read-only
+ * accesses to the IDR may be done under the RCU read lock or may
+ * exclude simultaneous writers.
+ *
+ * Return: The newly allocated ID, -ENOMEM if memory allocation failed,
+ * or -ENOSPC if no free IDs could be found.
+ */
+int idr_alloc(struct idr *idr, void *ptr, int start, int end, gfp_t gfp)
+{
+    u32 id = start;
+    int ret;
+
+    if (WARN_ON_ONCE(start < 0))
+        return -EINVAL;
+
+    ret = idr_alloc_u32(idr, ptr, &id, end > 0 ? end - 1 : INT_MAX, gfp);
+    if (ret)
+        return ret;
+
+    return id;
+}
+EXPORT_SYMBOL_GPL(idr_alloc);
+
+/**
+ * idr_replace() - replace pointer for given ID.
+ * @idr: IDR handle.
+ * @ptr: New pointer to associate with the ID.
+ * @id: ID to change.
+ *
+ * Replace the pointer registered with an ID and return the old value.
+ * This function can be called under the RCU read lock concurrently with
+ * idr_alloc() and idr_remove() (as long as the ID being removed is not
+ * the one being replaced!).
+ *
+ * Returns: the old value on success.  %-ENOENT indicates that @id was not
+ * found.  %-EINVAL indicates that @ptr was not valid.
+ */
+void *idr_replace(struct idr *idr, void *ptr, unsigned long id)
+{
+    struct radix_tree_node *node;
+    void __rcu **slot = NULL;
+    void *entry;
+
+    id -= idr->idr_base;
+
+    entry = __radix_tree_lookup(&idr->idr_rt, id, &node, &slot);
+    if (!slot || radix_tree_tag_get(&idr->idr_rt, id, IDR_FREE))
+        return ERR_PTR(-ENOENT);
+
+    __radix_tree_replace(&idr->idr_rt, node, slot, ptr);
+
+    return entry;
+}
+EXPORT_SYMBOL(idr_replace);
