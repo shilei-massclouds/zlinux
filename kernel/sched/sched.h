@@ -110,4 +110,8 @@ struct rq {
     struct mm_struct    *prev_mm;
 };
 
+struct rq_flags {
+    unsigned long flags;
+};
+
 #endif /* _KERNEL_SCHED_SCHED_H */

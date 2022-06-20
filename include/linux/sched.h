@@ -74,6 +74,15 @@
 #define PF_NO_SETAFFINITY   0x04000000  /* Userland is not allowed to meddle with cpus_mask */
 #define PF_MEMALLOC_PIN     0x10000000  /* Allocation context constrained to zones which allow long term pinning. */
 
+/* Wake flags. The first three directly map to some SD flag value */
+#define WF_EXEC     0x02 /* Wakeup after exec; maps to SD_BALANCE_EXEC */
+#define WF_FORK     0x04 /* Wakeup after fork; maps to SD_BALANCE_FORK */
+#define WF_TTWU     0x08 /* Wakeup;            maps to SD_BALANCE_WAKE */
+
+#define WF_SYNC     0x10 /* Waker goes to sleep after wakeup */
+#define WF_MIGRATED 0x20 /* Internal use, task got migrated */
+#define WF_ON_CPU   0x40 /* Wakee is on_cpu */
+
 /* Task command name length: */
 #define TASK_COMM_LEN   16
 
@@ -118,6 +127,8 @@ struct task_struct {
     /* Per task flags (PF_*), defined further below: */
     unsigned int flags;
 
+    int recent_used_cpu;
+
     /* A live task holds one reference: */
     refcount_t stack_refcount;
 
@@ -128,6 +139,9 @@ struct task_struct {
     struct signal_struct *signal;
 
     struct wake_q_node wake_q;
+
+    /* Protection of the PI data structures: */
+    raw_spinlock_t pi_lock;
 
     /* VM state: */
     struct reclaim_state *reclaim_state;
@@ -226,5 +240,12 @@ static inline struct pid *task_pid(struct task_struct *task)
 
 extern int
 dup_user_cpus_ptr(struct task_struct *dst, struct task_struct *src, int node);
+
+extern void wake_up_new_task(struct task_struct *tsk);
+
+static inline unsigned int task_cpu(const struct task_struct *p)
+{
+    return READ_ONCE(task_thread_info(p)->cpu);
+}
 
 #endif /* _LINUX_SCHED_H */

@@ -663,6 +663,8 @@ pid_t kernel_clone(struct kernel_clone_args *args)
     }
 #endif
 
+    wake_up_new_task(p);
+
     panic("%s: pid(%d) END!\n", __func__, nr);
 }
 
