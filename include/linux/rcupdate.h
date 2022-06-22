@@ -14,13 +14,10 @@
 #include <asm/processor.h>
 #include <linux/cpumask.h>
 
-#define rcu_check_sparse(p, space)
-
-#define __rcu_dereference_check(p, local, c, space) \
+#define __rcu_dereference_check(p, local) \
 ({ \
     /* Dependency order vs. p above. */ \
     typeof(*p) *local = (typeof(*p) *__force)READ_ONCE(p); \
-    rcu_check_sparse(p, space); \
     ((typeof(*p) __force __kernel *)(local)); \
 })
 
@@ -57,9 +54,8 @@
  * which pointers are protected by RCU and checks that the pointer is
  * annotated as __rcu.
  */
-#define rcu_dereference_check(p, c) \
-    __rcu_dereference_check((p), __UNIQUE_ID(rcu), \
-                            (c) || rcu_read_lock_held(), __rcu)
+#define rcu_dereference_check(p) \
+    __rcu_dereference_check((p), __UNIQUE_ID(rcu))
 
 /**
  * rcu_dereference() - fetch RCU-protected pointer for dereferencing
@@ -67,7 +63,7 @@
  *
  * This is a simple wrapper around rcu_dereference_check().
  */
-#define rcu_dereference(p) rcu_dereference_check(p, 0)
+#define rcu_dereference(p) rcu_dereference_check(p)
 
 /* Exported common interfaces */
 void call_rcu(struct rcu_head *head, rcu_callback_t func);

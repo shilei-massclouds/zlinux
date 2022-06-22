@@ -7,25 +7,89 @@
  *  Copyright (C) 1991-2002  Linus Torvalds
  */
 
-#include "sched.h"
+#include <linux/highmem.h>
+#if 0
+#include <linux/hrtimer_api.h>
+#include <linux/ktime_api.h>
+#include <linux/sched/signal.h>
+#include <linux/syscalls_api.h>
+#include <linux/debug_locks.h>
+#include <linux/prefetch.h>
+#include <linux/capability.h>
+#include <linux/pgtable_api.h>
+#include <linux/wait_bit.h>
+#include <linux/cpumask_api.h>
+#endif
+#include <linux/jiffies.h>
+#include <linux/spinlock_api.h>
+#if 0
+#include <linux/lockdep_api.h>
+#include <linux/hardirq.h>
+#include <linux/softirq.h>
+#include <linux/refcount_api.h>
+#endif
+#include <linux/topology.h>
+#if 0
+#include <linux/sched/clock.h>
+#include <linux/sched/cond_resched.h>
+#include <linux/sched/isolation.h>
+#include <linux/sched/nohz.h>
+#include <linux/sched/rseq_api.h>
+#endif
+#include <linux/sched/debug.h>
+#include <linux/sched/loadavg.h>
+#include <linux/sched/mm.h>
+#include <linux/sched/rt.h>
+
+#include <linux/init_task.h>
+#include <linux/mmzone.h>
+#if 0
+#include <linux/blkdev.h>
+#include <linux/context_tracking.h>
+#include <linux/cpuset.h>
+#include <linux/delayacct.h>
+#include <linux/interrupt.h>
+#include <linux/ioprio.h>
+#include <linux/kallsyms.h>
+#include <linux/kcov.h>
+#include <linux/kprobes.h>
+#include <linux/llist_api.h>
+#include <linux/mutex_api.h>
+#include <linux/nmi.h>
+#include <linux/nospec.h>
+#include <linux/perf_event_api.h>
+#include <linux/profile.h>
+#include <linux/psi.h>
+#include <linux/rcuwait_api.h>
+#include <linux/sched/wake_q.h>
+#include <linux/scs.h>
+#include <linux/syscalls.h>
+#include <linux/vtime.h>
+#include <linux/wait_api.h>
+#include <linux/workqueue_api.h>
+#endif
+#include <linux/slab.h>
+#include <linux/mmu_context.h>
 
 #if 0
-#include <linux/nospec.h>
-
-#include <linux/kcov.h>
-#include <linux/scs.h>
+#include <uapi/linux/sched/types.h>
 
 #include <asm/switch_to.h>
 #include <asm/tlb.h>
+#endif
+
+#include "sched.h"
+#if 0
+#include "stats.h"
+#include "autogroup.h"
+
+#include "pelt.h"
+#include "smp.h"
 
 #include "../workqueue_internal.h"
 #include "../../fs/io-wq.h"
 #include "../smpboot.h"
-
-#include "pelt.h"
-#include "smp.h"
 #endif
-#include <linux/slab.h>
 
 DEFINE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
 
@@ -173,7 +237,13 @@ dup_user_cpus_ptr(struct task_struct *dst, struct task_struct *src, int node)
  */
 static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 {
-    pr_warn("%s: NEED to be implemented!\n", __func__);
+    p->on_rq = 0;
+
+    p->se.on_rq = 0;
+    p->se.vruntime = 0;
+    INIT_LIST_HEAD(&p->se.group_node);
+
+    p->se.cfs_rq = NULL;
 }
 
 /*
@@ -182,6 +252,7 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 int sched_fork(unsigned long clone_flags, struct task_struct *p)
 {
     __sched_fork(clone_flags, p);
+
     /*
      * We mark the process as NEW here. This guarantees that
      * nobody will actually run it, and a signal or other external
@@ -189,7 +260,37 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
      */
     p->__state = TASK_NEW;
 
-    pr_warn("%s: NEED to be implemented!\n", __func__);
+    /*
+     * Make sure we do not leak PI boosting priority to the child.
+     */
+    p->prio = current->normal_prio;
+
+    /*
+     * Revert to default priority/policy on fork if requested.
+     */
+    if (unlikely(p->sched_reset_on_fork)) {
+        panic("%s: sched_reset_on_fork!\n", __func__);
+    }
+
+    if (dl_prio(p->prio))
+        return -EAGAIN;
+    else if (rt_prio(p->prio))
+        p->sched_class = &rt_sched_class;
+    else
+        p->sched_class = &fair_sched_class;
+
+#if 0
+    init_entity_runnable_average(&p->se);
+#endif
+
+    p->on_cpu = 0;
+
+    init_task_preempt_count(p);
+
+#if 0
+    plist_node_init(&p->pushable_tasks, MAX_PRIO);
+    RB_CLEAR_NODE(&p->pushable_dl_tasks);
+#endif
 
     return 0;
 }
@@ -327,6 +428,110 @@ schedule_tail(struct task_struct *prev) __releases(rq->lock)
 }
 
 /*
+ * Per-CPU kthreads are allowed to run on !active && online CPUs, see
+ * __set_cpus_allowed_ptr() and select_fallback_rq().
+ */
+static inline bool is_cpu_allowed(struct task_struct *p, int cpu)
+{
+    /* When not in the task's cpumask, no point in looking further. */
+    if (!cpumask_test_cpu(cpu, p->cpus_ptr))
+        return false;
+
+    /* migrate_disabled() must be allowed to finish. */
+    if (is_migration_disabled(p))
+        return cpu_online(cpu);
+
+    /* Non kernel threads are not allowed during either online or offline. */
+    if (!(p->flags & PF_KTHREAD))
+        return cpu_active(cpu) && task_cpu_possible(cpu, p);
+
+#if 0
+    /* KTHREAD_IS_PER_CPU is always allowed. */
+    if (kthread_is_per_cpu(p))
+        return cpu_online(cpu);
+#endif
+
+    /* Regular kernel threads don't get to stay during offline. */
+    if (cpu_dying(cpu))
+        return false;
+
+    /* But are allowed during online. */
+    return cpu_online(cpu);
+}
+
+/*
+ * The caller (fork, wakeup) owns p->pi_lock, ->cpus_ptr is stable.
+ */
+static inline
+int select_task_rq(struct task_struct *p, int cpu, int wake_flags)
+{
+    if (p->nr_cpus_allowed > 1 && !is_migration_disabled(p))
+        cpu = p->sched_class->select_task_rq(p, cpu, wake_flags);
+    else
+        cpu = cpumask_any(p->cpus_ptr);
+
+    /*
+     * In order not to call set_task_cpu() on a blocking task we need
+     * to rely on ttwu() to place the task on a valid ->cpus_ptr
+     * CPU.
+     *
+     * Since this is common to all placement strategies, this lives here.
+     *
+     * [ this allows ->select_task() to simply return task_cpu(p) and
+     *   not worry about this generic constraint ]
+     */
+    if (unlikely(!is_cpu_allowed(p, cpu))) {
+        panic("%s: !is_cpu_allowed!\n", __func__);
+        //cpu = select_fallback_rq(task_cpu(p), p);
+    }
+
+    return cpu;
+}
+
+/*
+ * __task_rq_lock - lock the rq @p resides on.
+ */
+struct rq *__task_rq_lock(struct task_struct *p, struct rq_flags *rf)
+    __acquires(rq->lock)
+{
+    struct rq *rq;
+
+    for (;;) {
+        rq = task_rq(p);
+        raw_spin_rq_lock(rq);
+        if (likely(rq == task_rq(p) && !task_on_rq_migrating(p))) {
+            //rq_pin_lock(rq, rf);
+            return rq;
+        }
+        raw_spin_rq_unlock(rq);
+
+        while (unlikely(task_on_rq_migrating(p)))
+            cpu_relax();
+    }
+}
+
+static inline void enqueue_task(struct rq *rq, struct task_struct *p, int flags)
+{
+#if 0
+    if (!(flags & ENQUEUE_NOCLOCK))
+        update_rq_clock(rq);
+
+    if (!(flags & ENQUEUE_RESTORE)) {
+        sched_info_enqueue(rq, p);
+    }
+#endif
+
+    p->sched_class->enqueue_task(rq, p, flags);
+}
+
+void activate_task(struct rq *rq, struct task_struct *p, int flags)
+{
+    enqueue_task(rq, p, flags);
+
+    p->on_rq = TASK_ON_RQ_QUEUED;
+}
+
+/*
  * wake_up_new_task - wake up a newly created task for the first time.
  *
  * This function will do some initial scheduler statistics housekeeping
@@ -352,8 +557,202 @@ void wake_up_new_task(struct task_struct *p)
     p->recent_used_cpu = task_cpu(p);
 #if 0
     rseq_migrate(p);
+#endif
     __set_task_cpu(p, select_task_rq(p, task_cpu(p), WF_FORK));
+
+    rq = __task_rq_lock(p, &rf);
+#if 0
+    update_rq_clock(rq);
+    post_init_entity_util_avg(p);
 #endif
 
-    panic("%s: END!\n", __func__);
+    activate_task(rq, p, ENQUEUE_NOCLOCK);
+#if 0
+    check_preempt_curr(rq, p, WF_FORK);
+#endif
+    if (p->sched_class->task_woken) {
+        panic("%s: no task_woken for sched_class.\n", __func__);
+    }
+    task_rq_unlock(rq, p, &rf);
+}
+
+void raw_spin_rq_lock_nested(struct rq *rq, int subclass)
+{
+    raw_spinlock_t *lock;
+
+    /* Matches synchronize_rcu() in __sched_core_enable() */
+    preempt_disable();
+    raw_spin_lock_nested(&rq->__lock, subclass);
+    /* preempt_count *MUST* be > 1 */
+    preempt_enable_no_resched();
+}
+
+void raw_spin_rq_unlock(struct rq *rq)
+{
+    raw_spin_unlock(rq_lockp(rq));
+}
+
+/*
+ * Default task group.
+ * Every task in system belongs to this group at bootup.
+ */
+struct task_group root_task_group;
+LIST_HEAD(task_groups);
+
+/* Cacheline aligned slab cache for task_group */
+static struct kmem_cache *task_group_cache __read_mostly;
+
+/**
+ * init_idle - set up an idle thread for a given CPU
+ * @idle: task in question
+ * @cpu: CPU the idle task belongs to
+ *
+ * NOTE: this function does not set the idle thread's NEED_RESCHED
+ * flag, to make booting more robust.
+ */
+void __init init_idle(struct task_struct *idle, int cpu)
+{
+    struct rq *rq = cpu_rq(cpu);
+    unsigned long flags;
+
+    __sched_fork(0, idle);
+
+    raw_spin_lock_irqsave(&idle->pi_lock, flags);
+    raw_spin_rq_lock(rq);
+
+    idle->__state = TASK_RUNNING;
+#if 0
+    idle->se.exec_start = sched_clock();
+#endif
+    /*
+     * PF_KTHREAD should already be set at this point; regardless, make it
+     * look like a proper per-CPU kthread.
+     */
+    idle->flags |= PF_IDLE | PF_KTHREAD | PF_NO_SETAFFINITY;
+#if 0
+    kthread_set_per_cpu(idle, cpu);
+#endif
+
+#if 0
+    /*
+     * It's possible that init_idle() gets called multiple times on a task,
+     * in that case do_set_cpus_allowed() will not do the right thing.
+     *
+     * And since this is boot we can forgo the serialization.
+     */
+    set_cpus_allowed_common(idle, cpumask_of(cpu), 0);
+#endif
+
+    /*
+     * We're having a chicken and egg problem, even though we are
+     * holding rq->lock, the CPU isn't yet set to this CPU so the
+     * lockdep check in task_group() will fail.
+     *
+     * Similar case to sched_fork(). / Alternatively we could
+     * use task_rq_lock() here and obtain the other rq->lock.
+     *
+     * Silence PROVE_RCU
+     */
+    rcu_read_lock();
+    __set_task_cpu(idle, cpu);
+    rcu_read_unlock();
+
+    rq->idle = idle;
+    rcu_assign_pointer(rq->curr, idle);
+    idle->on_rq = TASK_ON_RQ_QUEUED;
+    idle->on_cpu = 1;
+    raw_spin_rq_unlock(rq);
+    raw_spin_unlock_irqrestore(&idle->pi_lock, flags);
+
+    /* Set the preempt count _outside_ the spinlocks! */
+    init_idle_preempt_count(idle, cpu);
+
+    /*
+     * The idle tasks have their own, simple scheduling class:
+     */
+    idle->sched_class = &idle_sched_class;
+    sprintf(idle->comm, "%s/%d", INIT_TASK_COMM, cpu);
+}
+
+void __init sched_init(void)
+{
+    int i;
+    unsigned long ptr = 0;
+
+    /* Make sure the linker didn't screw up */
+    BUG_ON(&idle_sched_class + 1 != &fair_sched_class ||
+           &fair_sched_class + 1 != &rt_sched_class ||
+           &rt_sched_class + 1   != &dl_sched_class);
+    BUG_ON(&dl_sched_class + 1   != &stop_sched_class);
+
+    //wait_bit_init();
+
+    ptr += 2 * nr_cpu_ids * sizeof(void **);
+
+    if (ptr) {
+        ptr = (unsigned long)kzalloc(ptr, GFP_NOWAIT);
+
+        root_task_group.se = (struct sched_entity **)ptr;
+        ptr += nr_cpu_ids * sizeof(void **);
+
+        root_task_group.cfs_rq = (struct cfs_rq **)ptr;
+        ptr += nr_cpu_ids * sizeof(void **);
+
+        root_task_group.shares = ROOT_TASK_GROUP_LOAD;
+#if 0
+        init_cfs_bandwidth(&root_task_group.cfs_bandwidth);
+#endif
+    }
+
+    task_group_cache = KMEM_CACHE(task_group, 0);
+
+    list_add(&root_task_group.list, &task_groups);
+    INIT_LIST_HEAD(&root_task_group.children);
+    INIT_LIST_HEAD(&root_task_group.siblings);
+
+    for_each_possible_cpu(i) {
+        struct rq *rq;
+
+        rq = cpu_rq(i);
+        raw_spin_lock_init(&rq->__lock);
+        rq->nr_running = 0;
+        rq->calc_load_active = 0;
+        rq->calc_load_update = jiffies + LOAD_FREQ;
+#if 0
+        init_cfs_rq(&rq->cfs);
+        init_rt_rq(&rq->rt);
+        init_dl_rq(&rq->dl);
+#endif
+
+        /*
+         * How much CPU bandwidth does root_task_group get?
+         *
+         * In case of task-groups formed thr' the cgroup filesystem, it
+         * gets 100% of the CPU resources in the system. This overall
+         * system CPU resource is divided among the tasks of
+         * root_task_group and its child task-groups in a fair manner,
+         * based on each entity's (task or task-group's) weight
+         * (se->load.weight).
+         *
+         * In other words, if root_task_group has 10 tasks of weight
+         * 1024) and two child groups A0 and A1 (of weight 1024 each),
+         * then A0's share of the CPU resource is:
+         *
+         *  A0's bandwidth = 1024 / (10*1024 + 1024 + 1024) = 8.33%
+         *
+         * We achieve this by letting root_task_group's tasks sit
+         * directly in rq->cfs (i.e root_task_group->se[] = NULL).
+         */
+        init_tg_cfs_entry(&root_task_group, &rq->cfs, NULL, i, NULL);
+    }
+
+    /*
+     * Make us the idle thread. Technically, schedule() should not be
+     * called from this thread, however somewhere below it might be,
+     * but because we are the idle thread, we just pick up running again
+     * when this runqueue becomes "idle".
+     */
+    init_idle(current, smp_processor_id());
+
+    pr_warn("%s: NO implementation!", __func__);
 }

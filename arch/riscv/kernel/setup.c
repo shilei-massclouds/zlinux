@@ -28,7 +28,7 @@
  * This is used before the kernel initializes the BSS
  * so it can't be in the BSS.
  */
-atomic_t hart_lottery __section(.sdata);
+atomic_t hart_lottery __section(".sdata");
 unsigned long boot_cpu_hartid;
 
 void __init parse_dtb(void)

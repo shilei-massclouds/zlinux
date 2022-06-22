@@ -135,4 +135,8 @@
 # define __alloc_size(x, ...)   __malloc
 #endif
 
+#ifndef __nocfi
+# define __nocfi
+#endif
+
 #endif /* __LINUX_COMPILER_TYPES_H */

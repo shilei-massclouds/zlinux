@@ -52,4 +52,45 @@ static inline void rb_link_node(struct rb_node *node, struct rb_node *parent,
        ____ptr ? rb_entry(____ptr, type, member) : NULL; \
     })
 
+static inline void rb_insert_color_cached(struct rb_node *node,
+                                          struct rb_root_cached *root,
+                                          bool leftmost)
+{
+    if (leftmost)
+        root->rb_leftmost = node;
+    rb_insert_color(node, &root->rb_root);
+}
+
+/**
+ * rb_add_cached() - insert @node into the leftmost cached tree @tree
+ * @node: node to insert
+ * @tree: leftmost cached tree to insert @node into
+ * @less: operator defining the (partial) node order
+ *
+ * Returns @node when it is the new leftmost, or NULL.
+ */
+static __always_inline struct rb_node *
+rb_add_cached(struct rb_node *node, struct rb_root_cached *tree,
+              bool (*less)(struct rb_node *, const struct rb_node *))
+{
+    struct rb_node **link = &tree->rb_root.rb_node;
+    struct rb_node *parent = NULL;
+    bool leftmost = true;
+
+    while (*link) {
+        parent = *link;
+        if (less(node, parent)) {
+            link = &parent->rb_left;
+        } else {
+            link = &parent->rb_right;
+            leftmost = false;
+        }
+    }
+
+    rb_link_node(node, parent, link);
+    rb_insert_color_cached(node, tree, leftmost);
+
+    return leftmost ? node : NULL;
+}
+
 #endif  /* _LINUX_RBTREE_H */

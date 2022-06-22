@@ -61,6 +61,8 @@
 
 #define PREEMPT_DISABLE_OFFSET PREEMPT_OFFSET
 
+#define PREEMPT_DISABLED    (PREEMPT_DISABLE_OFFSET + PREEMPT_ENABLED)
+
 /*
  * Initial preempt_count value; reflects the preempt_count schedule invariant
  * which states that during context switches:
@@ -107,6 +109,8 @@ do { \
     barrier(); \
     preempt_count_dec(); \
 } while (0)
+
+#define preempt_enable_no_resched() sched_preempt_enable_no_resched()
 
 #define preempt_disable_notrace() \
 do { \

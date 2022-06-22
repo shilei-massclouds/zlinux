@@ -24,10 +24,10 @@
 #endif
 
 #define __page_aligned_data \
-    __section(.data..page_aligned) __aligned(PAGE_SIZE)
+    __section(".data..page_aligned") __aligned(PAGE_SIZE)
 
 #define __page_aligned_bss \
-    __section(.bss..page_aligned) __aligned(PAGE_SIZE)
+    __section(".bss..page_aligned") __aligned(PAGE_SIZE)
 
 #ifdef __ASSEMBLY__
 

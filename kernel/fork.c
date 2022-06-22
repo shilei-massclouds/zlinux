@@ -665,7 +665,23 @@ pid_t kernel_clone(struct kernel_clone_args *args)
 
     wake_up_new_task(p);
 
-    panic("%s: pid(%d) END!\n", __func__, nr);
+    /* forking complete and child started to run, tell ptracer */
+    if (unlikely(trace)) {
+        panic("%s: no TRACE!\n", __func__);
+        //ptrace_event_pid(trace, pid);
+    }
+
+    if (clone_flags & CLONE_VFORK) {
+        panic("%s: no CLONE_VFORK!\n", __func__);
+#if 0
+        if (!wait_for_vfork_done(p, &vfork))
+            ptrace_event_pid(PTRACE_EVENT_VFORK_DONE, pid);
+#endif
+    }
+
+    put_pid(pid);
+    pr_warn("%s: pid(%d) END!\n", __func__, nr);
+    return nr;
 }
 
 /*

@@ -127,4 +127,6 @@ static inline struct pid_namespace *ns_of_pid(struct pid *pid)
 extern struct pid *
 alloc_pid(struct pid_namespace *ns, pid_t *set_tid, size_t set_tid_size);
 
+extern void put_pid(struct pid *pid);
+
 #endif /* _LINUX_PID_H */

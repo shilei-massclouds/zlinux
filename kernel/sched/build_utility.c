@@ -52,8 +52,8 @@
 #include <linux/swait_api.h>
 #include <linux/spinlock_api.h>
 
-#if 0
 #include "sched.h"
+#if 0
 #include "sched-pelt.h"
 #include "stats.h"
 #include "autogroup.h"
@@ -64,3 +64,5 @@
 #include "clock.c"
 #endif
 #include "swait.c"
+
+#include "stop_task.c"

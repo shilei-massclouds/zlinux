@@ -30,10 +30,12 @@ extern struct cpumask __cpu_possible_mask;
 extern struct cpumask __cpu_online_mask;
 extern struct cpumask __cpu_present_mask;
 extern struct cpumask __cpu_active_mask;
+extern struct cpumask __cpu_dying_mask;
 #define cpu_possible_mask ((const struct cpumask *)&__cpu_possible_mask)
 #define cpu_online_mask   ((const struct cpumask *)&__cpu_online_mask)
 #define cpu_present_mask  ((const struct cpumask *)&__cpu_present_mask)
 #define cpu_active_mask   ((const struct cpumask *)&__cpu_active_mask)
+#define cpu_dying_mask    ((const struct cpumask *)&__cpu_dying_mask)
 
 /**
  * cpumask_bits - get the bits in a cpumask
@@ -44,35 +46,7 @@ extern struct cpumask __cpu_active_mask;
  */
 #define cpumask_bits(maskp) ((maskp)->bits)
 
-#define cpu_online(cpu) cpumask_test_cpu((cpu), cpu_online_mask)
-
 #define nr_cpumask_bits ((unsigned int)NR_CPUS)
-
-#define num_online_cpus()   1U
-#define num_possible_cpus() 1U
-#define num_present_cpus()  1U
-#define num_active_cpus()   1U
-
-/**
- * for_each_cpu - iterate over every cpu in a mask
- * @cpu: the (optionally unsigned) integer iterator
- * @mask: the cpumask pointer
- *
- * After the loop, cpu is >= nr_cpu_ids.
- */
-#define for_each_cpu(cpu, mask)                 \
-    for ((cpu) = -1;                            \
-        (cpu) = cpumask_next((cpu), (mask)),    \
-        (cpu) < nr_cpu_ids;)
-
-#define for_each_possible_cpu(cpu) for_each_cpu((cpu), cpu_possible_mask)
-#define for_each_online_cpu(cpu)   for_each_cpu((cpu), cpu_online_mask)
-#define for_each_present_cpu(cpu)  for_each_cpu((cpu), cpu_present_mask)
-
-#define CPU_BITS_NONE \
-{                     \
-    [0 ... BITS_TO_LONGS(NR_CPUS)-1] = 0UL \
-}
 
 static inline void cpu_max_bits_warn(unsigned int cpu, unsigned int bits)
 {
@@ -97,6 +71,52 @@ static inline int
 cpumask_test_cpu(int cpu, const struct cpumask *cpumask)
 {
     return test_bit(cpumask_check(cpu), cpumask_bits((cpumask)));
+}
+
+static inline bool cpu_online(unsigned int cpu)
+{
+    return cpumask_test_cpu(cpu, cpu_online_mask);
+}
+
+static inline bool cpu_possible(unsigned int cpu)
+{
+    return cpumask_test_cpu(cpu, cpu_possible_mask);
+}
+
+static inline bool cpu_present(unsigned int cpu)
+{
+    return cpumask_test_cpu(cpu, cpu_present_mask);
+}
+
+static inline bool cpu_active(unsigned int cpu)
+{
+    return cpumask_test_cpu(cpu, cpu_active_mask);
+}
+
+static inline bool cpu_dying(unsigned int cpu)
+{
+    return cpumask_test_cpu(cpu, cpu_dying_mask);
+}
+
+/**
+ * for_each_cpu - iterate over every cpu in a mask
+ * @cpu: the (optionally unsigned) integer iterator
+ * @mask: the cpumask pointer
+ *
+ * After the loop, cpu is >= nr_cpu_ids.
+ */
+#define for_each_cpu(cpu, mask)                 \
+    for ((cpu) = -1;                            \
+        (cpu) = cpumask_next((cpu), (mask)),    \
+        (cpu) < nr_cpu_ids;)
+
+#define for_each_possible_cpu(cpu) for_each_cpu((cpu), cpu_possible_mask)
+#define for_each_online_cpu(cpu)   for_each_cpu((cpu), cpu_online_mask)
+#define for_each_present_cpu(cpu)  for_each_cpu((cpu), cpu_present_mask)
+
+#define CPU_BITS_NONE \
+{                     \
+    [0 ... BITS_TO_LONGS(NR_CPUS)-1] = 0UL \
 }
 
 /**
@@ -229,11 +249,6 @@ static inline unsigned int cpumask_first(const struct cpumask *srcp)
     return find_first_bit(cpumask_bits(srcp), nr_cpumask_bits);
 }
 
-static inline bool cpu_possible(unsigned int cpu)
-{
-    return cpumask_test_cpu(cpu, cpu_possible_mask);
-}
-
 /**
  * cpumask_size - size to allocate for a 'struct cpumask' in bytes
  */
@@ -241,5 +256,45 @@ static inline unsigned int cpumask_size(void)
 {
     return BITS_TO_LONGS(nr_cpumask_bits) * sizeof(long);
 }
+
+/**
+ * cpumask_any - pick a "random" cpu from *srcp
+ * @srcp: the input cpumask
+ *
+ * Returns >= nr_cpu_ids if no cpus set.
+ */
+#define cpumask_any(srcp) cpumask_first(srcp)
+
+extern atomic_t __num_online_cpus;
+
+/**
+ * num_online_cpus() - Read the number of online CPUs
+ *
+ * Despite the fact that __num_online_cpus is of type atomic_t, this
+ * interface gives only a momentary snapshot and is not protected against
+ * concurrent CPU hotplug operations unless invoked from a cpuhp_lock held
+ * region.
+ */
+static inline unsigned int num_online_cpus(void)
+{
+    return atomic_read(&__num_online_cpus);
+}
+
+#define num_possible_cpus() cpumask_weight(cpu_possible_mask)
+#define num_present_cpus()  cpumask_weight(cpu_present_mask)
+#define num_active_cpus()   cpumask_weight(cpu_active_mask)
+
+#if NR_CPUS <= BITS_PER_LONG
+#define CPU_MASK_ALL                            \
+(cpumask_t) { {                             \
+    [BITS_TO_LONGS(NR_CPUS)-1] = BITMAP_LAST_WORD_MASK(NR_CPUS) \
+} }
+#else
+#define CPU_MASK_ALL                            \
+(cpumask_t) { {                             \
+    [0 ... BITS_TO_LONGS(NR_CPUS)-2] = ~0UL,            \
+    [BITS_TO_LONGS(NR_CPUS)-1] = BITMAP_LAST_WORD_MASK(NR_CPUS) \
+} }
+#endif /* NR_CPUS > BITS_PER_LONG */
 
 #endif /* __LINUX_CPUMASK_H */

@@ -210,6 +210,28 @@
     }
 
 /*
+ * GCC 4.5 and later have a 32 bytes section alignment for structures.
+ * Except GCC 4.9, that feels the need to align on 64 bytes.
+ */
+#define STRUCT_ALIGNMENT 32
+#define STRUCT_ALIGN() . = ALIGN(STRUCT_ALIGNMENT)
+
+/*
+ * The order of the sched class addresses are important, as they are
+ * used to determine the order of the priority of each sched class in
+ * relation to each other.
+ */
+#define SCHED_DATA              \
+    STRUCT_ALIGN();             \
+    __begin_sched_classes = .;  \
+    *(__idle_sched_class)       \
+    *(__fair_sched_class)       \
+    *(__rt_sched_class)         \
+    *(__dl_sched_class)         \
+    *(__stop_sched_class)       \
+    __end_sched_classes = .;
+
+/*
  * Read only Data
  */
 #define RO_DATA(align)  \
@@ -217,6 +239,7 @@
     .rodata : AT(ADDR(.rodata) - LOAD_OFFSET) { \
         __start_rodata = .;     \
         *(.rodata) *(.rodata.*) \
+        SCHED_DATA              \
         RO_AFTER_INIT_DATA  /* Read only after init */  \
         . = ALIGN(8); \
     }   \

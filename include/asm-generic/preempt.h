@@ -35,4 +35,15 @@ static __always_inline void __preempt_count_sub(int val)
     *preempt_count_ptr() -= val;
 }
 
+/*
+ * must be macros to avoid header recursion hell
+ */
+#define init_task_preempt_count(p) do { \
+    task_thread_info(p)->preempt_count = FORK_PREEMPT_COUNT; \
+} while (0)
+
+#define init_idle_preempt_count(p, cpu) do { \
+    task_thread_info(p)->preempt_count = PREEMPT_DISABLED; \
+} while (0)
+
 #endif /* __ASM_PREEMPT_H */

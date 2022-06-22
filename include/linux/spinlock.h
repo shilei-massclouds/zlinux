@@ -125,6 +125,15 @@ static __always_inline void spin_unlock_irq(spinlock_t *lock)
     raw_spin_unlock_irq(&lock->rlock);
 }
 
+/*
+ * Always evaluate the 'subclass' argument to avoid that the compiler
+ * warns about set-but-not-used variables when building with
+ * CONFIG_DEBUG_LOCK_ALLOC=n and with W=1.
+ */
+#define raw_spin_lock_nested(lock, subclass) \
+    _raw_spin_lock(((void)(subclass), (lock)))
+#define raw_spin_lock_nest_lock(lock, nest_lock) _raw_spin_lock(lock)
+
 #include <linux/spinlock_api_smp.h>
 
 #endif /* __LINUX_SPINLOCK_H */

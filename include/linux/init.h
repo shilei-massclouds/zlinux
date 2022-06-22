@@ -10,10 +10,10 @@
 /* These are for everybody (although not all archs will actually
    discard it in modules) */
 #define __init \
-    __section(.init.text) __cold __latent_entropy __noinitretpoline
+    __section(".init.text") __cold  __latent_entropy __noinitretpoline __nocfi
 
-#define __initdata  __section(.init.data)
-#define __initconst __section(.init.rodata)
+#define __initdata  __section(".init.data")
+#define __initconst __section(".init.rodata")
 
 #define __ref       __section(".ref.text") noinline
 #define __refdata   __section(".ref.data")
@@ -48,8 +48,8 @@ void setup_arch(char **);
     static const char __setup_str_##unique_id[] __initconst     \
         __aligned(1) = str;                                     \
     static struct obs_kernel_param __setup_##unique_id          \
-        __used __section(.init.setup)                           \
-        __attribute__((aligned((sizeof(long)))))                \
+        __used __section(".init.setup")                         \
+        __aligned(__alignof__(struct obs_kernel_param))         \
         = { __setup_str_##unique_id, fn, early }
 
 #define __setup(str, fn) __setup_param(str, fn, fn, 0)

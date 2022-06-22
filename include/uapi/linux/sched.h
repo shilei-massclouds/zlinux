@@ -12,6 +12,7 @@
 #define CLONE_FS        0x00000200  /* set if fs info shared between processes */
 #define CLONE_SIGHAND   0x00000800  /* set if signal handlers and blocked signals shared */
 #define CLONE_PIDFD     0x00001000  /* set if a pidfd should be placed in parent */
+#define CLONE_VFORK     0x00004000  /* set if the parent wants the child to wake it up on mm_release */
 #define CLONE_PARENT    0x00008000  /* set if we want to have the same parent as the cloner */
 #define CLONE_THREAD    0x00010000  /* Same thread group? */
 #define CLONE_NEWNS     0x00020000  /* New mount namespace group */
@@ -29,5 +30,16 @@
 #ifndef __ASSEMBLY__
 
 #endif /* !__ASSEMBLY__ */
+
+/*
+ * Scheduling policies
+ */
+#define SCHED_NORMAL    0
+#define SCHED_FIFO      1
+#define SCHED_RR        2
+#define SCHED_BATCH     3
+/* SCHED_ISO: reserved but not implemented yet */
+#define SCHED_IDLE      5
+#define SCHED_DEADLINE  6
 
 #endif /* _UAPI_LINUX_SCHED_H */

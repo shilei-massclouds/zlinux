@@ -14,6 +14,7 @@
 #include <linux/percpu.h>
 #include <linux/pid_namespace.h>
 #include <linux/sched.h>
+#include <linux/sched/init.h>
 #include <linux/sched/task.h>
 #include <linux/sched/task_stack.h>
 #include <linux/mm.h>
@@ -431,14 +432,12 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 #endif
     mm_init();
 
-#if 0
     /*
      * Set up the scheduler prior starting any interrupts (such as the
      * timer interrupt). Full topology setup happens at smp_init()
      * time - but meanwhile we still have a functioning scheduler.
      */
     sched_init();
-#endif
 
     if (WARN(!irqs_disabled(),
              "Interrupts were enabled *very* early, fixing it\n"))

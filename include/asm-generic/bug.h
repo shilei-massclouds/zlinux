@@ -3,6 +3,7 @@
 #define _ASM_GENERIC_BUG_H
 
 #include <linux/compiler.h>
+#include <linux/once_lite.h>
 
 #define BUGFLAG_WARNING         (1 << 0)
 #define BUGFLAG_ONCE            (1 << 1)
@@ -52,16 +53,8 @@ struct bug_entry {
     unlikely(__ret_warn_on);                    \
 })
 
-#define WARN_ONCE(condition, format...) ({          \
-    static bool __section(.data.once) __warned;     \
-    int __ret_warn_once = !!(condition);            \
-                                \
-    if (unlikely(__ret_warn_once && !__warned)) {       \
-        __warned = true;                \
-        WARN(1, format);                \
-    }                           \
-    unlikely(__ret_warn_once);              \
-})
+#define WARN_ONCE(condition, format...) \
+    DO_ONCE_LITE_IF(condition, WARN, 1, format)
 
 #endif /* !__ASSEMBLY__ */
 

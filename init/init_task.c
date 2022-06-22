@@ -5,6 +5,7 @@
 #include <linux/sched.h>
 #include <linux/sched/task.h>
 #include <linux/sched/signal.h>
+#include <linux/sched/autogroup.h>
 #include <linux/init.h>
 #include <linux/mm.h>
 
@@ -46,13 +47,23 @@ struct task_struct init_task __aligned(L1_CACHE_BYTES) = {
     .stack_refcount = REFCOUNT_INIT(1),
     .__state        = 0,
     .stack          = init_stack,
+    .prio           = MAX_PRIO - 20,
+    .normal_prio    = MAX_PRIO - 20,
+    .policy         = SCHED_NORMAL,
     .usage          = REFCOUNT_INIT(2),
     .flags          = PF_KTHREAD,
     .thread_pid     = &init_struct_pid,
     .cpus_ptr       = &init_task.cpus_mask,
     .user_cpus_ptr  = NULL,
+    .cpus_mask      = CPU_MASK_ALL,
+    .nr_cpus_allowed= NR_CPUS,
     .comm           = INIT_TASK_COMM,
     .signal         = &init_signals,
+    .pi_lock        = __RAW_SPIN_LOCK_UNLOCKED(init_task.pi_lock),
     .nsproxy        = &init_nsproxy,
+    .se             = {
+        .group_node     = LIST_HEAD_INIT(init_task.se.group_node),
+    },
+    .sched_task_group = &root_task_group,
 };
 EXPORT_SYMBOL(init_task);

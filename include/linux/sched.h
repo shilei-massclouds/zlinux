@@ -29,12 +29,13 @@
 #if 0
 #include <linux/resource.h>
 #include <linux/latencytop.h>
-#include <linux/sched/prio.h>
 #include <linux/sched/types.h>
 #include <linux/signal_types.h>
 #include <linux/syscall_user_dispatch.h>
 #endif
+#include <linux/sched/prio.h>
 #include <linux/mm_types_task.h>
+#include <linux/rbtree.h>
 #if 0
 #include <linux/task_io_accounting.h>
 #include <linux/posix-timers.h>
@@ -62,6 +63,7 @@
  * Per process flags
  */
 #define PF_IDLE             0x00000002  /* I am an IDLE thread */
+#define PF_EXITING          0x00000004  /* Getting shut down */
 #define PF_IO_WORKER        0x00000010  /* Task is an IO worker */
 #define PF_WQ_WORKER        0x00000020  /* I'm a workqueue worker */
 #define PF_FORKNOEXEC       0x00000040  /* Forked but didn't exec */
@@ -86,6 +88,16 @@
 /* Task command name length: */
 #define TASK_COMM_LEN   16
 
+/*
+ * Integer metrics need fixed point arithmetic, e.g., sched/fair
+ * has a few: load, load_avg, util_avg, freq, and capacity.
+ *
+ * We define a basic fixed point arithmetic range, and then formalize
+ * all these metrics based on that basic range.
+ */
+#define SCHED_FIXEDPOINT_SHIFT  10
+#define SCHED_FIXEDPOINT_SCALE  (1L << SCHED_FIXEDPOINT_SHIFT)
+
 static inline int _cond_resched(void) { return 0; }
 
 #define task_thread_info(task) (&(task)->thread_info)
@@ -109,6 +121,43 @@ struct wake_q_node {
     struct wake_q_node *next;
 };
 
+struct sched_avg {
+} ____cacheline_aligned;
+
+struct sched_entity {
+    /* For load-balancing: */
+#if 0
+    struct load_weight      load;
+#endif
+    struct rb_node          run_node;
+    struct list_head        group_node;
+    unsigned int            on_rq;
+
+    u64             exec_start;
+    u64             sum_exec_runtime;
+    u64             vruntime;
+    u64             prev_sum_exec_runtime;
+
+    u64             nr_migrations;
+
+    int             depth;
+    struct sched_entity     *parent;
+    /* rq on which this entity is (to be) queued: */
+    struct cfs_rq           *cfs_rq;
+    /* rq "owned" by this entity/group: */
+    struct cfs_rq           *my_q;
+    /* cached value of my_q->h_nr_running */
+    unsigned long           runnable_weight;
+
+    /*
+     * Per entity load average tracking.
+     *
+     * Put into separate cache line so it does not
+     * collide with read-mostly values above.
+     */
+    struct sched_avg        avg;
+};
+
 struct task_struct {
     /*
      * For reasons of header soup (see current_thread_info()), this
@@ -124,10 +173,21 @@ struct task_struct {
     void *stack;
     refcount_t usage;
 
+    int on_cpu;
+
     /* Per task flags (PF_*), defined further below: */
     unsigned int flags;
 
     int recent_used_cpu;
+
+    int wake_cpu;
+
+    int on_rq;
+
+    unsigned int policy;
+
+    int prio;
+    int normal_prio;
 
     /* A live task holds one reference: */
     refcount_t stack_refcount;
@@ -146,14 +206,25 @@ struct task_struct {
     /* VM state: */
     struct reclaim_state *reclaim_state;
 
+    unsigned short migration_disabled;
+
+    struct sched_entity se;
+    const struct sched_class *sched_class;
+
+    int nr_cpus_allowed;
     const cpumask_t *cpus_ptr;
-    cpumask_t       *user_cpus_ptr;
-    cpumask_t       cpus_mask;
+    cpumask_t *user_cpus_ptr;
+    cpumask_t cpus_mask;
 
     union {
         refcount_t      rcu_users;
         struct rcu_head rcu;
     };
+
+    /* Scheduler bits, serialized by scheduler locks: */
+    unsigned            sched_reset_on_fork:1;
+    unsigned            sched_contributes_to_load:1;
+    unsigned            sched_migrated:1;
 
     /* CLONE_CHILD_SETTID: */
     int __user          *set_child_tid;
@@ -208,6 +279,8 @@ struct task_struct {
      */
     u64 timer_slack_ns;
     u64 default_timer_slack_ns;
+
+    struct task_group *sched_task_group;
 
     /* CPU-specific state of this task: */
     struct thread_struct    thread;
