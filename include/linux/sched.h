@@ -321,4 +321,9 @@ static inline unsigned int task_cpu(const struct task_struct *p)
     return READ_ONCE(task_thread_info(p)->cpu);
 }
 
+static __always_inline bool need_resched(void)
+{
+    return unlikely(tif_need_resched());
+}
+
 #endif /* _LINUX_SCHED_H */

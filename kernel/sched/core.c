@@ -112,10 +112,164 @@ int wake_up_process(struct task_struct *p)
 }
 EXPORT_SYMBOL(wake_up_process);
 
+static inline void sched_submit_work(struct task_struct *tsk)
+{
+    pr_warn("%s: NO implementation!\n", __func__);
+}
+
+static void sched_update_worker(struct task_struct *tsk)
+{
+    pr_warn("%s: NO implementation!\n", __func__);
+#if 0
+    if (tsk->flags & (PF_WQ_WORKER | PF_IO_WORKER)) {
+        if (tsk->flags & PF_WQ_WORKER)
+            wq_worker_running(tsk);
+        else
+            io_wq_worker_running(tsk);
+    }
+#endif
+}
+
+/*
+ * Constants for the sched_mode argument of __schedule().
+ *
+ * The mode argument allows RT enabled kernels to differentiate a
+ * preemption from blocking on an 'sleeping' spin/rwlock. Note that
+ * SM_MASK_PREEMPT for !RT has all bits set, which allows the compiler to
+ * optimize the AND operation out and just check for zero.
+ */
+#define SM_NONE             0x0
+#define SM_PREEMPT          0x1
+#define SM_RTLOCK_WAIT      0x2
+
+static void put_prev_task_balance(struct rq *rq, struct task_struct *prev,
+                                  struct rq_flags *rf)
+{
+#if 0
+    const struct sched_class *class;
+    /*
+     * We must do the balancing pass before put_prev_task(), such
+     * that when we release the rq->lock the task is in the same
+     * state as before we took rq->lock.
+     *
+     * We can terminate the balance pass as soon as we know there is
+     * a runnable task of @class priority or higher.
+     */
+    for_class_range(class, prev->sched_class, &idle_sched_class) {
+        if (class->balance(rq, prev, rf))
+            break;
+    }
+#endif
+
+    put_prev_task(rq, prev);
+}
+
+/*
+ * Pick up the highest-prio task:
+ */
+static inline struct task_struct *
+__pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
+{
+    const struct sched_class *class;
+    struct task_struct *p;
+
+    put_prev_task_balance(rq, prev, rf);
+
+    for_each_class(class) {
+        p = class->pick_next_task(rq);
+        if (p)
+            return p;
+    }
+
+    BUG(); /* The idle class should always have a runnable task. */
+}
+
+static struct task_struct *
+pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
+{
+    return __pick_next_task(rq, prev, rf);
+}
+
+/*
+ * __schedule() is the main scheduler function.
+ *
+ * The main means of driving the scheduler and thus entering this function are:
+ *
+ *   1. Explicit blocking: mutex, semaphore, waitqueue, etc.
+ *
+ *   2. TIF_NEED_RESCHED flag is checked on interrupt and userspace return
+ *      paths. For example, see arch/x86/entry_64.S.
+ *
+ *      To drive preemption between tasks, the scheduler sets the flag in timer
+ *      interrupt handler scheduler_tick().
+ *
+ *   3. Wakeups don't really cause entry into schedule(). They add a
+ *      task to the run-queue and that's it.
+ *
+ *      Now, if the new task added to the run-queue preempts the current
+ *      task, then the wakeup sets TIF_NEED_RESCHED and schedule() gets
+ *      called on the nearest possible occasion:
+ *
+ *       - If the kernel is preemptible (CONFIG_PREEMPTION=y):
+ *
+ *         - in syscall or exception context, at the next outmost
+ *           preempt_enable(). (this might be as soon as the wake_up()'s
+ *           spin_unlock()!)
+ *
+ *         - in IRQ context, return from interrupt-handler to
+ *           preemptible context
+ *
+ *       - If the kernel is not preemptible (CONFIG_PREEMPTION is not set)
+ *         then at the next:
+ *
+ *          - cond_resched() call
+ *          - explicit schedule() call
+ *          - return from syscall or exception to user-space
+ *          - return from interrupt-handler to user-space
+ *
+ * WARNING: must be called with preemption disabled!
+ */
+static void __sched notrace __schedule(unsigned int sched_mode)
+{
+    int cpu;
+    struct rq *rq;
+    struct rq_flags rf;
+    unsigned long prev_state;
+    unsigned long *switch_count;
+    struct task_struct *prev, *next;
+
+    cpu = smp_processor_id();
+    rq = cpu_rq(cpu);
+    prev = rq->curr;
+
+    local_irq_disable();
+    //rcu_note_context_switch(!!sched_mode);
+
+    /*
+     * Make sure that signal_pending_state()->signal_pending() below
+     * can't be reordered with __set_current_state(TASK_INTERRUPTIBLE)
+     * done by the caller to avoid the race with signal_wake_up():
+     *
+     * __set_current_state(@state)      signal_wake_up()
+     * schedule()                 set_tsk_thread_flag(p, TIF_SIGPENDING)
+     *                    wake_up_state(p, state)
+     *   LOCK rq->lock              LOCK p->pi_state
+     *   smp_mb__after_spinlock()           smp_mb__after_spinlock()
+     *     if (signal_pending_state())      if (p->state & @state)
+     *
+     * Also, the membarrier system call requires a full memory barrier
+     * after coming from user-space, before storing to rq->curr.
+     */
+    rq_lock(rq, &rf);
+    smp_mb__after_spinlock();
+
+    next = pick_next_task(rq, prev, &rf);
+
+    panic("%s: END!\n", __func__);
+}
+
 asmlinkage __visible void __sched schedule(void)
 {
-    panic("%s: NO implementation!\n", __func__);
-#if 0
     struct task_struct *tsk = current;
 
     sched_submit_work(tsk);
@@ -125,7 +279,7 @@ asmlinkage __visible void __sched schedule(void)
         sched_preempt_enable_no_resched();
     } while (need_resched());
     sched_update_worker(tsk);
-#endif
+    panic("%s: NO implementation!\n", __func__);
 }
 EXPORT_SYMBOL(schedule);
 

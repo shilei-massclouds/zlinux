@@ -100,8 +100,6 @@ noinline void __ref rest_init(void)
      */
     pid = kernel_thread(kernel_init, NULL, CLONE_FS);
 
-    panic("%s: pid(%d) END!\n", __func__, pid);
-
     /*
      * Enable might_sleep() and smp_processor_id() checks.
      * They cannot be enabled earlier because with CONFIG_PREEMPTION=y
@@ -110,6 +108,14 @@ noinline void __ref rest_init(void)
      * already, but it's stuck on the kthreadd_done completion.
      */
     system_state = SYSTEM_SCHEDULING;
+
+    /*
+     * The boot idle thread must execute schedule()
+     * at least once to get things moving:
+     */
+    schedule_preempt_disabled();
+
+    panic("%s: pid(%d) END!\n", __func__, pid);
 }
 
 void __init __weak arch_call_rest_init(void)

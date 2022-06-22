@@ -182,6 +182,7 @@ struct rq {
 
     struct task_struct __rcu    *curr;
     struct task_struct  *idle;
+    struct task_struct  *stop;
     struct mm_struct    *prev_mm;
 
     struct sched_domain __rcu *sd;
@@ -194,6 +195,11 @@ struct rq_flags {
 struct sched_class {
     void (*enqueue_task)(struct rq *rq, struct task_struct *p, int flags);
     void (*dequeue_task) (struct rq *rq, struct task_struct *p, int flags);
+
+    struct task_struct *(*pick_next_task)(struct rq *rq);
+
+    void (*put_prev_task)(struct rq *rq, struct task_struct *p);
+    void (*set_next_task)(struct rq *rq, struct task_struct *p, bool first);
 
     int (*select_task_rq)(struct task_struct *p, int task_cpu, int flags);
     void (*task_woken)(struct rq *this_rq, struct task_struct *task);
@@ -382,5 +388,41 @@ static inline void __set_task_cpu(struct task_struct *p, unsigned int cpu)
 extern void init_tg_cfs_entry(struct task_group *tg, struct cfs_rq *cfs_rq,
                               struct sched_entity *se, int cpu,
                               struct sched_entity *parent);
+
+static inline void
+rq_lock(struct rq *rq, struct rq_flags *rf)
+    __acquires(rq->lock)
+{
+    raw_spin_rq_lock(rq);
+}
+
+static inline void put_prev_task(struct rq *rq, struct task_struct *prev)
+{
+    WARN_ON_ONCE(rq->curr != prev);
+    prev->sched_class->put_prev_task(rq, prev);
+}
+
+/* Defined in include/asm-generic/vmlinux.lds.h */
+extern struct sched_class __begin_sched_classes[];
+extern struct sched_class __end_sched_classes[];
+
+#define sched_class_highest (__end_sched_classes - 1)
+#define sched_class_lowest  (__begin_sched_classes - 1)
+
+#define for_class_range(class, _from, _to) \
+    for (class = (_from); class != (_to); class--)
+
+#define for_each_class(class) \
+    for_class_range(class, sched_class_highest, sched_class_lowest)
+
+static inline int task_on_rq_queued(struct task_struct *p)
+{
+    return p->on_rq == TASK_ON_RQ_QUEUED;
+}
+
+static inline bool sched_stop_runnable(struct rq *rq)
+{
+    return rq->stop && task_on_rq_queued(rq->stop);
+}
 
 #endif /* _KERNEL_SCHED_SCHED_H */

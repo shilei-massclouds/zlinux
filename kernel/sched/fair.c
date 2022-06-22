@@ -277,12 +277,82 @@ void init_tg_cfs_entry(struct task_group *tg, struct cfs_rq *cfs_rq,
     panic("%s: END!\n", __func__);
 }
 
+static void put_prev_entity(struct cfs_rq *cfs_rq, struct sched_entity *prev)
+{
+#if 0
+    /*
+     * If still on the runqueue then deactivate_task()
+     * was not called and update_curr() has to be done:
+     */
+    if (prev->on_rq)
+        update_curr(cfs_rq);
+
+    /* throttle cfs_rqs exceeding runtime */
+    check_cfs_rq_runtime(cfs_rq);
+
+    check_spread(cfs_rq, prev);
+#endif
+
+    if (prev->on_rq) {
+#if 0
+        update_stats_wait_start_fair(cfs_rq, prev);
+#endif
+        /* Put 'current' back into the tree. */
+        __enqueue_entity(cfs_rq, prev);
+#if 0
+        /* in !on_rq case, update occurred at dequeue */
+        update_load_avg(cfs_rq, prev, 0);
+#endif
+    }
+    cfs_rq->curr = NULL;
+}
+
+/*
+ * Account for a descheduled task:
+ */
+static void put_prev_task_fair(struct rq *rq, struct task_struct *prev)
+{
+    struct sched_entity *se = &prev->se;
+    struct cfs_rq *cfs_rq;
+
+    for_each_sched_entity(se) {
+        cfs_rq = cfs_rq_of(se);
+        put_prev_entity(cfs_rq, se);
+    }
+}
+
+/* Account for a task changing its policy or group.
+ *
+ * This routine is mostly called to set cfs_rq->curr field when a task
+ * migrates between groups/classes.
+ */
+static void set_next_task_fair(struct rq *rq, struct task_struct *p, bool first)
+{
+    panic("%s: END!\n", __func__);
+}
+
+struct task_struct *
+pick_next_task_fair(struct rq *rq, struct task_struct *prev,
+                    struct rq_flags *rf)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static struct task_struct *__pick_next_task_fair(struct rq *rq)
+{
+    return pick_next_task_fair(rq, NULL, NULL);
+}
+
 /*
  * All the scheduling class methods:
  */
 DEFINE_SCHED_CLASS(fair) = {
     .enqueue_task       = enqueue_task_fair,
     .dequeue_task       = dequeue_task_fair,
+
+    .pick_next_task     = __pick_next_task_fair,
+    .put_prev_task      = put_prev_task_fair,
+    .set_next_task      = set_next_task_fair,
 
     .select_task_rq     = select_task_rq_fair,
 };

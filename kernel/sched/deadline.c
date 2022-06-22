@@ -16,5 +16,32 @@
  *                    Fabio Checconi <fchecconi@gmail.com>
  */
 
+static void put_prev_task_dl(struct rq *rq, struct task_struct *p)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
+static void set_next_task_dl(struct rq *rq, struct task_struct *p, bool first)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
+static struct task_struct *pick_next_task_dl(struct rq *rq)
+{
+    panic("%s: NO implementation!\n", __func__);
+#if 0
+    struct task_struct *p;
+
+    p = pick_task_dl(rq);
+    if (p)
+        set_next_task_dl(rq, p, true);
+
+    return p;
+#endif
+}
+
 DEFINE_SCHED_CLASS(dl) = {
+    .pick_next_task     = pick_next_task_dl,
+    .put_prev_task      = put_prev_task_dl,
+    .set_next_task      = set_next_task_dl,
 };

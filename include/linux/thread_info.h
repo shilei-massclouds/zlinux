@@ -36,6 +36,16 @@ static inline void clear_ti_thread_flag(struct thread_info *ti, int flag)
     clear_bit(flag, (unsigned long *)&ti->flags);
 }
 
+static inline int test_ti_thread_flag(struct thread_info *ti, int flag)
+{
+    return test_bit(flag, (unsigned long *)&ti->flags);
+}
+
+#define test_thread_flag(flag) \
+    test_ti_thread_flag(current_thread_info(), flag)
+
+#define tif_need_resched() test_thread_flag(TIF_NEED_RESCHED)
+
 #endif /* __KERNEL__ */
 
 #endif /* _LINUX_THREAD_INFO_H */
