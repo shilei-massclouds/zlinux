@@ -179,6 +179,15 @@ struct mm_struct {
 
         unsigned long start_code, end_code, start_data, end_data;
         unsigned long start_brk, brk, start_stack;
+
+        /**
+         * @mm_count: The number of references to &struct mm_struct
+         * (@mm_users count as 1).
+         *
+         * Use mmgrab()/mmdrop() to modify. When this drops to 0, the
+         * &struct mm_struct is freed.
+         */
+        atomic_t mm_count;
     } __randomize_layout;
 
     /*

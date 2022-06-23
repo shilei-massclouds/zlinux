@@ -16,6 +16,11 @@
  *                    Fabio Checconi <fchecconi@gmail.com>
  */
 
+static inline struct task_struct *dl_task_of(struct sched_dl_entity *dl_se)
+{
+    return container_of(dl_se, struct task_struct, dl);
+}
+
 static void put_prev_task_dl(struct rq *rq, struct task_struct *p)
 {
     panic("%s: NO implementation!\n", __func__);
@@ -26,22 +31,51 @@ static void set_next_task_dl(struct rq *rq, struct task_struct *p, bool first)
     panic("%s: NO implementation!\n", __func__);
 }
 
-static struct task_struct *pick_next_task_dl(struct rq *rq)
+#define __node_2_dle(node) \
+    rb_entry((node), struct sched_dl_entity, rb_node)
+
+static struct sched_dl_entity *pick_next_dl_entity(struct dl_rq *dl_rq)
 {
-    panic("%s: NO implementation!\n", __func__);
-#if 0
+    struct rb_node *left = rb_first_cached(&dl_rq->root);
+
+    if (!left)
+        return NULL;
+
+    return __node_2_dle(left);
+}
+
+static struct task_struct *pick_task_dl(struct rq *rq)
+{
+    struct sched_dl_entity *dl_se;
+    struct dl_rq *dl_rq = &rq->dl;
     struct task_struct *p;
 
+    if (!sched_dl_runnable(rq))
+        return NULL;
+
+    dl_se = pick_next_dl_entity(dl_rq);
+    BUG_ON(!dl_se);
+    p = dl_task_of(dl_se);
+
+    return p;
+}
+
+static struct task_struct *pick_next_task_dl(struct rq *rq)
+{
+    struct task_struct *p;
+
+    printk("%s: 1\n", __func__);
     p = pick_task_dl(rq);
     if (p)
         set_next_task_dl(rq, p, true);
 
     return p;
-#endif
 }
 
 DEFINE_SCHED_CLASS(dl) = {
     .pick_next_task     = pick_next_task_dl,
     .put_prev_task      = put_prev_task_dl,
     .set_next_task      = set_next_task_dl,
+
+    .pick_task          = pick_task_dl,
 };

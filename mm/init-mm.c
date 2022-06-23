@@ -27,6 +27,7 @@
  */
 struct mm_struct init_mm = {
     .pgd        = swapper_pg_dir,
+    .mm_count   = ATOMIC_INIT(1),
     .page_table_lock = __SPIN_LOCK_UNLOCKED(init_mm.page_table_lock),
     .cpu_bitmap = CPU_BITS_NONE,
 };

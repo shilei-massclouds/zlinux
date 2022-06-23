@@ -206,6 +206,49 @@ do {                                        \
 })
 #define rcu_dereference_raw(p) __rcu_dereference_raw(p, __UNIQUE_ID(rcu))
 
+/**
+ * RCU_INIT_POINTER() - initialize an RCU protected pointer
+ * @p: The pointer to be initialized.
+ * @v: The value to initialized the pointer to.
+ *
+ * Initialize an RCU-protected pointer in special cases where readers
+ * do not need ordering constraints on the CPU or the compiler.  These
+ * special cases are:
+ *
+ * 1.   This use of RCU_INIT_POINTER() is NULLing out the pointer *or*
+ * 2.   The caller has taken whatever steps are required to prevent
+ *  RCU readers from concurrently accessing this pointer *or*
+ * 3.   The referenced data structure has already been exposed to
+ *  readers either at compile time or via rcu_assign_pointer() *and*
+ *
+ *  a.  You have not made *any* reader-visible changes to
+ *      this structure since then *or*
+ *  b.  It is OK for readers accessing this structure from its
+ *      new location to see the old state of the structure.  (For
+ *      example, the changes were to statistical counters or to
+ *      other state where exact synchronization is not required.)
+ *
+ * Failure to follow these rules governing use of RCU_INIT_POINTER() will
+ * result in impossible-to-diagnose memory corruption.  As in the structures
+ * will look OK in crash dumps, but any concurrent RCU readers might
+ * see pre-initialized values of the referenced data structure.  So
+ * please be very careful how you use RCU_INIT_POINTER()!!!
+ *
+ * If you are creating an RCU-protected linked structure that is accessed
+ * by a single external-to-structure RCU-protected pointer, then you may
+ * use RCU_INIT_POINTER() to initialize the internal RCU-protected
+ * pointers, but you must use rcu_assign_pointer() to initialize the
+ * external-to-structure pointer *after* you have completely initialized
+ * the reader-accessible portions of the linked structure.
+ *
+ * Note that unlike rcu_assign_pointer(), RCU_INIT_POINTER() provides no
+ * ordering guarantees for either the CPU or the compiler.
+ */
+#define RCU_INIT_POINTER(p, v) \
+    do { \
+        WRITE_ONCE(p, RCU_INITIALIZER(v)); \
+    } while (0)
+
 #include <linux/rcutree.h>
 
 #endif /* __LINUX_RCUPDATE_H */

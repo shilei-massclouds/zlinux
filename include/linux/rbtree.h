@@ -38,6 +38,12 @@
 extern void rb_insert_color(struct rb_node *, struct rb_root *);
 extern void rb_erase(struct rb_node *, struct rb_root *);
 
+/* Find logical next and previous nodes in a tree */
+extern struct rb_node *rb_next(const struct rb_node *);
+extern struct rb_node *rb_prev(const struct rb_node *);
+extern struct rb_node *rb_first(const struct rb_root *);
+extern struct rb_node *rb_last(const struct rb_root *);
+
 static inline void rb_link_node(struct rb_node *node, struct rb_node *parent,
                                 struct rb_node **rb_link)
 {
@@ -92,5 +98,21 @@ rb_add_cached(struct rb_node *node, struct rb_root_cached *tree,
 
     return leftmost ? node : NULL;
 }
+
+static inline struct rb_node *
+rb_erase_cached(struct rb_node *node, struct rb_root_cached *root)
+{
+    struct rb_node *leftmost = NULL;
+
+    if (root->rb_leftmost == node)
+        leftmost = root->rb_leftmost = rb_next(node);
+
+    rb_erase(node, &root->rb_root);
+
+    return leftmost;
+}
+
+/* Same as rb_first(), but O(1) */
+#define rb_first_cached(root) (root)->rb_leftmost
 
 #endif  /* _LINUX_RBTREE_H */

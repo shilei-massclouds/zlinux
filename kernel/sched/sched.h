@@ -84,6 +84,11 @@
 #include "cpudeadline.h"
 #endif
 
+#define SCHED_WARN_ON(x)   ({ (void)(x), 0; })
+
+/* An entity is a task if it doesn't "own" a runqueue */
+#define entity_is_task(se)  (!se->my_q)
+
 /* task_struct::on_rq states: */
 #define TASK_ON_RQ_QUEUED       1
 #define TASK_ON_RQ_MIGRATING    2
@@ -142,6 +147,10 @@ DECLARE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
 
 /* CFS-related fields in a runqueue */
 struct cfs_rq {
+    unsigned int            nr_running;
+
+    u64                     min_vruntime;
+
     struct rq *rq;          /* CPU runqueue to which this cfs_rq is attached */
     struct task_group *tg;  /* group that "owns" this runqueue */
 
@@ -153,6 +162,19 @@ struct cfs_rq {
      */
     struct sched_entity *curr;
 
+};
+
+/* Deadline class' related fields in a runqueue */
+struct dl_rq {
+    /* runqueue is an rbtree, ordered by deadline */
+    struct rb_root_cached   root;
+
+    unsigned int        dl_nr_running;
+};
+
+/* Real-Time classes' related field in a runqueue: */
+struct rt_rq {
+    int         rt_queued;
 };
 
 /*
@@ -175,6 +197,8 @@ struct rq {
     u64                 nr_switches;
 
     struct cfs_rq       cfs;
+    struct rt_rq        rt;
+    struct dl_rq        dl;
 
     /* calc_load related fields */
     unsigned long       calc_load_update;
@@ -184,6 +208,8 @@ struct rq {
     struct task_struct  *idle;
     struct task_struct  *stop;
     struct mm_struct    *prev_mm;
+
+    struct list_head cfs_tasks;
 
     struct sched_domain __rcu *sd;
 };
@@ -202,6 +228,7 @@ struct sched_class {
     void (*set_next_task)(struct rq *rq, struct task_struct *p, bool first);
 
     int (*select_task_rq)(struct task_struct *p, int task_cpu, int flags);
+    struct task_struct * (*pick_task)(struct rq *rq);
     void (*task_woken)(struct rq *this_rq, struct task_struct *task);
 };
 
@@ -423,6 +450,27 @@ static inline int task_on_rq_queued(struct task_struct *p)
 static inline bool sched_stop_runnable(struct rq *rq)
 {
     return rq->stop && task_on_rq_queued(rq->stop);
+}
+
+static inline bool sched_dl_runnable(struct rq *rq)
+{
+    return rq->dl.dl_nr_running > 0;
+}
+
+static inline bool sched_rt_runnable(struct rq *rq)
+{
+    return rq->rt.rt_queued > 0;
+}
+
+static inline bool sched_fair_runnable(struct rq *rq)
+{
+    return rq->cfs.nr_running > 0;
+}
+
+static inline struct task_struct *task_of(struct sched_entity *se)
+{
+    SCHED_WARN_ON(!entity_is_task(se));
+    return container_of(se, struct task_struct, se);
 }
 
 #endif /* _KERNEL_SCHED_SCHED_H */

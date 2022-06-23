@@ -87,11 +87,45 @@ static void __enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
     rb_add_cached(&se->run_node, &cfs_rq->tasks_timeline, __entity_less);
 }
 
+static void __dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
+{
+    rb_erase_cached(&se->run_node, &cfs_rq->tasks_timeline);
+}
+
+static void
+account_entity_enqueue(struct cfs_rq *cfs_rq, struct sched_entity *se)
+{
+#if 0
+    update_load_add(&cfs_rq->load, se->load.weight);
+
+    if (entity_is_task(se)) {
+        struct rq *rq = rq_of(cfs_rq);
+
+        list_add(&se->group_node, &rq->cfs_tasks);
+    }
+#endif
+
+    cfs_rq->nr_running++;
+#if 0
+    if (se_is_idle(se))
+        cfs_rq->idle_nr_running++;
+#endif
+}
+
 static void
 enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 {
     bool renorm = !(flags & ENQUEUE_WAKEUP) || (flags & ENQUEUE_MIGRATED);
     bool curr = cfs_rq->curr == se;
+
+    /*
+     * If we're the current task, we must renormalise before calling
+     * update_curr().
+     */
+    if (renorm && curr)
+        se->vruntime += cfs_rq->min_vruntime;
+
+    account_entity_enqueue(cfs_rq, se);
 
     if (!curr)
         __enqueue_entity(cfs_rq, se);
@@ -315,6 +349,7 @@ static void put_prev_task_fair(struct rq *rq, struct task_struct *prev)
     struct sched_entity *se = &prev->se;
     struct cfs_rq *cfs_rq;
 
+    printk("%s: 1\n", __func__);
     for_each_sched_entity(se) {
         cfs_rq = cfs_rq_of(se);
         put_prev_entity(cfs_rq, se);
@@ -331,11 +366,117 @@ static void set_next_task_fair(struct rq *rq, struct task_struct *p, bool first)
     panic("%s: END!\n", __func__);
 }
 
+static void
+set_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
+{
+#if 0
+    clear_buddies(cfs_rq, se);
+#endif
+
+    /* 'current' is not kept within the tree. */
+    if (se->on_rq) {
+        /*
+         * Any task has to be enqueued before it get to execute on
+         * a CPU. So account for the time it spent waiting on the
+         * runqueue.
+         */
+        //update_stats_wait_end_fair(cfs_rq, se);
+        __dequeue_entity(cfs_rq, se);
+        //update_load_avg(cfs_rq, se, UPDATE_TG);
+    }
+
+    //update_stats_curr_start(cfs_rq, se);
+    cfs_rq->curr = se;
+}
+
+struct sched_entity *__pick_first_entity(struct cfs_rq *cfs_rq)
+{
+    struct rb_node *left = rb_first_cached(&cfs_rq->tasks_timeline);
+
+    if (!left)
+        return NULL;
+
+    return __node_2_se(left);
+}
+
+/*
+ * Pick the next process, keeping these things in mind, in this order:
+ * 1) keep things fair between processes/task groups
+ * 2) pick the "next" process, since someone really wants that to run
+ * 3) pick the "last" process, for cache locality
+ * 4) do not run the "skip" process, if something else is available
+ */
+static struct sched_entity *
+pick_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *curr)
+{
+    struct sched_entity *se;
+    struct sched_entity *left = __pick_first_entity(cfs_rq);
+
+    /*
+     * If curr is set we have to see if its left of the leftmost entity
+     * still in the tree, provided there was anything in the tree at all.
+     */
+    if (!left || (curr && entity_before(curr, left)))
+        left = curr;
+
+    se = left; /* ideally we run the leftmost entity */
+
+    return se;
+}
+
 struct task_struct *
 pick_next_task_fair(struct rq *rq, struct task_struct *prev,
                     struct rq_flags *rf)
 {
-    panic("%s: END!\n", __func__);
+    int new_tasks;
+    struct task_struct *p;
+    struct sched_entity *se;
+    struct cfs_rq *cfs_rq = &rq->cfs;
+
+ again:
+    if (!sched_fair_runnable(rq))
+        goto idle;
+
+    if (!prev || prev->sched_class != &fair_sched_class)
+        goto simple;
+
+    panic("%s: nr_running(%d) END!\n", __func__, rq->cfs.nr_running);
+
+ simple:
+    if (prev)
+        put_prev_task(rq, prev);
+
+    do {
+        se = pick_next_entity(cfs_rq, NULL);
+        set_next_entity(cfs_rq, se);
+        cfs_rq = group_cfs_rq(se);
+    } while (cfs_rq);
+
+    p = task_of(se);
+
+ done: __maybe_unused;
+    /*
+     * Move the next running task to the front of
+     * the list, so our cfs_tasks list becomes MRU
+     * one.
+     */
+    list_move(&p->se.group_node, &rq->cfs_tasks);
+
+#if 0
+    if (hrtick_enabled_fair(rq))
+        hrtick_start_fair(rq, p);
+
+    update_misfit_status(p, rq);
+#endif
+
+    return p;
+
+ idle:
+    pr_warn("%s: idle ...\n", __func__);
+    if (!rf)
+        return NULL;
+
+    panic("%s: ERR!\n", __func__);
 }
 
 static struct task_struct *__pick_next_task_fair(struct rq *rq)

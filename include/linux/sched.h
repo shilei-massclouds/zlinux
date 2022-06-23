@@ -141,6 +141,7 @@ struct sched_entity {
     u64             nr_migrations;
 
     int             depth;
+
     struct sched_entity     *parent;
     /* rq on which this entity is (to be) queued: */
     struct cfs_rq           *cfs_rq;
@@ -158,6 +159,10 @@ struct sched_entity {
     struct sched_avg        avg;
 };
 
+struct sched_dl_entity {
+    struct rb_node          rb_node;
+};
+
 struct task_struct {
     /*
      * For reasons of header soup (see current_thread_info()), this
@@ -169,6 +174,9 @@ struct task_struct {
     struct pid *thread_pid;
 
     unsigned int __state;
+
+    struct mm_struct    *mm;
+    struct mm_struct    *active_mm;
 
     void *stack;
     refcount_t usage;
@@ -208,7 +216,8 @@ struct task_struct {
 
     unsigned short migration_disabled;
 
-    struct sched_entity se;
+    struct sched_entity     se;
+    struct sched_dl_entity  dl;
     const struct sched_class *sched_class;
 
     int nr_cpus_allowed;
@@ -324,6 +333,12 @@ static inline unsigned int task_cpu(const struct task_struct *p)
 static __always_inline bool need_resched(void)
 {
     return unlikely(tif_need_resched());
+}
+
+/* runqueue "owned" by this group */
+static inline struct cfs_rq *group_cfs_rq(struct sched_entity *grp)
+{
+    return grp->my_q;
 }
 
 #endif /* _LINUX_SCHED_H */

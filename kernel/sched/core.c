@@ -71,10 +71,10 @@
 #include <linux/slab.h>
 #include <linux/mmu_context.h>
 
+#include <asm/switch_to.h>
 #if 0
 #include <uapi/linux/sched/types.h>
 
-#include <asm/switch_to.h>
 #include <asm/tlb.h>
 #endif
 
@@ -92,6 +92,17 @@
 #endif
 
 DEFINE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
+
+static inline void prepare_task(struct task_struct *next)
+{
+    /*
+     * Claim the task as running, we do this before switching to it
+     * such that any running task will have this set.
+     *
+     * See the ttwu() WF_ON_CPU case and its ordering comment.
+     */
+    WRITE_ONCE(next->on_cpu, 1);
+}
 
 /**
  * wake_up_process - Wake up a specific process
@@ -190,6 +201,68 @@ pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
     return __pick_next_task(rq, prev, rf);
 }
 
+/**
+ * prepare_task_switch - prepare to switch tasks
+ * @rq: the runqueue preparing to switch
+ * @prev: the current task that is being switched out
+ * @next: the task we are going to switch to.
+ *
+ * This is called with the rq lock held and interrupts off. It must
+ * be paired with a subsequent finish_task_switch after the context
+ * switch.
+ *
+ * prepare_task_switch sets up locking and calls architecture specific
+ * hooks.
+ */
+static inline void
+prepare_task_switch(struct rq *rq, struct task_struct *prev,
+            struct task_struct *next)
+{
+#if 0
+    rseq_preempt(prev);
+    fire_sched_out_preempt_notifiers(prev, next);
+    kmap_local_sched_out();
+#endif
+    prepare_task(next);
+}
+
+/*
+ * context_switch - switch to the new MM and the new thread's register state.
+ */
+static __always_inline struct rq *
+context_switch(struct rq *rq, struct task_struct *prev,
+               struct task_struct *next, struct rq_flags *rf)
+{
+    prepare_task_switch(rq, prev, next);
+
+    /*
+     * kernel -> kernel   lazy + transfer active
+     *   user -> kernel   lazy + mmgrab() active
+     *
+     * kernel ->   user   switch + mmdrop() active
+     *   user ->   user   switch
+     */
+    if (!next->mm) {                            // to kernel
+        next->active_mm = prev->active_mm;
+        if (prev->mm)                           // from user
+            mmgrab(prev->active_mm);
+        else
+            prev->active_mm = NULL;
+    } else {                                    // to user
+        panic("%s: next->mm!\n", __func__);
+    }
+
+#if 0
+    rq->clock_update_flags &= ~(RQCF_ACT_SKIP|RQCF_REQ_SKIP);
+#endif
+
+    /* Here we just switch the register state and the stack. */
+    switch_to(prev, next, prev);
+    barrier();
+
+    panic("%s: mm(%p) END!\n", __func__, next->mm);
+}
+
 /*
  * __schedule() is the main scheduler function.
  *
@@ -263,8 +336,43 @@ static void __sched notrace __schedule(unsigned int sched_mode)
     rq_lock(rq, &rf);
     smp_mb__after_spinlock();
 
+    printk("%s: rq(%p) prev(%p)\n", __func__, rq, prev);
     next = pick_next_task(rq, prev, &rf);
 
+    clear_tsk_need_resched(prev);
+
+    if (likely(prev != next)) {
+        rq->nr_switches++;
+        /*
+         * RCU users of rcu_dereference(rq->curr) may not see
+         * changes to task_struct made by pick_next_task().
+         */
+        RCU_INIT_POINTER(rq->curr, next);
+#if 0
+        /*
+         * The membarrier system call requires each architecture
+         * to have a full memory barrier after updating
+         * rq->curr, before returning to user-space.
+         *
+         * Here are the schemes providing that barrier on the
+         * various architectures:
+         * - mm ? switch_mm() : mmdrop() for x86, s390, sparc, PowerPC.
+         *   switch_mm() rely on membarrier_arch_switch_mm() on PowerPC.
+         * - finish_lock_switch() for weakly-ordered
+         *   architectures where spin_unlock is a full barrier,
+         * - switch_to() for arm64 (weakly-ordered, spin_unlock
+         *   is a RELEASE barrier),
+         */
+        ++*switch_count;
+
+        migrate_disable_switch(rq, prev);
+#endif
+
+        /* Also unlocks the rq: */
+        rq = context_switch(rq, prev, next, &rf);
+    } else {
+        panic("%s: prev(%p) next(%p)\n", __func__, prev, next);
+    }
     panic("%s: END!\n", __func__);
 }
 
@@ -898,6 +1006,8 @@ void __init sched_init(void)
          * directly in rq->cfs (i.e root_task_group->se[] = NULL).
          */
         init_tg_cfs_entry(&root_task_group, &rq->cfs, NULL, i, NULL);
+
+        INIT_LIST_HEAD(&rq->cfs_tasks);
     }
 
     /*
