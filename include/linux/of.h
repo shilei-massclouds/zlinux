@@ -15,9 +15,7 @@
 #include <linux/bitops.h>
 #include <linux/errno.h>
 #include <linux/kobject.h>
-/*
 #include <linux/mod_devicetable.h>
-*/
 #include <linux/spinlock.h>
 /*
 #include <linux/topology.h>
@@ -210,6 +208,11 @@ static inline int of_property_read_u32(const struct device_node *np,
 static inline int of_node_to_nid(struct device_node *device)
 {
     return NUMA_NO_NODE;
+}
+
+static inline bool of_have_populated_dt(void)
+{
+    return of_root != NULL;
 }
 
 #endif /* _LINUX_OF_H */
