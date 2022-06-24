@@ -64,6 +64,19 @@ void setup_arch(char **);
 void __init parse_early_param(void);
 void __init parse_early_options(char *cmdline);
 
+/*
+ * Used for initialization calls..
+ */
+typedef int (*initcall_t)(void);
+typedef void (*exitcall_t)(void);
+
+typedef initcall_t initcall_entry_t;
+
+static inline initcall_t initcall_from_entry(initcall_entry_t *entry)
+{
+    return *entry;
+}
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* _LINUX_INIT_H */

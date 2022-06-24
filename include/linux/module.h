@@ -16,7 +16,11 @@
 #include <linux/export.h>
 
 #include <linux/percpu.h>
-//#include <asm/module.h>
+#if 0
+#include <asm/module.h>
+#endif
+
+#define __init_or_module
 
 struct module {
 } ____cacheline_aligned __randomize_layout;

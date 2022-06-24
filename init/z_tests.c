@@ -68,5 +68,15 @@ int z_tests_early(void)
 
 int z_tests(void)
 {
+    /* TEST: alloc_page */
+    Z_EXIT_ON_ERROR(test_alloc_free_page);
+
+    /* TEST: kmalloc */
+    Z_EXIT_ON_ERROR(test_kmalloc_kfree);
+
+    /* TEST: rbtree color */
+    Z_EXIT_ON_ERROR(test_rb_insert_color);
+
+    printk("### Z TESTS OK! ###\n");
     return 0;
 }

@@ -23,6 +23,7 @@
 #include <linux/rcupdate.h>
 #include <linux/kernel_stat.h>
 #include <linux/vmalloc.h>
+#include <linux/module.h>
 
 #include <asm/setup.h>
 #include "z_tests.h"
@@ -70,9 +71,154 @@ static const char *panic_later, *panic_param;
 
 extern void radix_tree_init(void);
 
+extern initcall_entry_t __initcall_start[];
+extern initcall_entry_t __initcall0_start[];
+extern initcall_entry_t __initcall1_start[];
+extern initcall_entry_t __initcall2_start[];
+extern initcall_entry_t __initcall3_start[];
+extern initcall_entry_t __initcall4_start[];
+extern initcall_entry_t __initcall5_start[];
+extern initcall_entry_t __initcall6_start[];
+extern initcall_entry_t __initcall7_start[];
+extern initcall_entry_t __initcall_end[];
+
+static initcall_entry_t *initcall_levels[] __initdata = {
+    __initcall0_start,
+    __initcall1_start,
+    __initcall2_start,
+    __initcall3_start,
+    __initcall4_start,
+    __initcall5_start,
+    __initcall6_start,
+    __initcall7_start,
+    __initcall_end,
+};
+
+/* Keep these in sync with initcalls in include/linux/init.h */
+static const char *initcall_level_names[] __initdata = {
+    "pure",
+    "core",
+    "postcore",
+    "arch",
+    "subsys",
+    "fs",
+    "device",
+    "late",
+};
+
+static int __init ignore_unknown_bootoption(char *param, char *val,
+                                            const char *unused, void *arg)
+{
+    return 0;
+}
+
+int __init_or_module do_one_initcall(initcall_t fn)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static void __init do_initcall_level(int level, char *command_line)
+{
+    initcall_entry_t *fn;
+
+    parse_args(initcall_level_names[level], command_line,
+               __start___param, __stop___param - __start___param,
+               level, level, NULL, ignore_unknown_bootoption);
+
+    for (fn = initcall_levels[level]; fn < initcall_levels[level+1]; fn++)
+        do_one_initcall(initcall_from_entry(fn));
+}
+
+static void __init do_initcalls(void)
+{
+    int level;
+    size_t len = strlen(saved_command_line) + 1;
+    char *command_line;
+
+    command_line = kzalloc(len, GFP_KERNEL);
+    if (!command_line)
+        panic("%s: Failed to allocate %zu bytes\n", __func__, len);
+
+    for (level = 0; level < ARRAY_SIZE(initcall_levels) - 1; level++) {
+        /* Parser modifies command_line, restore it each time */
+        strcpy(command_line, saved_command_line);
+        do_initcall_level(level, command_line);
+    }
+
+    kfree(command_line);
+}
+
+/*
+ * Ok, the machine is now initialized. None of the devices
+ * have been touched yet, but the CPU subsystem is up and
+ * running, and memory and process management works.
+ *
+ * Now we can finally start doing some real work..
+ */
+static void __init do_basic_setup(void)
+{
+#if 0
+    cpuset_init_smp();
+    driver_init();
+    init_irq_proc();
+    do_ctors();
+#endif
+    do_initcalls();
+}
+
+static noinline void __init kernel_init_freeable(void)
+{
+    /* Now the scheduler is fully set up and can do blocking allocations */
+    gfp_allowed_mask = __GFP_BITS_MASK;
+
+#if 0
+    /*
+     * init can allocate pages on any node
+     */
+    set_mems_allowed(node_states[N_MEMORY]);
+
+    cad_pid = get_pid(task_pid(current));
+
+    smp_prepare_cpus(setup_max_cpus);
+
+    workqueue_init();
+
+    init_mm_internals();
+
+    rcu_init_tasks_generic();
+    do_pre_smp_initcalls();
+    lockup_detector_init();
+
+    smp_init();
+    sched_init_smp();
+
+    padata_init();
+    page_alloc_init_late();
+    /* Initialize page ext after all struct pages are initialized. */
+    page_ext_init();
+#endif
+
+    do_basic_setup();
+
+    panic("%s: END!\n", __func__);
+}
+
 static int __ref kernel_init(void *unused)
 {
-    panic("%s: BEGIN!\n", __func__);
+    int ret;
+
+#if 0
+    /*
+     * Wait until kthreadd is all set-up.
+     */
+    wait_for_completion(&kthreadd_done);
+#endif
+
+    kernel_init_freeable();
+#if 0
+    /* need to finish all async __init code before freeing the memory */
+    async_synchronize_full();
+#endif
 
     system_state = SYSTEM_FREEING_INITMEM;
 
