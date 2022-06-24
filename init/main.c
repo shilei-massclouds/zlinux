@@ -24,6 +24,7 @@
 #include <linux/kernel_stat.h>
 #include <linux/vmalloc.h>
 #include <linux/module.h>
+#include <linux/kallsyms.h>
 
 #include <asm/setup.h>
 #include "z_tests.h"
@@ -71,6 +72,52 @@ static const char *panic_later, *panic_param;
 
 extern void radix_tree_init(void);
 
+struct blacklist_entry {
+    struct list_head next;
+    char *buf;
+};
+
+static __initdata_or_module LIST_HEAD(blacklisted_initcalls);
+
+static int __init initcall_blacklist(char *str)
+{
+    char *str_entry;
+    struct blacklist_entry *entry;
+
+    /* str argument is a comma-separated list of functions */
+    do {
+        str_entry = strsep(&str, ",");
+        if (str_entry) {
+            pr_debug("blacklisting initcall %s\n", str_entry);
+            entry = memblock_alloc(sizeof(*entry), SMP_CACHE_BYTES);
+            if (!entry)
+                panic("%s: Failed to allocate %zu bytes\n",
+                      __func__, sizeof(*entry));
+            entry->buf = memblock_alloc(strlen(str_entry) + 1, SMP_CACHE_BYTES);
+            if (!entry->buf)
+                panic("%s: Failed to allocate %zu bytes\n",
+                      __func__, strlen(str_entry) + 1);
+            strcpy(entry->buf, str_entry);
+            list_add(&entry->next, &blacklisted_initcalls);
+        }
+    } while (str_entry);
+
+    return 1;
+}
+__setup("initcall_blacklist=", initcall_blacklist);
+
+static bool __init_or_module initcall_blacklisted(initcall_t fn)
+{
+    unsigned long addr;
+    char fn_name[KSYM_SYMBOL_LEN];
+    struct blacklist_entry *entry;
+
+    if (list_empty(&blacklisted_initcalls))
+        return false;
+
+    panic("%s: NO implementation!\n", __func__);
+}
+
 extern initcall_entry_t __initcall_start[];
 extern initcall_entry_t __initcall0_start[];
 extern initcall_entry_t __initcall1_start[];
@@ -114,7 +161,28 @@ static int __init ignore_unknown_bootoption(char *param, char *val,
 
 int __init_or_module do_one_initcall(initcall_t fn)
 {
-    panic("%s: END!\n", __func__);
+    int ret;
+    char msgbuf[64];
+    int count = preempt_count();
+
+    if (initcall_blacklisted(fn))
+        return -EPERM;
+
+    ret = fn();
+
+    msgbuf[0] = 0;
+
+    if (preempt_count() != count) {
+        sprintf(msgbuf, "preemption imbalance ");
+        preempt_count_set(count);
+    }
+    if (irqs_disabled()) {
+        strlcat(msgbuf, "disabled interrupts ", sizeof(msgbuf));
+        local_irq_enable();
+    }
+    WARN(msgbuf[0], "initcall %pS returned with %s\n", fn, msgbuf);
+
+    return ret;
 }
 
 static void __init do_initcall_level(int level, char *command_line)

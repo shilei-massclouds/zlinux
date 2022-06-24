@@ -6,6 +6,9 @@
 #include <linux/init.h>
 #include <linux/kernel.h>
 
+/* Chosen so that structs with an unsigned long line up. */
+#define MAX_PARAM_PREFIX_LEN (64 - sizeof(unsigned long))
+
 struct kernel_param;
 
 /*

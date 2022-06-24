@@ -25,6 +25,73 @@
 #define __HEAD  .section ".head.text","ax"
 #define __INIT  .section ".init.text","ax"
 
+/* Format: <modname>__<counter>_<line>_<fn> */
+#define __initcall_id(fn)           \
+    __PASTE(__KBUILD_MODNAME,       \
+    __PASTE(__,                     \
+    __PASTE(__COUNTER__,            \
+    __PASTE(_,                      \
+    __PASTE(__LINE__,               \
+    __PASTE(_, fn))))))
+
+#define __initcall_name(prefix, __iid, id)  \
+    __PASTE(__,                             \
+    __PASTE(prefix,                         \
+    __PASTE(__,                             \
+    __PASTE(__iid, id))))
+
+#define __initcall_section(__sec, __iid) \
+    #__sec ".init"
+
+#define __initcall_stub(fn, __iid, id)  fn
+
+#define ____define_initcall(fn, __unused, __name, __sec) \
+    static initcall_t __name __used \
+        __attribute__((__section__(__sec))) = fn;
+
+#define __unique_initcall(fn, id, __sec, __iid) \
+    ____define_initcall(fn,                     \
+        __initcall_stub(fn, __iid, id),         \
+        __initcall_name(initcall, __iid, id),   \
+        __initcall_section(__sec, __iid))
+
+#define ___define_initcall(fn, id, __sec) \
+    __unique_initcall(fn, id, __sec, __initcall_id(fn))
+
+#define __define_initcall(fn, id) ___define_initcall(fn, id, .initcall##id)
+
+/*
+ * Early initcalls run before initializing SMP.
+ *
+ * Only for built-in code, not modules.
+ */
+#define early_initcall(fn)          __define_initcall(fn, early)
+
+/*
+ * A "pure" initcall has no dependencies on anything else, and purely
+ * initializes variables that couldn't be statically initialized.
+ *
+ * This only exists for built-in code, not for modules.
+ * Keep main.c:initcall_level_names[] in sync.
+ */
+#define pure_initcall(fn)           __define_initcall(fn, 0)
+
+#define core_initcall(fn)           __define_initcall(fn, 1)
+#define core_initcall_sync(fn)      __define_initcall(fn, 1s)
+#define postcore_initcall(fn)       __define_initcall(fn, 2)
+#define postcore_initcall_sync(fn)  __define_initcall(fn, 2s)
+#define arch_initcall(fn)           __define_initcall(fn, 3)
+#define arch_initcall_sync(fn)      __define_initcall(fn, 3s)
+#define subsys_initcall(fn)         __define_initcall(fn, 4)
+#define subsys_initcall_sync(fn)    __define_initcall(fn, 4s)
+#define fs_initcall(fn)             __define_initcall(fn, 5)
+#define fs_initcall_sync(fn)        __define_initcall(fn, 5s)
+#define rootfs_initcall(fn)         __define_initcall(fn, rootfs)
+#define device_initcall(fn)         __define_initcall(fn, 6)
+#define device_initcall_sync(fn)    __define_initcall(fn, 6s)
+#define late_initcall(fn)           __define_initcall(fn, 7)
+#define late_initcall_sync(fn)      __define_initcall(fn, 7s)
+
 #ifndef __ASSEMBLY__
 
 struct obs_kernel_param {

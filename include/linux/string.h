@@ -81,6 +81,18 @@ extern int strcasecmp(const char *s1, const char *s2);
 extern char * strnchr(const char *, size_t, int);
 #endif
 
+#ifndef __HAVE_ARCH_STRPBRK
+extern char * strpbrk(const char *,const char *);
+#endif
+
+#ifndef __HAVE_ARCH_STRSEP
+extern char * strsep(char **,const char *);
+#endif
+
+#ifndef __HAVE_ARCH_STRLCAT
+extern size_t strlcat(char *, const char *, __kernel_size_t);
+#endif
+
 extern char * __must_check skip_spaces(const char *);
 
 /**

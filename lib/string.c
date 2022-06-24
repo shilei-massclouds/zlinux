@@ -9,6 +9,7 @@
 #include <linux/ctype.h>
 #include <linux/kernel.h>
 #include <linux/export.h>
+#include <linux/bug.h>
 
 #include <asm/byteorder.h>
 #include <asm/page.h>
@@ -389,4 +390,81 @@ char *strnchr(const char *s, size_t count, int c)
     return NULL;
 }
 EXPORT_SYMBOL(strnchr);
+#endif
+
+#ifndef __HAVE_ARCH_STRPBRK
+/**
+ * strpbrk - Find the first occurrence of a set of characters
+ * @cs: The string to be searched
+ * @ct: The characters to search for
+ */
+char *strpbrk(const char *cs, const char *ct)
+{
+    const char *sc1, *sc2;
+
+    for (sc1 = cs; *sc1 != '\0'; ++sc1) {
+        for (sc2 = ct; *sc2 != '\0'; ++sc2) {
+            if (*sc1 == *sc2)
+                return (char *)sc1;
+        }
+    }
+    return NULL;
+}
+EXPORT_SYMBOL(strpbrk);
+#endif
+
+#ifndef __HAVE_ARCH_STRSEP
+/**
+ * strsep - Split a string into tokens
+ * @s: The string to be searched
+ * @ct: The characters to search for
+ *
+ * strsep() updates @s to point after the token, ready for the next call.
+ *
+ * It returns empty tokens, too, behaving exactly like the libc function
+ * of that name. In fact, it was stolen from glibc2 and de-fancy-fied.
+ * Same semantics, slimmer shape. ;)
+ */
+char *strsep(char **s, const char *ct)
+{
+    char *sbegin = *s;
+    char *end;
+
+    if (sbegin == NULL)
+        return NULL;
+
+    end = strpbrk(sbegin, ct);
+    if (end)
+        *end++ = '\0';
+    *s = end;
+    return sbegin;
+}
+EXPORT_SYMBOL(strsep);
+#endif
+
+#ifndef __HAVE_ARCH_STRLCAT
+/**
+ * strlcat - Append a length-limited, C-string to another
+ * @dest: The string to be appended to
+ * @src: The string to append to it
+ * @count: The size of the destination buffer.
+ */
+size_t strlcat(char *dest, const char *src, size_t count)
+{
+    size_t dsize = strlen(dest);
+    size_t len = strlen(src);
+    size_t res = dsize + len;
+
+    /* This would be a bug */
+    BUG_ON(dsize >= count);
+
+    dest += dsize;
+    count -= dsize;
+    if (len >= count)
+        len = count-1;
+    memcpy(dest, src, len);
+    dest[len] = 0;
+    return res;
+}
+EXPORT_SYMBOL(strlcat);
 #endif

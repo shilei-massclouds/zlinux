@@ -20,7 +20,14 @@
 #include <asm/module.h>
 #endif
 
+#define MODULE_NAME_LEN MAX_PARAM_PREFIX_LEN
+
 #define __init_or_module
+#define __initdata_or_module
+#define __initconst_or_module
+#define __INIT_OR_MODULE        .text
+#define __INITDATA_OR_MODULE    .data
+#define __INITRODATA_OR_MODULE  .section ".rodata","a",%progbits
 
 struct module {
 } ____cacheline_aligned __randomize_layout;

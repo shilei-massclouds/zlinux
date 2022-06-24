@@ -7,6 +7,14 @@
 #include <linux/compiler.h>
 #include <linux/types.h>
 
+#define dereference_function_descriptor(p) ((void *)(p))
+#define dereference_kernel_function_descriptor(p) ((void *)(p))
+
+/* An address is simply the address of the function. */
+typedef struct {
+    unsigned long addr;
+} func_desc_t;
+
 extern char _text[], _stext[], _etext[];
 extern char _data[], _sdata[], _edata[];
 extern char __bss_start[], __bss_stop[];
