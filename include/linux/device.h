@@ -37,6 +37,9 @@
 #endif
 
 struct device {
+    void (*release)(struct device *dev);
 };
+
+void device_initialize(struct device *dev);
 
 #endif /* _DEVICE_H_ */

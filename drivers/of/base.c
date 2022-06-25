@@ -487,3 +487,68 @@ bool of_device_is_available(const struct device_node *device)
     return res;
 }
 EXPORT_SYMBOL(of_device_is_available);
+
+/**
+ * of_get_next_child - Iterate a node childs
+ * @node:   parent node
+ * @prev:   previous child of the parent node, or NULL to get first
+ *
+ * Return: A node pointer with refcount incremented, use of_node_put() on
+ * it when done. Returns NULL when prev is the last child. Decrements the
+ * refcount of prev.
+ */
+struct device_node *
+of_get_next_child(const struct device_node *node, struct device_node *prev)
+{
+    struct device_node *next;
+    unsigned long flags;
+
+    raw_spin_lock_irqsave(&devtree_lock, flags);
+    next = __of_get_next_child(node, prev);
+    raw_spin_unlock_irqrestore(&devtree_lock, flags);
+    return next;
+}
+EXPORT_SYMBOL(of_get_next_child);
+
+static const struct of_device_id *
+__of_match_node(const struct of_device_id *matches,
+                const struct device_node *node)
+{
+    const struct of_device_id *best_match = NULL;
+    int score, best_score = 0;
+
+    if (!matches)
+        return NULL;
+
+    for (; matches->name[0] || matches->type[0] || matches->compatible[0]; matches++) {
+        score = __of_device_is_compatible(node, matches->compatible,
+                                          matches->type, matches->name);
+        if (score > best_score) {
+            best_match = matches;
+            best_score = score;
+        }
+    }
+
+    return best_match;
+}
+
+/**
+ * of_match_node - Tell if a device_node has a matching of_match structure
+ * @matches:    array of of device match structures to search in
+ * @node:   the of device structure to match against
+ *
+ * Low level utility function used by device matching.
+ */
+const struct of_device_id *
+of_match_node(const struct of_device_id *matches,
+              const struct device_node *node)
+{
+    const struct of_device_id *match;
+    unsigned long flags;
+
+    raw_spin_lock_irqsave(&devtree_lock, flags);
+    match = __of_match_node(matches, node);
+    raw_spin_unlock_irqrestore(&devtree_lock, flags);
+    return match;
+}
+EXPORT_SYMBOL(of_match_node);

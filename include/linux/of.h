@@ -215,4 +215,32 @@ static inline bool of_have_populated_dt(void)
     return of_root != NULL;
 }
 
+extern struct device_node *
+of_get_next_child(const struct device_node *node, struct device_node *prev);
+
+extern const struct of_device_id *
+of_match_node(const struct of_device_id *matches,
+              const struct device_node *node);
+
+static inline int
+of_node_check_flag(const struct device_node *n, unsigned long flag)
+{
+    return test_bit(flag, &n->_flags);
+}
+
+static inline int
+of_node_test_and_set_flag(struct device_node *n, unsigned long flag)
+{
+    return test_and_set_bit(flag, &n->_flags);
+}
+
+static inline void of_node_clear_flag(struct device_node *n, unsigned long flag)
+{
+    clear_bit(flag, &n->_flags);
+}
+
+#define for_each_child_of_node(parent, child) \
+    for (child = of_get_next_child(parent, NULL); child != NULL; \
+         child = of_get_next_child(parent, child))
+
 #endif /* _LINUX_OF_H */
