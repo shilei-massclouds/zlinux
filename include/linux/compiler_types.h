@@ -91,6 +91,7 @@
 #define __kernel
 #define __user
 #define __rcu
+#define __iomem
 
 /*
  * __unqual_scalar_typeof(x) - Declare an unqualified scalar type, leaving

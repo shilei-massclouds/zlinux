@@ -59,7 +59,7 @@
  */
 void device_initialize(struct device *dev)
 {
-    panic("%s: NO implementation!\n", __func__);
+    pr_warn("%s: NO implementation!\n", __func__);
 
 #if 0
     dev->kobj.kset = devices_kset;

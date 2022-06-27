@@ -32,9 +32,9 @@
 #include <linux/rtc.h>
 #include <linux/time.h>
 #include <linux/uuid.h>
-#include <linux/of.h>
 #include <net/addrconf.h>
 #endif
+#include <linux/of.h>
 #include <linux/siphash.h>
 #include <linux/compiler.h>
 #if 0
@@ -1008,6 +1008,116 @@ char *address_val(char *buf, char *end, const void *addr,
     return special_hex_number(buf, end, num, size);
 }
 
+static const struct printf_spec default_str_spec = {
+    .field_width = -1,
+    .precision = -1,
+};
+
+static noinline_for_stack char *
+fwnode_full_name_string(struct fwnode_handle *fwnode, char *buf, char *end)
+{
+    int depth;
+
+    /* Loop starting from the root node to the current node. */
+    for (depth = fwnode_count_parents(fwnode); depth >= 0; depth--) {
+        struct fwnode_handle *__fwnode = fwnode_get_nth_parent(fwnode, depth);
+
+        buf = string(buf, end, fwnode_get_name_prefix(__fwnode),
+                     default_str_spec);
+        buf = string(buf, end, fwnode_get_name(__fwnode), default_str_spec);
+
+        fwnode_handle_put(__fwnode);
+    }
+
+    return buf;
+}
+
+static noinline_for_stack
+char *device_node_string(char *buf, char *end, struct device_node *dn,
+                         struct printf_spec spec, const char *fmt)
+{
+    char tbuf[sizeof("xxxx") + 1];
+    const char *p;
+    int ret;
+    char *buf_start = buf;
+    struct property *prop;
+    bool has_mult, pass;
+
+    struct printf_spec str_spec = spec;
+    str_spec.field_width = -1;
+
+    if (fmt[0] != 'F')
+        return error_string(buf, end, "(%pO?)", spec);
+
+    if (check_pointer(&buf, end, dn, spec))
+        return buf;
+
+    /* simple case without anything any more format specifiers */
+    fmt++;
+    if (fmt[0] == '\0' || strcspn(fmt,"fnpPFcC") > 0)
+        fmt = "f";
+
+    for (pass = false; strspn(fmt,"fnpPFcC"); fmt++, pass = true) {
+        int precision;
+        if (pass) {
+            if (buf < end)
+                *buf = ':';
+            buf++;
+        }
+
+        switch (*fmt) {
+        case 'f':   /* full_name */
+            buf = fwnode_full_name_string(of_fwnode_handle(dn), buf, end);
+            break;
+        case 'n':   /* name */
+            p = fwnode_get_name(of_fwnode_handle(dn));
+            precision = str_spec.precision;
+            str_spec.precision = strchrnul(p, '@') - p;
+            buf = string(buf, end, p, str_spec);
+            str_spec.precision = precision;
+            break;
+        case 'p':   /* phandle */
+            buf = number(buf, end, (unsigned int)dn->phandle, default_dec_spec);
+            break;
+        case 'P':   /* path-spec */
+            p = fwnode_get_name(of_fwnode_handle(dn));
+            if (!p[1])
+                p = "/";
+            buf = string(buf, end, p, str_spec);
+            break;
+        case 'F':   /* flags */
+            tbuf[0] = of_node_check_flag(dn, OF_DYNAMIC) ? 'D' : '-';
+            tbuf[1] = of_node_check_flag(dn, OF_DETACHED) ? 'd' : '-';
+            tbuf[2] = of_node_check_flag(dn, OF_POPULATED) ? 'P' : '-';
+            tbuf[3] = of_node_check_flag(dn, OF_POPULATED_BUS) ? 'B' : '-';
+            tbuf[4] = 0;
+            buf = string_nocheck(buf, end, tbuf, str_spec);
+            break;
+        case 'c':   /* major compatible string */
+            ret = of_property_read_string(dn, "compatible", &p);
+            if (!ret)
+                buf = string(buf, end, p, str_spec);
+            break;
+        case 'C':   /* full compatible string */
+            has_mult = false;
+            of_property_for_each_string(dn, "compatible", prop, p) {
+                if (has_mult)
+                    buf = string_nocheck(buf, end, ",", str_spec);
+                buf = string_nocheck(buf, end, "\"", str_spec);
+                buf = string(buf, end, p, str_spec);
+                buf = string_nocheck(buf, end, "\"", str_spec);
+
+                has_mult = true;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    return widen_string(buf, buf - buf_start, end, spec);
+}
+
 static noinline_for_stack
 char *pointer(const char *fmt, char *buf, char *end, void *ptr,
               struct printf_spec spec)
@@ -1025,6 +1135,8 @@ char *pointer(const char *fmt, char *buf, char *end, void *ptr,
         return hex_string(buf, end, ptr, spec, fmt);
     case 'a':
         return address_val(buf, end, ptr, spec, fmt);
+    case 'O':
+        return device_node_string(buf, end, ptr, spec, fmt + 1);
 
     /* Todo: */
     }

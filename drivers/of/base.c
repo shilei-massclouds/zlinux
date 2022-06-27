@@ -440,6 +440,27 @@ int of_n_addr_cells(struct device_node *np)
 }
 EXPORT_SYMBOL(of_n_addr_cells);
 
+int of_bus_n_size_cells(struct device_node *np)
+{
+    u32 cells;
+
+    for (; np; np = np->parent)
+        if (!of_property_read_u32(np, "#size-cells", &cells))
+            return cells;
+
+    /* No #size-cells property for the root node */
+    return OF_ROOT_NODE_SIZE_CELLS_DEFAULT;
+}
+
+int of_n_size_cells(struct device_node *np)
+{
+    if (np->parent)
+        np = np->parent;
+
+    return of_bus_n_size_cells(np);
+}
+EXPORT_SYMBOL(of_n_size_cells);
+
 /**
  *  __of_device_is_available - check if a device is available for use
  *
@@ -552,3 +573,25 @@ of_match_node(const struct of_device_id *matches,
     return match;
 }
 EXPORT_SYMBOL(of_match_node);
+
+/**
+ * of_get_parent - Get a node's parent if any
+ * @node:   Node to get parent
+ *
+ * Return: A node pointer with refcount incremented, use
+ * of_node_put() on it when done.
+ */
+struct device_node *of_get_parent(const struct device_node *node)
+{
+    struct device_node *np;
+    unsigned long flags;
+
+    if (!node)
+        return NULL;
+
+    raw_spin_lock_irqsave(&devtree_lock, flags);
+    np = of_node_get(node->parent);
+    raw_spin_unlock_irqrestore(&devtree_lock, flags);
+    return np;
+}
+EXPORT_SYMBOL(of_get_parent);

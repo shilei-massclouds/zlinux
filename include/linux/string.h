@@ -69,6 +69,10 @@ extern char * strchrnul(const char *,int);
 extern __kernel_size_t strcspn(const char *,const char *);
 #endif
 
+#ifndef __HAVE_ARCH_STRSPN
+extern __kernel_size_t strspn(const char *,const char *);
+#endif
+
 #ifndef __HAVE_ARCH_STRNLEN
 extern __kernel_size_t strnlen(const char *,__kernel_size_t);
 #endif

@@ -20,8 +20,8 @@
 /*
 #include <linux/topology.h>
 #include <linux/notifier.h>
-#include <linux/property.h>
 */
+#include <linux/property.h>
 #include <linux/list.h>
 #include <linux/sysfs.h>
 #include <linux/numa.h>
@@ -59,7 +59,7 @@ struct device_node {
     const char *name;
     phandle phandle;
     const char *full_name;
-    //struct fwnode_handle fwnode;
+    struct fwnode_handle fwnode;
 
     struct  property *properties;
     struct  property *deadprops;    /* removed properties */
@@ -69,6 +69,13 @@ struct device_node {
     struct  kobject kobj;
     unsigned long _flags;
     void    *data;
+};
+
+#define MAX_PHANDLE_ARGS 16
+struct of_phandle_args {
+    struct device_node *np;
+    int args_count;
+    uint32_t args[MAX_PHANDLE_ARGS];
 };
 
 /* Pointer for first entry in chain of all nodes. */
@@ -90,12 +97,13 @@ of_find_property(const struct device_node *np,
 
 extern void of_alias_scan(void * (*dt_alloc)(u64 size, u64 align));
 
+/* initialize a node */
+extern struct kobj_type of_node_ktype;
+extern const struct fwnode_operations of_fwnode_ops;
 static inline void of_node_init(struct device_node *node)
 {
     kobject_init(&node->kobj, &of_node_ktype);
-#if 0
-    node->fwnode.ops = &of_fwnode_ops;
-#endif
+    fwnode_init(&node->fwnode, &of_fwnode_ops);
 }
 
 /*
@@ -239,8 +247,69 @@ static inline void of_node_clear_flag(struct device_node *n, unsigned long flag)
     clear_bit(flag, &n->_flags);
 }
 
+extern struct device_node *of_get_parent(const struct device_node *node);
+
 #define for_each_child_of_node(parent, child) \
     for (child = of_get_next_child(parent, NULL); child != NULL; \
          child = of_get_next_child(parent, child))
+
+extern int
+of_property_read_string_helper(const struct device_node *np,
+                               const char *propname,
+                               const char **out_strs, size_t sz, int index);
+
+/**
+ * of_property_read_string_index() - Find and read a string from a multiple
+ * strings property.
+ * @np:     device node from which the property value is to be read.
+ * @propname:   name of the property to be searched.
+ * @index:  index of the string in the list of strings
+ * @output: pointer to null terminated return string, modified only if
+ *      return value is 0.
+ *
+ * Search for a property in a device tree node and retrieve a null
+ * terminated string value (pointer to data, not a copy) in the list of strings
+ * contained in that property.
+ *
+ * Return: 0 on success, -EINVAL if the property does not exist, -ENODATA if
+ * property does not have a value, and -EILSEQ if the string is not
+ * null-terminated within the length of the property data.
+ *
+ * The out_string pointer is modified only if a valid string can be decoded.
+ */
+static inline int
+of_property_read_string_index(const struct device_node *np,
+                              const char *propname,
+                              int index, const char **output)
+{
+    int rc = of_property_read_string_helper(np, propname, output, 1, index);
+    return rc < 0 ? rc : 0;
+}
+
+static inline bool is_of_node(const struct fwnode_handle *fwnode)
+{
+    return !IS_ERR_OR_NULL(fwnode) && fwnode->ops == &of_fwnode_ops;
+}
+
+#define to_of_node(__fwnode)    \
+({                              \
+    typeof(__fwnode) __to_of_node_fwnode = (__fwnode);  \
+                                                        \
+    is_of_node(__to_of_node_fwnode) ? \
+    container_of(__to_of_node_fwnode, struct device_node, fwnode) : NULL; \
+})
+
+#define of_fwnode_handle(node)                      \
+({                                                  \
+    typeof(node) __of_fwnode_handle_node = (node);  \
+                                                    \
+    __of_fwnode_handle_node ? &__of_fwnode_handle_node->fwnode : NULL; \
+})
+
+#define of_property_for_each_string(np, propname, prop, s)  \
+    for (prop = of_find_property(np, propname, NULL),   \
+        s = of_prop_next_string(prop, NULL);        \
+        s;                      \
+        s = of_prop_next_string(prop, s))
 
 #endif /* _LINUX_OF_H */

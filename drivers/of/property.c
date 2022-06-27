@@ -150,3 +150,95 @@ int of_property_read_variable_u32_array(const struct device_node *np,
     return sz;
 }
 EXPORT_SYMBOL_GPL(of_property_read_variable_u32_array);
+
+/**
+ * of_property_read_string_helper() - Utility helper for parsing string properties
+ * @np:     device node from which the property value is to be read.
+ * @propname:   name of the property to be searched.
+ * @out_strs:   output array of string pointers.
+ * @sz:     number of array elements to read.
+ * @skip:   Number of strings to skip over at beginning of list.
+ *
+ * Don't call this function directly. It is a utility helper for the
+ * of_property_read_string*() family of functions.
+ */
+int of_property_read_string_helper(const struct device_node *np,
+                   const char *propname, const char **out_strs,
+                   size_t sz, int skip)
+{
+    const struct property *prop = of_find_property(np, propname, NULL);
+    int l = 0, i = 0;
+    const char *p, *end;
+
+    if (!prop)
+        return -EINVAL;
+    if (!prop->value)
+        return -ENODATA;
+    p = prop->value;
+    end = p + prop->length;
+
+    for (i = 0; p < end && (!out_strs || i < skip + sz); i++, p += l) {
+        l = strnlen(p, end - p) + 1;
+        if (p + l > end)
+            return -EILSEQ;
+        if (out_strs && i >= skip)
+            *out_strs++ = p;
+    }
+    i -= skip;
+    return i <= 0 ? -ENODATA : i;
+}
+EXPORT_SYMBOL_GPL(of_property_read_string_helper);
+
+static struct fwnode_handle *
+of_fwnode_get_parent(const struct fwnode_handle *fwnode)
+{
+    return of_fwnode_handle(of_get_parent(to_of_node(fwnode)));
+}
+
+static struct fwnode_handle *of_fwnode_get(struct fwnode_handle *fwnode)
+{
+    return of_fwnode_handle(of_node_get(to_of_node(fwnode)));
+}
+
+static void of_fwnode_put(struct fwnode_handle *fwnode)
+{
+    of_node_put(to_of_node(fwnode));
+}
+
+static const char *of_fwnode_get_name(const struct fwnode_handle *fwnode)
+{
+    return kbasename(to_of_node(fwnode)->full_name);
+}
+
+static const char *of_fwnode_get_name_prefix(const struct fwnode_handle *fwnode)
+{
+    /* Root needs no prefix here (its name is "/"). */
+    if (!to_of_node(fwnode)->parent)
+        return "";
+
+    return "/";
+}
+
+const struct fwnode_operations of_fwnode_ops = {
+    .get = of_fwnode_get,
+    .put = of_fwnode_put,
+    .get_parent = of_fwnode_get_parent,
+    .get_name = of_fwnode_get_name,
+    .get_name_prefix = of_fwnode_get_name_prefix,
+#if 0
+    .device_is_available = of_fwnode_device_is_available,
+    .device_get_match_data = of_fwnode_device_get_match_data,
+    .property_present = of_fwnode_property_present,
+    .property_read_int_array = of_fwnode_property_read_int_array,
+    .property_read_string_array = of_fwnode_property_read_string_array,
+    .get_next_child_node = of_fwnode_get_next_child_node,
+    .get_named_child_node = of_fwnode_get_named_child_node,
+    .get_reference_args = of_fwnode_get_reference_args,
+    .graph_get_next_endpoint = of_fwnode_graph_get_next_endpoint,
+    .graph_get_remote_endpoint = of_fwnode_graph_get_remote_endpoint,
+    .graph_get_port_parent = of_fwnode_graph_get_port_parent,
+    .graph_parse_endpoint = of_fwnode_graph_parse_endpoint,
+    .add_links = of_fwnode_add_links,
+#endif
+};
+EXPORT_SYMBOL_GPL(of_fwnode_ops);

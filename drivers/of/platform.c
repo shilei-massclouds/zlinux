@@ -17,10 +17,10 @@
 #include <linux/dma-mapping.h>
 #endif
 #include <linux/slab.h>
-#if 0
 #include <linux/of_address.h>
-#include <linux/of_device.h>
 #include <linux/of_irq.h>
+#if 0
+#include <linux/of_device.h>
 #endif
 #include <linux/of.h>
 #include <linux/of_platform.h>
@@ -73,6 +73,11 @@ of_device_alloc(struct device_node *np,
     dev = platform_device_alloc("", PLATFORM_DEVID_NONE);
     if (!dev)
         return NULL;
+
+    /* count the io and irq resources */
+    while (of_address_to_resource(np, num_reg, &temp_res) == 0)
+        num_reg++;
+    num_irq = of_irq_count(np);
 
     panic("%s: END!\n", __func__);
 }

@@ -70,7 +70,7 @@ static void platform_device_release(struct device *dev)
  */
 static void setup_pdev_dma_masks(struct platform_device *pdev)
 {
-    panic("%s: NO implementation!\n", __func__);
+    pr_warn("%s: NO implementation!\n", __func__);
 #if 0
     pdev->dev.dma_parms = &pdev->dma_parms;
 
