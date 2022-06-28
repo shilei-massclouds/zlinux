@@ -80,6 +80,22 @@ out_put:
     return error;
 }
 
+static void klist_devices_get(struct klist_node *n)
+{
+    struct device_private *dev_prv = to_device_private_bus(n);
+    struct device *dev = dev_prv->device;
+
+    get_device(dev);
+}
+
+static void klist_devices_put(struct klist_node *n)
+{
+    struct device_private *dev_prv = to_device_private_bus(n);
+    struct device *dev = dev_prv->device;
+
+    put_device(dev);
+}
+
 /**
  * bus_register - register a driver-core subsystem
  * @bus: bus to register
@@ -105,6 +121,10 @@ int bus_register(struct bus_type *bus)
     retval = kobject_set_name(&priv->subsys.kobj, "%s", bus->name);
     if (retval)
         goto out;
+
+    __mutex_init(&priv->mutex, "subsys mutex", NULL);
+    klist_init(&priv->klist_devices, klist_devices_get, klist_devices_put);
+    klist_init(&priv->klist_drivers, NULL, NULL);
 
     pr_warn("bus: '%s': registered\n", bus->name);
     return 0;

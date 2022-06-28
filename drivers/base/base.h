@@ -93,6 +93,8 @@ struct device_private {
 };
 #define to_device_private_parent(obj)   \
     container_of(obj, struct device_private, knode_parent)
+#define to_device_private_bus(obj)  \
+    container_of(obj, struct device_private, knode_bus)
 
 extern int bus_add_device(struct device *dev);
 
