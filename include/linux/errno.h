@@ -4,6 +4,7 @@
 
 #include <uapi/linux/errno.h>
 
-#define ENOTSUPP    524 /* Operation is not supported */
+#define EPROBE_DEFER    517 /* Driver requests probe retry */
+#define ENOTSUPP        524 /* Operation is not supported */
 
 #endif /* _LINUX_ERRNO_H */

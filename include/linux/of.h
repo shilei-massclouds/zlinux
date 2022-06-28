@@ -78,6 +78,23 @@ struct of_phandle_args {
     uint32_t args[MAX_PHANDLE_ARGS];
 };
 
+struct of_phandle_iterator {
+    /* Common iterator information */
+    const char *cells_name;
+    int cell_count;
+    const struct device_node *parent;
+
+    /* List size information */
+    const __be32 *list_end;
+    const __be32 *phandle_end;
+
+    /* Current position state */
+    const __be32 *cur;
+    uint32_t cur_count;
+    phandle phandle;
+    struct device_node *node;
+};
+
 /* Pointer for first entry in chain of all nodes. */
 extern struct device_node *of_root;
 extern struct device_node *of_chosen;
@@ -311,5 +328,95 @@ static inline bool is_of_node(const struct fwnode_handle *fwnode)
         s = of_prop_next_string(prop, NULL);        \
         s;                      \
         s = of_prop_next_string(prop, s))
+
+extern int __of_parse_phandle_with_args(const struct device_node *np,
+    const char *list_name, const char *cells_name, int cell_count,
+    int index, struct of_phandle_args *out_args);
+
+/**
+ * of_parse_phandle_with_args() - Find a node pointed by phandle in a list
+ * @np:     pointer to a device tree node containing a list
+ * @list_name:  property name that contains a list
+ * @cells_name: property name that specifies phandles' arguments count
+ * @index:  index of a phandle to parse out
+ * @out_args:   optional pointer to output arguments structure (will be filled)
+ *
+ * This function is useful to parse lists of phandles and their arguments.
+ * Returns 0 on success and fills out_args, on error returns appropriate
+ * errno value.
+ *
+ * Caller is responsible to call of_node_put() on the returned out_args->np
+ * pointer.
+ *
+ * Example::
+ *
+ *  phandle1: node1 {
+ *  #list-cells = <2>;
+ *  };
+ *
+ *  phandle2: node2 {
+ *  #list-cells = <1>;
+ *  };
+ *
+ *  node3 {
+ *  list = <&phandle1 1 2 &phandle2 3>;
+ *  };
+ *
+ * To get a device_node of the ``node2`` node you may call this:
+ * of_parse_phandle_with_args(node3, "list", "#list-cells", 1, &args);
+ */
+static inline int
+of_parse_phandle_with_args(const struct device_node *np,
+                           const char *list_name,
+                           const char *cells_name,
+                           int index,
+                           struct of_phandle_args *out_args)
+{
+    int cell_count = -1;
+
+    /* If cells_name is NULL we assume a cell count of 0 */
+    if (!cells_name)
+        cell_count = 0;
+
+    return __of_parse_phandle_with_args(np, list_name, cells_name,
+                                        cell_count, index, out_args);
+}
+
+/* phandle iterator functions */
+extern int of_phandle_iterator_init(struct of_phandle_iterator *it,
+                                    const struct device_node *np,
+                                    const char *list_name,
+                                    const char *cells_name,
+                                    int cell_count);
+
+extern int of_phandle_iterator_next(struct of_phandle_iterator *it);
+
+extern int of_phandle_iterator_args(struct of_phandle_iterator *it,
+                                    uint32_t *args,
+                                    int size);
+
+#define of_for_each_phandle(it, err, np, ln, cn, cc)                \
+    for (of_phandle_iterator_init((it), (np), (ln), (cn), (cc)),    \
+         err = of_phandle_iterator_next(it);                        \
+         err == 0;                                                  \
+         err = of_phandle_iterator_next(it))
+
+extern struct device_node *__of_find_all_nodes(struct device_node *prev);
+
+#define for_each_of_allnodes_from(from, dn) \
+    for (dn = __of_find_all_nodes(from); dn; dn = __of_find_all_nodes(dn))
+
+#define for_each_of_allnodes(dn) for_each_of_allnodes_from(NULL, dn)
+
+static inline const char *of_node_full_name(const struct device_node *np)
+{
+    return np ? np->full_name : "<no-node>";
+}
+
+extern struct device_node *of_find_node_by_phandle(phandle handle);
+
+extern int of_property_read_u32_index(const struct device_node *np,
+                                      const char *propname,
+                                      u32 index, u32 *out_value);
 
 #endif /* _LINUX_OF_H */

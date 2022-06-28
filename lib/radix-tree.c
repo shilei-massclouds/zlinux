@@ -305,19 +305,6 @@ radix_tree_find_next_bit(struct radix_tree_node *node, unsigned int tag,
     return RADIX_TREE_MAP_SIZE;
 }
 
-#if 0
-static unsigned int
-radix_tree_descend(const struct radix_tree_node *parent,
-                   struct radix_tree_node **nodep, unsigned long index)
-{
-    unsigned int offset = (index >> parent->shift) & RADIX_TREE_MAP_MASK;
-    void __rcu **entry = rcu_dereference_raw(parent->slots[offset]);
-
-    *nodep = (void *)entry;
-    return offset;
-}
-#endif
-
 /**
  *  radix_tree_tagged - test whether any items in the tree are tagged
  *  @root:      radix tree root
@@ -950,6 +937,24 @@ int radix_tree_tag_get(const struct radix_tree_root *root,
     return 1;
 }
 EXPORT_SYMBOL(radix_tree_tag_get);
+
+/**
+ *  radix_tree_lookup    -    perform lookup operation on a radix tree
+ *  @root:      radix tree root
+ *  @index:     index key
+ *
+ *  Lookup the item at the position @index in the radix tree @root.
+ *
+ *  This function can be called under rcu_read_lock, however the caller
+ *  must manage lifetimes of leaf nodes (eg. RCU may also be used to free
+ *  them safely). No RCU barriers are required to access or modify the
+ *  returned item, however.
+ */
+void *radix_tree_lookup(const struct radix_tree_root *root, unsigned long index)
+{
+    return __radix_tree_lookup(root, index, NULL, NULL);
+}
+EXPORT_SYMBOL(radix_tree_lookup);
 
 void __init radix_tree_init(void)
 {

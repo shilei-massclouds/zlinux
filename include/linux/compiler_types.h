@@ -5,6 +5,9 @@
 #ifndef __ASSEMBLY__
 
 #define __force
+#define __private
+
+#define ACCESS_PRIVATE(p, member) ((p)->member)
 
 /* Indirect macros required for expanded argument pasting, eg. __LINE__. */
 #define ___PASTE(a,b) a##b

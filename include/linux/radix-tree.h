@@ -24,6 +24,9 @@
 #define radix_tree_root     xarray
 #define radix_tree_node     xa_node
 
+#define RADIX_TREE(name, mask) \
+    struct radix_tree_root name = RADIX_TREE_INIT(name, mask)
+
 /*
  * The bottom two bits of the slot determine how the remaining bits in the
  * slot are interpreted:
@@ -151,5 +154,7 @@ void __radix_tree_replace(struct radix_tree_root *, struct radix_tree_node *,
 
 int radix_tree_tag_get(const struct radix_tree_root *,
                        unsigned long index, unsigned int tag);
+
+void *radix_tree_lookup(const struct radix_tree_root *, unsigned long);
 
 #endif /* _LINUX_RADIX_TREE_H */

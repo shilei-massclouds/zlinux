@@ -299,8 +299,8 @@ __of_translate_address(struct device_node *dev,
             break;
         }
 
-        pr_debug("parent bus is %s (na=%d, ns=%d) on %pOF\n",
-                 pbus->name, pna, pns, parent);
+        pr_info("parent bus is %s (na=%d, ns=%d) on %pOF\n",
+                pbus->name, pna, pns, parent);
 
         /* Apply bus translation */
         if (of_translate_one(dev, bus, pbus, addr, na, ns, pna, rprop))
@@ -311,8 +311,6 @@ __of_translate_address(struct device_node *dev,
         ns = pns;
         bus = pbus;
     }
-
-    panic("%s: END!\n", __func__);
 
  bail:
     of_node_put(parent);
@@ -367,7 +365,17 @@ __of_address_to_resource(struct device_node *dev, int index, int bar_no,
     else
         return -EINVAL;
 
-    panic("%s: END!\n", __func__);
+    if (taddr == OF_BAD_ADDR)
+        return -EINVAL;
+
+    memset(r, 0, sizeof(struct resource));
+
+    r->start = taddr;
+    r->end = taddr + size - 1;
+    r->flags = flags;
+    r->name = name ? name : dev->full_name;
+
+    return 0;
 }
 
 /**

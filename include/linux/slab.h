@@ -466,4 +466,34 @@ static inline __alloc_size(1) void *kzalloc(size_t size, gfp_t flags)
     kmem_cache_create(#__struct, sizeof(struct __struct), \
                       __alignof__(struct __struct), (__flags), NULL)
 
+/**
+ * kmalloc_array - allocate memory for an array.
+ * @n: number of elements.
+ * @size: element size.
+ * @flags: the type of memory to allocate (see kmalloc).
+ */
+static inline __alloc_size(1, 2)
+void *kmalloc_array(size_t n, size_t size, gfp_t flags)
+{
+    size_t bytes;
+
+    if (unlikely(check_mul_overflow(n, size, &bytes)))
+        return NULL;
+    if (__builtin_constant_p(n) && __builtin_constant_p(size))
+        return kmalloc(bytes, flags);
+    return __kmalloc(bytes, flags);
+}
+
+/**
+ * kcalloc - allocate memory for an array. The memory is set to zero.
+ * @n: number of elements.
+ * @size: element size.
+ * @flags: the type of memory to allocate (see kmalloc).
+ */
+static inline __alloc_size(1, 2)
+void *kcalloc(size_t n, size_t size, gfp_t flags)
+{
+    return kmalloc_array(n, size, flags | __GFP_ZERO);
+}
+
 #endif  /* _LINUX_SLAB_H */

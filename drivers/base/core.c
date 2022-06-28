@@ -9,26 +9,26 @@
  */
 #include <linux/device.h>
 #include <linux/err.h>
-#if 0
-#include <linux/acpi.h>
-#include <linux/cpufreq.h>
 #include <linux/fwnode.h>
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/slab.h>
+#include <linux/of.h>
+#include <linux/mutex.h>
+#include <linux/sysfs.h>
+#include <linux/sched/signal.h>
+#include <linux/sched/mm.h>
+#if 0
+#include <linux/of_device.h>
+#include <linux/acpi.h>
+#include <linux/cpufreq.h>
 #include <linux/string.h>
 #include <linux/kdev_t.h>
 #include <linux/notifier.h>
-#include <linux/of.h>
-#include <linux/of_device.h>
 #include <linux/blkdev.h>
-#include <linux/mutex.h>
 #include <linux/pm_runtime.h>
 #include <linux/netdevice.h>
-#include <linux/sched/signal.h>
-#include <linux/sched/mm.h>
 #include <linux/swiotlb.h>
-#include <linux/sysfs.h>
 #include <linux/dma-map-ops.h> /* for dma_default_coherent */
 #endif
 
@@ -36,6 +36,23 @@
 #include "base.h"
 #include "power/power.h"
 #endif
+
+/**
+ * dev_set_name - set a device name
+ * @dev: device
+ * @fmt: format string for the device's name
+ */
+int dev_set_name(struct device *dev, const char *fmt, ...)
+{
+    va_list vargs;
+    int err;
+
+    va_start(vargs, fmt);
+    err = kobject_set_name_vargs(&dev->kobj, fmt, vargs);
+    va_end(vargs);
+    return err;
+}
+EXPORT_SYMBOL_GPL(dev_set_name);
 
 /**
  * device_initialize - init device structure.

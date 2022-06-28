@@ -56,6 +56,19 @@ of_dev_lookup(const struct of_dev_auxdata *lookup, struct device_node *np)
 }
 
 /**
+ * of_device_make_bus_id - Use the device node data to assign a unique name
+ * @dev: pointer to device structure that is linked to a device tree node
+ *
+ * This routine will first try using the translated bus address to
+ * derive a unique name. If it cannot, then it will prepend names from
+ * parent nodes until a unique name can be derived.
+ */
+static void of_device_make_bus_id(struct device *dev)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
+/**
  * of_device_alloc - Allocate and initialize an of_device
  * @np: device node to assign to device
  * @bus_id: Name to assign to the device.  May be null to use default name.
@@ -79,7 +92,35 @@ of_device_alloc(struct device_node *np,
         num_reg++;
     num_irq = of_irq_count(np);
 
-    panic("%s: END!\n", __func__);
+    /* Populate the resource table */
+    if (num_irq || num_reg) {
+        res = kcalloc(num_irq + num_reg, sizeof(*res), GFP_KERNEL);
+        if (!res) {
+            platform_device_put(dev);
+            return NULL;
+        }
+
+        dev->num_resources = num_reg + num_irq;
+        dev->resource = res;
+        for (i = 0; i < num_reg; i++, res++) {
+            rc = of_address_to_resource(np, i, res);
+            WARN_ON(rc);
+        }
+        if (of_irq_to_resource_table(np, res, num_irq) != num_irq)
+            pr_err("not all legacy IRQ resources mapped for %pOFn\n", np);
+    }
+
+    dev->dev.of_node = of_node_get(np);
+    dev->dev.fwnode = &np->fwnode;
+    dev->dev.parent = parent ? : &platform_bus;
+
+    if (bus_id)
+        dev_set_name(&dev->dev, "%s", bus_id);
+    else
+        of_device_make_bus_id(&dev->dev);
+
+    panic("%s: num_reg(%d) num_irq(%d) END!\n", __func__, num_reg, num_irq);
+    return dev;
 }
 
 /**

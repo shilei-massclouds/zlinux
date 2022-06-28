@@ -13,15 +13,15 @@
 #include <linux/platform_device.h>
 #if 0
 #include <linux/of_device.h>
-#include <linux/of_irq.h>
 #endif
+#include <linux/of_irq.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #if 0
 #include <linux/interrupt.h>
-#include <linux/ioport.h>
 #include <linux/dma-mapping.h>
 #endif
+#include <linux/ioport.h>
 #include <linux/memblock.h>
 #include <linux/err.h>
 #include <linux/slab.h>
@@ -34,19 +34,23 @@
 #include <linux/acpi.h>
 #include <linux/clk/clk-conf.h>
 #include <linux/limits.h>
-#include <linux/property.h>
 #endif
+#include <linux/property.h>
 #include <linux/types.h>
 
 #if 0
 #include "base.h"
 #endif
-//#include "power/power.h"
 
 struct platform_object {
     struct platform_device pdev;
     char name[];
 };
+
+struct device platform_bus = {
+    .init_name  = "platform",
+};
+EXPORT_SYMBOL_GPL(platform_bus);
 
 static void platform_device_release(struct device *dev)
 {
@@ -108,3 +112,20 @@ struct platform_device *platform_device_alloc(const char *name, int id)
     return pa ? &pa->pdev : NULL;
 }
 EXPORT_SYMBOL_GPL(platform_device_alloc);
+
+/**
+ * platform_device_put - destroy a platform device
+ * @pdev: platform device to free
+ *
+ * Free all memory associated with a platform device.  This function must
+ * _only_ be externally called in error cases.  All other usage is a bug.
+ */
+void platform_device_put(struct platform_device *pdev)
+{
+    panic("%s: NO implementation!\n", __func__);
+#if 0
+    if (!IS_ERR_OR_NULL(pdev))
+        put_device(&pdev->dev);
+#endif
+}
+EXPORT_SYMBOL_GPL(platform_device_put);

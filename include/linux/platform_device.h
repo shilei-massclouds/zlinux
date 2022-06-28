@@ -19,8 +19,14 @@ struct platform_device {
     const char *name;
     int id;
     struct device dev;
+    u32 num_resources;
+    struct resource *resource;
 };
 
+extern struct device platform_bus;
+
 extern struct platform_device *platform_device_alloc(const char *name, int id);
+
+extern void platform_device_put(struct platform_device *pdev);
 
 #endif /* _PLATFORM_DEVICE_H_ */

@@ -14,7 +14,7 @@
 #include <linux/string.h>
 #include <linux/export.h>
 //#include <linux/stat.h>
-//#include <linux/slab.h>
+#include <linux/slab.h>
 //#include <linux/random.h>
 
 static void kobject_init_internal(struct kobject *kobj)
@@ -27,6 +27,45 @@ static void kobject_init_internal(struct kobject *kobj)
     //kobj->state_add_uevent_sent = 0;
     //kobj->state_remove_uevent_sent = 0;
     kobj->state_initialized = 1;
+}
+
+/**
+ * kobject_set_name_vargs() - Set the name of a kobject.
+ * @kobj: struct kobject to set the name of
+ * @fmt: format string used to build the name
+ * @vargs: vargs to format the string.
+ */
+int kobject_set_name_vargs(struct kobject *kobj, const char *fmt, va_list vargs)
+{
+    const char *s;
+
+    if (kobj->name && !fmt)
+        return 0;
+
+    s = kvasprintf_const(GFP_KERNEL, fmt, vargs);
+    if (!s)
+        return -ENOMEM;
+
+    /*
+     * ewww... some of these buggers have '/' in the name ... If
+     * that's the case, we need to make sure we have an actual
+     * allocated copy to modify, since kvasprintf_const may have
+     * returned something from .rodata.
+     */
+    if (strchr(s, '/')) {
+        char *t;
+
+        t = kstrdup(s, GFP_KERNEL);
+        kfree_const(s);
+        if (!t)
+            return -ENOMEM;
+        strreplace(t, '/', '!');
+        s = t;
+    }
+    kfree_const(kobj->name);
+    kobj->name = s;
+
+    return 0;
 }
 
 void kobject_init(struct kobject *kobj, struct kobj_type *ktype)

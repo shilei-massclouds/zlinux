@@ -112,6 +112,9 @@ static inline const char *kbasename(const char *path)
 
 extern void kfree_const(const void *x);
 
+extern char *kstrdup(const char *s, gfp_t gfp) __malloc;
 extern const char *kstrdup_const(const char *s, gfp_t gfp);
+
+char *strreplace(char *s, char old, char new);
 
 #endif /* _LINUX_STRING_H_ */
