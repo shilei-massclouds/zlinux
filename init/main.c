@@ -25,6 +25,7 @@
 #include <linux/vmalloc.h>
 #include <linux/module.h>
 #include <linux/kallsyms.h>
+#include <linux/device/driver.h>
 
 #include <asm/setup.h>
 #include "z_tests.h"
@@ -227,7 +228,9 @@ static void __init do_basic_setup(void)
 {
 #if 0
     cpuset_init_smp();
+#endif
     driver_init();
+#if 0
     init_irq_proc();
     do_ctors();
 #endif

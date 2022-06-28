@@ -29,4 +29,6 @@ extern struct platform_device *platform_device_alloc(const char *name, int id);
 
 extern void platform_device_put(struct platform_device *pdev);
 
+extern struct bus_type platform_bus_type;
+
 #endif /* _PLATFORM_DEVICE_H_ */

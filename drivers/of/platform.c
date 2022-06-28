@@ -19,9 +19,7 @@
 #include <linux/slab.h>
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
-#if 0
 #include <linux/of_device.h>
-#endif
 #include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
@@ -147,7 +145,7 @@ of_device_alloc(struct device_node *np,
     else
         of_device_make_bus_id(&dev->dev);
 
-    panic("%s: num_reg(%d) num_irq(%d) END!\n", __func__, num_reg, num_irq);
+    pr_info("%s: num_reg(%d) num_irq(%d) END!\n", __func__, num_reg, num_irq);
     return dev;
 }
 
@@ -177,10 +175,25 @@ of_platform_device_create_pdata(struct device_node *np,
     if (!dev)
         goto err_clear_flag;
 
-    panic("%s: END!\n", __func__);
+#if 0
+    dev->dev.coherent_dma_mask = DMA_BIT_MASK(32);
+    if (!dev->dev.dma_mask)
+        dev->dev.dma_mask = &dev->dev.coherent_dma_mask;
+#endif
+    dev->dev.bus = &platform_bus_type;
+    dev->dev.platform_data = platform_data;
+#if 0
+    of_msi_configure(&dev->dev, dev->dev.of_node);
+#endif
+
+    if (of_device_add(dev) != 0) {
+        platform_device_put(dev);
+        goto err_clear_flag;
+    }
+
     return dev;
 
- err_clear_flag:
+err_clear_flag:
     of_node_clear_flag(np, OF_POPULATED);
     return NULL;
 }
@@ -335,3 +348,18 @@ static int __init of_platform_default_populate_init(void)
     return 0;
 }
 arch_initcall_sync(of_platform_default_populate_init);
+
+int __init platform_bus_init(void)
+{
+    int error;
+
+    error = device_register(&platform_bus);
+    if (error) {
+        put_device(&platform_bus);
+        return error;
+    }
+    error = bus_register(&platform_bus_type);
+    if (error)
+        device_unregister(&platform_bus);
+    return error;
+}

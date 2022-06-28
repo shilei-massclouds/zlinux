@@ -31,11 +31,45 @@
 struct kobject {
     const char          *name;
     struct list_head    entry;
+    struct kobject      *parent;
+    struct kset         *kset;
     struct kobj_type    *ktype;
     struct kref         kref;
 
     unsigned int state_initialized:1;
 };
+
+struct kset_uevent_ops {
+#if 0
+    int (* const filter)(struct kobject *kobj);
+    const char *(* const name)(struct kobject *kobj);
+    int (* const uevent)(struct kobject *kobj, struct kobj_uevent_env *env);
+#endif
+};
+
+/**
+ * struct kset - a set of kobjects of a specific type, belonging to a specific subsystem.
+ *
+ * A kset defines a group of kobjects.  They can be individually
+ * different "types" but overall these kobjects all want to be grouped
+ * together and operated on in the same manner.  ksets are used to
+ * define the attribute callbacks and other common events that happen to
+ * a kobject.
+ *
+ * @list: the list of all kobjects for this kset
+ * @list_lock: a lock for iterating over the kobjects
+ * @kobj: the embedded kobject for this kset (recursion, isn't it fun...)
+ * @uevent_ops: the set of uevent operations for this kset.  These are
+ * called whenever a kobject has something happen to it so that the kset
+ * can add new environment variables, or filter out the uevents if so
+ * desired.
+ */
+struct kset {
+    struct list_head list;
+    spinlock_t list_lock;
+    struct kobject kobj;
+    const struct kset_uevent_ops *uevent_ops;
+} __randomize_layout;
 
 struct kobj_type {
     void (*release)(struct kobject *kobj);
@@ -54,5 +88,44 @@ static inline const char *kobject_name(const struct kobject *kobj)
 {
     return kobj->name;
 }
+
+extern struct kobject *kobject_get(struct kobject *kobj);
+extern void kobject_put(struct kobject *kobj);
+
+static inline const struct kobj_type *get_ktype(struct kobject *kobj)
+{
+    return kobj->ktype;
+}
+
+int kobject_add(struct kobject *kobj, struct kobject *parent,
+                const char *fmt, ...);
+
+static inline struct kset *to_kset(struct kobject *kobj)
+{
+    return kobj ? container_of(kobj, struct kset, kobj) : NULL;
+}
+
+static inline struct kset *kset_get(struct kset *k)
+{
+    return k ? to_kset(kobject_get(&k->kobj)) : NULL;
+}
+
+static inline void kset_put(struct kset *k)
+{
+    kobject_put(&k->kobj);
+}
+
+extern struct kobject * __must_check
+kobject_create_and_add(const char *name,
+                       struct kobject *parent);
+
+extern struct kset * __must_check
+kset_create_and_add(const char *name,
+                    const struct kset_uevent_ops *u,
+                    struct kobject *parent_kobj);
+
+extern void kset_init(struct kset *kset);
+extern int __must_check kset_register(struct kset *kset);
+extern void kset_unregister(struct kset *kset);
 
 #endif /* _KOBJECT_H_ */

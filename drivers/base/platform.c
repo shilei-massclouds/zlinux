@@ -52,6 +52,104 @@ struct device platform_bus = {
 };
 EXPORT_SYMBOL_GPL(platform_bus);
 
+/**
+ * platform_match - bind platform device to platform driver.
+ * @dev: device.
+ * @drv: driver.
+ *
+ * Platform device IDs are assumed to be encoded like this:
+ * "<name><instance>", where <name> is a short description of the type of
+ * device, like "pci" or "floppy", and <instance> is the enumerated
+ * instance of the device, like '0' or '42'.  Driver IDs are simply
+ * "<name>".  So, extract the <name> from the platform_device structure,
+ * and compare it against the name of the driver. Return whether they match
+ * or not.
+ */
+static int platform_match(struct device *dev, struct device_driver *drv)
+{
+    panic("%s: END!\n", __func__);
+#if 0
+    struct platform_device *pdev = to_platform_device(dev);
+    struct platform_driver *pdrv = to_platform_driver(drv);
+
+    /* When driver_override is set, only bind to the matching driver */
+    if (pdev->driver_override)
+        return !strcmp(pdev->driver_override, drv->name);
+
+    /* Attempt an OF style match first */
+    if (of_driver_match_device(dev, drv))
+        return 1;
+
+    /* Then try ACPI style match */
+    if (acpi_driver_match_device(dev, drv))
+        return 1;
+
+    /* Then try to match against the id table */
+    if (pdrv->id_table)
+        return platform_match_id(pdrv->id_table, pdev) != NULL;
+
+    /* fall-back to driver name match */
+    return (strcmp(pdev->name, drv->name) == 0);
+#endif
+}
+
+static int platform_probe(struct device *_dev)
+{
+#if 0
+    struct platform_driver *drv = to_platform_driver(_dev->driver);
+    struct platform_device *dev = to_platform_device(_dev);
+    int ret;
+
+    /*
+     * A driver registered using platform_driver_probe() cannot be bound
+     * again later because the probe function usually lives in __init code
+     * and so is gone. For these drivers .probe is set to
+     * platform_probe_fail in __platform_driver_probe(). Don't even prepare
+     * clocks and PM domains for these to match the traditional behaviour.
+     */
+    if (unlikely(drv->probe == platform_probe_fail))
+        return -ENXIO;
+
+    ret = of_clk_set_defaults(_dev->of_node, false);
+    if (ret < 0)
+        return ret;
+
+    ret = dev_pm_domain_attach(_dev, true);
+    if (ret)
+        goto out;
+
+    if (drv->probe) {
+        ret = drv->probe(dev);
+        if (ret)
+            dev_pm_domain_detach(_dev, true);
+    }
+
+out:
+    if (drv->prevent_deferred_probe && ret == -EPROBE_DEFER) {
+        dev_warn(_dev, "probe deferral not supported\n");
+        ret = -ENXIO;
+    }
+
+    return ret;
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+struct bus_type platform_bus_type = {
+    .name       = "platform",
+    //.dev_groups = platform_dev_groups,
+    .match      = platform_match,
+    //.uevent     = platform_uevent,
+    .probe      = platform_probe,
+#if 0
+    .remove     = platform_remove,
+    .shutdown   = platform_shutdown,
+    .dma_configure  = platform_dma_configure,
+    .pm     = &platform_dev_pm_ops,
+#endif
+};
+EXPORT_SYMBOL_GPL(platform_bus_type);
+
 static void platform_device_release(struct device *dev)
 {
     panic("%s: NO implementation!\n", __func__);

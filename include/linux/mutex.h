@@ -18,6 +18,22 @@
 #include <asm/processor.h>
 //#include <linux/osq_lock.h>
 //#include <linux/debug_locks.h>
+#include <linux/lockdep_types.h>
+
+/**
+ * mutex_init - initialize the mutex
+ * @mutex: the mutex to be initialized
+ *
+ * Initialize the mutex to unlocked state.
+ *
+ * It is not allowed to initialize an already locked mutex.
+ */
+#define mutex_init(mutex)               \
+do {                                    \
+    static struct lock_class_key __key; \
+                                        \
+    __mutex_init((mutex), #mutex, &__key); \
+} while (0)
 
 #define __MUTEX_INITIALIZER(lockname) \
     { .owner = ATOMIC_LONG_INIT(0), \
@@ -60,6 +76,9 @@ struct mutex {
     raw_spinlock_t      wait_lock;
     struct list_head    wait_list;
 };
+
+extern void __mutex_init(struct mutex *lock, const char *name,
+                         struct lock_class_key *key);
 
 extern void mutex_lock(struct mutex *lock);
 extern void mutex_unlock(struct mutex *lock);
