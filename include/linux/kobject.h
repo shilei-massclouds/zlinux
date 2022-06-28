@@ -50,5 +50,9 @@ extern __printf(2, 0)
 int kobject_set_name_vargs(struct kobject *kobj,
                            const char *fmt, va_list vargs);
 
+static inline const char *kobject_name(const struct kobject *kobj)
+{
+    return kobj->name;
+}
 
 #endif /* _KOBJECT_H_ */

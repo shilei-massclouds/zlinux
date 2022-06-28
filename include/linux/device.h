@@ -76,4 +76,13 @@ void device_initialize(struct device *dev);
 
 __printf(2, 3) int dev_set_name(struct device *dev, const char *name, ...);
 
+static inline const char *dev_name(const struct device *dev)
+{
+    /* Use the init name until the kobject becomes available */
+    if (dev->init_name)
+        return dev->init_name;
+
+    return kobject_name(&dev->kobj);
+}
+
 #endif /* _DEVICE_H_ */

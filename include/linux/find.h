@@ -1,11 +1,20 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _ASM_GENERIC_BITOPS_FIND_H_
-#define _ASM_GENERIC_BITOPS_FIND_H_
+#ifndef __LINUX_FIND_H_
+#define __LINUX_FIND_H_
+
+#ifndef __LINUX_BITMAP_H
+#error only <linux/bitmap.h> can be included directly
+#endif
+
+#include <linux/bitops.h>
 
 extern unsigned long
-_find_next_bit(const unsigned long *addr1, const unsigned long *addr2,
-               unsigned long nbits, unsigned long start,
-               unsigned long invert, unsigned long le);
+_find_next_bit(const unsigned long *addr1,
+               const unsigned long *addr2, unsigned long nbits,
+               unsigned long start, unsigned long invert, unsigned long le);
+
+extern unsigned long
+_find_first_bit(const unsigned long *addr, unsigned long size);
 
 extern unsigned long
 _find_last_bit(const unsigned long *addr, unsigned long size);
@@ -21,8 +30,7 @@ _find_last_bit(const unsigned long *addr, unsigned long size);
  * If no bits are set, returns @size.
  */
 static inline
-unsigned long find_next_bit(const unsigned long *addr,
-                            unsigned long size,
+unsigned long find_next_bit(const unsigned long *addr, unsigned long size,
                             unsigned long offset)
 {
     if (small_const_nbits(size)) {
@@ -67,6 +75,28 @@ unsigned long find_next_zero_bit(const unsigned long *addr, unsigned long size,
 }
 #endif
 
+#ifndef find_first_bit
+/**
+ * find_first_bit - find the first set bit in a memory region
+ * @addr: The address to start the search at
+ * @size: The maximum number of bits to search
+ *
+ * Returns the bit number of the first set bit.
+ * If no bits are set, returns @size.
+ */
+static inline
+unsigned long find_first_bit(const unsigned long *addr, unsigned long size)
+{
+    if (small_const_nbits(size)) {
+        unsigned long val = *addr & GENMASK(size - 1, 0);
+
+        return val ? __ffs(val) : size;
+    }
+
+    return _find_first_bit(addr, size);
+}
+#endif
+
 #ifndef find_last_bit
 /**
  * find_last_bit - find the last set bit in a memory region
@@ -88,11 +118,4 @@ unsigned long find_last_bit(const unsigned long *addr, unsigned long size)
 }
 #endif
 
-#ifndef find_first_bit
-#define find_first_bit(addr, size) find_next_bit((addr), (size), 0)
-#endif
-#ifndef find_first_zero_bit
-#define find_first_zero_bit(addr, size) find_next_zero_bit((addr), (size), 0)
-#endif
-
-#endif /*_ASM_GENERIC_BITOPS_FIND_H_ */
+#endif /*__LINUX_FIND_H_ */

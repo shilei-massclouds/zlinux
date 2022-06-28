@@ -65,7 +65,35 @@ of_dev_lookup(const struct of_dev_auxdata *lookup, struct device_node *np)
  */
 static void of_device_make_bus_id(struct device *dev)
 {
-    panic("%s: NO implementation!\n", __func__);
+    struct device_node *node = dev->of_node;
+    const __be32 *reg;
+    u64 addr;
+    u32 mask;
+
+    /* Construct the name, using parent nodes if necessary to ensure uniqueness */
+    while (node->parent) {
+        /*
+         * If the address can be translated, then that is as much
+         * uniqueness as we need. Make it the first component and return
+         */
+        reg = of_get_property(node, "reg", NULL);
+        if (reg && (addr = of_translate_address(node, reg)) != OF_BAD_ADDR) {
+            if (!of_property_read_u32(node, "mask", &mask))
+                dev_set_name(dev, dev_name(dev) ?
+                             "%llx.%x.%pOFn:%s" : "%llx.%x.%pOFn",
+                             addr, ffs(mask) - 1, node, dev_name(dev));
+
+            else
+                dev_set_name(dev, dev_name(dev) ?
+                             "%llx.%pOFn:%s" : "%llx.%pOFn",
+                             addr, node, dev_name(dev));
+            return;
+        }
+
+        panic("%s: node(%pOF) NO implementation!\n", __func__, node);
+    }
+
+    panic("%s: END!\n", __func__);
 }
 
 /**
