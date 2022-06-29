@@ -829,8 +829,10 @@ int of_phandle_iterator_args(struct of_phandle_iterator *it,
     if (WARN_ON(size < count))
         count = size;
 
-    for (i = 0; i < count; i++)
+    for (i = 0; i < count; i++) {
         args[i] = be32_to_cpup(it->cur++);
+        printk("%s: %d %x\n", __func__, i, args[i]);
+    }
 
     return count;
 }
@@ -850,4 +852,26 @@ struct device_node *__of_find_all_nodes(struct device_node *prev)
         np = np->sibling; /* Might be null at the end of the tree */
     }
     return np;
+}
+
+/** Checks if the device is compatible with any of the entries in
+ *  a NULL terminated array of strings. Returns the best match
+ *  score or 0.
+ */
+int of_device_compatible_match(struct device_node *device,
+                               const char *const *compat)
+{
+    unsigned int tmp, score = 0;
+
+    if (!compat)
+        return 0;
+
+    while (*compat) {
+        tmp = of_device_is_compatible(device, *compat);
+        if (tmp > score)
+            score = tmp;
+        compat++;
+    }
+
+    return score;
 }

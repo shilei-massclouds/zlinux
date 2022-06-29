@@ -419,4 +419,24 @@ extern int of_property_read_u32_index(const struct device_node *np,
                                       const char *propname,
                                       u32 index, u32 *out_value);
 
+/**
+ * of_property_read_bool - Find a property
+ * @np:     device node from which the property value is to be read.
+ * @propname:   name of the property to be searched.
+ *
+ * Search for a property in a device node.
+ *
+ * Return: true if the property exists false otherwise.
+ */
+static inline bool of_property_read_bool(const struct device_node *np,
+                                         const char *propname)
+{
+    struct property *prop = of_find_property(np, propname, NULL);
+
+    return prop ? true : false;
+}
+
+extern int of_device_compatible_match(struct device_node *device,
+                                      const char *const *compat);
+
 #endif /* _LINUX_OF_H */

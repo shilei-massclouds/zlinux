@@ -54,6 +54,26 @@ struct device_node *of_irq_find_parent(struct device_node *child)
 }
 EXPORT_SYMBOL_GPL(of_irq_find_parent);
 
+/*
+ * These interrupt controllers abuse interrupt-map for unspeakable
+ * reasons and rely on the core code to *ignore* it (the drivers do
+ * their own parsing of the property).
+ *
+ * If you think of adding to the list for something *new*, think
+ * again. There is a high chance that you will be sent back to the
+ * drawing board.
+ */
+static const char * const of_irq_imap_abusers[] = {
+    "CBEA,platform-spider-pic",
+    "sti,platform-spider-pic",
+    "realtek,rtl-intc",
+    "fsl,ls1021a-extirq",
+    "fsl,ls1043a-extirq",
+    "fsl,ls1088a-extirq",
+    "renesas,rza1-irqc",
+    NULL,
+};
+
 /**
  * of_irq_parse_raw - Low level interrupt tree parsing
  * @addr:   address specifier (start of "reg" property of the device) in be32 format
@@ -96,7 +116,59 @@ int of_irq_parse_raw(const __be32 *addr, struct of_phandle_args *out_irq)
         goto fail;
     }
 
-    pr_info("of_irq_parse_raw: ipar=%pOF, size=%d\n", ipar, intsize);
+    pr_debug("of_irq_parse_raw: ipar=%pOF, size=%d\n", ipar, intsize);
+
+    if (out_irq->args_count != intsize)
+        goto fail;
+
+    /* Look for this #address-cells. We have to implement the old linux
+     * trick of looking for the parent here as some device-trees rely on it
+     */
+    old = of_node_get(ipar);
+    do {
+        tmp = of_get_property(old, "#address-cells", NULL);
+        tnode = of_get_parent(old);
+        of_node_put(old);
+        old = tnode;
+    } while (old && tmp == NULL);
+    of_node_put(old);
+    old = NULL;
+    addrsize = (tmp == NULL) ? 2 : be32_to_cpu(*tmp);
+
+    pr_debug(" -> addrsize=%d\n", addrsize);
+
+    /* Range check so that the temporary buffer doesn't overflow */
+    if (WARN_ON(addrsize + intsize > MAX_PHANDLE_ARGS)) {
+        rc = -EFAULT;
+        goto fail;
+    }
+
+    /* Precalculate the match array - this simplifies match loop */
+    for (i = 0; i < addrsize; i++)
+        initial_match_array[i] = addr ? addr[i] : 0;
+    for (i = 0; i < intsize; i++)
+        initial_match_array[addrsize + i] = cpu_to_be32(out_irq->args[i]);
+
+    /* Now start the actual "proper" walk of the interrupt tree */
+    while (ipar != NULL) {
+        /*
+         * Now check if cursor is an interrupt-controller and
+         * if it is then we are done, unless there is an
+         * interrupt-map which takes precedence except on one
+         * of these broken platforms that want to parse
+         * interrupt-map themselves for $reason.
+         */
+        bool intc = of_property_read_bool(ipar, "interrupt-controller");
+
+        imap = of_get_property(ipar, "interrupt-map", &imaplen);
+        if (intc &&
+            (!imap || of_device_compatible_match(ipar, of_irq_imap_abusers))) {
+            pr_debug(" -> got it !\n");
+            return 0;
+        }
+
+        panic("%s: ipar(%pOF) intc(%d)!\n", __func__, ipar, intc);
+    }
 
     panic("%s: END!\n", __func__);
 
@@ -149,7 +221,7 @@ int of_irq_parse_one(struct device_node *device, int index,
         goto out;
     }
 
-    pr_info(" parent=%pOF, intsize=%d\n", p, intsize);
+    pr_debug(" parent=%pOF, intsize=%d\n", p, intsize);
 
     /* Copy intspec into irq structure */
     out_irq->np = p;
@@ -164,7 +236,6 @@ int of_irq_parse_one(struct device_node *device, int index,
 
     pr_debug(" intspec=%d\n", *out_irq->args);
 
-    panic("%s: END!\n", __func__);
     /* Check if there are any interrupt-map translations to process */
     res = of_irq_parse_raw(addr, out_irq);
  out:

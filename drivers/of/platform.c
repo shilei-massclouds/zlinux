@@ -85,13 +85,15 @@ static void of_device_make_bus_id(struct device *dev)
                 dev_set_name(dev, dev_name(dev) ?
                              "%llx.%pOFn:%s" : "%llx.%pOFn",
                              addr, node, dev_name(dev));
+
             return;
         }
 
-        panic("%s: node(%pOF) NO implementation!\n", __func__, node);
+        /* format arguments only used if dev_name() resolves to NULL */
+        dev_set_name(dev, dev_name(dev) ? "%s:%s" : "%s",
+                     kbasename(node->full_name), dev_name(dev));
+        node = node->parent;
     }
-
-    panic("%s: END!\n", __func__);
 }
 
 /**
@@ -132,6 +134,7 @@ of_device_alloc(struct device_node *np,
             rc = of_address_to_resource(np, i, res);
             WARN_ON(rc);
         }
+        pr_info("%s: %pOF\n", __func__, np);
         if (of_irq_to_resource_table(np, res, num_irq) != num_irq)
             pr_err("not all legacy IRQ resources mapped for %pOFn\n", np);
     }
@@ -145,7 +148,6 @@ of_device_alloc(struct device_node *np,
     else
         of_device_make_bus_id(&dev->dev);
 
-    pr_info("%s: num_reg(%d) num_irq(%d) END!\n", __func__, num_reg, num_irq);
     return dev;
 }
 
@@ -250,7 +252,16 @@ static int of_platform_bus_create(struct device_node *bus,
     if (!dev || !of_match_node(matches, bus))
         return 0;
 
-    panic("%s: name(%s) END!\n", __func__, bus->name);
+    for_each_child_of_node(bus, child) {
+        pr_info("   create child: %pOF\n", child);
+        rc = of_platform_bus_create(child, matches, lookup, &dev->dev, strict);
+        if (rc) {
+            of_node_put(child);
+            break;
+        }
+    }
+    of_node_set_flag(bus, OF_POPULATED_BUS);
+    return rc;
 }
 
 /**
@@ -297,7 +308,10 @@ int of_platform_populate(struct device_node *root,
     }
     //device_links_supplier_sync_state_resume();
 
-    panic("%s: END!\n", __func__);
+    of_node_set_flag(root, OF_POPULATED_BUS);
+
+    of_node_put(root);
+    return rc;
 }
 EXPORT_SYMBOL_GPL(of_platform_populate);
 
@@ -344,7 +358,6 @@ static int __init of_platform_default_populate_init(void)
     /* Populate everything else. */
     of_platform_default_populate(NULL, NULL, NULL);
 
-    panic("%s: END!\n", __func__);
     return 0;
 }
 arch_initcall_sync(of_platform_default_populate_init);

@@ -207,8 +207,22 @@ static int of_translate_one(struct device_node *parent, struct of_bus *bus,
         pr_warn("no ranges; cannot translate\n");
         return 1;
     }
+    if (ranges == NULL || rlen == 0) {
+        offset = of_read_number(addr, na);
+        memset(addr, 0, pna * 4);
+        pr_debug("empty ranges; 1:1 translation\n");
+        goto finish;
+    }
+
+    pr_info("walking ranges...\n");
 
     panic("%s: name(%s) END!\n", __func__, parent->name);
+
+ finish:
+    pr_debug("with offset: %llx\n", offset);
+
+    /* Translate it into parent bus space */
+    return pbus->translate(addr, offset, pna);
 }
 
 /*
@@ -237,7 +251,7 @@ __of_translate_address(struct device_node *dev,
     int na, ns, pna, pns;
     u64 result = OF_BAD_ADDR;
 
-    pr_info("** translation for device %pOF **\n", dev);
+    pr_debug("** translation for device %pOF **\n", dev);
 
     /* Increase refcount at current level */
     of_node_get(dev);
@@ -257,8 +271,8 @@ __of_translate_address(struct device_node *dev,
     }
     memcpy(addr, in_addr, na * 4);
 
-    pr_info("bus is %s (na=%d, ns=%d) on %pOF\n",
-            bus->name, na, ns, parent);
+    pr_debug("bus is %s (na=%d, ns=%d) on %pOF\n",
+             bus->name, na, ns, parent);
 
     /* Translate */
     for (;;) {
@@ -271,7 +285,7 @@ __of_translate_address(struct device_node *dev,
 
         /* If root, we have finished */
         if (parent == NULL) {
-            pr_info("reached root node\n");
+            pr_debug("reached root node\n");
             result = of_read_number(addr, na);
             break;
         }
@@ -299,8 +313,8 @@ __of_translate_address(struct device_node *dev,
             break;
         }
 
-        pr_info("parent bus is %s (na=%d, ns=%d) on %pOF\n",
-                pbus->name, pna, pns, parent);
+        pr_debug("parent bus is %s (na=%d, ns=%d) on %pOF\n",
+                 pbus->name, pna, pns, parent);
 
         /* Apply bus translation */
         if (of_translate_one(dev, bus, pbus, addr, na, ns, pna, rprop))

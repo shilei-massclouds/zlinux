@@ -113,9 +113,9 @@ struct irq_fwspec {
  * @revmap: Linear table of irq_data pointers
  */
 struct irq_domain {
-#if 0
     struct list_head link;
     const char *name;
+#if 0
     const struct irq_domain_ops *ops;
     void *host_data;
     unsigned int flags;
