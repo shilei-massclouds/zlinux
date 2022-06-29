@@ -56,12 +56,25 @@
     KEEP(*(__earlycon_table))           \
     __earlycon_table_end = .;
 
+#define ___OF_TABLE(cfg, name)  _OF_TABLE_##cfg(name)
+#define __OF_TABLE(cfg, name)   ___OF_TABLE(cfg, name)
+#define OF_TABLE(cfg, name) __OF_TABLE(IS_ENABLED(cfg), name)
+#define _OF_TABLE_0(name)
+#define _OF_TABLE_1(name)                       \
+    . = ALIGN(8);                           \
+    __##name##_of_table = .;                    \
+    KEEP(*(__##name##_of_table))                    \
+    KEEP(*(__##name##_of_table_end))
+
+#define IRQCHIP_OF_MATCH_TABLE() OF_TABLE(CONFIG_IRQCHIP, irqchip)
+
 /* init and exit section handling */
 #define INIT_DATA                       \
     *(.init.data init.data.*)           \
     MEM_DISCARD(init.data*)             \
     *(.init.rodata .init.rodata.*)      \
     MEM_DISCARD(init.rodata)            \
+    IRQCHIP_OF_MATCH_TABLE()            \
     EARLYCON_TABLE()
 
 #define INIT_SETUP(initsetup_align) \

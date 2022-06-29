@@ -53,3 +53,5 @@
 #define CONFIG_INIT_ENV_ARG_LIMIT 32
 
 #define CONFIG_SLAB 1
+
+#define CONFIG_IRQCHIP 1

@@ -26,6 +26,7 @@
 #include <linux/module.h>
 #include <linux/kallsyms.h>
 #include <linux/device/driver.h>
+#include <linux/irq.h>
 
 #include <asm/setup.h>
 #include "z_tests.h"
@@ -666,6 +667,8 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
              "Interrupts were enabled *very* early, fixing it\n"))
         local_irq_disable();
     radix_tree_init();
+
+    init_IRQ();
 
     setup_per_cpu_pageset();
 

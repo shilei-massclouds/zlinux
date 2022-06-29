@@ -17,4 +17,6 @@ extern int of_irq_parse_one(struct device_node *device, int index,
 extern int of_irq_to_resource_table(struct device_node *dev,
                                     struct resource *res, int nr_irqs);
 
+extern void of_irq_init(const struct of_device_id *matches);
+
 #endif /* __OF_IRQ_H */

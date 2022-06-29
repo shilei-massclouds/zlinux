@@ -22,10 +22,8 @@
 #include <linux/slab.h>
 
 #include <asm/ptrace.h>
-#if 0
 #include <asm/irq.h>
 #include <asm/irq_regs.h>
-#endif
 
 /*
  * Bit masks for irq_common_data.state_use_accessors
@@ -145,6 +143,23 @@ static inline u32 irqd_get_trigger_type(struct irq_data *d)
 {
     return __irqd_to_state(d) & IRQD_TRIGGER_MASK;
 }
+
+/*
+ * Registers a generic IRQ handling function as the top-level IRQ handler in
+ * the system, which is generally the first C code called from an assembly
+ * architecture-specific interrupt handler.
+ *
+ * Returns 0 on success, or -EBUSY if an IRQ handler has already been
+ * registered.
+ */
+int __init set_handle_irq(void (*handle_irq)(struct pt_regs *));
+
+/*
+ * Allows interrupt handlers to find the irqchip that's been registered as the
+ * top-level IRQ handler.
+ */
+extern void (*handle_arch_irq)(struct pt_regs *) __ro_after_init;
+asmlinkage void generic_handle_arch_irq(struct pt_regs *regs);
 
 #include <linux/irqdesc.h>
 

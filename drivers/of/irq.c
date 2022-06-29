@@ -340,3 +340,15 @@ int of_irq_to_resource_table(struct device_node *dev, struct resource *res,
     return i;
 }
 EXPORT_SYMBOL_GPL(of_irq_to_resource_table);
+
+/**
+ * of_irq_init - Scan and init matching interrupt controllers in DT
+ * @matches: 0 terminated array of nodes to match and init function to call
+ *
+ * This function scans the device tree for matching interrupt controller nodes,
+ * and calls their initialization functions in order with parents first.
+ */
+void __init of_irq_init(const struct of_device_id *matches)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
