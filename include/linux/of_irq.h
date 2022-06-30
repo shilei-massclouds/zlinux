@@ -9,6 +9,8 @@
 #include <linux/ioport.h>
 #include <linux/of.h>
 
+typedef int (*of_irq_init_cb_t)(struct device_node *, struct device_node *);
+
 extern int of_irq_count(struct device_node *dev);
 
 extern int of_irq_parse_one(struct device_node *device, int index,

@@ -120,6 +120,12 @@ struct callback_head {
 
 typedef void (*rcu_callback_t)(struct rcu_head *head);
 
+/*
+ * This type is the placeholder for a hardware interrupt number. It has to be
+ * big enough to enclose whatever representation is used by a given platform.
+ */
+typedef unsigned long irq_hw_number_t;
+
 #endif /*  __ASSEMBLY__ */
 
 #endif /* _LINUX_TYPES_H */

@@ -28,4 +28,6 @@ fwnode_get_nth_parent(struct fwnode_handle *fwn, unsigned int depth);
 const char *fwnode_get_name(const struct fwnode_handle *fwnode);
 const char *fwnode_get_name_prefix(const struct fwnode_handle *fwnode);
 
+bool is_software_node(const struct fwnode_handle *fwnode);
+
 #endif /* _LINUX_PROPERTY_H_ */

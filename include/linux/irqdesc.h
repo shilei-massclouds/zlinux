@@ -57,4 +57,6 @@ struct irq_desc {
     struct irq_data         irq_data;
 } ____cacheline_internodealigned_in_smp;
 
+int generic_handle_domain_irq(struct irq_domain *domain, unsigned int hwirq);
+
 #endif /* _LINUX_IRQDESC_H */

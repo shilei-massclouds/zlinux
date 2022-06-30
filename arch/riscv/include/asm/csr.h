@@ -5,6 +5,9 @@
 #include <asm/asm.h>
 #include <linux/const.h>
 
+/* Exception cause high bit - is an interrupt if set */
+#define CAUSE_IRQ_FLAG      (_AC(1, UL) << (__riscv_xlen - 1))
+
 /* Status register flags */
 #define SR_SIE  _AC(0x00000002, UL) /* Supervisor Interrupt Enable */
 #define SR_SPIE _AC(0x00000020, UL) /* Previous Supervisor IE */

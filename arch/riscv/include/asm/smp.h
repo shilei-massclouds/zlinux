@@ -28,4 +28,8 @@ extern unsigned long __cpuid_to_hartid_map[NR_CPUS];
 
 void __init setup_smp(void);
 
+int riscv_hartid_to_cpuid(int hartid);
+
+void handle_IPI(struct pt_regs *regs);
+
 #endif /* _ASM_RISCV_SMP_H */

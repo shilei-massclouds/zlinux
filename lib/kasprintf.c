@@ -50,3 +50,16 @@ const char *kvasprintf_const(gfp_t gfp, const char *fmt, va_list ap)
     return kvasprintf(gfp, fmt, ap);
 }
 EXPORT_SYMBOL(kvasprintf_const);
+
+char *kasprintf(gfp_t gfp, const char *fmt, ...)
+{
+    va_list ap;
+    char *p;
+
+    va_start(ap, fmt);
+    p = kvasprintf(gfp, fmt, ap);
+    va_end(ap);
+
+    return p;
+}
+EXPORT_SYMBOL(kasprintf);

@@ -35,3 +35,20 @@ void __init smp_setup_processor_id(void)
 {
     cpuid_to_hartid_map(0) = boot_cpu_hartid;
 }
+
+int riscv_hartid_to_cpuid(int hartid)
+{
+    int i;
+
+    for (i = 0; i < NR_CPUS; i++)
+        if (cpuid_to_hartid_map(i) == hartid)
+            return i;
+
+    pr_err("Couldn't find cpu id for hartid [%d]\n", hartid);
+    return -ENOENT;
+}
+
+void handle_IPI(struct pt_regs *regs)
+{
+    panic("%s: NO implementation!\n", __func__);
+}

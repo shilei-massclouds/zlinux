@@ -145,4 +145,6 @@ char *kvasprintf(gfp_t gfp, const char *fmt, va_list args);
 extern __printf(2, 0)
 const char *kvasprintf_const(gfp_t gfp, const char *fmt, va_list args);
 
+char *kasprintf(gfp_t gfp, const char *fmt, ...);
+
 #endif /* _LINUX_KERNEL_H */

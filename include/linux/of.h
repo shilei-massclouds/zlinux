@@ -44,6 +44,22 @@
 
 #define of_prop_cmp(s1, s2)     strcmp((s1), (s2))
 
+#if defined(CONFIG_OF) && !defined(MODULE)
+#define _OF_DECLARE(table, name, compat, fn, fn_type)   \
+    static const struct of_device_id __of_table_##name  \
+        __used __section("__" #table "_of_table")       \
+        __aligned(__alignof__(struct of_device_id))     \
+         = { .compatible = compat,                      \
+             .data = (fn == (fn_type)NULL) ? fn : fn  }
+#else
+# error "MODULE is NOT supported!\n"
+#endif
+
+typedef int (*of_init_fn_2)(struct device_node *, struct device_node *);
+
+#define OF_DECLARE_2(table, name, compat, fn) \
+    _OF_DECLARE(table, name, compat, fn, of_init_fn_2)
+
 typedef u32 phandle;
 typedef u32 ihandle;
 
@@ -438,5 +454,14 @@ static inline bool of_property_read_bool(const struct device_node *np,
 
 extern int of_device_compatible_match(struct device_node *device,
                                       const char *const *compat);
+
+extern struct device_node *
+of_find_matching_node_and_match(struct device_node *from,
+                                const struct of_device_id *matches,
+                                const struct of_device_id **match);
+
+#define for_each_matching_node_and_match(dn, matches, match) \
+    for (dn = of_find_matching_node_and_match(NULL, matches, match); \
+         dn; dn = of_find_matching_node_and_match(dn, matches, match))
 
 #endif /* _LINUX_OF_H */

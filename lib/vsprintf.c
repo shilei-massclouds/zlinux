@@ -1119,6 +1119,36 @@ char *device_node_string(char *buf, char *end, struct device_node *dn,
 }
 
 static noinline_for_stack
+char *fwnode_string(char *buf, char *end, struct fwnode_handle *fwnode,
+                    struct printf_spec spec, const char *fmt)
+{
+    struct printf_spec str_spec = spec;
+    char *buf_start = buf;
+
+    str_spec.field_width = -1;
+
+    if (*fmt != 'w')
+        return error_string(buf, end, "(%pf?)", spec);
+
+    if (check_pointer(&buf, end, fwnode, spec))
+        return buf;
+
+    fmt++;
+
+    switch (*fmt) {
+    case 'P':   /* name */
+        buf = string(buf, end, fwnode_get_name(fwnode), str_spec);
+        break;
+    case 'f':   /* full_name */
+    default:
+        buf = fwnode_full_name_string(fwnode, buf, end);
+        break;
+    }
+
+    return widen_string(buf, buf - buf_start, end, spec);
+}
+
+static noinline_for_stack
 char *pointer(const char *fmt, char *buf, char *end, void *ptr,
               struct printf_spec spec)
 {
@@ -1137,6 +1167,8 @@ char *pointer(const char *fmt, char *buf, char *end, void *ptr,
         return address_val(buf, end, ptr, spec, fmt);
     case 'O':
         return device_node_string(buf, end, ptr, spec, fmt + 1);
+    case 'f':
+        return fwnode_string(buf, end, ptr, spec, fmt + 1);
 
     /* Todo: */
     }

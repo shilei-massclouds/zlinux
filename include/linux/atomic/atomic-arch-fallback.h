@@ -122,4 +122,13 @@ arch_atomic64_inc(atomic64_t *v)
 #define arch_atomic64_inc arch_atomic64_inc
 #endif
 
+#ifndef arch_atomic_inc_return
+static __always_inline int
+arch_atomic_inc_return(atomic_t *v)
+{
+    return arch_atomic_add_return(1, v);
+}
+#define arch_atomic_inc_return arch_atomic_inc_return
+#endif
+
 #endif /* _LINUX_ATOMIC_FALLBACK_H */

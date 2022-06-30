@@ -54,6 +54,8 @@ static inline void arch_thread_struct_whitelist(unsigned long *offset,
     ((struct pt_regs *)(task_stack_page(tsk) + THREAD_SIZE \
                         - ALIGN(sizeof(struct pt_regs), STACK_ALIGN)))
 
+int riscv_of_parent_hartid(struct device_node *node);
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* _ASM_RISCV_PROCESSOR_H */

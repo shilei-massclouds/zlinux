@@ -162,4 +162,10 @@ atomic_long_add_return(long i, atomic_long_t *v)
     return arch_atomic_long_add_return(i, v);
 }
 
+static __always_inline int
+atomic_inc_return(atomic_t *v)
+{
+    return arch_atomic_inc_return(v);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */

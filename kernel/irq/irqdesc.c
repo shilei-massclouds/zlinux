@@ -29,3 +29,23 @@ struct irq_desc *irq_to_desc(unsigned int irq)
 {
     return radix_tree_lookup(&irq_desc_tree, irq);
 }
+
+/**
+ * generic_handle_domain_irq - Invoke the handler for a HW irq belonging
+ *                             to a domain.
+ * @domain: The domain where to perform the lookup
+ * @hwirq:  The HW irq number to convert to a logical one
+ *
+ * Returns: 0 on success, or -EINVAL if conversion has failed
+ *
+ *      This function must be called from an IRQ context with irq regs
+ *      initialized.
+ */
+int generic_handle_domain_irq(struct irq_domain *domain, unsigned int hwirq)
+{
+    panic("%s: END!\n", __func__);
+#if 0
+    return handle_irq_desc(irq_resolve_mapping(domain, hwirq));
+#endif
+}
+EXPORT_SYMBOL_GPL(generic_handle_domain_irq);
