@@ -54,9 +54,63 @@ struct pt_regs;
  */
 struct irq_desc {
     struct irq_common_data  irq_common_data;
-    struct irq_data         irq_data;
+    struct irq_data     irq_data;
+    unsigned int __percpu   *kstat_irqs;
+    irq_flow_handler_t  handle_irq;
+    struct irqaction    *action;    /* IRQ action list */
+    unsigned int        status_use_accessors;
+    unsigned int        core_internal_state__do_not_mess_with_it;
+    unsigned int        depth;      /* nested irq disables */
+    unsigned int        wake_depth; /* nested wake enables */
+    unsigned int        tot_count;
+    unsigned int        irq_count;  /* For detecting broken IRQs */
+    unsigned long       last_unhandled; /* Aging timer for unhandled count */
+    unsigned int        irqs_unhandled;
+    atomic_t            threads_handled;
+    int                 threads_handled_last;
+    raw_spinlock_t      lock;
+    struct cpumask      *percpu_enabled;
+    const struct cpumask    *percpu_affinity;
+    const struct cpumask    *affinity_hint;
+    struct irq_affinity_notify *affinity_notify;
+
+    unsigned long       threads_oneshot;
+    atomic_t            threads_active;
+#if 0
+    wait_queue_head_t   wait_for_threads;
+#endif
+
+    struct proc_dir_entry   *dir;
+
+    struct rcu_head     rcu;
+    struct kobject      kobj;
+
+    struct mutex        request_mutex;
+    int                 parent_irq;
+    struct module       *owner;
+    const char          *name;
 } ____cacheline_internodealigned_in_smp;
 
 int generic_handle_domain_irq(struct irq_domain *domain, unsigned int hwirq);
+
+static inline struct irq_desc *irq_data_to_desc(struct irq_data *data)
+{
+    return container_of(data->common, struct irq_desc, irq_common_data);
+}
+
+static inline struct irq_chip *irq_desc_get_chip(struct irq_desc *desc)
+{
+    return desc->irq_data.chip;
+}
+
+static inline unsigned int irq_desc_get_irq(struct irq_desc *desc)
+{
+    return desc->irq_data.irq;
+}
+
+static inline struct irq_data *irq_desc_get_irq_data(struct irq_desc *desc)
+{
+    return &desc->irq_data;
+}
 
 #endif /* _LINUX_IRQDESC_H */

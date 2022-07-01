@@ -288,8 +288,7 @@ int of_irq_get(struct device_node *dev, int index)
     if (!domain)
         return -EPROBE_DEFER;
 
-    panic("%s: END!\n", __func__);
-    //return irq_create_of_mapping(&oirq);
+    return irq_create_of_mapping(&oirq);
 }
 EXPORT_SYMBOL_GPL(of_irq_get);
 

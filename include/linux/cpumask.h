@@ -258,12 +258,36 @@ static inline unsigned int cpumask_size(void)
 }
 
 /**
+ * cpumask_first_and - return the first cpu from *srcp1 & *srcp2
+ * @src1p: the first input
+ * @src2p: the second input
+ *
+ * Returns >= nr_cpu_ids if no cpus set in both.  See also cpumask_next_and().
+ */
+static inline
+unsigned int cpumask_first_and(const struct cpumask *srcp1,
+                               const struct cpumask *srcp2)
+{
+    return find_first_and_bit(cpumask_bits(srcp1), cpumask_bits(srcp2),
+                              nr_cpumask_bits);
+}
+
+/**
  * cpumask_any - pick a "random" cpu from *srcp
  * @srcp: the input cpumask
  *
  * Returns >= nr_cpu_ids if no cpus set.
  */
 #define cpumask_any(srcp) cpumask_first(srcp)
+
+/**
+ * cpumask_any_and - pick a "random" cpu from *mask1 & *mask2
+ * @mask1: the first input cpumask
+ * @mask2: the second input cpumask
+ *
+ * Returns >= nr_cpu_ids if no cpus set.
+ */
+#define cpumask_any_and(mask1, mask2) cpumask_first_and((mask1), (mask2))
 
 extern atomic_t __num_online_cpus;
 
@@ -296,5 +320,14 @@ static inline unsigned int num_online_cpus(void)
     [BITS_TO_LONGS(NR_CPUS)-1] = BITMAP_LAST_WORD_MASK(NR_CPUS) \
 } }
 #endif /* NR_CPUS > BITS_PER_LONG */
+
+typedef struct cpumask cpumask_var_t[1];
+
+static inline bool
+zalloc_cpumask_var_node(cpumask_var_t *mask, gfp_t flags, int node)
+{
+    cpumask_clear(*mask);
+    return true;
+}
 
 #endif /* __LINUX_CPUMASK_H */

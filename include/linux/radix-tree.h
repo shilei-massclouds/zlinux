@@ -157,4 +157,9 @@ int radix_tree_tag_get(const struct radix_tree_root *,
 
 void *radix_tree_lookup(const struct radix_tree_root *, unsigned long);
 
+int radix_tree_insert(struct radix_tree_root *, unsigned long index, void *);
+
+void *radix_tree_delete_item(struct radix_tree_root *, unsigned long, void *);
+void *radix_tree_delete(struct radix_tree_root *, unsigned long);
+
 #endif /* _LINUX_RADIX_TREE_H */

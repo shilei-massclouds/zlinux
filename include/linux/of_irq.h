@@ -21,4 +21,6 @@ extern int of_irq_to_resource_table(struct device_node *dev,
 
 extern void of_irq_init(const struct of_device_id *matches);
 
+extern unsigned int irq_create_of_mapping(struct of_phandle_args *irq_data);
+
 #endif /* __OF_IRQ_H */

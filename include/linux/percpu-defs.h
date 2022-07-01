@@ -232,6 +232,10 @@ do {                                    \
     DEFINE_PER_CPU_SECTION(type, name, PER_CPU_SHARED_ALIGNED_SECTION) \
     ____cacheline_aligned_in_smp
 
+#define DECLARE_PER_CPU_ALIGNED(type, name)             \
+    DECLARE_PER_CPU_SECTION(type, name, PER_CPU_ALIGNED_SECTION)    \
+    ____cacheline_aligned
+
 #endif /* __ASSEMBLY__ */
 
 #endif /* _LINUX_PERCPU_DEFS_H */

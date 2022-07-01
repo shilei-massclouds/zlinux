@@ -12,9 +12,7 @@
 #include <linux/irq.h>
 #include <linux/irqchip.h>
 #include <linux/irqdomain.h>
-#if 0
 #include <linux/interrupt.h>
-#endif
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/smp.h>
@@ -42,16 +40,29 @@ static asmlinkage void riscv_intc_irq(struct pt_regs *regs)
     }
 }
 
+static void riscv_intc_irq_mask(struct irq_data *d)
+{
+    csr_clear(CSR_IE, BIT(d->hwirq));
+}
+
+static void riscv_intc_irq_unmask(struct irq_data *d)
+{
+    csr_set(CSR_IE, BIT(d->hwirq));
+}
+
+static struct irq_chip riscv_intc_chip = {
+    .name = "RISC-V INTC",
+    .irq_mask = riscv_intc_irq_mask,
+    .irq_unmask = riscv_intc_irq_unmask,
+};
+
 static int riscv_intc_domain_map(struct irq_domain *d,
                                  unsigned int irq, irq_hw_number_t hwirq)
 {
-    panic("%s: END!\n", __func__);
-#if 0
     irq_set_percpu_devid(irq);
     irq_domain_set_info(d, irq, hwirq, &riscv_intc_chip, d->host_data,
                         handle_percpu_devid_irq, NULL, NULL);
 
-#endif
     return 0;
 }
 

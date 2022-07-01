@@ -30,9 +30,7 @@
 #define _LINUX_IRQDOMAIN_H
 
 #include <linux/types.h>
-#if 0
 #include <linux/irqhandler.h>
-#endif
 #include <linux/of.h>
 #include <linux/mutex.h>
 #include <linux/radix-tree.h>
@@ -282,5 +280,60 @@ static inline bool is_fwnode_irqchip(struct fwnode_handle *fwnode)
 {
     return fwnode && fwnode->ops == &irqchip_fwnode_ops;
 }
+
+extern struct irq_desc *
+__irq_resolve_mapping(struct irq_domain *domain,
+                      irq_hw_number_t hwirq,
+                      unsigned int *irq);
+
+/**
+ * irq_find_mapping() - Find a linux irq from a hw irq number.
+ * @domain: domain owning this hardware interrupt
+ * @hwirq: hardware irq number in that domain space
+ */
+static inline unsigned int irq_find_mapping(struct irq_domain *domain,
+                                            irq_hw_number_t hwirq)
+{
+    unsigned int irq;
+
+    if (__irq_resolve_mapping(domain, hwirq, &irq))
+        return irq;
+
+    return 0;
+}
+
+static inline bool irq_domain_is_hierarchy(struct irq_domain *domain)
+{
+    return domain->flags & IRQ_DOMAIN_FLAG_HIERARCHY;
+}
+
+extern unsigned int
+irq_create_mapping_affinity(struct irq_domain *host,
+                            irq_hw_number_t hwirq,
+                            const struct irq_affinity_desc *affinity);
+
+static inline unsigned int irq_create_mapping(struct irq_domain *host,
+                                              irq_hw_number_t hwirq)
+{
+    return irq_create_mapping_affinity(host, hwirq, NULL);
+}
+
+static inline struct device_node *irq_domain_get_of_node(struct irq_domain *d)
+{
+    return to_of_node(d->fwnode);
+}
+
+extern int irq_domain_associate(struct irq_domain *domain, unsigned int irq,
+                                irq_hw_number_t hwirq);
+
+extern int irq_domain_activate_irq(struct irq_data *irq_data, bool early);
+extern void irq_domain_deactivate_irq(struct irq_data *irq_data);
+
+extern void
+irq_domain_set_info(struct irq_domain *domain,
+                    unsigned int virq, irq_hw_number_t hwirq,
+                    const struct irq_chip *chip, void *chip_data,
+                    irq_flow_handler_t handler, void *handler_data,
+                    const char *handler_name);
 
 #endif /* _LINUX_IRQDOMAIN_H */

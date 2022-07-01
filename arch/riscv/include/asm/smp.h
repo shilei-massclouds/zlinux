@@ -7,7 +7,7 @@
 #define _ASM_RISCV_SMP_H
 
 #include <linux/cpumask.h>
-//#include <linux/irqreturn.h>
+#include <linux/irqreturn.h>
 #include <linux/thread_info.h>
 
 #define INVALID_HARTID ULONG_MAX

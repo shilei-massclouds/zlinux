@@ -34,3 +34,22 @@ int __init set_handle_irq(void (*handle_irq)(struct pt_regs *))
     handle_arch_irq = handle_irq;
     return 0;
 }
+
+/**
+ * handle_bad_irq - handle spurious and unhandled irqs
+ * @desc:      description of the interrupt
+ *
+ * Handles spurious and unhandled IRQ's. It also prints a debugmessage.
+ */
+void handle_bad_irq(struct irq_desc *desc)
+{
+    panic("%s: END!\n", __func__);
+#if 0
+    unsigned int irq = irq_desc_get_irq(desc);
+
+    print_irq_desc(irq, desc);
+    kstat_incr_irqs_this_cpu(desc);
+    ack_bad_irq(irq);
+#endif
+}
+EXPORT_SYMBOL_GPL(handle_bad_irq);

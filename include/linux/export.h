@@ -2,7 +2,22 @@
 #ifndef _LINUX_EXPORT_H
 #define _LINUX_EXPORT_H
 
+/*
+ * Export symbols from the kernel to modules.  Forked from module.h
+ * to reduce the amount of pointless cruft we feed to gcc when only
+ * exporting a simple symbol or two.
+ *
+ * Try not to add #includes here.  It slows compilation and makes kernel
+ * hackers place grumpy comments in header files.
+ */
+
 #ifndef __ASSEMBLY__
+#ifdef MODULE
+extern struct module __this_module;
+#define THIS_MODULE (&__this_module)
+#else
+#define THIS_MODULE ((struct module *)0)
+#endif
 
 #define __KSYMTAB_ENTRY(sym, sec)                   \
     static const struct kernel_symbol __ksymtab_##sym       \
