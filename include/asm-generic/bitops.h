@@ -43,6 +43,3 @@
 #endif
 
 #endif /* __ASM_GENERIC_BITOPS_H */
-
-
-
