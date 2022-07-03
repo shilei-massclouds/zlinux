@@ -233,7 +233,7 @@ __irq_domain_add(struct fwnode_handle *fwnode, unsigned int size,
 EXPORT_SYMBOL_GPL(__irq_domain_add);
 
 void of_phandle_args_to_fwspec(struct device_node *np, const u32 *args,
-                   unsigned int count, struct irq_fwspec *fwspec)
+                               unsigned int count, struct irq_fwspec *fwspec)
 {
     int i;
 
@@ -260,6 +260,61 @@ static int irq_domain_translate(struct irq_domain *d,
     *hwirq = fwspec->param[0];
     return 0;
 }
+
+/**
+ * irq_domain_free_irqs - Free IRQ number and associated data structures
+ * @virq:   base IRQ number
+ * @nr_irqs:    number of IRQs to free
+ */
+void irq_domain_free_irqs(unsigned int virq, unsigned int nr_irqs)
+{
+    panic("%s: END!\n", __func__);
+#if 0
+    struct irq_data *data = irq_get_irq_data(virq);
+    int i;
+
+    if (WARN(!data || !data->domain || !data->domain->ops->free,
+             "NULL pointer, cannot free irq\n"))
+        return;
+
+    mutex_lock(&irq_domain_mutex);
+    for (i = 0; i < nr_irqs; i++)
+        irq_domain_remove_irq(virq + i);
+    irq_domain_free_irqs_hierarchy(data->domain, virq, nr_irqs);
+    mutex_unlock(&irq_domain_mutex);
+
+    irq_domain_free_irq_data(virq, nr_irqs);
+    irq_free_descs(virq, nr_irqs);
+#endif
+}
+
+/**
+ * irq_dispose_mapping() - Unmap an interrupt
+ * @virq: linux irq number of the interrupt to unmap
+ */
+void irq_dispose_mapping(unsigned int virq)
+{
+    panic("%s: END!\n", __func__);
+#if 0
+    struct irq_data *irq_data = irq_get_irq_data(virq);
+    struct irq_domain *domain;
+
+    if (!virq || !irq_data)
+        return;
+
+    domain = irq_data->domain;
+    if (WARN_ON(domain == NULL))
+        return;
+
+    if (irq_domain_is_hierarchy(domain)) {
+        irq_domain_free_irqs(virq, 1);
+    } else {
+        irq_domain_disassociate(domain, virq);
+        irq_free_desc(virq);
+    }
+#endif
+}
+EXPORT_SYMBOL_GPL(irq_dispose_mapping);
 
 unsigned int irq_create_fwspec_mapping(struct irq_fwspec *fwspec)
 {
@@ -337,7 +392,19 @@ unsigned int irq_create_fwspec_mapping(struct irq_fwspec *fwspec)
             return virq;
     }
 
-    panic("%s: (%d) END!\n", __func__, fwspec->param[0]);
+    irq_data = irq_get_irq_data(virq);
+    if (!irq_data) {
+        if (irq_domain_is_hierarchy(domain))
+            irq_domain_free_irqs(virq, 1);
+        else
+            irq_dispose_mapping(virq);
+        return 0;
+    }
+
+    /* Store trigger type */
+    irqd_set_trigger_type(irq_data, type);
+
+    return virq;
 }
 
 unsigned int irq_create_of_mapping(struct of_phandle_args *irq_data)
@@ -414,13 +481,26 @@ int irq_domain_alloc_descs(int virq, unsigned int cnt, irq_hw_number_t hwirq,
     return virq;
 }
 
-int irq_domain_associate(struct irq_domain *domain, unsigned int virq,
+static void irq_domain_set_mapping(struct irq_domain *domain,
+                                   irq_hw_number_t hwirq,
+                                   struct irq_data *irq_data)
+{
+    mutex_lock(&domain->revmap_mutex);
+    if (hwirq < domain->revmap_size)
+        rcu_assign_pointer(domain->revmap[hwirq], irq_data);
+    else
+        radix_tree_insert(&domain->revmap_tree, hwirq, irq_data);
+    mutex_unlock(&domain->revmap_mutex);
+}
+
+int irq_domain_associate(struct irq_domain *domain,
+                         unsigned int virq,
                          irq_hw_number_t hwirq)
 {
     int ret;
     struct irq_data *irq_data = irq_get_irq_data(virq);
 
-    pr_info("%s: (%u:%lu max:%u) ...\n",
+    pr_info("%s: (%u:%lu max:%lu) ...\n",
             __func__, virq, hwirq, domain->hwirq_max);
 
     if (WARN(hwirq >= domain->hwirq_max,
@@ -452,9 +532,19 @@ int irq_domain_associate(struct irq_domain *domain, unsigned int virq,
             mutex_unlock(&irq_domain_mutex);
             return ret;
         }
+
+        /* If not already assigned, give the domain the chip's name */
+        if (!domain->name && irq_data->chip)
+            domain->name = irq_data->chip->name;
     }
 
-    panic("%s: (%u:%u) END!\n", __func__, virq, hwirq);
+    domain->mapcount++;
+    irq_domain_set_mapping(domain, hwirq, irq_data);
+    mutex_unlock(&irq_domain_mutex);
+
+    irq_clear_status_flags(virq, IRQ_NOREQUEST);
+
+    return 0;
 }
 EXPORT_SYMBOL_GPL(irq_domain_associate);
 
@@ -513,7 +603,6 @@ irq_create_mapping_affinity(struct irq_domain *domain,
     pr_info("irq %lu on domain %s mapped to virtual irq %u\n",
             hwirq, of_node_full_name(of_node), virq);
 
-    panic("%s: virq(%d) END!\n", __func__, virq);
     return virq;
 }
 EXPORT_SYMBOL_GPL(irq_create_mapping_affinity);

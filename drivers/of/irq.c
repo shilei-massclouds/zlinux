@@ -206,7 +206,7 @@ int of_irq_parse_one(struct device_node *device, int index,
     u32 intsize;
     int i, res;
 
-    pr_info("of_irq_parse_one: dev=%pOF, index=%d\n", device, index);
+    pr_debug("of_irq_parse_one: dev=%pOF, index=%d\n", device, index);
 
     /* Get the reg property (if any) */
     addr = of_get_property(device, "reg", NULL);

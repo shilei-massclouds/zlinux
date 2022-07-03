@@ -290,6 +290,17 @@ static inline bool irqd_can_balance(struct irq_data *d)
     return !(__irqd_to_state(d) & (IRQD_PER_CPU | IRQD_NO_BALANCING));
 }
 
+/*
+ * Must only be called inside irq_chip.irq_set_type() functions or
+ * from the DT/ACPI setup code.
+ */
+static inline void irqd_set_trigger_type(struct irq_data *d, u32 type)
+{
+    __irqd_to_state(d) &= ~IRQD_TRIGGER_MASK;
+    __irqd_to_state(d) |= type & IRQD_TRIGGER_MASK;
+    __irqd_to_state(d) |= IRQD_DEFAULT_TRIGGER_SET;
+}
+
 #undef __irqd_to_state
 
 /**
@@ -462,6 +473,11 @@ void irq_modify_status(unsigned int irq, unsigned long clr, unsigned long set);
 static inline void irq_set_status_flags(unsigned int irq, unsigned long set)
 {
     irq_modify_status(irq, 0, set);
+}
+
+static inline void irq_clear_status_flags(unsigned int irq, unsigned long clr)
+{
+    irq_modify_status(irq, clr, 0);
 }
 
 static inline void irq_set_percpu_devid_flags(unsigned int irq)
