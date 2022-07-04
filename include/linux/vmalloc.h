@@ -60,6 +60,11 @@ struct vmap_area {
 
 extern void __init vmalloc_init(void);
 
+extern struct vm_struct *get_vm_area(unsigned long size, unsigned long flags);
+
+extern struct vm_struct *
+get_vm_area_caller(unsigned long size, unsigned long flags, const void *caller);
+
 extern void *
 __vmalloc_node_range(unsigned long size, unsigned long align,
                      unsigned long start, unsigned long end, gfp_t gfp_mask,
@@ -89,5 +94,36 @@ static inline size_t get_vm_area_size(const struct vm_struct *area)
         return area->size;
 
 }
+
+/* archs that select HAVE_ARCH_HUGE_VMAP should override one or more of these */
+#ifndef arch_vmap_p4d_supported
+static inline bool arch_vmap_p4d_supported(pgprot_t prot)
+{
+    return false;
+}
+#endif
+
+#ifndef arch_vmap_pud_supported
+static inline bool arch_vmap_pud_supported(pgprot_t prot)
+{
+    return false;
+}
+#endif
+
+#ifndef arch_vmap_pmd_supported
+static inline bool arch_vmap_pmd_supported(pgprot_t prot)
+{
+    return false;
+}
+#endif
+
+#ifndef arch_vmap_pte_range_map_size
+static inline unsigned long
+arch_vmap_pte_range_map_size(unsigned long addr, unsigned long end,
+                             u64 pfn, unsigned int max_page_shift)
+{
+    return PAGE_SIZE;
+}
+#endif
 
 #endif /* _LINUX_VMALLOC_H */

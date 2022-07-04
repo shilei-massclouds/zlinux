@@ -121,3 +121,73 @@ int irq_do_set_affinity(struct irq_data *data,
 
     panic("%s: END!\n", __func__);
 }
+
+static bool
+irq_set_affinity_deactivated(struct irq_data *data,
+                             const struct cpumask *mask, bool force)
+{
+    struct irq_desc *desc = irq_data_to_desc(data);
+
+    /*
+     * Handle irq chips which can handle affinity only in activated
+     * state correctly
+     *
+     * If the interrupt is not yet activated, just store the affinity
+     * mask and do not call the chip driver at all. On activation the
+     * driver has to make sure anyway that the interrupt is in a
+     * usable state so startup works.
+     */
+    if (irqd_is_activated(data) || !irqd_affinity_on_activate(data))
+        return false;
+
+    cpumask_copy(desc->irq_common_data.affinity, mask);
+    irqd_set(data, IRQD_AFFINITY_SET);
+    return true;
+}
+
+int irq_set_affinity_locked(struct irq_data *data, const struct cpumask *mask,
+                            bool force)
+{
+    struct irq_chip *chip = irq_data_get_irq_chip(data);
+    struct irq_desc *desc = irq_data_to_desc(data);
+    int ret = 0;
+
+    if (!chip || !chip->irq_set_affinity)
+        return -EINVAL;
+
+    if (irq_set_affinity_deactivated(data, mask, force))
+        return 0;
+
+    pr_warn("%s: NO implementation!\n", __func__);
+
+    return 0;
+}
+
+static int __irq_set_affinity(unsigned int irq, const struct cpumask *mask,
+                              bool force)
+{
+    struct irq_desc *desc = irq_to_desc(irq);
+    unsigned long flags;
+    int ret;
+
+    if (!desc)
+        return -EINVAL;
+
+    raw_spin_lock_irqsave(&desc->lock, flags);
+    ret = irq_set_affinity_locked(irq_desc_get_irq_data(desc), mask, force);
+    raw_spin_unlock_irqrestore(&desc->lock, flags);
+    return ret;
+}
+
+/**
+ * irq_set_affinity - Set the irq affinity of a given irq
+ * @irq:    Interrupt to set affinity
+ * @cpumask:    cpumask
+ *
+ * Fails if cpumask does not contain an online CPU
+ */
+int irq_set_affinity(unsigned int irq, const struct cpumask *cpumask)
+{
+    return __irq_set_affinity(irq, cpumask, false);
+}
+EXPORT_SYMBOL_GPL(irq_set_affinity);

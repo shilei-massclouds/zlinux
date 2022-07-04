@@ -409,3 +409,24 @@ int of_address_to_resource(struct device_node *dev, int index,
     return __of_address_to_resource(dev, index, -1, r);
 }
 EXPORT_SYMBOL_GPL(of_address_to_resource);
+
+/**
+ * of_iomap - Maps the memory mapped IO for a given device_node
+ * @np:     the device whose io range will be mapped
+ * @index:  index of the io range
+ *
+ * Returns a pointer to the mapped memory
+ */
+void __iomem *of_iomap(struct device_node *np, int index)
+{
+    struct resource res;
+
+    if (of_address_to_resource(np, index, &res))
+        return NULL;
+
+    if (res.flags & IORESOURCE_MEM_NONPOSTED)
+        return ioremap_np(res.start, resource_size(&res));
+    else
+        return ioremap(res.start, resource_size(&res));
+}
+EXPORT_SYMBOL(of_iomap);

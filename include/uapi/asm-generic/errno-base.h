@@ -5,6 +5,7 @@
 #define EPERM       1   /* Operation not permitted */
 #define ENOENT      2   /* No such file or directory */
 #define EINTR       4   /* Interrupted system call */
+#define EIO         5   /* I/O error */
 #define ENXIO       6   /* No such device or address */
 #define E2BIG       7   /* Argument list too long */
 #define EAGAIN      11  /* Try again */

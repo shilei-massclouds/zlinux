@@ -62,6 +62,8 @@
 #define lm_alias(x) __va(__pa_symbol(x))
 #endif
 
+typedef unsigned long vm_flags_t;
+
 extern unsigned long max_mapnr;
 
 static inline void set_max_mapnr(unsigned long limit)

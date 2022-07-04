@@ -21,6 +21,19 @@
 
 #include "internals.h"
 
+static int irq_sw_resend(struct irq_desc *desc)
+{
+    return -EINVAL;
+}
+
+static int try_retrigger(struct irq_desc *desc)
+{
+    if (desc->irq_data.chip->irq_retrigger)
+        return desc->irq_data.chip->irq_retrigger(&desc->irq_data);
+
+    return irq_chip_retrigger_hierarchy(&desc->irq_data);
+}
+
 /*
  * IRQ resend
  *
@@ -28,5 +41,31 @@
  */
 int check_irq_resend(struct irq_desc *desc, bool inject)
 {
-    panic("%s: NO implementation!\n", __func__);
+    int err = 0;
+
+    /*
+     * We do not resend level type interrupts. Level type interrupts
+     * are resent by hardware when they are still active. Clear the
+     * pending bit so suspend/resume does not get confused.
+     */
+    if (irq_settings_is_level(desc)) {
+        desc->istate &= ~IRQS_PENDING;
+        return -EINVAL;
+    }
+
+    if (desc->istate & IRQS_REPLAY)
+        return -EBUSY;
+
+    if (!(desc->istate & IRQS_PENDING) && !inject)
+        return 0;
+
+    desc->istate &= ~IRQS_PENDING;
+
+    if (!try_retrigger(desc))
+        err = irq_sw_resend(desc);
+
+    /* If the retrigger was successful, mark it with the REPLAY bit */
+    if (!err)
+        desc->istate |= IRQS_REPLAY;
+    return err;
 }

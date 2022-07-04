@@ -45,4 +45,12 @@ static inline void mmiowb_spin_unlock(void)
     ms->nesting_count--;
 }
 
+static inline void mmiowb_set_pending(void)
+{
+    struct mmiowb_state *ms = __mmiowb_state();
+
+    if (likely(ms->nesting_count))
+        ms->mmiowb_pending = ms->nesting_count;
+}
+
 #endif  /* __ASM_GENERIC_MMIOWB_H */

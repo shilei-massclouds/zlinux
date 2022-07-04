@@ -3,6 +3,7 @@ mmu-$(CONFIG_MMU) := memory.o vmalloc.o pgtable-generic.o
 obj-y := mmzone.o vmstat.o percpu.o page-writeback.o slab_common.o util.o \
 	$(mmu-y)
 obj-y += memblock.o
+obj-y += ioremap.o
 obj-$(CONFIG_SLAB) += slab.o
 
 # Give 'page_alloc' its own module-parameter namespace

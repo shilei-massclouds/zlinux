@@ -11,6 +11,6 @@ extern int of_address_to_resource(struct device_node *dev, int index,
 
 extern u64 of_translate_address(struct device_node *np, const __be32 *addr);
 
-void __iomem *of_iomap(struct device_node *node, int index);
+extern void __iomem *of_iomap(struct device_node *device, int index);
 
 #endif /* __OF_ADDRESS_H */

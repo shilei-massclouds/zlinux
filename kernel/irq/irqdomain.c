@@ -384,7 +384,9 @@ unsigned int irq_create_fwspec_mapping(struct irq_fwspec *fwspec)
     }
 
     if (irq_domain_is_hierarchy(domain)) {
-        panic("%s: irq domain is hierarchy!\n", __func__);
+        virq = irq_domain_alloc_irqs(domain, 1, NUMA_NO_NODE, fwspec);
+        if (virq <= 0)
+            return 0;
     } else {
         /* Create mapping */
         virq = irq_create_mapping(domain, hwirq);
@@ -742,3 +744,261 @@ void irq_domain_deactivate_irq(struct irq_data *irq_data)
         irqd_clr_activated(irq_data);
     }
 }
+
+/**
+ * irq_domain_translate_onecell() - Generic translate for direct one cell
+ * bindings
+ */
+int irq_domain_translate_onecell(struct irq_domain *d,
+                                 struct irq_fwspec *fwspec,
+                                 unsigned long *out_hwirq,
+                                 unsigned int *out_type)
+{
+    if (WARN_ON(fwspec->param_count < 1))
+        return -EINVAL;
+    *out_hwirq = fwspec->param[0];
+    *out_type = IRQ_TYPE_NONE;
+    return 0;
+}
+EXPORT_SYMBOL_GPL(irq_domain_translate_onecell);
+
+/**
+ * irq_domain_free_irqs_top - Clear handler and handler data, clear irqdata and free parent
+ * @domain: Interrupt domain to match
+ * @virq:   IRQ number to start with
+ * @nr_irqs:    The number of irqs to free
+ */
+void irq_domain_free_irqs_top(struct irq_domain *domain,
+                              unsigned int virq,
+                              unsigned int nr_irqs)
+{
+    panic("%s: END!\n", __func__);
+#if 0
+    int i;
+
+    for (i = 0; i < nr_irqs; i++) {
+        irq_set_handler_data(virq + i, NULL);
+        irq_set_handler(virq + i, NULL);
+    }
+    irq_domain_free_irqs_common(domain, virq, nr_irqs);
+#endif
+}
+
+static struct irq_data *
+irq_domain_insert_irq_data(struct irq_domain *domain, struct irq_data *child)
+{
+    struct irq_data *irq_data;
+
+    irq_data = kzalloc_node(sizeof(*irq_data), GFP_KERNEL,
+                            irq_data_get_node(child));
+    if (irq_data) {
+        child->parent_data = irq_data;
+        irq_data->irq = child->irq;
+        irq_data->common = child->common;
+        irq_data->domain = domain;
+    }
+
+    return irq_data;
+}
+
+static void __irq_domain_free_hierarchy(struct irq_data *irq_data)
+{
+    struct irq_data *tmp;
+
+    while (irq_data) {
+        tmp = irq_data;
+        irq_data = irq_data->parent_data;
+        kfree(tmp);
+    }
+}
+
+static void irq_domain_free_irq_data(unsigned int virq, unsigned int nr_irqs)
+{
+    struct irq_data *irq_data, *tmp;
+    int i;
+
+    for (i = 0; i < nr_irqs; i++) {
+        irq_data = irq_get_irq_data(virq + i);
+        tmp = irq_data->parent_data;
+        irq_data->parent_data = NULL;
+        irq_data->domain = NULL;
+
+        __irq_domain_free_hierarchy(tmp);
+    }
+}
+
+static int irq_domain_alloc_irq_data(struct irq_domain *domain,
+                                     unsigned int virq, unsigned int nr_irqs)
+{
+    struct irq_data *irq_data;
+    struct irq_domain *parent;
+    int i;
+
+    /* The outermost irq_data is embedded in struct irq_desc */
+    for (i = 0; i < nr_irqs; i++) {
+        irq_data = irq_get_irq_data(virq + i);
+        irq_data->domain = domain;
+
+        for (parent = domain->parent; parent; parent = parent->parent) {
+            irq_data = irq_domain_insert_irq_data(parent, irq_data);
+            if (!irq_data) {
+                irq_domain_free_irq_data(virq, i + 1);
+                return -ENOMEM;
+            }
+        }
+    }
+
+    return 0;
+}
+
+int irq_domain_alloc_irqs_hierarchy(struct irq_domain *domain,
+                                    unsigned int irq_base,
+                                    unsigned int nr_irqs, void *arg)
+{
+    if (!domain->ops->alloc) {
+        pr_debug("domain->ops->alloc() is NULL\n");
+        return -ENOSYS;
+    }
+
+    return domain->ops->alloc(domain, irq_base, nr_irqs, arg);
+}
+
+static int irq_domain_trim_hierarchy(unsigned int virq)
+{
+    struct irq_data *tail, *irqd, *irq_data;
+
+    irq_data = irq_get_irq_data(virq);
+    tail = NULL;
+
+    /* The first entry must have a valid irqchip */
+    if (!irq_data->chip || IS_ERR(irq_data->chip))
+        return -EINVAL;
+
+    /*
+     * Validate that the irq_data chain is sane in the presence of
+     * a hierarchy trimming marker.
+     */
+    for (irqd = irq_data->parent_data; irqd; irq_data = irqd, irqd = irqd->parent_data) {
+        /* Can't have a valid irqchip after a trim marker */
+        if (irqd->chip && tail)
+            return -EINVAL;
+
+        /* Can't have an empty irqchip before a trim marker */
+        if (!irqd->chip && !tail)
+            return -EINVAL;
+
+        if (IS_ERR(irqd->chip)) {
+            /* Only -ENOTCONN is a valid trim marker */
+            if (PTR_ERR(irqd->chip) != -ENOTCONN)
+                return -EINVAL;
+
+            tail = irq_data;
+        }
+    }
+
+    /* No trim marker, nothing to do */
+    if (!tail)
+        return 0;
+
+    panic("%s: END!\n", __func__);
+}
+
+static void irq_domain_insert_irq(int virq)
+{
+    struct irq_data *data;
+
+    for (data = irq_get_irq_data(virq); data; data = data->parent_data) {
+        struct irq_domain *domain = data->domain;
+
+        domain->mapcount++;
+        irq_domain_set_mapping(domain, data->hwirq, data);
+
+        /* If not already assigned, give the domain the chip's name */
+        if (!domain->name && data->chip)
+            domain->name = data->chip->name;
+    }
+
+    irq_clear_status_flags(virq, IRQ_NOREQUEST);
+}
+
+/**
+ * __irq_domain_alloc_irqs - Allocate IRQs from domain
+ * @domain: domain to allocate from
+ * @irq_base:   allocate specified IRQ number if irq_base >= 0
+ * @nr_irqs:    number of IRQs to allocate
+ * @node:   NUMA node id for memory allocation
+ * @arg:    domain specific argument
+ * @realloc:    IRQ descriptors have already been allocated if true
+ * @affinity:   Optional irq affinity mask for multiqueue devices
+ *
+ * Allocate IRQ numbers and initialized all data structures to support
+ * hierarchy IRQ domains.
+ * Parameter @realloc is mainly to support legacy IRQs.
+ * Returns error code or allocated IRQ number
+ *
+ * The whole process to setup an IRQ has been split into two steps.
+ * The first step, __irq_domain_alloc_irqs(), is to allocate IRQ
+ * descriptor and required hardware resources. The second step,
+ * irq_domain_activate_irq(), is to program the hardware with preallocated
+ * resources. In this way, it's easier to rollback when failing to
+ * allocate resources.
+ */
+int
+__irq_domain_alloc_irqs(struct irq_domain *domain, int irq_base,
+                        unsigned int nr_irqs, int node, void *arg,
+                        bool realloc, const struct irq_affinity_desc *affinity)
+{
+    int i, ret, virq;
+
+    if (domain == NULL) {
+        domain = irq_default_domain;
+        if (WARN(!domain, "domain is NULL; cannot allocate IRQ\n"))
+            return -EINVAL;
+    }
+
+    if (realloc && irq_base >= 0) {
+        virq = irq_base;
+    } else {
+        virq = irq_domain_alloc_descs(irq_base, nr_irqs, 0, node, affinity);
+        if (virq < 0) {
+            pr_debug("cannot allocate IRQ(base %d, count %d)\n",
+                     irq_base, nr_irqs);
+            return virq;
+        }
+        printk("%s: virq(%d)\n", __func__, virq);
+    }
+
+    if (irq_domain_alloc_irq_data(domain, virq, nr_irqs)) {
+        pr_debug("cannot allocate memory for IRQ%d\n", virq);
+        ret = -ENOMEM;
+        goto out_free_desc;
+    }
+
+    mutex_lock(&irq_domain_mutex);
+    ret = irq_domain_alloc_irqs_hierarchy(domain, virq, nr_irqs, arg);
+    if (ret < 0) {
+        mutex_unlock(&irq_domain_mutex);
+        goto out_free_irq_data;
+    }
+
+    for (i = 0; i < nr_irqs; i++) {
+        ret = irq_domain_trim_hierarchy(virq + i);
+        if (ret) {
+            mutex_unlock(&irq_domain_mutex);
+            goto out_free_irq_data;
+        }
+    }
+
+    for (i = 0; i < nr_irqs; i++)
+        irq_domain_insert_irq(virq + i);
+    mutex_unlock(&irq_domain_mutex);
+
+    return virq;
+
+ out_free_irq_data:
+    irq_domain_free_irq_data(virq, nr_irqs);
+ out_free_desc:
+    irq_free_descs(virq, nr_irqs);
+    return ret;
+}
+EXPORT_SYMBOL_GPL(__irq_domain_alloc_irqs);

@@ -23,4 +23,11 @@ extern void of_irq_init(const struct of_device_id *matches);
 
 extern unsigned int irq_create_of_mapping(struct of_phandle_args *irq_data);
 
+/*
+ * irq_of_parse_and_map() is used by all OF enabled platforms; but SPARC
+ * implements it differently.  However, the prototype is the same for all,
+ * so declare it here regardless of the CONFIG_OF_IRQ setting.
+ */
+extern unsigned int irq_of_parse_and_map(struct device_node *node, int index);
+
 #endif /* __OF_IRQ_H */

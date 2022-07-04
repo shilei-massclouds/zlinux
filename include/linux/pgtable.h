@@ -182,6 +182,52 @@ static inline pud_t *pud_offset(p4d_t *p4d, unsigned long address)
 #define pud_offset pud_offset
 #endif
 
+/*
+ * No-op macros that just return the current protection value. Defined here
+ * because these macros can be used even if CONFIG_MMU is not defined.
+ */
+
+#ifndef pgprot_nx
+#define pgprot_nx(prot) (prot)
+#endif
+
+static inline int p4d_set_huge(p4d_t *p4d, phys_addr_t addr, pgprot_t prot)
+{
+    return 0;
+}
+static inline int pud_set_huge(pud_t *pud, phys_addr_t addr, pgprot_t prot)
+{
+    return 0;
+}
+static inline int pmd_set_huge(pmd_t *pmd, phys_addr_t addr, pgprot_t prot)
+{
+    return 0;
+}
+static inline int p4d_clear_huge(p4d_t *p4d)
+{
+    return 0;
+}
+static inline int pud_clear_huge(pud_t *pud)
+{
+    return 0;
+}
+static inline int pmd_clear_huge(pmd_t *pmd)
+{
+    return 0;
+}
+static inline int p4d_free_pud_page(p4d_t *p4d, unsigned long addr)
+{
+    return 0;
+}
+static inline int pud_free_pmd_page(pud_t *pud, unsigned long addr)
+{
+    return 0;
+}
+static inline int pmd_free_pte_page(pmd_t *pmd, unsigned long addr)
+{
+    return 0;
+}
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* _LINUX_PGTABLE_H */

@@ -19,7 +19,7 @@
  * MMIO access functions are separated out to break dependency cycles
  * when using {read,write}* fns in low-level headers
  */
-//#include <asm/mmio.h>
+#include <asm/mmio.h>
 
 /* Content */
 

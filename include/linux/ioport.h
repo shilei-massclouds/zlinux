@@ -50,6 +50,19 @@ struct resource {
 #define IORESOURCE_AUTO     0x40000000
 #define IORESOURCE_BUSY     0x80000000  /* Driver has marked this resource busy */
 
+/* PnP memory I/O specific bits (IORESOURCE_BITS) */
+#define IORESOURCE_MEM_WRITEABLE    (1<<0)  /* dup: IORESOURCE_READONLY */
+#define IORESOURCE_MEM_CACHEABLE    (1<<1)  /* dup: IORESOURCE_CACHEABLE */
+#define IORESOURCE_MEM_RANGELENGTH  (1<<2)  /* dup: IORESOURCE_RANGELENGTH */
+#define IORESOURCE_MEM_TYPE_MASK    (3<<3)
+#define IORESOURCE_MEM_8BIT         (0<<3)
+#define IORESOURCE_MEM_16BIT        (1<<3)
+#define IORESOURCE_MEM_8AND16BIT    (2<<3)
+#define IORESOURCE_MEM_32BIT        (3<<3)
+#define IORESOURCE_MEM_SHADOWABLE   (1<<5)  /* dup: IORESOURCE_SHADOWABLE */
+#define IORESOURCE_MEM_EXPANSIONROM (1<<6)
+#define IORESOURCE_MEM_NONPOSTED    (1<<7)
+
 static inline resource_size_t resource_size(const struct resource *res)
 {
     return res->end - res->start + 1;

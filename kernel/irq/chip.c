@@ -395,3 +395,35 @@ int irq_set_handler_data(unsigned int irq, void *data)
     return 0;
 }
 EXPORT_SYMBOL(irq_set_handler_data);
+
+/**
+ * irq_chip_retrigger_hierarchy - Retrigger an interrupt in hardware
+ * @data:   Pointer to interrupt specific data
+ *
+ * Iterate through the domain hierarchy of the interrupt and check
+ * whether a hw retrigger function exists. If yes, invoke it.
+ */
+int irq_chip_retrigger_hierarchy(struct irq_data *data)
+{
+    for (data = data->parent_data; data; data = data->parent_data)
+        if (data->chip && data->chip->irq_retrigger)
+            return data->chip->irq_retrigger(data);
+
+    return 0;
+}
+EXPORT_SYMBOL_GPL(irq_chip_retrigger_hierarchy);
+
+/**
+ *  handle_fasteoi_irq - irq handler for transparent controllers
+ *  @desc:  the interrupt description structure for this irq
+ *
+ *  Only a single callback will be issued to the chip: an ->eoi()
+ *  call when the interrupt has been serviced. This enables support
+ *  for modern forms of interrupt handlers, which handle the flow
+ *  details in hardware, transparently.
+ */
+void handle_fasteoi_irq(struct irq_desc *desc)
+{
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL_GPL(handle_fasteoi_irq);

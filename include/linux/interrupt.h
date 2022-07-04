@@ -70,4 +70,6 @@ struct irqaction {
 
 extern cpumask_var_t irq_default_affinity;
 
+extern int irq_set_affinity(unsigned int irq, const struct cpumask *cpumask);
+
 #endif /* _LINUX_INTERRUPT_H */

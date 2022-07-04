@@ -71,8 +71,14 @@
 
 #define PAGE_TABLE          __pgprot(_PAGE_TABLE)
 
-#define TASK_SIZE      (PGDIR_SIZE * PTRS_PER_PGD / 2)
-#define TASK_SIZE_MIN  (PGDIR_SIZE_L3 * PTRS_PER_PGD / 2)
+/*
+ * The RISC-V ISA doesn't yet specify how to query or modify PMAs, so we can't
+ * change the properties of memory regions.
+ */
+#define _PAGE_IOREMAP   _PAGE_KERNEL
+
+#define TASK_SIZE       (PGDIR_SIZE * PTRS_PER_PGD / 2)
+#define TASK_SIZE_MIN   (PGDIR_SIZE_L3 * PTRS_PER_PGD / 2)
 
 struct pt_alloc_ops {
     pte_t *(*get_pte_virt)(phys_addr_t pa);
@@ -194,6 +200,11 @@ static inline void set_pmd(pmd_t *pmdp, pmd_t pmd)
 static inline void pmd_clear(pmd_t *pmdp)
 {
     set_pmd(pmdp, __pmd(0));
+}
+
+static inline pte_t pte_mkhuge(pte_t pte)
+{
+    return pte;
 }
 
 /* Yields the page frame number (PFN) of a page table entry */

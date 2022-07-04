@@ -160,10 +160,10 @@ struct irq_domain {
     enum irq_domain_bus_token bus_token;
 #if 0
     struct irq_domain_chip_generic *gc;
+#endif
     struct device *dev;
     struct irq_domain *parent;
 
-#endif
     /* reverse map data. The linear map gets appended to the irq_domain */
     irq_hw_number_t hwirq_max;
     unsigned int revmap_size;
@@ -335,5 +335,26 @@ irq_domain_set_info(struct irq_domain *domain,
                     const struct irq_chip *chip, void *chip_data,
                     irq_flow_handler_t handler, void *handler_data,
                     const char *handler_name);
+
+int irq_domain_translate_onecell(struct irq_domain *d,
+                                 struct irq_fwspec *fwspec,
+                                 unsigned long *out_hwirq,
+                                 unsigned int *out_type);
+
+extern void irq_domain_free_irqs_top(struct irq_domain *domain,
+                                     unsigned int virq, unsigned int nr_irqs);
+
+extern int
+__irq_domain_alloc_irqs(struct irq_domain *domain, int irq_base,
+                        unsigned int nr_irqs, int node, void *arg,
+                        bool realloc,
+                        const struct irq_affinity_desc *affinity);
+
+static inline int
+irq_domain_alloc_irqs(struct irq_domain *domain,
+                      unsigned int nr_irqs, int node, void *arg)
+{
+    return __irq_domain_alloc_irqs(domain, -1, nr_irqs, node, arg, false, NULL);
+}
 
 #endif /* _LINUX_IRQDOMAIN_H */

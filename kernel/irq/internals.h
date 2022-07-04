@@ -17,6 +17,8 @@
 
 #define IRQ_BITMAP_BITS     (NR_IRQS + 8196)
 
+#define istate core_internal_state__do_not_mess_with_it
+
 #define _IRQ_DESC_CHECK     (1 << 0)
 #define _IRQ_DESC_PERCPU    (1 << 1)
 
@@ -25,6 +27,33 @@
 
 #define IRQ_START_FORCE true
 #define IRQ_START_COND  false
+
+/*
+ * Bit masks for desc->core_internal_state__do_not_mess_with_it
+ *
+ * IRQS_AUTODETECT      - autodetection in progress
+ * IRQS_SPURIOUS_DISABLED   - was disabled due to spurious interrupt
+ *                detection
+ * IRQS_POLL_INPROGRESS     - polling in progress
+ * IRQS_ONESHOT         - irq is not unmasked in primary handler
+ * IRQS_REPLAY          - irq is replayed
+ * IRQS_WAITING         - irq is waiting
+ * IRQS_PENDING         - irq is pending and replayed later
+ * IRQS_SUSPENDED       - irq is suspended
+ * IRQS_NMI         - irq line is used to deliver NMIs
+ */
+enum {
+    IRQS_AUTODETECT = 0x00000001,
+    IRQS_SPURIOUS_DISABLED  = 0x00000002,
+    IRQS_POLL_INPROGRESS    = 0x00000008,
+    IRQS_ONESHOT    = 0x00000020,
+    IRQS_REPLAY     = 0x00000040,
+    IRQS_WAITING    = 0x00000080,
+    IRQS_PENDING    = 0x00000200,
+    IRQS_SUSPENDED  = 0x00000800,
+    IRQS_TIMINGS    = 0x00001000,
+    IRQS_NMI        = 0x00002000,
+};
 
 extern int __irq_set_trigger(struct irq_desc *desc, unsigned long flags);
 extern void __disable_irq(struct irq_desc *desc);

@@ -13,4 +13,10 @@
 #include <asm/io.h>
 #include <asm/page.h>
 
+struct device;
+struct resource;
+
+int ioremap_page_range(unsigned long addr, unsigned long end,
+                       phys_addr_t phys_addr, pgprot_t prot);
+
 #endif /* _LINUX_IO_H */

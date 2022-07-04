@@ -301,6 +301,11 @@ static inline void irqd_set_trigger_type(struct irq_data *d, u32 type)
     __irqd_to_state(d) |= IRQD_DEFAULT_TRIGGER_SET;
 }
 
+static inline bool irqd_affinity_on_activate(struct irq_data *d)
+{
+    return __irqd_to_state(d) & IRQD_AFFINITY_ON_ACTIVATE;
+}
+
 #undef __irqd_to_state
 
 /**
@@ -480,6 +485,11 @@ static inline void irq_clear_status_flags(unsigned int irq, unsigned long clr)
     irq_modify_status(irq, clr, 0);
 }
 
+static inline void irq_set_noprobe(unsigned int irq)
+{
+    irq_modify_status(irq, 0, IRQ_NOPROBE);
+}
+
 static inline void irq_set_percpu_devid_flags(unsigned int irq)
 {
     irq_set_status_flags(irq,
@@ -506,6 +516,38 @@ static inline int irq_common_data_get_node(struct irq_common_data *d)
 static inline struct irq_chip *irq_data_get_irq_chip(struct irq_data *d)
 {
     return d->chip;
+}
+
+extern void handle_fasteoi_irq(struct irq_desc *desc);
+
+static inline
+void irq_data_update_effective_affinity(struct irq_data *d,
+                                        const struct cpumask *m)
+{
+}
+
+static inline
+struct cpumask *irq_data_get_effective_affinity_mask(struct irq_data *d)
+{
+    return d->common->affinity;
+}
+
+/*
+ * Set a highlevel chained flow handler for a given IRQ.
+ * (a chained handler is automatically enabled and set to
+ *  IRQ_NOREQUEST, IRQ_NOPROBE, and IRQ_NOTHREAD)
+ */
+static inline void
+irq_set_chained_handler(unsigned int irq, irq_flow_handler_t handle)
+{
+    __irq_set_handler(irq, handle, 1, NULL);
+}
+
+extern int irq_chip_retrigger_hierarchy(struct irq_data *data);
+
+static inline int irq_data_get_node(struct irq_data *d)
+{
+    return irq_common_data_get_node(d->common);
 }
 
 #include <linux/irqdesc.h>

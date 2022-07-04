@@ -348,6 +348,25 @@ int of_irq_to_resource_table(struct device_node *dev, struct resource *res,
 EXPORT_SYMBOL_GPL(of_irq_to_resource_table);
 
 /**
+ * irq_of_parse_and_map - Parse and map an interrupt into linux virq space
+ * @dev: Device node of the device whose interrupt is to be mapped
+ * @index: Index of the interrupt to map
+ *
+ * This function is a wrapper that chains of_irq_parse_one() and
+ * irq_create_of_mapping() to make things easier to callers
+ */
+unsigned int irq_of_parse_and_map(struct device_node *dev, int index)
+{
+    struct of_phandle_args oirq;
+
+    if (of_irq_parse_one(dev, index, &oirq))
+        return 0;
+
+    return irq_create_of_mapping(&oirq);
+}
+EXPORT_SYMBOL_GPL(irq_of_parse_and_map);
+
+/**
  * of_irq_init - Scan and init matching interrupt controllers in DT
  * @matches: 0 terminated array of nodes to match and init function to call
  *
