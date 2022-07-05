@@ -15,13 +15,34 @@
 #define PLATFORM_DEVID_NONE (-1)
 #define PLATFORM_DEVID_AUTO (-2)
 
+struct platform_device_id;
+
 struct platform_device {
     const char *name;
     int id;
+    bool id_auto;
     struct device dev;
+#if 0
+    u64     platform_dma_mask;
+    struct device_dma_parameters dma_parms;
+#endif
     u32 num_resources;
     struct resource *resource;
+
+    const struct platform_device_id *id_entry;
+    char *driver_override; /* Driver name to force a match */
+
+#if 0
+    /* MFD cell pointer */
+    struct mfd_cell *mfd_cell;
+
+    /* arch specific additions */
+    struct pdev_archdata    archdata;
+#endif
 };
+
+#define dev_is_platform(dev) ((dev)->bus == &platform_bus_type)
+#define to_platform_device(x) container_of((x), struct platform_device, dev)
 
 struct platform_driver {
     int (*probe)(struct platform_device *);
@@ -33,6 +54,9 @@ struct platform_driver {
     const struct platform_device_id *id_table;
     bool prevent_deferred_probe;
 };
+
+#define to_platform_driver(drv) \
+    (container_of((drv), struct platform_driver, driver))
 
 extern struct device platform_bus;
 

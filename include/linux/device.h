@@ -72,7 +72,6 @@ struct device_type {
 };
 
 struct device {
-
     struct kobject  kobj;
     struct device   *parent;
 
@@ -112,6 +111,12 @@ struct device {
     struct class *class;
 
     void (*release)(struct device *dev);
+
+    bool offline_disabled:1;
+    bool offline:1;
+    bool of_node_reused:1;
+    bool state_synced:1;
+    bool can_match:1;
 };
 
 /*
@@ -156,6 +161,21 @@ static inline void dev_set_drvdata(struct device *dev, void *data)
     dev->driver_data = data;
 }
 
+static inline void device_lock(struct device *dev)
+{
+    mutex_lock(&dev->mutex);
+}
+
+static inline void device_unlock(struct device *dev)
+{
+    mutex_unlock(&dev->mutex);
+}
+
 int __must_check driver_attach(struct device_driver *drv);
+
+static inline int device_is_registered(struct device *dev)
+{
+    return dev->kobj.state_in_sysfs;
+}
 
 #endif /* _DEVICE_H_ */

@@ -49,6 +49,20 @@ struct device platform_bus = {
 };
 EXPORT_SYMBOL_GPL(platform_bus);
 
+static const struct platform_device_id *
+platform_match_id(const struct platform_device_id *id,
+                  struct platform_device *pdev)
+{
+    while (id->name[0]) {
+        if (strcmp(pdev->name, id->name) == 0) {
+            pdev->id_entry = id;
+            return id;
+        }
+        id++;
+    }
+    return NULL;
+}
+
 /**
  * platform_match - bind platform device to platform driver.
  * @dev: device.
@@ -64,8 +78,6 @@ EXPORT_SYMBOL_GPL(platform_bus);
  */
 static int platform_match(struct device *dev, struct device_driver *drv)
 {
-    panic("%s: END!\n", __func__);
-#if 0
     struct platform_device *pdev = to_platform_device(dev);
     struct platform_driver *pdrv = to_platform_driver(drv);
 
@@ -77,17 +89,12 @@ static int platform_match(struct device *dev, struct device_driver *drv)
     if (of_driver_match_device(dev, drv))
         return 1;
 
-    /* Then try ACPI style match */
-    if (acpi_driver_match_device(dev, drv))
-        return 1;
-
     /* Then try to match against the id table */
     if (pdrv->id_table)
         return platform_match_id(pdrv->id_table, pdev) != NULL;
 
     /* fall-back to driver name match */
     return (strcmp(pdev->name, drv->name) == 0);
-#endif
 }
 
 static int platform_probe(struct device *_dev)

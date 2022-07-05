@@ -121,3 +121,9 @@ extern void bus_remove_driver(struct device_driver *drv);
 
 extern void module_add_driver(struct module *mod, struct device_driver *drv);
 extern void module_remove_driver(struct device_driver *drv);
+
+static inline int driver_match_device(struct device_driver *drv,
+                                      struct device *dev)
+{
+    return drv->bus->match ? drv->bus->match(dev, drv) : 1;
+}

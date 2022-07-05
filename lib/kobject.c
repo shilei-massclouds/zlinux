@@ -37,9 +37,9 @@ static void kobject_init_internal(struct kobject *kobj)
         return;
     kref_init(&kobj->kref);
     INIT_LIST_HEAD(&kobj->entry);
-    //kobj->state_in_sysfs = 0;
-    //kobj->state_add_uevent_sent = 0;
-    //kobj->state_remove_uevent_sent = 0;
+    kobj->state_in_sysfs = 0;
+    kobj->state_add_uevent_sent = 0;
+    kobj->state_remove_uevent_sent = 0;
     kobj->state_initialized = 1;
 }
 
@@ -172,17 +172,15 @@ static void kobject_cleanup(struct kobject *kobj)
                 "See Documentation/core-api/kobject.rst.\n",
                 kobject_name(kobj), kobj);
 
-#if 0
     /* remove from sysfs if the caller did not do it */
     if (kobj->state_in_sysfs) {
         pr_debug("kobject: '%s' (%p): auto cleanup kobject_del\n",
-             kobject_name(kobj), kobj);
+                 kobject_name(kobj), kobj);
         __kobject_del(kobj);
     } else {
         /* avoid dropping the parent reference unnecessarily */
         parent = NULL;
     }
-#endif
 
     if (t && t->release) {
         pr_info("kobject: '%s' (%p): calling ktype release\n",
@@ -235,6 +233,12 @@ static void kobj_kset_join(struct kobject *kobj)
     spin_unlock(&kobj->kset->list_lock);
 }
 
+static int create_dir(struct kobject *kobj)
+{
+    pr_warn("%s: NO implementation!\n", __func__);
+    return 0;
+}
+
 static int kobject_add_internal(struct kobject *kobj)
 {
     int error = 0;
@@ -264,9 +268,10 @@ static int kobject_add_internal(struct kobject *kobj)
              parent ? kobject_name(parent) : "<NULL>",
              kobj->kset ? kobject_name(&kobj->kset->kobj) : "<NULL>");
 
-#if 0
     error = create_dir(kobj);
     if (error) {
+        panic("%s: create_dir error!\n", __func__);
+#if 0
         kobj_kset_leave(kobj);
         kobject_put(parent);
         kobj->parent = NULL;
@@ -279,9 +284,9 @@ static int kobject_add_internal(struct kobject *kobj)
             pr_err("%s failed for %s (error: %d parent: %s)\n",
                    __func__, kobject_name(kobj), error,
                    parent ? kobject_name(parent) : "'none'");
+#endif
     } else
         kobj->state_in_sysfs = 1;
-#endif
 
     return error;
 }

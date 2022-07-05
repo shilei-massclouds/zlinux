@@ -24,4 +24,12 @@ struct of_device_id {
     const void *data;
 };
 
+#define PLATFORM_NAME_SIZE  20
+#define PLATFORM_MODULE_PREFIX  "platform:"
+
+struct platform_device_id {
+    char name[PLATFORM_NAME_SIZE];
+    kernel_ulong_t driver_data;
+};
+
 #endif /* LINUX_MOD_DEVICETABLE_H */
