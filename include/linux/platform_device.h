@@ -23,6 +23,17 @@ struct platform_device {
     struct resource *resource;
 };
 
+struct platform_driver {
+    int (*probe)(struct platform_device *);
+    int (*remove)(struct platform_device *);
+    void (*shutdown)(struct platform_device *);
+    int (*suspend)(struct platform_device *, pm_message_t state);
+    int (*resume)(struct platform_device *);
+    struct device_driver driver;
+    const struct platform_device_id *id_table;
+    bool prevent_deferred_probe;
+};
+
 extern struct device platform_bus;
 
 extern struct platform_device *platform_device_alloc(const char *name, int id);
@@ -30,5 +41,19 @@ extern struct platform_device *platform_device_alloc(const char *name, int id);
 extern void platform_device_put(struct platform_device *pdev);
 
 extern struct bus_type platform_bus_type;
+
+/*
+ * use a macro to avoid include chaining to get THIS_MODULE
+ */
+#define platform_driver_register(drv) \
+    __platform_driver_register(drv, THIS_MODULE)
+extern int __platform_driver_register(struct platform_driver *,
+                                      struct module *);
+extern void platform_driver_unregister(struct platform_driver *);
+
+static inline void *platform_get_drvdata(const struct platform_device *pdev)
+{
+    return dev_get_drvdata(&pdev->dev);
+}
 
 #endif /* _PLATFORM_DEVICE_H_ */

@@ -19,19 +19,19 @@
 #if 0
 #include <linux/dev_printk.h>
 #include <linux/energy_model.h>
-#include <linux/klist.h>
 #endif
+#include <linux/klist.h>
 #include <linux/types.h>
 #include <linux/mutex.h>
 #include <linux/atomic.h>
 #include <linux/gfp.h>
 #include <linux/device/bus.h>
-#if 0
 #include <linux/pm.h>
+#include <linux/device/driver.h>
+#if 0
 #include <linux/uidgid.h>
 #include <linux/overflow.h>
 #include <linux/device/class.h>
-#include <linux/device/driver.h>
 #include <asm/device.h>
 #endif
 
@@ -83,10 +83,8 @@ struct device {
 
     struct bus_type *bus;               /* type of bus device is on */
 
-#if 0
     struct device_driver *driver;       /* which driver has allocated this
                                            device */
-#endif
 
     void *platform_data;                /* Platform specific data,
                                            device core doesn't touch it */
@@ -147,5 +145,17 @@ static inline struct device *kobj_to_dev(struct kobject *kobj)
 {
     return container_of(kobj, struct device, kobj);
 }
+
+static inline void *dev_get_drvdata(const struct device *dev)
+{
+    return dev->driver_data;
+}
+
+static inline void dev_set_drvdata(struct device *dev, void *data)
+{
+    dev->driver_data = data;
+}
+
+int __must_check driver_attach(struct device_driver *drv);
 
 #endif /* _DEVICE_H_ */

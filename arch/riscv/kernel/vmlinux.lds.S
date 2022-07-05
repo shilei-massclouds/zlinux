@@ -116,4 +116,6 @@ SECTIONS
     BSS_SECTION(PAGE_SIZE, PAGE_SIZE, 0)
 
     _end = .;
+
+    DISCARDS
 }

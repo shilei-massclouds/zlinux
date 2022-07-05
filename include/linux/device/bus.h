@@ -117,4 +117,7 @@ struct bus_type {
 
 extern int __must_check bus_register(struct bus_type *bus);
 
+int bus_for_each_dev(struct bus_type *bus, struct device *start, void *data,
+                     int (*fn)(struct device *dev, void *data));
+
 #endif /* _DEVICE_BUS_H_ */

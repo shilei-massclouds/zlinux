@@ -51,6 +51,9 @@
     *(.text.exit)                           \
     MEM_DISCARD(exit.text)
 
+#define EXIT_CALL                           \
+    *(.exitcall.exit)
+
 #define EARLYCON_TABLE() . = ALIGN(8);  \
     __earlycon_table = .;               \
     KEEP(*(__earlycon_table))           \
@@ -356,3 +359,24 @@
         __sched_text_start = .;     \
         *(.sched.text)              \
         __sched_text_end = .;
+
+#define EXIT_DISCARDS               \
+    EXIT_TEXT                       \
+    EXIT_DATA
+
+#define SANITIZER_DISCARDS
+
+#define COMMON_DISCARDS                     \
+    SANITIZER_DISCARDS                      \
+    *(.discard)                             \
+    *(.discard.*)                           \
+    *(.modinfo)                             \
+    /* ld.bfd warns about .gnu.version* even when not emitted */    \
+    *(.gnu.version*)                        \
+
+#define DISCARDS                            \
+    /DISCARD/ : {                           \
+        EXIT_DISCARDS                       \
+        EXIT_CALL                           \
+        COMMON_DISCARDS                     \
+    }

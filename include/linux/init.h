@@ -12,8 +12,18 @@
 #define __init \
     __section(".init.text") __cold  __latent_entropy __noinitretpoline __nocfi
 
+#ifdef MODULE
+#define __exitused
+#else
+#define __exitused __used
+#endif
+
+#define __exit __section(".exit.text") __exitused __cold notrace
+
 #define __initdata  __section(".init.data")
 #define __initconst __section(".init.rodata")
+#define __exitdata  __section(".exit.data")
+#define __exit_call __used __section(".exitcall.exit")
 
 #define __ref       __section(".ref.text") noinline
 #define __refdata   __section(".ref.data")
@@ -91,6 +101,11 @@
 #define device_initcall_sync(fn)    __define_initcall(fn, 6s)
 #define late_initcall(fn)           __define_initcall(fn, 7)
 #define late_initcall_sync(fn)      __define_initcall(fn, 7s)
+
+#define __initcall(fn) device_initcall(fn)
+
+#define __exitcall(fn) \
+    static exitcall_t __exitcall_##fn __exit_call = fn
 
 #ifndef __ASSEMBLY__
 

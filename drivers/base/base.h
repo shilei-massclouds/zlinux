@@ -96,8 +96,28 @@ struct device_private {
 #define to_device_private_bus(obj)  \
     container_of(obj, struct device_private, knode_bus)
 
+struct driver_private {
+    struct kobject kobj;
+    struct klist klist_devices;
+    struct klist_node knode_bus;
+    //struct module_kobject *mkobj;
+    struct device_driver *driver;
+};
+#define to_driver(obj) container_of(obj, struct driver_private, kobj)
+
+/* /sys/devices directory */
+extern struct kset *devices_kset;
+
 extern int bus_add_device(struct device *dev);
 
 extern int devices_init(void);
+extern int buses_init(void);
+extern int classes_init(void);
 
 extern int platform_bus_init(void);
+
+extern int bus_add_driver(struct device_driver *drv);
+extern void bus_remove_driver(struct device_driver *drv);
+
+extern void module_add_driver(struct module *mod, struct device_driver *drv);
+extern void module_remove_driver(struct device_driver *drv);

@@ -131,4 +131,17 @@ arch_atomic_inc_return(atomic_t *v)
 #define arch_atomic_inc_return arch_atomic_inc_return
 #endif
 
+#ifndef arch_atomic_try_cmpxchg_relaxed
+static __always_inline bool
+arch_atomic_try_cmpxchg_relaxed(atomic_t *v, int *old, int new)
+{
+    int r, o = *old;
+    r = arch_atomic_cmpxchg_relaxed(v, o, new);
+    if (unlikely(r != o))
+        *old = r;
+    return likely(r == o);
+}
+#define arch_atomic_try_cmpxchg_relaxed arch_atomic_try_cmpxchg_relaxed
+#endif
+
 #endif /* _LINUX_ATOMIC_FALLBACK_H */

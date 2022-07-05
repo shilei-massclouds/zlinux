@@ -31,6 +31,17 @@ void refcount_warn_saturate(refcount_t *r, enum refcount_saturation_type t);
 #define REFCOUNT_SATURATED  (INT_MIN / 2)
 
 /**
+ * refcount_read - get a refcount's value
+ * @r: the refcount
+ *
+ * Return: the refcount's value
+ */
+static inline unsigned int refcount_read(const refcount_t *r)
+{
+    return atomic_read(&r->refs);
+}
+
+/**
  * refcount_set - set a refcount's value
  * @r: the refcount
  * @n: value to which the refcount will be set
@@ -100,6 +111,25 @@ __refcount_dec_and_test(refcount_t *r, int *oldp)
     return __refcount_sub_and_test(1, r, oldp);
 }
 
+static inline __must_check bool
+__refcount_add_not_zero(int i, refcount_t *r, int *oldp)
+{
+    int old = refcount_read(r);
+
+    do {
+        if (!old)
+            break;
+    } while (!atomic_try_cmpxchg_relaxed(&r->refs, &old, old + i));
+
+    if (oldp)
+        *oldp = old;
+
+    if (unlikely(old < 0 || old + i < 0))
+        refcount_warn_saturate(r, REFCOUNT_ADD_NOT_ZERO_OVF);
+
+    return old;
+}
+
 /**
  * refcount_dec_and_test - decrement a refcount and test if it is 0
  * @r: the refcount
@@ -116,6 +146,30 @@ __refcount_dec_and_test(refcount_t *r, int *oldp)
 static inline __must_check bool refcount_dec_and_test(refcount_t *r)
 {
     return __refcount_dec_and_test(r, NULL);
+}
+
+static inline __must_check bool
+__refcount_inc_not_zero(refcount_t *r, int *oldp)
+{
+    return __refcount_add_not_zero(1, r, oldp);
+}
+
+/**
+ * refcount_inc_not_zero - increment a refcount unless it is 0
+ * @r: the refcount to increment
+ *
+ * Similar to atomic_inc_not_zero(), but will saturate at REFCOUNT_SATURATED
+ * and WARN.
+ *
+ * Provides no memory ordering, it is assumed the caller has guaranteed the
+ * object memory to be stable (RCU, etc.). It does provide a control dependency
+ * and thereby orders future stores. See the comment on top.
+ *
+ * Return: true if the increment was successful, false otherwise
+ */
+static inline __must_check bool refcount_inc_not_zero(refcount_t *r)
+{
+    return __refcount_inc_not_zero(r, NULL);
 }
 
 #endif /* _LINUX_REFCOUNT_H */

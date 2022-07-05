@@ -168,4 +168,10 @@ atomic_inc_return(atomic_t *v)
     return arch_atomic_inc_return(v);
 }
 
+static __always_inline bool
+atomic_try_cmpxchg_relaxed(atomic_t *v, int *old, int new)
+{
+    return arch_atomic_try_cmpxchg_relaxed(v, old, new);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */

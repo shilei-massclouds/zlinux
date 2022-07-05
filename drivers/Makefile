@@ -6,4 +6,5 @@
 obj-y               += irqchip/
 obj-y               += base/
 obj-y               += tty/
+obj-y               += virtio/
 obj-$(CONFIG_OF)	+= of/

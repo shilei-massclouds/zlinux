@@ -77,6 +77,11 @@ struct kobj_type {
 
 extern void kobject_init(struct kobject *kobj, struct kobj_type *ktype);
 
+extern __printf(4, 5) __must_check
+int kobject_init_and_add(struct kobject *kobj,
+                         const struct kobj_type *ktype, struct kobject *parent,
+                         const char *fmt, ...);
+
 extern __printf(2, 3)
 int kobject_set_name(struct kobject *kobj, const char *name, ...);
 
@@ -127,5 +132,7 @@ kset_create_and_add(const char *name,
 extern void kset_init(struct kset *kset);
 extern int __must_check kset_register(struct kset *kset);
 extern void kset_unregister(struct kset *kset);
+
+extern struct kobject *kset_find_obj(struct kset *, const char *);
 
 #endif /* _KOBJECT_H_ */

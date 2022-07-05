@@ -11,14 +11,12 @@
 
 #include <linux/string.h>
 #include <linux/platform_device.h>
-#if 0
 #include <linux/of_device.h>
-#endif
 #include <linux/of_irq.h>
 #include <linux/module.h>
 #include <linux/init.h>
-#if 0
 #include <linux/interrupt.h>
+#if 0
 #include <linux/dma-mapping.h>
 #endif
 #include <linux/ioport.h>
@@ -29,6 +27,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/pm_domain.h>
 #endif
+#include <linux/pm.h>
 #include <linux/idr.h>
 #if 0
 #include <linux/acpi.h>
@@ -38,9 +37,7 @@
 #include <linux/property.h>
 #include <linux/types.h>
 
-#if 0
 #include "base.h"
-#endif
 
 struct platform_object {
     struct platform_device pdev;
@@ -227,3 +224,29 @@ void platform_device_put(struct platform_device *pdev)
 #endif
 }
 EXPORT_SYMBOL_GPL(platform_device_put);
+
+/**
+ * __platform_driver_register - register a driver for platform-level devices
+ * @drv: platform driver structure
+ * @owner: owning module/driver
+ */
+int __platform_driver_register(struct platform_driver *drv,
+                               struct module *owner)
+{
+    drv->driver.owner = owner;
+    drv->driver.bus = &platform_bus_type;
+
+    return driver_register(&drv->driver);
+}
+EXPORT_SYMBOL_GPL(__platform_driver_register);
+
+/**
+ * platform_driver_unregister - unregister a driver for platform-level devices
+ * @drv: platform driver structure
+ */
+void platform_driver_unregister(struct platform_driver *drv)
+{
+    panic("%s: END!\n", __func__);
+    //driver_unregister(&drv->driver);
+}
+EXPORT_SYMBOL_GPL(platform_driver_unregister);
