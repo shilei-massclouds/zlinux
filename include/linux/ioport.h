@@ -63,10 +63,28 @@ struct resource {
 #define IORESOURCE_MEM_EXPANSIONROM (1<<6)
 #define IORESOURCE_MEM_NONPOSTED    (1<<7)
 
+extern struct resource iomem_resource;
+
 static inline resource_size_t resource_size(const struct resource *res)
 {
     return res->end - res->start + 1;
 }
+
+static inline unsigned long resource_type(const struct resource *res)
+{
+    return res->flags & IORESOURCE_TYPE_BITS;
+}
+
+#define devm_request_mem_region(dev,start,n,name) \
+    __devm_request_region(dev, &iomem_resource, (start), (n), (name))
+
+/* Wrappers for managed devices */
+struct device;
+
+extern struct resource *
+__devm_request_region(struct device *dev,
+                      struct resource *parent, resource_size_t start,
+                      resource_size_t n, const char *name);
 
 #endif /* __ASSEMBLY__ */
 #endif  /* _LINUX_IOPORT_H */

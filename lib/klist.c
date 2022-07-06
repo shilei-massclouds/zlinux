@@ -290,3 +290,13 @@ struct klist_node *klist_next(struct klist_iter *i)
         put(last);
     return i->i_cur;
 }
+
+/**
+ * klist_node_attached - Say whether a node is bound to a list or not.
+ * @n: Node that we're testing.
+ */
+int klist_node_attached(struct klist_node *n)
+{
+    return (n->n_klist != NULL);
+}
+EXPORT_SYMBOL_GPL(klist_node_attached);

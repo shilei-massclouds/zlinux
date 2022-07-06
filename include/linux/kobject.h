@@ -28,12 +28,15 @@
 //#include <linux/workqueue.h>
 //#include <linux/uidgid.h>
 
+#define UEVENT_NUM_ENVP         64      /* number of env pointers */
+#define UEVENT_BUFFER_SIZE      2048    /* buffer for the variables */
+
 struct kobject {
     const char          *name;
     struct list_head    entry;
     struct kobject      *parent;
     struct kset         *kset;
-    struct kobj_type    *ktype;
+    const struct kobj_type    *ktype;
     struct kref         kref;
 
     unsigned int state_initialized:1;
@@ -79,7 +82,15 @@ struct kobj_type {
     void (*release)(struct kobject *kobj);
 };
 
-extern void kobject_init(struct kobject *kobj, struct kobj_type *ktype);
+struct kobj_uevent_env {
+    char *argv[3];
+    char *envp[UEVENT_NUM_ENVP];
+    int envp_idx;
+    char buf[UEVENT_BUFFER_SIZE];
+    int buflen;
+};
+
+extern void kobject_init(struct kobject *kobj, const struct kobj_type *ktype);
 
 extern __printf(4, 5) __must_check
 int kobject_init_and_add(struct kobject *kobj,

@@ -27,6 +27,6 @@ typedef struct spinlock {
 #define __SPIN_LOCK_UNLOCKED(lockname) \
     (spinlock_t) __SPIN_LOCK_INITIALIZER(lockname)
 
-//#include <linux/rwlock_types.h>
+#include <linux/rwlock_types.h>
 
 #endif /* __LINUX_SPINLOCK_TYPES_H */

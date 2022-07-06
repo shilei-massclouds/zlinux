@@ -110,6 +110,94 @@ static void device_remove(struct device *dev)
         dev->driver->remove(dev);
 }
 
+static int call_driver_probe(struct device *dev, struct device_driver *drv)
+{
+    int ret = 0;
+
+    if (dev->bus->probe)
+        ret = dev->bus->probe(dev);
+    else if (drv->probe)
+        ret = drv->probe(dev);
+
+    switch (ret) {
+    case 0:
+        break;
+    case -EPROBE_DEFER:
+        /* Driver requested deferred probing */
+        pr_debug("Driver %s requests probe deferral\n", drv->name);
+        break;
+    case -ENODEV:
+    case -ENXIO:
+        pr_debug("%s: probe of %s rejects match %d\n",
+                 drv->name, dev_name(dev), ret);
+        break;
+    default:
+        /* driver matched but the probe failed */
+        pr_warn("%s: probe of %s failed with error %d\n",
+                drv->name, dev_name(dev), ret);
+        break;
+    }
+
+    return ret;
+}
+
+static inline bool dev_has_sync_state(struct device *dev)
+{
+    if (!dev)
+        return false;
+    if (dev->driver && dev->driver->sync_state)
+        return true;
+    if (dev->bus && dev->bus->sync_state)
+        return true;
+    return false;
+}
+
+/**
+ * device_is_bound() - Check if device is bound to a driver
+ * @dev: device to check
+ *
+ * Returns true if passed device has already finished probing successfully
+ * against a driver.
+ *
+ * This function must be called with the device lock held.
+ */
+bool device_is_bound(struct device *dev)
+{
+    return dev->p && klist_node_attached(&dev->p->knode_driver);
+}
+
+static void driver_bound(struct device *dev)
+{
+    if (device_is_bound(dev)) {
+        pr_warn("%s: device %s already bound\n",
+                __func__, kobject_name(&dev->kobj));
+        return;
+    }
+
+    pr_info("driver: '%s': %s: bound to device '%s'\n", dev->driver->name,
+            __func__, dev_name(dev));
+
+    klist_add_tail(&dev->p->knode_driver, &dev->driver->p->klist_devices);
+#if 0
+    device_links_driver_bound(dev);
+
+    device_pm_check_callbacks(dev);
+
+    /*
+     * Make sure the device is no longer in one of the deferred lists and
+     * kick off retrying all pending devices
+     */
+    driver_deferred_probe_del(dev);
+    driver_deferred_probe_trigger();
+
+    if (dev->bus)
+        blocking_notifier_call_chain(&dev->bus->p->bus_notifier,
+                         BUS_NOTIFY_BOUND_DRIVER, dev);
+
+    kobject_uevent(&dev->kobj, KOBJ_BIND);
+#endif
+}
+
 static int really_probe(struct device *dev, struct device_driver *drv)
 {
     int ret;
@@ -147,13 +235,64 @@ re_probe:
             goto pinctrl_bind_failed;
     }
 
-    panic("%s: END!\n", __func__);
+#if 0
+    ret = driver_sysfs_add(dev);
+    if (ret) {
+        pr_err("%s: driver_sysfs_add(%s) failed\n",
+               __func__, dev_name(dev));
+        goto sysfs_failed;
+    }
+
+    if (dev->pm_domain && dev->pm_domain->activate) {
+        ret = dev->pm_domain->activate(dev);
+        if (ret)
+            goto probe_failed;
+    }
+#endif
+
+    ret = call_driver_probe(dev, drv);
+    if (ret) {
+        /*
+         * Return probe errors as positive values so that the callers
+         * can distinguish them from other errors.
+         */
+        ret = -ret;
+        goto probe_failed;
+    }
+
+#if 0
+    ret = device_add_groups(dev, drv->dev_groups);
+    if (ret) {
+        dev_err(dev, "device_add_groups() failed\n");
+        goto dev_groups_failed;
+    }
+#endif
+
+    if (dev_has_sync_state(dev)) {
+#if 0
+        ret = device_create_file(dev, &dev_attr_state_synced);
+        if (ret) {
+            dev_err(dev, "state_synced sysfs add failed\n");
+            goto dev_sysfs_state_synced_failed;
+        }
+#endif
+    }
+
+#if 0
+    if (dev->pm_domain && dev->pm_domain->sync)
+        dev->pm_domain->sync(dev);
+#endif
+
+    driver_bound(dev);
+    pr_info("bus: '%s': %s: bound device %s to driver %s\n",
+            drv->bus->name, __func__, dev_name(dev), drv->name);
+    goto done;
 
 dev_sysfs_state_synced_failed:
 dev_groups_failed:
     device_remove(dev);
-#if 0
 probe_failed:
+#if 0
     driver_sysfs_remove(dev);
 sysfs_failed:
     if (dev->bus)

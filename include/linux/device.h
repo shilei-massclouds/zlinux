@@ -192,4 +192,52 @@ static inline int device_is_registered(struct device *dev)
     return dev->kobj.state_in_sysfs;
 }
 
+/* managed devm_k.alloc/kfree for device drivers */
+void *devm_kmalloc(struct device *dev, size_t size, gfp_t gfp) __malloc;
+
+static inline void *devm_kzalloc(struct device *dev, size_t size, gfp_t gfp)
+{
+    return devm_kmalloc(dev, size, gfp | __GFP_ZERO);
+}
+
+void devm_kfree(struct device *dev, const void *p);
+
+static inline int dev_to_node(struct device *dev)
+{
+    return NUMA_NO_NODE;
+}
+
+static inline void set_dev_node(struct device *dev, int node)
+{
+}
+
+/* device resource management */
+typedef void (*dr_release_t)(struct device *dev, void *res);
+typedef int (*dr_match_t)(struct device *dev, void *res, void *match_data);
+
+void __iomem *devm_ioremap_resource(struct device *dev,
+                                    const struct resource *res);
+
+void __iomem *devm_ioremap_resource_wc(struct device *dev,
+                                       const struct resource *res);
+
+char *devm_kstrdup(struct device *dev, const char *s, gfp_t gfp) __malloc;
+
+__printf(3, 0) char *devm_kvasprintf(struct device *dev, gfp_t gfp,
+                                     const char *fmt, va_list ap) __malloc;
+
+__printf(3, 4) char *devm_kasprintf(struct device *dev, gfp_t gfp,
+                                    const char *fmt, ...) __malloc;
+
+void devres_free(void *res);
+void devres_add(struct device *dev, void *res);
+
+void *__devres_alloc_node(dr_release_t release, size_t size, gfp_t gfp,
+                          int nid, const char *name) __malloc;
+
+#define devres_alloc(release, size, gfp) \
+    __devres_alloc_node(release, size, gfp, NUMA_NO_NODE, #release)
+#define devres_alloc_node(release, size, gfp, nid) \
+    __devres_alloc_node(release, size, gfp, nid, #release)
+
 #endif /* _DEVICE_H_ */

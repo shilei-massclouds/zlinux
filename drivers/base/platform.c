@@ -97,9 +97,13 @@ static int platform_match(struct device *dev, struct device_driver *drv)
     return (strcmp(pdev->name, drv->name) == 0);
 }
 
+static int platform_probe_fail(struct platform_device *pdev)
+{
+    return -ENXIO;
+}
+
 static int platform_probe(struct device *_dev)
 {
-#if 0
     struct platform_driver *drv = to_platform_driver(_dev->driver);
     struct platform_device *dev = to_platform_device(_dev);
     int ret;
@@ -114,6 +118,7 @@ static int platform_probe(struct device *_dev)
     if (unlikely(drv->probe == platform_probe_fail))
         return -ENXIO;
 
+#if 0
     ret = of_clk_set_defaults(_dev->of_node, false);
     if (ret < 0)
         return ret;
@@ -121,22 +126,23 @@ static int platform_probe(struct device *_dev)
     ret = dev_pm_domain_attach(_dev, true);
     if (ret)
         goto out;
+#endif
 
     if (drv->probe) {
         ret = drv->probe(dev);
+#if 0
         if (ret)
             dev_pm_domain_detach(_dev, true);
+#endif
     }
 
-out:
+ out:
     if (drv->prevent_deferred_probe && ret == -EPROBE_DEFER) {
-        dev_warn(_dev, "probe deferral not supported\n");
+        pr_warn("probe deferral not supported\n");
         ret = -ENXIO;
     }
 
     return ret;
-#endif
-    panic("%s: END!\n", __func__);
 }
 
 int platform_dma_configure(struct device *dev)
@@ -267,3 +273,70 @@ void platform_driver_unregister(struct platform_driver *drv)
     //driver_unregister(&drv->driver);
 }
 EXPORT_SYMBOL_GPL(platform_driver_unregister);
+
+/**
+ * platform_get_resource - get a resource for a device
+ * @dev: platform device
+ * @type: resource type
+ * @num: resource index
+ *
+ * Return: a pointer to the resource or NULL on failure.
+ */
+struct resource *platform_get_resource(struct platform_device *dev,
+                                       unsigned int type, unsigned int num)
+{
+    u32 i;
+
+    for (i = 0; i < dev->num_resources; i++) {
+        struct resource *r = &dev->resource[i];
+
+        if (type == resource_type(r) && num-- == 0)
+            return r;
+    }
+    return NULL;
+}
+EXPORT_SYMBOL_GPL(platform_get_resource);
+
+/**
+ * devm_platform_get_and_ioremap_resource - call devm_ioremap_resource() for a
+ *                      platform device and get resource
+ *
+ * @pdev: platform device to use both for memory resource lookup as well as
+ *        resource management
+ * @index: resource index
+ * @res: optional output parameter to store a pointer to the obtained resource.
+ *
+ * Return: a pointer to the remapped memory or an ERR_PTR() encoded error code
+ * on failure.
+ */
+void __iomem *
+devm_platform_get_and_ioremap_resource(struct platform_device *pdev,
+                                       unsigned int index,
+                                       struct resource **res)
+{
+    struct resource *r;
+
+    r = platform_get_resource(pdev, IORESOURCE_MEM, index);
+    if (res)
+        *res = r;
+    return devm_ioremap_resource(&pdev->dev, r);
+}
+EXPORT_SYMBOL_GPL(devm_platform_get_and_ioremap_resource);
+
+/**
+ * devm_platform_ioremap_resource - call devm_ioremap_resource() for a platform
+ *                  device
+ *
+ * @pdev: platform device to use both for memory resource lookup as well as
+ *        resource management
+ * @index: resource index
+ *
+ * Return: a pointer to the remapped memory or an ERR_PTR() encoded error code
+ * on failure.
+ */
+void __iomem *devm_platform_ioremap_resource(struct platform_device *pdev,
+                                             unsigned int index)
+{
+    return devm_platform_get_and_ioremap_resource(pdev, index, NULL);
+}
+EXPORT_SYMBOL_GPL(devm_platform_ioremap_resource);

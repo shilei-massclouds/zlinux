@@ -19,4 +19,6 @@ struct resource;
 int ioremap_page_range(unsigned long addr, unsigned long end,
                        phys_addr_t phys_addr, pgprot_t prot);
 
+#define IOMEM_ERR_PTR(err) (__force void __iomem *)ERR_PTR(err)
+
 #endif /* _LINUX_IO_H */

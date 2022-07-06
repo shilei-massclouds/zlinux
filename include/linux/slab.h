@@ -496,4 +496,7 @@ void *kcalloc(size_t n, size_t size, gfp_t flags)
     return kmalloc_array(n, size, flags | __GFP_ZERO);
 }
 
+#define kmalloc_node_track_caller(size, flags, node) \
+    kmalloc_track_caller(size, flags)
+
 #endif  /* _LINUX_SLAB_H */

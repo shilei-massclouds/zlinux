@@ -15,6 +15,8 @@ obj-y += hexdump.o
 obj-y += hweight.o bitmap.o
 obj-y += kasprintf.o string_helpers.o
 
+obj-y += devres.o
+
 libfdt_files = fdt.o fdt_ro.o find_bit.o
 
 $(foreach file, $(libfdt_files), \
