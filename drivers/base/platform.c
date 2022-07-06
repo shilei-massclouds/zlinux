@@ -139,6 +139,16 @@ out:
     panic("%s: END!\n", __func__);
 }
 
+int platform_dma_configure(struct device *dev)
+{
+    int ret = 0;
+
+    if (dev->of_node)
+        ret = of_dma_configure(dev, dev->of_node, true);
+
+    return ret;
+}
+
 struct bus_type platform_bus_type = {
     .name       = "platform",
     //.dev_groups = platform_dev_groups,
@@ -148,9 +158,9 @@ struct bus_type platform_bus_type = {
 #if 0
     .remove     = platform_remove,
     .shutdown   = platform_shutdown,
-    .dma_configure  = platform_dma_configure,
-    .pm     = &platform_dev_pm_ops,
 #endif
+    .dma_configure  = platform_dma_configure,
+    //.pm       = &platform_dev_pm_ops,
 };
 EXPORT_SYMBOL_GPL(platform_bus_type);
 

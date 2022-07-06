@@ -4,12 +4,12 @@
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/of_address.h>
-#if 0
 #include <linux/of_iommu.h>
+#if 0
 #include <linux/of_reserved_mem.h>
+#endif
 #include <linux/dma-direct.h> /* for bus_dma_region */
 #include <linux/dma-map-ops.h>
-#endif
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/mod_devicetable.h>
@@ -47,3 +47,99 @@ of_match_device(const struct of_device_id *matches, const struct device *dev)
     return of_match_node(matches, dev->of_node);
 }
 EXPORT_SYMBOL(of_match_device);
+
+static void
+of_dma_set_restricted_buffer(struct device *dev, struct device_node *np)
+{
+    return;
+}
+
+/**
+ * of_dma_configure_id - Setup DMA configuration
+ * @dev:    Device to apply DMA configuration
+ * @np:     Pointer to OF node having DMA configuration
+ * @force_dma:  Whether device is to be set up by of_dma_configure() even if
+ *      DMA capability is not explicitly described by firmware.
+ * @id:     Optional const pointer value input id
+ *
+ * Try to get devices's DMA configuration from DT and update it
+ * accordingly.
+ *
+ * If platform code needs to use its own special DMA configuration, it
+ * can use a platform bus notifier and handle BUS_NOTIFY_ADD_DEVICE events
+ * to fix up DMA configuration.
+ */
+int of_dma_configure_id(struct device *dev, struct device_node *np,
+                        bool force_dma, const u32 *id)
+{
+    const struct iommu_ops *iommu;
+    const struct bus_dma_region *map = NULL;
+    u64 dma_start = 0;
+    u64 mask, end, size = 0;
+    bool coherent;
+    int ret;
+
+    ret = of_dma_get_range(np, &map);
+    if (ret < 0) {
+        /*
+         * For legacy reasons, we have to assume some devices need
+         * DMA configuration regardless of whether "dma-ranges" is
+         * correctly specified or not.
+         */
+        if (!force_dma)
+            return ret == -ENODEV ? 0 : ret;
+    } else {
+        panic("%s: dma ranges exist!\n", __func__);
+    }
+
+    /*
+     * If @dev is expected to be DMA-capable then the bus code that created
+     * it should have initialised its dma_mask pointer by this point. For
+     * now, we'll continue the legacy behaviour of coercing it to the
+     * coherent mask if not, but we'll no longer do so quietly.
+     */
+    if (!dev->dma_mask) {
+        pr_warn("DMA mask not set\n");
+        dev->dma_mask = &dev->coherent_dma_mask;
+    }
+
+    if (!size && dev->coherent_dma_mask)
+        size = max(dev->coherent_dma_mask, dev->coherent_dma_mask + 1);
+    else if (!size)
+        size = 1ULL << 32;
+
+    /*
+     * Limit coherent and dma mask based on size and default mask
+     * set by the driver.
+     */
+    end = dma_start + size - 1;
+    mask = DMA_BIT_MASK(ilog2(end) + 1);
+    dev->coherent_dma_mask &= mask;
+    *dev->dma_mask &= mask;
+    /* ...but only set bus limit and range map if we found valid dma-ranges earlier */
+    if (!ret) {
+        dev->bus_dma_limit = end;
+        dev->dma_range_map = map;
+    }
+
+    coherent = of_dma_is_coherent(np);
+    pr_info("device is%sdma coherent\n", coherent ? " " : " not ");
+
+    iommu = of_iommu_configure(dev, np, id);
+    if (PTR_ERR(iommu) == -EPROBE_DEFER) {
+        /* Don't touch range map if it wasn't set from a valid dma-ranges */
+        if (!ret)
+            dev->dma_range_map = NULL;
+        kfree(map);
+        return -EPROBE_DEFER;
+    }
+
+    pr_debug("device is%sbehind an iommu\n",
+             iommu ? " " : " not ");
+
+    if (!iommu)
+        of_dma_set_restricted_buffer(dev, np);
+
+    return 0;
+}
+EXPORT_SYMBOL_GPL(of_dma_configure_id);

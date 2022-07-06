@@ -13,4 +13,6 @@ extern u64 of_translate_address(struct device_node *np, const __be32 *addr);
 
 extern void __iomem *of_iomap(struct device_node *device, int index);
 
+extern bool of_dma_is_coherent(struct device_node *np);
+
 #endif /* __OF_ADDRESS_H */

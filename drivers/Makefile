@@ -6,5 +6,8 @@
 obj-y               += irqchip/
 obj-y               += base/
 obj-y               += tty/
+obj-y               += pci/
 obj-y               += virtio/
+# iommu/ comes before gpu as gpu are using iommu controllers
+obj-y               += iommu/
 obj-$(CONFIG_OF)	+= of/

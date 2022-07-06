@@ -15,8 +15,8 @@
 #include <linux/pci_regs.h>
 #if 0
 #include <linux/pci.h>
-#include <linux/dma-direct.h> /* for bus_dma_region */
 #endif
+#include <linux/dma-direct.h> /* for bus_dma_region */
 #include <linux/sizes.h>
 #include <linux/slab.h>
 #include <linux/string.h>
@@ -430,3 +430,117 @@ void __iomem *of_iomap(struct device_node *np, int index)
         return ioremap(res.start, resource_size(&res));
 }
 EXPORT_SYMBOL(of_iomap);
+
+static struct device_node *__of_get_dma_parent(const struct device_node *np)
+{
+    struct of_phandle_args args;
+    int ret, index;
+
+    index = of_property_match_string(np, "interconnect-names", "dma-mem");
+    if (index < 0)
+        return of_get_parent(np);
+
+    panic("%s: END!\n", __func__);
+#if 0
+    ret = of_parse_phandle_with_args(np, "interconnects", "#interconnect-cells",
+                                     index, &args);
+    if (ret < 0)
+        return of_get_parent(np);
+
+    return of_node_get(args.np);
+#endif
+}
+
+static struct device_node *of_get_next_dma_parent(struct device_node *np)
+{
+    struct device_node *parent;
+
+    parent = __of_get_dma_parent(np);
+    of_node_put(np);
+
+    return parent;
+}
+
+/**
+ * of_dma_get_range - Get DMA range info and put it into a map array
+ * @np:     device node to get DMA range info
+ * @map:    dma range structure to return
+ *
+ * Look in bottom up direction for the first "dma-ranges" property
+ * and parse it.  Put the information into a DMA offset map array.
+ *
+ * dma-ranges format:
+ *  DMA addr (dma_addr) : naddr cells
+ *  CPU addr (phys_addr_t)  : pna cells
+ *  size            : nsize cells
+ *
+ * It returns -ENODEV if "dma-ranges" property was not found for this
+ * device in the DT.
+ */
+int of_dma_get_range(struct device_node *np, const struct bus_dma_region **map)
+{
+    struct device_node *node = of_node_get(np);
+    const __be32 *ranges = NULL;
+    bool found_dma_ranges = false;
+#if 0
+    struct of_range_parser parser;
+    struct of_range range;
+#endif
+    struct bus_dma_region *r;
+    int len, num_ranges = 0;
+    int ret = 0;
+
+    while (node) {
+        ranges = of_get_property(node, "dma-ranges", &len);
+
+        /* Ignore empty ranges, they imply no translation required */
+        if (ranges && len > 0)
+            break;
+
+        /* Once we find 'dma-ranges', then a missing one is an error */
+        if (found_dma_ranges && !ranges) {
+            ret = -ENODEV;
+            goto out;
+        }
+        found_dma_ranges = true;
+
+        node = of_get_next_dma_parent(node);
+    }
+
+    if (!node || !ranges) {
+        pr_info("no dma-ranges found for node(%pOF)\n", np);
+        ret = -ENODEV;
+        goto out;
+    }
+
+    panic("%s: END!\n", __func__);
+ out:
+    of_node_put(node);
+    return ret;
+}
+
+/**
+ * of_dma_is_coherent - Check if device is coherent
+ * @np: device node
+ *
+ * It returns true if "dma-coherent" property was found
+ * for this device in the DT, or if DMA is coherent by
+ * default for OF devices on the current platform.
+ */
+bool of_dma_is_coherent(struct device_node *np)
+{
+    struct device_node *node;
+
+    node = of_node_get(np);
+
+    while (node) {
+        if (of_property_read_bool(node, "dma-coherent")) {
+            of_node_put(node);
+            return true;
+        }
+        node = of_get_next_dma_parent(node);
+    }
+    of_node_put(node);
+    return false;
+}
+EXPORT_SYMBOL_GPL(of_dma_is_coherent);

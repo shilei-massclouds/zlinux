@@ -464,4 +464,8 @@ of_find_matching_node_and_match(struct device_node *from,
     for (dn = of_find_matching_node_and_match(NULL, matches, match); \
          dn; dn = of_find_matching_node_and_match(dn, matches, match))
 
+extern int
+of_property_match_string(const struct device_node *np, const char *propname,
+                         const char *string);
+
 #endif /* _LINUX_OF_H */

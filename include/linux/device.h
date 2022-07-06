@@ -66,9 +66,8 @@ struct device_type {
     char *(*devnode)(struct device *dev, umode_t *mode,
                      kuid_t *uid, kgid_t *gid);
     void (*release)(struct device *dev);
-
-    const struct dev_pm_ops *pm;
 #endif
+    const struct dev_pm_ops *pm;
 };
 
 struct device {
@@ -98,7 +97,20 @@ struct device {
     struct dev_links_info   links;
 #endif
 
-    struct list_head        dma_pools;  /* dma pools (if dma'ble) */
+    const struct dma_map_ops *dma_ops;
+
+    u64 *dma_mask;          /* dma mask (if dma'able device) */
+    u64 coherent_dma_mask;  /* Like dma_mask, but for alloc_coherent mappings
+                               as not all hardware supports 64 bit addresses
+                               for consistent allocations such descriptors. */
+    u64 bus_dma_limit;      /* upstream dma constraint */
+    const struct bus_dma_region *dma_range_map;
+
+    struct device_dma_parameters *dma_parms;
+
+    struct list_head dma_pools;         /* dma pools (if dma'ble) */
+
+    struct dma_coherent_mem *dma_mem;   /* internal for coherent mem override */
 
     struct device_node      *of_node;   /* associated device tree node */
     struct fwnode_handle    *fwnode;    /* firmware device node */
@@ -111,6 +123,8 @@ struct device {
     struct class *class;
 
     void (*release)(struct device *dev);
+
+    struct dev_iommu    *iommu;
 
     bool offline_disabled:1;
     bool offline:1;

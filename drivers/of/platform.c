@@ -12,10 +12,7 @@
 #include <linux/errno.h>
 #include <linux/module.h>
 #include <linux/device.h>
-#if 0
-#include <linux/amba/bus.h>
 #include <linux/dma-mapping.h>
-#endif
 #include <linux/slab.h>
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
@@ -177,11 +174,9 @@ of_platform_device_create_pdata(struct device_node *np,
     if (!dev)
         goto err_clear_flag;
 
-#if 0
     dev->dev.coherent_dma_mask = DMA_BIT_MASK(32);
     if (!dev->dev.dma_mask)
         dev->dev.dma_mask = &dev->dev.coherent_dma_mask;
-#endif
     dev->dev.bus = &platform_bus_type;
     dev->dev.platform_data = platform_data;
 #if 0

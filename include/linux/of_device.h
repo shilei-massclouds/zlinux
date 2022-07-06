@@ -27,4 +27,13 @@ static inline int of_driver_match_device(struct device *dev,
     return of_match_device(drv->of_match_table, dev) != NULL;
 }
 
+int of_dma_configure_id(struct device *dev, struct device_node *np,
+                        bool force_dma, const u32 *id);
+
+static inline int of_dma_configure(struct device *dev, struct device_node *np,
+                                   bool force_dma)
+{
+    return of_dma_configure_id(dev, np, force_dma, NULL);
+}
+
 #endif /* _LINUX_OF_DEVICE_H */

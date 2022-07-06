@@ -18,4 +18,6 @@ void fdt_reserved_mem_save_node(unsigned long node, const char *uname,
 extern const void *__of_get_property(const struct device_node *np,
                                      const char *name, int *lenp);
 
+int of_dma_get_range(struct device_node *np, const struct bus_dma_region **map);
+
 #endif /* _LINUX_OF_PRIVATE_H */

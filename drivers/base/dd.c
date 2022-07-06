@@ -35,6 +35,13 @@
 
 #include "base.h"
 
+/*
+ * In some cases, like suspend to RAM or hibernation, It might be reasonable
+ * to prohibit probing of devices as it could be unsafe.
+ * Once defer_all_probes is true all drivers probes will be forcibly deferred.
+ */
+static bool defer_all_probes;
+
 static atomic_t probe_count = ATOMIC_INIT(0);
 #if 0
 static DECLARE_WAIT_QUEUE_HEAD(probe_waitqueue);
@@ -90,9 +97,76 @@ static void __device_driver_unlock(struct device *dev, struct device *parent)
         device_unlock(parent);
 }
 
+static void device_remove(struct device *dev)
+{
+#if 0
+    device_remove_file(dev, &dev_attr_state_synced);
+    device_remove_groups(dev, dev->driver->dev_groups);
+#endif
+
+    if (dev->bus && dev->bus->remove)
+        dev->bus->remove(dev);
+    else if (dev->driver->remove)
+        dev->driver->remove(dev);
+}
+
 static int really_probe(struct device *dev, struct device_driver *drv)
 {
+    int ret;
+
+    if (defer_all_probes) {
+        /*
+         * Value of defer_all_probes can be set only by
+         * device_block_probing() which, in turn, will call
+         * wait_for_device_probe() right after that to avoid any races.
+         */
+        pr_debug("Driver %s force probe deferral\n", drv->name);
+        return -EPROBE_DEFER;
+    }
+
+#if 0
+    ret = device_links_check_suppliers(dev);
+    if (ret)
+        return ret;
+#endif
+
+    pr_debug("bus: '%s': %s: probing driver %s with device %s\n",
+             drv->bus->name, __func__, drv->name, dev_name(dev));
+    if (!list_empty(&dev->devres_head)) {
+        pr_err("Resources present before probing\n");
+        ret = -EBUSY;
+        goto done;
+    }
+
+re_probe:
+    dev->driver = drv;
+
+    if (dev->bus->dma_configure) {
+        ret = dev->bus->dma_configure(dev);
+        if (ret)
+            goto pinctrl_bind_failed;
+    }
+
     panic("%s: END!\n", __func__);
+
+dev_sysfs_state_synced_failed:
+dev_groups_failed:
+    device_remove(dev);
+#if 0
+probe_failed:
+    driver_sysfs_remove(dev);
+sysfs_failed:
+    if (dev->bus)
+        blocking_notifier_call_chain(&dev->bus->p->bus_notifier,
+                                     BUS_NOTIFY_DRIVER_NOT_BOUND, dev);
+#endif
+pinctrl_bind_failed:
+#if 0
+    device_links_no_driver(dev);
+    device_unbind_cleanup(dev);
+#endif
+done:
+    return ret;
 }
 
 static int __driver_probe_device(struct device_driver *drv, struct device *dev)
