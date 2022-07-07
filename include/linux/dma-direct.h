@@ -26,4 +26,20 @@ struct bus_dma_region {
     u64     offset;
 };
 
+int dma_direct_supported(struct device *dev, u64 mask);
+
+static inline dma_addr_t
+translate_phys_to_dma(struct device *dev, phys_addr_t paddr)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
+static inline dma_addr_t
+phys_to_dma_unencrypted(struct device *dev, phys_addr_t paddr)
+{
+    if (dev->dma_range_map)
+        return translate_phys_to_dma(dev, paddr);
+    return paddr;
+}
+
 #endif /* _LINUX_DMA_DIRECT_H */

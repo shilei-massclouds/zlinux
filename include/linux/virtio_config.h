@@ -9,9 +9,7 @@
 #include <linux/virtio_byteorder.h>
 #endif
 #include <linux/compiler_types.h>
-#if 0
 #include <uapi/linux/virtio_config.h>
-#endif
 
 struct irq_affinity;
 

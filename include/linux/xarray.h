@@ -19,6 +19,37 @@
 #include <linux/spinlock.h>
 #include <linux/types.h>
 
+typedef unsigned __bitwise xa_mark_t;
+#define XA_MARK_0       ((__force xa_mark_t)0U)
+#define XA_MARK_1       ((__force xa_mark_t)1U)
+#define XA_MARK_2       ((__force xa_mark_t)2U)
+#define XA_PRESENT      ((__force xa_mark_t)8U)
+#define XA_MARK_MAX     XA_MARK_2
+#define XA_FREE_MARK    XA_MARK_0
+
+enum xa_lock_type {
+    XA_LOCK_IRQ = 1,
+    XA_LOCK_BH = 2,
+};
+
+/*
+ * Values for xa_flags.  The radix tree stores its GFP flags in the xa_flags,
+ * and we remain compatible with that.
+ */
+#define XA_FLAGS_LOCK_IRQ   ((__force gfp_t)XA_LOCK_IRQ)
+#define XA_FLAGS_LOCK_BH    ((__force gfp_t)XA_LOCK_BH)
+#define XA_FLAGS_TRACK_FREE ((__force gfp_t)4U)
+#define XA_FLAGS_ZERO_BUSY  ((__force gfp_t)8U)
+#define XA_FLAGS_ALLOC_WRAPPED  ((__force gfp_t)16U)
+#define XA_FLAGS_ACCOUNT    ((__force gfp_t)32U)
+
+#define XA_FLAGS_MARK(mark) \
+    ((__force gfp_t)((1U << __GFP_BITS_SHIFT) << (__force unsigned)(mark)))
+
+/* ALLOC is for a normal 0-based alloc.  ALLOC1 is for an 1-based alloc */
+#define XA_FLAGS_ALLOC  (XA_FLAGS_TRACK_FREE | XA_FLAGS_MARK(XA_FREE_MARK))
+#define XA_FLAGS_ALLOC1 (XA_FLAGS_TRACK_FREE | XA_FLAGS_ZERO_BUSY)
+
 /**
  * struct xarray - The anchor of the XArray.
  * @xa_lock: Lock that protects the contents of the XArray.

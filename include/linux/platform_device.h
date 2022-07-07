@@ -80,6 +80,12 @@ static inline void *platform_get_drvdata(const struct platform_device *pdev)
     return dev_get_drvdata(&pdev->dev);
 }
 
+static inline void platform_set_drvdata(struct platform_device *pdev,
+                                        void *data)
+{
+    dev_set_drvdata(&pdev->dev, data);
+}
+
 extern void __iomem *
 devm_platform_get_and_ioremap_resource(struct platform_device *pdev,
                                        unsigned int index,

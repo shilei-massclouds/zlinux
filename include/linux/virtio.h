@@ -67,4 +67,51 @@ struct virtio_device {
     void *priv;
 };
 
+/**
+ * virtio_driver - operations for a virtio I/O driver
+ * @driver: underlying device driver (populate name and owner).
+ * @id_table: the ids serviced by this driver.
+ * @feature_table: an array of feature numbers supported by this driver.
+ * @feature_table_size: number of entries in the feature table array.
+ * @feature_table_legacy: same as feature_table but when working in legacy mode.
+ * @feature_table_size_legacy: number of entries in feature table legacy array.
+ * @probe: the function to call when a device is found.  Returns 0 or -errno.
+ * @scan: optional function to call after successful probe; intended
+ *    for virtio-scsi to invoke a scan.
+ * @remove: the function to call when a device is removed.
+ * @config_changed: optional function to call when the device configuration
+ *    changes; may be called in interrupt context.
+ * @freeze: optional function to call during suspend/hibernation.
+ * @restore: optional function to call on resume.
+ */
+struct virtio_driver {
+    struct device_driver driver;
+    const struct virtio_device_id *id_table;
+    const unsigned int *feature_table;
+    unsigned int feature_table_size;
+    const unsigned int *feature_table_legacy;
+    unsigned int feature_table_size_legacy;
+    int (*validate)(struct virtio_device *dev);
+    int (*probe)(struct virtio_device *dev);
+    void (*scan)(struct virtio_device *dev);
+    void (*remove)(struct virtio_device *dev);
+    void (*config_changed)(struct virtio_device *dev);
+    int (*freeze)(struct virtio_device *dev);
+    int (*restore)(struct virtio_device *dev);
+};
+
+int register_virtio_device(struct virtio_device *dev);
+
+static inline struct virtio_device *dev_to_virtio(struct device *_dev)
+{
+    return container_of(_dev, struct virtio_device, dev);
+}
+
+static inline struct virtio_driver *drv_to_virtio(struct device_driver *drv)
+{
+    return container_of(drv, struct virtio_driver, driver);
+}
+
+void virtio_add_status(struct virtio_device *dev, unsigned int status);
+
 #endif /* _LINUX_VIRTIO_H */

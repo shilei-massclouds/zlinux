@@ -16,6 +16,31 @@
 #include <linux/gfp.h>
 #include <linux/percpu.h>
 
+struct ida {
+    struct xarray xa;
+};
+
+#define IDA_INIT_FLAGS  (XA_FLAGS_LOCK_IRQ | XA_FLAGS_ALLOC)
+
+#define IDA_INIT(name) { \
+    .xa = XARRAY_INIT(name, IDA_INIT_FLAGS) \
+}
+
+#define DEFINE_IDA(name)    struct ida name = IDA_INIT(name)
+
+/*
+ * ida_simple_get() and ida_simple_remove() are deprecated. Use
+ * ida_alloc() and ida_free() instead respectively.
+ */
+#define ida_simple_get(ida, start, end, gfp) \
+    ida_alloc_range(ida, start, (end) - 1, gfp)
+
+#define ida_simple_remove(ida, id) ida_free(ida, id)
+
+int ida_alloc_range(struct ida *, unsigned int min, unsigned int max, gfp_t);
+void ida_free(struct ida *, unsigned int id);
+void ida_destroy(struct ida *ida);
+
 /*
  * The IDR API does not expose the tagging functionality of the radix tree
  * to users.  Use tag 0 to track whether a node has free space below it.
@@ -38,7 +63,7 @@
  *
  * A freshly-initialised IDR contains no IDs.
  */
-#define IDR_INIT(name)  IDR_INIT_BASE(name, 0)
+#define IDR_INIT(name)      IDR_INIT_BASE(name, 0)
 
 struct idr {
     struct radix_tree_root  idr_rt;

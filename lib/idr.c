@@ -167,3 +167,32 @@ void *idr_replace(struct idr *idr, void *ptr, unsigned long id)
     return entry;
 }
 EXPORT_SYMBOL(idr_replace);
+
+/**
+ * ida_alloc_range() - Allocate an unused ID.
+ * @ida: IDA handle.
+ * @min: Lowest ID to allocate.
+ * @max: Highest ID to allocate.
+ * @gfp: Memory allocation flags.
+ *
+ * Allocate an ID between @min and @max, inclusive.  The allocated ID will
+ * not exceed %INT_MAX, even if @max is larger.
+ *
+ * Context: Any context. It is safe to call this function without
+ * locking in your code.
+ * Return: The allocated ID, or %-ENOMEM if memory could not be allocated,
+ * or %-ENOSPC if there are no free IDs.
+ */
+int ida_alloc_range(struct ida *ida, unsigned int min, unsigned int max,
+                    gfp_t gfp)
+{
+#if 0
+    XA_STATE(xas, &ida->xa, min / IDA_BITMAP_BITS);
+    unsigned bit = min % IDA_BITMAP_BITS;
+    unsigned long flags;
+    struct ida_bitmap *bitmap, *alloc = NULL;
+#endif
+
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL(ida_alloc_range);
