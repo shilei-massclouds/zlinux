@@ -86,4 +86,6 @@ static inline void __raw_spin_lock(raw_spinlock_t *lock)
 
 #define assert_raw_spin_locked(x)   BUG_ON(!raw_spin_is_locked(x))
 
+#include <linux/rwlock_api_smp.h>
+
 #endif /* __LINUX_SPINLOCK_API_SMP_H */

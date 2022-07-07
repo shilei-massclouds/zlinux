@@ -19,6 +19,9 @@
 #include <linux/spinlock_types.h>
 #include <asm/spinlock.h>
 
+/* Include rwlock functions for !RT */
+#include <linux/rwlock.h>
+
 #define raw_spin_lock_init(lock) \
     do { *(lock) = __RAW_SPIN_LOCK_UNLOCKED(lock); } while (0)
 

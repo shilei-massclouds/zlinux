@@ -74,3 +74,44 @@ void __lockfunc _raw_spin_unlock(raw_spinlock_t *lock)
 }
 EXPORT_SYMBOL(_raw_spin_unlock);
 #endif
+
+#ifndef CONFIG_INLINE_READ_LOCK
+void __lockfunc _raw_read_lock(rwlock_t *lock)
+{
+    __raw_read_lock(lock);
+}
+EXPORT_SYMBOL(_raw_read_lock);
+#endif
+
+#ifndef CONFIG_INLINE_READ_UNLOCK
+void __lockfunc _raw_read_unlock(rwlock_t *lock)
+{
+    __raw_read_unlock(lock);
+}
+EXPORT_SYMBOL(_raw_read_unlock);
+#endif
+
+#ifndef CONFIG_INLINE_WRITE_LOCK
+void __lockfunc _raw_write_lock(rwlock_t *lock)
+{
+    __raw_write_lock(lock);
+}
+EXPORT_SYMBOL(_raw_write_lock);
+
+#ifndef CONFIG_INLINE_WRITE_UNLOCK
+void __lockfunc _raw_write_unlock(rwlock_t *lock)
+{
+    __raw_write_unlock(lock);
+}
+EXPORT_SYMBOL(_raw_write_unlock);
+#endif
+
+#define __raw_write_lock_nested(lock, subclass) \
+    __raw_write_lock(((void)(subclass), (lock)))
+
+void __lockfunc _raw_write_lock_nested(rwlock_t *lock, int subclass)
+{
+    __raw_write_lock_nested(lock, subclass);
+}
+EXPORT_SYMBOL(_raw_write_lock_nested);
+#endif

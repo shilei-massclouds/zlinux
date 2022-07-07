@@ -45,6 +45,9 @@ struct resource {
 #define IORESOURCE_WINDOW   0x00200000  /* forwarded by bridge */
 #define IORESOURCE_MUXED    0x00400000  /* Resource is software muxed */
 
+#define IORESOURCE_EXT_TYPE_BITS 0x01000000 /* Resource extended types */
+#define IORESOURCE_SYSRAM   0x01000000  /* System RAM (modifier) */
+
 #define IORESOURCE_DISABLED 0x10000000
 #define IORESOURCE_UNSET    0x20000000  /* No address assigned yet */
 #define IORESOURCE_AUTO     0x40000000
@@ -75,11 +78,26 @@ static inline unsigned long resource_type(const struct resource *res)
     return res->flags & IORESOURCE_TYPE_BITS;
 }
 
+static inline unsigned long resource_ext_type(const struct resource *res)
+{
+    return res->flags & IORESOURCE_EXT_TYPE_BITS;
+}
+
+#define devm_request_region(dev,start,n,name) \
+    __devm_request_region(dev, &ioport_resource, (start), (n), (name))
 #define devm_request_mem_region(dev,start,n,name) \
     __devm_request_region(dev, &iomem_resource, (start), (n), (name))
 
+#define devm_release_region(dev, start, n) \
+    __devm_release_region(dev, &ioport_resource, (start), (n))
+#define devm_release_mem_region(dev, start, n) \
+    __devm_release_region(dev, &iomem_resource, (start), (n))
+
 /* Wrappers for managed devices */
 struct device;
+
+extern void __devm_release_region(struct device *dev, struct resource *parent,
+                                  resource_size_t start, resource_size_t n);
 
 extern struct resource *
 __devm_request_region(struct device *dev,

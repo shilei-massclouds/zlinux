@@ -13,6 +13,49 @@ enum devm_ioremap_type {
     DEVM_IOREMAP_NP,
 };
 
+void devm_ioremap_release(struct device *dev, void *res)
+{
+    iounmap(*(void __iomem **)res);
+}
+
+static void __iomem *
+__devm_ioremap(struct device *dev, resource_size_t offset,
+               resource_size_t size,
+               enum devm_ioremap_type type)
+{
+    void __iomem **ptr, *addr = NULL;
+
+    ptr = devres_alloc(devm_ioremap_release, sizeof(*ptr), GFP_KERNEL);
+    if (!ptr)
+        return NULL;
+
+    switch (type) {
+    case DEVM_IOREMAP:
+        addr = ioremap(offset, size);
+        break;
+    case DEVM_IOREMAP_UC:
+        panic("%s: NO DEVM_IOREMAP_UC!\n", __func__);
+        //addr = ioremap_uc(offset, size);
+        break;
+    case DEVM_IOREMAP_WC:
+        panic("%s: NO DEVM_IOREMAP_WC!\n", __func__);
+        //addr = ioremap_wc(offset, size);
+        break;
+    case DEVM_IOREMAP_NP:
+        panic("%s: NO DEVM_IOREMAP_NP!\n", __func__);
+        //addr = ioremap_np(offset, size);
+        break;
+    }
+
+    if (addr) {
+        *ptr = addr;
+        devres_add(dev, ptr);
+    } else
+        devres_free(ptr);
+
+    return addr;
+}
+
 static void __iomem *
 __devm_ioremap_resource(struct device *dev, const struct resource *res,
                         enum devm_ioremap_type type)
@@ -48,7 +91,14 @@ __devm_ioremap_resource(struct device *dev, const struct resource *res,
         return IOMEM_ERR_PTR(-EBUSY);
     }
 
-    panic("%s: END!\n", __func__);
+    dest_ptr = __devm_ioremap(dev, res->start, size, type);
+    if (!dest_ptr) {
+        pr_err("ioremap failed for resource %pR\n", res);
+        devm_release_mem_region(dev, res->start, size);
+        dest_ptr = IOMEM_ERR_PTR(-ENOMEM);
+    }
+
+    return dest_ptr;
 }
 
 /**

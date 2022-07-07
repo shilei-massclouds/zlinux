@@ -89,6 +89,64 @@ static struct resource *alloc_resource(gfp_t flags)
     return kzalloc(sizeof(struct resource), flags);
 }
 
+/* Return the conflict entry if you can't request it */
+static struct resource *
+__request_resource(struct resource *root, struct resource *new)
+{
+    resource_size_t start = new->start;
+    resource_size_t end = new->end;
+    struct resource *tmp, **p;
+
+    if (end < start)
+        return root;
+    if (start < root->start)
+        return root;
+    if (end > root->end)
+        return root;
+    p = &root->child;
+    for (;;) {
+        tmp = *p;
+        if (!tmp || tmp->start > end) {
+            new->sibling = tmp;
+            *p = new;
+            new->parent = root;
+            return NULL;
+        }
+        p = &tmp->sibling;
+        if (tmp->end < start)
+            continue;
+        return tmp;
+    }
+}
+
+static int
+__request_region_locked(struct resource *res, struct resource *parent,
+                        resource_size_t start, resource_size_t n,
+                        const char *name, int flags)
+{
+    //DECLARE_WAITQUEUE(wait, current);
+
+    res->name = name;
+    res->start = start;
+    res->end = start + n - 1;
+
+    for (;;) {
+        struct resource *conflict;
+
+        res->flags = resource_type(parent) | resource_ext_type(parent);
+        res->flags |= IORESOURCE_BUSY | flags;
+        res->desc = parent->desc;
+
+        conflict = __request_resource(parent, res);
+        if (!conflict)
+            break;
+
+        panic("%s: conflict!\n", __func__);
+    }
+
+    return 0;
+}
+
 /**
  * __request_region - create a new busy resource region
  * @parent: parent resource descriptor
@@ -107,8 +165,6 @@ struct resource *__request_region(struct resource *parent,
     if (!res)
         return NULL;
 
-    panic("%s: END!\n", __func__);
-#if 0
     write_lock(&resource_lock);
     ret = __request_region_locked(res, parent, start, n, name, flags);
     write_unlock(&resource_lock);
@@ -118,11 +174,7 @@ struct resource *__request_region(struct resource *parent,
         return NULL;
     }
 
-    if (parent == &iomem_resource)
-        revoke_iomem(res);
-
     return res;
-#endif
 }
 EXPORT_SYMBOL(__request_region);
 
@@ -152,3 +204,22 @@ __devm_request_region(struct device *dev, struct resource *parent,
     return res;
 }
 EXPORT_SYMBOL(__devm_request_region);
+
+static int devm_region_match(struct device *dev, void *res, void *match_data)
+{
+    struct region_devres *this = res, *match = match_data;
+
+    return this->parent == match->parent &&
+        this->start == match->start && this->n == match->n;
+}
+
+void __devm_release_region(struct device *dev, struct resource *parent,
+                           resource_size_t start, resource_size_t n)
+{
+    struct region_devres match_data = { parent, start, n };
+
+    __release_region(parent, start, n);
+    WARN_ON(devres_destroy(dev, devm_region_release, devm_region_match,
+                           &match_data));
+}
+EXPORT_SYMBOL(__devm_release_region);

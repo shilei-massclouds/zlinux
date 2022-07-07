@@ -240,4 +240,11 @@ void *__devres_alloc_node(dr_release_t release, size_t size, gfp_t gfp,
 #define devres_alloc_node(release, size, gfp, nid) \
     __devres_alloc_node(release, size, gfp, nid, #release)
 
+void *devres_remove(struct device *dev, dr_release_t release,
+                    dr_match_t match, void *match_data);
+int devres_destroy(struct device *dev, dr_release_t release,
+                   dr_match_t match, void *match_data);
+int devres_release(struct device *dev, dr_release_t release,
+                   dr_match_t match, void *match_data);
+
 #endif /* _DEVICE_H_ */
