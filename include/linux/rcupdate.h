@@ -21,6 +21,11 @@
     ((typeof(*p) __force __kernel *)(local)); \
 })
 
+#define __rcu_dereference_protected(p, local) \
+({ \
+    ((typeof(*p) __force __kernel *)(p)); \
+})
+
 /**
  * rcu_dereference_check() - rcu_dereference with debug checking
  * @p: The pointer to read, prior to dereferencing
@@ -64,6 +69,25 @@
  * This is a simple wrapper around rcu_dereference_check().
  */
 #define rcu_dereference(p) rcu_dereference_check(p)
+
+/**
+ * rcu_dereference_protected() - fetch RCU pointer when updates prevented
+ * @p: The pointer to read, prior to dereferencing
+ * @c: The conditions under which the dereference will take place
+ *
+ * Return the value of the specified RCU-protected pointer, but omit
+ * the READ_ONCE().  This is useful in cases where update-side locks
+ * prevent the value of the pointer from changing.  Please note that this
+ * primitive does *not* prevent the compiler from repeating this reference
+ * or combining it with other references, so it should not be used without
+ * protection of appropriate locks.
+ *
+ * This function is only for update-side use.  Using this function
+ * when protected only by rcu_read_lock() will result in infrequent
+ * but very ugly failures.
+ */
+#define rcu_dereference_protected(p) \
+    __rcu_dereference_protected((p), __UNIQUE_ID(rcu))
 
 /* Exported common interfaces */
 void call_rcu(struct rcu_head *head, rcu_callback_t func);

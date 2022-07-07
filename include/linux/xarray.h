@@ -18,6 +18,47 @@
 #include <linux/rcupdate.h>
 #include <linux/spinlock.h>
 #include <linux/types.h>
+#include <linux/err.h>
+
+#define XA_BUG_ON(xa, x)        do { } while (0)
+#define XA_NODE_BUG_ON(node, x) do { } while (0)
+
+/*
+ * The bottom two bits of the entry determine how the XArray interprets
+ * the contents:
+ *
+ * 00: Pointer entry
+ * 10: Internal entry
+ * x1: Value entry or tagged pointer
+ *
+ * Attempting to store internal entries in the XArray is a bug.
+ *
+ * Most internal entries are pointers to the next node in the tree.
+ * The following internal entries have a special meaning:
+ *
+ * 0-62: Sibling entries
+ * 256: Retry entry
+ * 257: Zero entry
+ *
+ * Errors are also represented as internal entries, but use the negative
+ * space (-4094 to -2).  They're never stored in the slots array; only
+ * returned by the normal API.
+ */
+
+#define BITS_PER_XA_VALUE   (BITS_PER_LONG - 1)
+
+/**
+ * xa_mk_value() - Create an XArray entry from an integer.
+ * @v: Value to store in XArray.
+ *
+ * Context: Any context.
+ * Return: An entry suitable for storing in the XArray.
+ */
+static inline void *xa_mk_value(unsigned long v)
+{
+    WARN_ON((long)v < 0);
+    return (void *)((v << 1) | 1);
+}
 
 typedef unsigned __bitwise xa_mark_t;
 #define XA_MARK_0       ((__force xa_mark_t)0U)
@@ -136,11 +177,89 @@ struct xa_node {
     };
 };
 
+/**
+ * typedef xa_update_node_t - A callback function from the XArray.
+ * @node: The node which is being processed
+ *
+ * This function is called every time the XArray updates the count of
+ * present and value entries in a node.  It allows advanced users to
+ * maintain the private_list in the node.
+ *
+ * Context: The xa_lock is held and interrupts may be disabled.
+ *      Implementations should not drop the xa_lock, nor re-enable
+ *      interrupts.
+ */
+typedef void (*xa_update_node_t)(struct xa_node *node);
+
+void xa_delete_node(struct xa_node *, xa_update_node_t);
+
+/*
+ * The xa_state is opaque to its users.  It contains various different pieces
+ * of state involved in the current operation on the XArray.  It should be
+ * declared on the stack and passed between the various internal routines.
+ * The various elements in it should not be accessed directly, but only
+ * through the provided accessor functions.  The below documentation is for
+ * the benefit of those working on the code, not for users of the XArray.
+ *
+ * @xa_node usually points to the xa_node containing the slot we're operating
+ * on (and @xa_offset is the offset in the slots array).  If there is a
+ * single entry in the array at index 0, there are no allocated xa_nodes to
+ * point to, and so we store %NULL in @xa_node.  @xa_node is set to
+ * the value %XAS_RESTART if the xa_state is not walked to the correct
+ * position in the tree of nodes for this operation.  If an error occurs
+ * during an operation, it is set to an %XAS_ERROR value.  If we run off the
+ * end of the allocated nodes, it is set to %XAS_BOUNDS.
+ */
+struct xa_state {
+    struct xarray *xa;
+    unsigned long xa_index;
+    unsigned char xa_shift;
+    unsigned char xa_sibs;
+    unsigned char xa_offset;
+    unsigned char xa_pad;       /* Helps gcc generate better code */
+    struct xa_node *xa_node;
+    struct xa_node *xa_alloc;
+    xa_update_node_t xa_update;
+    struct list_lru *xa_lru;
+};
+
 #define XARRAY_INIT(name, flags) {                      \
     .xa_lock    = __SPIN_LOCK_UNLOCKED(name.xa_lock),   \
     .xa_flags   = flags,                                \
     .xa_head    = NULL,                                 \
 }
+
+/*
+ * We encode errnos in the xas->xa_node.  If an error has happened, we need to
+ * drop the lock to fix it, and once we've done so the xa_state is invalid.
+ */
+#define XA_ERROR(errno) ((struct xa_node *)(((unsigned long)errno << 2) | 2UL))
+#define XAS_BOUNDS      ((struct xa_node *)1UL)
+#define XAS_RESTART     ((struct xa_node *)3UL)
+
+#define __XA_STATE(array, index, shift, sibs) { \
+    .xa = array,                    \
+    .xa_index = index,              \
+    .xa_shift = shift,              \
+    .xa_sibs = sibs,                \
+    .xa_offset = 0,                 \
+    .xa_pad = 0,                    \
+    .xa_node = XAS_RESTART,         \
+    .xa_alloc = NULL,               \
+    .xa_update = NULL,              \
+    .xa_lru = NULL,                 \
+}
+
+/**
+ * XA_STATE() - Declare an XArray operation state.
+ * @name: Name of this operation state (usually xas).
+ * @array: Array to operate on.
+ * @index: Initial index of interest.
+ *
+ * Declare and initialise an xa_state on the stack.
+ */
+#define XA_STATE(name, array, index)                \
+    struct xa_state name = __XA_STATE(array, index, 0, 0)
 
 /**
  * xa_init_flags() - Initialise an empty XArray with flags.
@@ -170,6 +289,247 @@ static inline void xa_init_flags(struct xarray *xa, gfp_t flags)
 static inline bool xa_is_value(const void *entry)
 {
     return (unsigned long)entry & 1;
+}
+
+#define xa_lock_irqsave(xa, flags) \
+    spin_lock_irqsave(&(xa)->xa_lock, flags)
+
+#define xa_unlock_irqrestore(xa, flags) \
+    spin_unlock_irqrestore(&(xa)->xa_lock, flags)
+
+#define xas_lock_irqsave(xas, flags) \
+    xa_lock_irqsave((xas)->xa, flags)
+
+#define xas_unlock_irqrestore(xas, flags) \
+    xa_unlock_irqrestore((xas)->xa, flags)
+
+void *xas_find_marked(struct xa_state *, unsigned long max, xa_mark_t);
+
+/**
+ * xas_set() - Set up XArray operation state for a different index.
+ * @xas: XArray operation state.
+ * @index: New index into the XArray.
+ *
+ * Move the operation state to refer to a different index.  This will
+ * have the effect of starting a walk from the top; see xas_next()
+ * to move to an adjacent index.
+ */
+static inline void xas_set(struct xa_state *xas, unsigned long index)
+{
+    xas->xa_index = index;
+    xas->xa_node = XAS_RESTART;
+}
+
+/*
+ * xa_to_internal() - Extract the value from an internal entry.
+ * @entry: XArray entry.
+ *
+ * Context: Any context.
+ * Return: The value which was stored in the internal entry.
+ */
+static inline unsigned long xa_to_internal(const void *entry)
+{
+    return (unsigned long)entry >> 2;
+}
+
+/*
+ * xa_is_internal() - Is the entry an internal entry?
+ * @entry: XArray entry.
+ *
+ * Context: Any context.
+ * Return: %true if the entry is an internal entry.
+ */
+static inline bool xa_is_internal(const void *entry)
+{
+    return ((unsigned long)entry & 3) == 2;
+}
+
+#define XA_ZERO_ENTRY   xa_mk_internal(257)
+
+/**
+ * xa_is_zero() - Is the entry a zero entry?
+ * @entry: Entry retrieved from the XArray
+ *
+ * The normal API will return NULL as the contents of a slot containing
+ * a zero entry.  You can only see zero entries by using the advanced API.
+ *
+ * Return: %true if the entry is a zero entry.
+ */
+static inline bool xa_is_zero(const void *entry)
+{
+    return unlikely(entry == XA_ZERO_ENTRY);
+}
+
+/**
+ * xa_is_err() - Report whether an XArray operation returned an error
+ * @entry: Result from calling an XArray function
+ *
+ * If an XArray operation cannot complete an operation, it will return
+ * a special value indicating an error.  This function tells you
+ * whether an error occurred; xa_err() tells you which error occurred.
+ *
+ * Context: Any context.
+ * Return: %true if the entry indicates an error.
+ */
+static inline bool xa_is_err(const void *entry)
+{
+    return unlikely(xa_is_internal(entry) &&
+                    entry >= xa_mk_internal(-MAX_ERRNO));
+}
+
+/**
+ * xa_err() - Turn an XArray result into an errno.
+ * @entry: Result from calling an XArray function.
+ *
+ * If an XArray operation cannot complete an operation, it will return
+ * a special pointer value which encodes an errno.  This function extracts
+ * the errno from the pointer value, or returns 0 if the pointer does not
+ * represent an errno.
+ *
+ * Context: Any context.
+ * Return: A negative errno or 0.
+ */
+static inline int xa_err(void *entry)
+{
+    /* xa_to_internal() would not do sign extension. */
+    if (xa_is_err(entry))
+        return (long)entry >> 2;
+    return 0;
+}
+
+/**
+ * xas_error() - Return an errno stored in the xa_state.
+ * @xas: XArray operation state.
+ *
+ * Return: 0 if no error has been noted.  A negative errno if one has.
+ */
+static inline int xas_error(const struct xa_state *xas)
+{
+    return xa_err(xas->xa_node);
+}
+
+/* Private */
+static inline struct xa_node *xa_to_node(const void *entry)
+{
+    return (struct xa_node *)((unsigned long)entry - 2);
+}
+
+/* Private */
+static inline bool xa_is_node(const void *entry)
+{
+    return xa_is_internal(entry) && (unsigned long)entry > 4096;
+}
+
+/* Private */
+static inline void *xa_head(const struct xarray *xa)
+{
+    return rcu_dereference_check(xa->xa_head);
+}
+
+/* Private */
+static inline void *xa_entry(const struct xarray *xa,
+                const struct xa_node *node, unsigned int offset)
+{
+    XA_NODE_BUG_ON(node, offset >= XA_CHUNK_SIZE);
+    return rcu_dereference_check(node->slots[offset]);
+}
+
+/* True if the node represents head-of-tree, RESTART or BOUNDS */
+static inline bool xas_top(struct xa_node *node)
+{
+    return node <= XAS_RESTART;
+}
+
+/**
+ * xa_marked() - Inquire whether any entry in this array has a mark set
+ * @xa: Array
+ * @mark: Mark value
+ *
+ * Context: Any context.
+ * Return: %true if any entry has this mark set.
+ */
+static inline bool xa_marked(const struct xarray *xa, xa_mark_t mark)
+{
+    return xa->xa_flags & XA_FLAGS_MARK(mark);
+}
+
+void *xas_load(struct xa_state *);
+void *xas_store(struct xa_state *, void *entry);
+void *xas_find(struct xa_state *, unsigned long max);
+void *xas_find_conflict(struct xa_state *);
+
+/**
+ * xa_is_sibling() - Is the entry a sibling entry?
+ * @entry: Entry retrieved from the XArray
+ *
+ * Return: %true if the entry is a sibling entry.
+ */
+static inline bool xa_is_sibling(const void *entry)
+{
+    return false;
+}
+
+/**
+ * xas_invalid() - Is the xas in a retry or error state?
+ * @xas: XArray operation state.
+ *
+ * Return: %true if the xas cannot be used for operations.
+ */
+static inline bool xas_invalid(const struct xa_state *xas)
+{
+    return (unsigned long)xas->xa_node & 3;
+}
+
+/**
+ * xas_valid() - Is the xas a valid cursor into the array?
+ * @xas: XArray operation state.
+ *
+ * Return: %true if the xas can be used for operations.
+ */
+static inline bool xas_valid(const struct xa_state *xas)
+{
+    return !xas_invalid(xas);
+}
+
+/**
+ * xas_reload() - Refetch an entry from the xarray.
+ * @xas: XArray operation state.
+ *
+ * Use this function to check that a previously loaded entry still has
+ * the same value.  This is useful for the lockless pagecache lookup where
+ * we walk the array with only the RCU lock to protect us, lock the page,
+ * then check that the page hasn't moved since we looked it up.
+ *
+ * The caller guarantees that @xas is still valid.  If it may be in an
+ * error or restart state, call xas_load() instead.
+ *
+ * Return: The entry at this location in the xarray.
+ */
+static inline void *xas_reload(struct xa_state *xas)
+{
+    struct xa_node *node = xas->xa_node;
+    void *entry;
+    char offset;
+
+    if (!node)
+        return xa_head(xas->xa);
+    
+    offset = xas->xa_offset;
+    return xa_entry(xas->xa, node, offset);
+}
+
+/* Private */
+static inline void *xa_head_locked(const struct xarray *xa)
+{
+    return rcu_dereference_protected(xa->xa_head);
+}
+
+/* Private */
+static inline void *xa_entry_locked(const struct xarray *xa,
+                const struct xa_node *node, unsigned int offset)
+{
+    XA_NODE_BUG_ON(node, offset >= XA_CHUNK_SIZE);
+    return rcu_dereference_protected(node->slots[offset]);
 }
 
 #endif /* _LINUX_XARRAY_H */

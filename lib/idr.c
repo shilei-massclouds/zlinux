@@ -186,13 +186,61 @@ EXPORT_SYMBOL(idr_replace);
 int ida_alloc_range(struct ida *ida, unsigned int min, unsigned int max,
                     gfp_t gfp)
 {
-#if 0
     XA_STATE(xas, &ida->xa, min / IDA_BITMAP_BITS);
     unsigned bit = min % IDA_BITMAP_BITS;
     unsigned long flags;
     struct ida_bitmap *bitmap, *alloc = NULL;
-#endif
 
-    panic("%s: END!\n", __func__);
+    if ((int)min < 0)
+        return -ENOSPC;
+
+    if ((int)max < 0)
+        max = INT_MAX;
+
+ retry:
+    xas_lock_irqsave(&xas, flags);
+
+ next:
+    bitmap = xas_find_marked(&xas, max / IDA_BITMAP_BITS, XA_FREE_MARK);
+    if (xas.xa_index > min / IDA_BITMAP_BITS)
+        bit = 0;
+    if (xas.xa_index * IDA_BITMAP_BITS + bit > max)
+        goto nospc;
+
+    if (xa_is_value(bitmap)) {
+        panic("%s: xa for value NOT SUPPORTED!\n", __func__);
+    }
+
+    if (bitmap) {
+        panic("%s: bitmap NOT NULL!\n");
+    } else {
+        if (bit < BITS_PER_XA_VALUE) {
+            bitmap = xa_mk_value(1UL << bit);
+        } else {
+            bitmap = alloc;
+            if (!bitmap)
+                bitmap = kzalloc(sizeof(*bitmap), GFP_NOWAIT);
+            if (!bitmap)
+                goto alloc;
+            __set_bit(bit, bitmap->bitmap);
+        }
+        xas_store(&xas, bitmap);
+    }
+
+    panic("%s: min(%x) max(%x) END!\n", __func__, min, max);
+    return xas.xa_index * IDA_BITMAP_BITS + bit;
+
+ alloc:
+    xas_unlock_irqrestore(&xas, flags);
+    alloc = kzalloc(sizeof(*bitmap), gfp);
+    if (!alloc)
+        return -ENOMEM;
+    xas_set(&xas, min / IDA_BITMAP_BITS);
+    bit = min % IDA_BITMAP_BITS;
+    goto retry;
+ nospc:
+    xas_unlock_irqrestore(&xas, flags);
+    kfree(alloc);
+    return -ENOSPC;
 }
 EXPORT_SYMBOL(ida_alloc_range);

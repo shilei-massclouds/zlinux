@@ -16,6 +16,17 @@
 #include <linux/gfp.h>
 #include <linux/percpu.h>
 
+/*
+ * IDA - ID Allocator, use when translation from id to pointer isn't necessary.
+ */
+#define IDA_CHUNK_SIZE      128 /* 128 bytes per chunk */
+#define IDA_BITMAP_LONGS    (IDA_CHUNK_SIZE / sizeof(long))
+#define IDA_BITMAP_BITS     (IDA_BITMAP_LONGS * sizeof(long) * 8)
+
+struct ida_bitmap {
+    unsigned long bitmap[IDA_BITMAP_LONGS];
+};
+
 struct ida {
     struct xarray xa;
 };
