@@ -4,7 +4,7 @@
 #
 
 obj-y               += irqchip/
-obj-y               += base/
+obj-y               += base/ block/
 obj-y               += tty/
 obj-y               += pci/
 obj-y               += virtio/

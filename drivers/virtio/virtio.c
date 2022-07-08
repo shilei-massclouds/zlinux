@@ -36,6 +36,44 @@ static int virtio_dev_match(struct device *_dv, struct device_driver *_dr)
 
 static int virtio_dev_probe(struct device *_d)
 {
+    int err, i;
+    struct virtio_device *dev = dev_to_virtio(_d);
+    struct virtio_driver *drv = drv_to_virtio(dev->dev.driver);
+    u64 device_features;
+    u64 driver_features;
+    u64 driver_features_legacy;
+
+    /* We have a driver! */
+    virtio_add_status(dev, VIRTIO_CONFIG_S_DRIVER);
+
+    /* Figure out what features the device supports. */
+    device_features = dev->config->get_features(dev);
+
+    /* Figure out what features the driver supports. */
+    driver_features = 0;
+    for (i = 0; i < drv->feature_table_size; i++) {
+        unsigned int f = drv->feature_table[i];
+        BUG_ON(f >= 64);
+        driver_features |= (1ULL << f);
+    }
+
+    /* Some drivers have a separate feature table for virtio v1.0 */
+    if (drv->feature_table_legacy) {
+        driver_features_legacy = 0;
+        for (i = 0; i < drv->feature_table_size_legacy; i++) {
+            unsigned int f = drv->feature_table_legacy[i];
+            BUG_ON(f >= 64);
+            driver_features_legacy |= (1ULL << f);
+        }
+    } else {
+        driver_features_legacy = driver_features;
+    }
+
+    if (device_features & (1ULL << VIRTIO_F_VERSION_1))
+        dev->features = driver_features & device_features;
+    else
+        dev->features = driver_features_legacy & device_features;
+
     panic("%s: END!\n", __func__);
 }
 
@@ -153,6 +191,15 @@ void virtio_add_status(struct virtio_device *dev, unsigned int status)
     dev->config->set_status(dev, dev->config->get_status(dev) | status);
 }
 EXPORT_SYMBOL_GPL(virtio_add_status);
+
+int register_virtio_driver(struct virtio_driver *driver)
+{
+    /* Catch this early. */
+    BUG_ON(driver->feature_table_size && !driver->feature_table);
+    driver->driver.bus = &virtio_bus;
+    return driver_register(&driver->driver);
+}
+EXPORT_SYMBOL_GPL(register_virtio_driver);
 
 static int virtio_init(void)
 {

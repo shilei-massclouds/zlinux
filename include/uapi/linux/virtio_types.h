@@ -1,8 +1,9 @@
-#ifndef _UAPI_LINUX_VIRTIO_CONFIG_H
-#define _UAPI_LINUX_VIRTIO_CONFIG_H
-
-/* This header, excluding the #ifdef __KERNEL__ part, is BSD licensed so
- * anyone can use the definitions to implement compatible drivers/servers.
+#ifndef _UAPI_LINUX_VIRTIO_TYPES_H
+#define _UAPI_LINUX_VIRTIO_TYPES_H
+/* Type definitions for virtio implementations.
+ *
+ * This header is BSD licensed so anyone can use the definitions to implement
+ * compatible drivers/servers.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,28 +26,11 @@
  * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE. */
-
-/* Virtio devices use a standardized configuration space to define their
- * features and pass configuration information, but each implementation can
- * store and access that space differently. */
+ * SUCH DAMAGE.
+ *
+ * Copyright (C) 2014 Red Hat, Inc.
+ * Author: Michael S. Tsirkin <mst@redhat.com>
+ */
 #include <linux/types.h>
 
-/* Status byte for guest to report progress, and synchronize features. */
-/* We have seen device and processed generic fields (VIRTIO_CONFIG_F_VIRTIO) */
-#define VIRTIO_CONFIG_S_ACKNOWLEDGE 1
-/* We have found a driver for the device. */
-#define VIRTIO_CONFIG_S_DRIVER      2
-/* Driver has used its parts of the config, and is happy */
-#define VIRTIO_CONFIG_S_DRIVER_OK   4
-/* Driver has finished configuring features */
-#define VIRTIO_CONFIG_S_FEATURES_OK 8
-/* Device entered invalid state, driver must reset it */
-#define VIRTIO_CONFIG_S_NEEDS_RESET 0x40
-/* We've given up on this device. */
-#define VIRTIO_CONFIG_S_FAILED      0x80
-
-/* v1.0 compliant. */
-#define VIRTIO_F_VERSION_1      32
-
-#endif /* _UAPI_LINUX_VIRTIO_CONFIG_H */
+#endif /* _UAPI_LINUX_VIRTIO_TYPES_H */

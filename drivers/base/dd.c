@@ -528,7 +528,39 @@ static int __device_attach_driver(struct device_driver *drv, void *_data)
     bool async_allowed;
     int ret;
 
+    ret = driver_match_device(drv, dev);
+    if (ret == 0) {
+        /* no match */
+        return 0;
+    } else if (ret == -EPROBE_DEFER) {
+        pr_info("Device match requests probe deferral\n");
+        dev->can_match = true;
+        driver_deferred_probe_add(dev);
+    } else if (ret < 0) {
+        pr_info("Bus failed to match device: %d\n", ret);
+        return ret;
+    } /* ret > 0 means positive match */
+
+#if 0
+    async_allowed = driver_allows_async_probing(drv);
+
+    if (async_allowed)
+        data->have_async = true;
+
+    if (data->check_async && async_allowed != data->want_async)
+        return 0;
+#endif
+
+    /*
+     * Ignore errors returned by ->probe so that the next driver can try
+     * its luck.
+     */
+    ret = driver_probe_device(drv, dev);
+    if (ret < 0)
+        return ret;
+
     panic("%s: driver(%s) END!\n", __func__, drv->name);
+    return ret == 0;
 }
 
 static int __device_attach(struct device *dev, bool allow_async)

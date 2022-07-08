@@ -114,4 +114,7 @@ static inline struct virtio_driver *drv_to_virtio(struct device_driver *drv)
 
 void virtio_add_status(struct virtio_device *dev, unsigned int status);
 
+int register_virtio_driver(struct virtio_driver *drv);
+void unregister_virtio_driver(struct virtio_driver *drv);
+
 #endif /* _LINUX_VIRTIO_H */
