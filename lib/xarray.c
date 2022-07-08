@@ -12,6 +12,10 @@
 #include <linux/slab.h>
 #include <linux/xarray.h>
 
+extern struct kmem_cache *radix_tree_node_cachep;
+
+extern void radix_tree_node_rcu_free(struct rcu_head *head);
+
 static void *set_bounds(struct xa_state *xas)
 {
     xas->xa_node = XAS_BOUNDS;
@@ -57,6 +61,147 @@ static inline void node_mark_all(struct xa_node *node, xa_mark_t mark)
 {
     bitmap_fill(node_marks(node, mark), XA_CHUNK_SIZE);
 }
+
+/* returns true if the bit was set */
+static inline bool node_set_mark(struct xa_node *node, unsigned int offset,
+                                 xa_mark_t mark)
+{
+    return __test_and_set_bit(offset, node_marks(node, mark));
+}
+
+/* returns true if the bit was set */
+static inline bool node_clear_mark(struct xa_node *node, unsigned int offset,
+                                   xa_mark_t mark)
+{
+    return __test_and_clear_bit(offset, node_marks(node, mark));
+}
+
+static inline bool node_any_mark(struct xa_node *node, xa_mark_t mark)
+{
+    return !bitmap_empty(node_marks(node, mark), XA_CHUNK_SIZE);
+}
+
+static inline void xa_mark_set(struct xarray *xa, xa_mark_t mark)
+{
+    if (!(xa->xa_flags & XA_FLAGS_MARK(mark)))
+        xa->xa_flags |= XA_FLAGS_MARK(mark);
+}
+
+static inline void xa_mark_clear(struct xarray *xa, xa_mark_t mark)
+{
+    if (xa->xa_flags & XA_FLAGS_MARK(mark))
+        xa->xa_flags &= ~(XA_FLAGS_MARK(mark));
+}
+
+#define mark_inc(mark) do { \
+    mark = (__force xa_mark_t)((__force unsigned)(mark) + 1); \
+} while (0)
+
+/*
+ * xas_squash_marks() - Merge all marks to the first entry
+ * @xas: Array operation state.
+ *
+ * Set a mark on the first entry if any entry has it set.  Clear marks on
+ * all sibling entries.
+ */
+static void xas_squash_marks(const struct xa_state *xas)
+{
+    unsigned int mark = 0;
+    unsigned int limit = xas->xa_offset + xas->xa_sibs + 1;
+
+    if (!xas->xa_sibs)
+        return;
+
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * xas_set_mark() - Sets the mark on this entry and its parents.
+ * @xas: XArray operation state.
+ * @mark: Mark number.
+ *
+ * Sets the specified mark on this entry, and walks up the tree setting it
+ * on all the ancestor entries.  Does nothing if @xas has not been walked to
+ * an entry, or is in an error state.
+ */
+void xas_set_mark(const struct xa_state *xas, xa_mark_t mark)
+{
+    struct xa_node *node = xas->xa_node;
+    unsigned int offset = xas->xa_offset;
+
+    if (xas_invalid(xas))
+        return;
+
+    while (node) {
+        if (node_set_mark(node, offset, mark))
+            return;
+        offset = node->offset;
+        node = xa_parent_locked(xas->xa, node);
+    }
+
+    if (!xa_marked(xas->xa, mark))
+        xa_mark_set(xas->xa, mark);
+}
+EXPORT_SYMBOL_GPL(xas_set_mark);
+
+/**
+ * xas_clear_mark() - Clears the mark on this entry and its parents.
+ * @xas: XArray operation state.
+ * @mark: Mark number.
+ *
+ * Clears the specified mark on this entry, and walks back to the head
+ * attempting to clear it on all the ancestor entries.  Does nothing if
+ * @xas has not been walked to an entry, or is in an error state.
+ */
+void xas_clear_mark(const struct xa_state *xas, xa_mark_t mark)
+{
+    struct xa_node *node = xas->xa_node;
+    unsigned int offset = xas->xa_offset;
+
+    if (xas_invalid(xas))
+        return;
+
+    while (node) {
+        if (!node_clear_mark(node, offset, mark))
+            return;
+        if (node_any_mark(node, mark))
+            return;
+
+        offset = node->offset;
+        node = xa_parent_locked(xas->xa, node);
+    }
+
+    if (xa_marked(xas->xa, mark))
+        xa_mark_clear(xas->xa, mark);
+}
+EXPORT_SYMBOL_GPL(xas_clear_mark);
+
+/**
+ * xas_init_marks() - Initialise all marks for the entry
+ * @xas: Array operations state.
+ *
+ * Initialise all marks for the entry specified by @xas.  If we're tracking
+ * free entries with a mark, we need to set it on all entries.  All other
+ * marks are cleared.
+ *
+ * This implementation is not as efficient as it could be; we may walk
+ * up the tree multiple times.
+ */
+void xas_init_marks(const struct xa_state *xas)
+{
+    xa_mark_t mark = 0;
+
+    for (;;) {
+        if (xa_track_free(xas->xa) && mark == XA_FREE_MARK)
+            xas_set_mark(xas, mark);
+        else
+            xas_clear_mark(xas, mark);
+        if (mark == XA_MARK_MAX)
+            break;
+        mark_inc(mark);
+    }
+}
+EXPORT_SYMBOL_GPL(xas_init_marks);
 
 /**
  * xas_find_marked() - Find the next marked entry in the XArray.
@@ -303,6 +448,60 @@ static void *xas_create(struct xa_state *xas, bool allow_root)
 }
 
 /**
+ * xas_free_nodes() - Free this node and all nodes that it references
+ * @xas: Array operation state.
+ * @top: Node to free
+ *
+ * This node has been removed from the tree.  We must now free it and all
+ * of its subnodes.  There may be RCU walkers with references into the tree,
+ * so we must replace all entries with retry markers.
+ */
+static void xas_free_nodes(struct xa_state *xas, struct xa_node *top)
+{
+    unsigned int offset = 0;
+    struct xa_node *node = top;
+
+    panic("%s: END!\n", __func__);
+}
+
+static void xas_update(struct xa_state *xas, struct xa_node *node)
+{
+    if (xas->xa_update)
+        xas->xa_update(node);
+    else
+        XA_NODE_BUG_ON(node, !list_empty(&node->private_list));
+}
+
+/*
+ * xas_delete_node() - Attempt to delete an xa_node
+ * @xas: Array operation state.
+ *
+ * Attempts to delete the @xas->xa_node.  This will fail if xa->node has
+ * a non-zero reference count.
+ */
+static void xas_delete_node(struct xa_state *xas)
+{
+    struct xa_node *node = xas->xa_node;
+
+    panic("%s: END!\n", __func__);
+}
+
+static void update_node(struct xa_state *xas, struct xa_node *node,
+                        int count, int values)
+{
+    if (!node || (!count && !values))
+        return;
+
+    node->count += count;
+    node->nr_values += values;
+    XA_NODE_BUG_ON(node, node->count > XA_CHUNK_SIZE);
+    XA_NODE_BUG_ON(node, node->nr_values > XA_CHUNK_SIZE);
+    xas_update(xas, node);
+    if (count < 0)
+        xas_delete_node(xas);
+}
+
+/**
  * xas_store() - Store this entry in the XArray.
  * @xas: XArray operation state.
  * @entry: New entry.
@@ -332,6 +531,97 @@ void *xas_store(struct xa_state *xas, void *entry)
         first = xas_load(xas);
     }
 
-    panic("%s: first(%lx) END!\n", __func__, first);
+    if (xas_invalid(xas))
+        return first;
+    node = xas->xa_node;
+    if (node && (xas->xa_shift < node->shift))
+        xas->xa_sibs = 0;
+    if ((first == entry) && !xas->xa_sibs)
+        return first;
+
+    next = first;
+    offset = xas->xa_offset;
+    max = xas->xa_offset + xas->xa_sibs;
+    if (node) {
+        slot = &node->slots[offset];
+        if (xas->xa_sibs)
+            xas_squash_marks(xas);
+    }
+    if (!entry)
+        xas_init_marks(xas);
+
+    for (;;) {
+        /*
+         * Must clear the marks before setting the entry to NULL,
+         * otherwise xas_for_each_marked may find a NULL entry and
+         * stop early.  rcu_assign_pointer contains a release barrier
+         * so the mark clearing will appear to happen before the
+         * entry is set to NULL.
+         */
+        rcu_assign_pointer(*slot, entry);
+        if (xa_is_node(next) && (!node || node->shift))
+            xas_free_nodes(xas, xa_to_node(next));
+        if (!node)
+            break;
+
+        panic("%s: NOT implementation entry(%lx)!\n", __func__, entry);
+    }
+
+    update_node(xas, node, count, values);
+    return first;
 }
 EXPORT_SYMBOL_GPL(xas_store);
+
+/*
+ * xas_destroy() - Free any resources allocated during the XArray operation.
+ * @xas: XArray operation state.
+ *
+ * This function is now internal-only.
+ */
+static void xas_destroy(struct xa_state *xas)
+{
+    struct xa_node *next, *node = xas->xa_alloc;
+
+    while (node) {
+        XA_NODE_BUG_ON(node, !list_empty(&node->private_list));
+        next = rcu_dereference_raw(node->parent);
+        radix_tree_node_rcu_free(&node->rcu_head);
+        xas->xa_alloc = node = next;
+    }
+}
+
+/**
+ * xas_nomem() - Allocate memory if needed.
+ * @xas: XArray operation state.
+ * @gfp: Memory allocation flags.
+ *
+ * If we need to add new nodes to the XArray, we try to allocate memory
+ * with GFP_NOWAIT while holding the lock, which will usually succeed.
+ * If it fails, @xas is flagged as needing memory to continue.  The caller
+ * should drop the lock and call xas_nomem().  If xas_nomem() succeeds,
+ * the caller should retry the operation.
+ *
+ * Forward progress is guaranteed as one node is allocated here and
+ * stored in the xa_state where it will be found by xas_alloc().  More
+ * nodes will likely be found in the slab allocator, but we do not tie
+ * them up here.
+ *
+ * Return: true if memory was needed, and was successfully allocated.
+ */
+bool xas_nomem(struct xa_state *xas, gfp_t gfp)
+{
+    if (xas->xa_node != XA_ERROR(-ENOMEM)) {
+        xas_destroy(xas);
+        return false;
+    }
+    if (xas->xa->xa_flags & XA_FLAGS_ACCOUNT)
+        gfp |= __GFP_ACCOUNT;
+    xas->xa_alloc = kmem_cache_alloc_lru(radix_tree_node_cachep, xas->xa_lru, gfp);
+    if (!xas->xa_alloc)
+        return false;
+    xas->xa_alloc->parent = NULL;
+    XA_NODE_BUG_ON(xas->xa_alloc, !list_empty(&xas->xa_alloc->private_list));
+    xas->xa_node = XAS_RESTART;
+    return true;
+}
+EXPORT_SYMBOL_GPL(xas_nomem);

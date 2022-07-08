@@ -62,3 +62,4 @@ tags
 
 !scripts/Makefile.lib
 include/generated/*
+build_and_test.sh

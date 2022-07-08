@@ -227,7 +227,17 @@ int ida_alloc_range(struct ida *ida, unsigned int min, unsigned int max,
         xas_store(&xas, bitmap);
     }
 
-    panic("%s: min(%x) max(%x) END!\n", __func__, min, max);
+ out:
+    xas_unlock_irqrestore(&xas, flags);
+    if (xas_nomem(&xas, gfp)) {
+        xas.xa_index = min / IDA_BITMAP_BITS;
+        bit = min % IDA_BITMAP_BITS;
+        goto retry;
+    }
+    if (bitmap != alloc)
+        kfree(alloc);
+    if (xas_error(&xas))
+        return xas_error(&xas);
     return xas.xa_index * IDA_BITMAP_BITS + bit;
 
  alloc:

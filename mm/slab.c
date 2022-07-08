@@ -1719,3 +1719,18 @@ void *__kmalloc_track_caller(size_t size, gfp_t flags, unsigned long caller)
     return __do_kmalloc(size, flags, caller);
 }
 EXPORT_SYMBOL(__kmalloc_track_caller);
+
+static __always_inline
+void *__kmem_cache_alloc_lru(struct kmem_cache *cachep, struct list_lru *lru,
+                             gfp_t flags)
+{
+    void *ret = slab_alloc(cachep, flags, cachep->object_size, _RET_IP_);
+    return ret;
+}
+
+void *kmem_cache_alloc_lru(struct kmem_cache *cachep, struct list_lru *lru,
+                           gfp_t flags)
+{
+    return __kmem_cache_alloc_lru(cachep, lru, flags);
+}
+EXPORT_SYMBOL(kmem_cache_alloc_lru);

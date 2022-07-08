@@ -133,6 +133,7 @@
 
 #define ZERO_OR_NULL_PTR(x) ((unsigned long)(x) <= (unsigned long)ZERO_SIZE_PTR)
 
+struct list_lru;
 struct kmem_cache;
 
 /*
@@ -498,5 +499,8 @@ void *kcalloc(size_t n, size_t size, gfp_t flags)
 
 #define kmalloc_node_track_caller(size, flags, node) \
     kmalloc_track_caller(size, flags)
+
+void *kmem_cache_alloc_lru(struct kmem_cache *s, struct list_lru *lru,
+                           gfp_t gfpflags) __assume_slab_alignment __malloc;
 
 #endif  /* _LINUX_SLAB_H */

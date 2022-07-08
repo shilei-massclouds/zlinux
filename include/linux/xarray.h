@@ -538,4 +538,13 @@ static inline void *xa_mk_node(const struct xa_node *node)
     return (void *)((unsigned long)node | 2);
 }
 
+/* Private */
+static inline struct xa_node *
+xa_parent_locked(const struct xarray *xa, const struct xa_node *node)
+{
+    return rcu_dereference_protected(node->parent);
+}
+
+bool xas_nomem(struct xa_state *, gfp_t);
+
 #endif /* _LINUX_XARRAY_H */
