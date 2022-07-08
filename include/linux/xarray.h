@@ -513,7 +513,7 @@ static inline void *xas_reload(struct xa_state *xas)
 
     if (!node)
         return xa_head(xas->xa);
-    
+
     offset = xas->xa_offset;
     return xa_entry(xas->xa, node, offset);
 }
@@ -530,6 +530,12 @@ static inline void *xa_entry_locked(const struct xarray *xa,
 {
     XA_NODE_BUG_ON(node, offset >= XA_CHUNK_SIZE);
     return rcu_dereference_protected(node->slots[offset]);
+}
+
+/* Private */
+static inline void *xa_mk_node(const struct xa_node *node)
+{
+    return (void *)((unsigned long)node | 2);
 }
 
 #endif /* _LINUX_XARRAY_H */

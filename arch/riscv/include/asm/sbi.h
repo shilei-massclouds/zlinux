@@ -30,6 +30,8 @@ enum sbi_ext_id {
     SBI_EXT_IPI = 0x735049,
     SBI_EXT_RFENCE = 0x52464E43,
     SBI_EXT_HSM = 0x48534D,
+    SBI_EXT_SRST = 0x53525354,
+    SBI_EXT_PMU = 0x504D55,
 };
 
 enum sbi_ext_base_fid {
@@ -57,6 +59,21 @@ enum sbi_ext_hsm_fid {
     SBI_EXT_HSM_HART_STOP,
     SBI_EXT_HSM_HART_STATUS,
     SBI_EXT_HSM_HART_SUSPEND,
+};
+
+enum sbi_ext_srst_fid {
+    SBI_EXT_SRST_RESET = 0,
+};
+
+enum sbi_srst_reset_type {
+    SBI_SRST_RESET_TYPE_SHUTDOWN = 0,
+    SBI_SRST_RESET_TYPE_COLD_REBOOT,
+    SBI_SRST_RESET_TYPE_WARM_REBOOT,
+};
+
+enum sbi_srst_reset_reason {
+    SBI_SRST_RESET_REASON_NONE = 0,
+    SBI_SRST_RESET_REASON_SYS_FAILURE,
 };
 
 /* SBI return error codes */
@@ -110,5 +127,13 @@ int sbi_probe_extension(int ext);
 int sbi_err_map_linux_errno(int err);
 
 int sbi_remote_fence_i(const struct cpumask *cpu_mask);
+
+/* Make SBI version */
+static inline unsigned long
+sbi_mk_version(unsigned long major, unsigned long minor)
+{
+    return ((major & SBI_SPEC_VERSION_MAJOR_MASK) <<
+            SBI_SPEC_VERSION_MAJOR_SHIFT) | minor;
+}
 
 #endif /* _ASM_RISCV_SBI_H */

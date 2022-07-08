@@ -7,8 +7,8 @@
 
 #include <linux/bits.h>
 #include <linux/init.h>
-//#include <linux/pm.h>
-//#include <linux/reboot.h>
+#include <linux/pm.h>
+#include <linux/reboot.h>
 #include <linux/errno.h>
 #include <asm/sbi.h>
 #include <asm/smp.h>
@@ -198,6 +198,21 @@ __sbi_rfence_v02(int fid, const struct cpumask *cpu_mask,
     return 0;
 }
 
+static void sbi_srst_reset(unsigned long type,
+                           unsigned long reason)
+{
+    sbi_ecall(SBI_EXT_SRST, SBI_EXT_SRST_RESET,
+              type, reason, 0, 0, 0, 0);
+    pr_warn("%s: type=0x%lx reason=0x%lx failed\n",
+            __func__, type, reason);
+}
+
+static void sbi_srst_power_off(void)
+{
+    sbi_srst_reset(SBI_SRST_RESET_TYPE_SHUTDOWN,
+                   SBI_SRST_RESET_REASON_NONE);
+}
+
 void __init sbi_init(void)
 {
     int ret;
@@ -234,16 +249,18 @@ void __init sbi_init(void)
     } else {
         panic("%s: NO support for rfence v0.1\n", __func__);
     }
-#if 0
     if ((sbi_spec_version >= sbi_mk_version(0, 3)) &&
         (sbi_probe_extension(SBI_EXT_SRST) > 0)) {
         pr_info("SBI SRST extension detected\n");
         pm_power_off = sbi_srst_power_off;
+#if 0
         sbi_srst_reboot_nb.notifier_call = sbi_srst_reboot;
         sbi_srst_reboot_nb.priority = 192;
         register_restart_handler(&sbi_srst_reboot_nb);
+#endif
     }
 
+#if 0
     riscv_set_ipi_ops(&sbi_ipi_ops);
 #endif
 }

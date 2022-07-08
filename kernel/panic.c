@@ -24,6 +24,7 @@
 //#include <linux/nmi.h>
 #include <linux/console.h>
 #include <linux/bug.h>
+#include <linux/reboot.h>
 //#include <linux/ratelimit.h>
 //#include <linux/debugfs.h>
 #include <asm/sections.h>
@@ -112,16 +113,19 @@ void panic(const char *fmt, ...)
     /* Do not scroll important messages printed above */
     suppress_printk = 1;
     local_irq_enable();
-    for (i = 0; ; i += PANIC_TIMER_STEP) {
 #if 0
+    for (i = 0; ; i += PANIC_TIMER_STEP) {
         touch_softlockup_watchdog();
         if (i >= i_next) {
             i += panic_blink(state ^= 1);
             i_next = i + 3600 / PANIC_BLINK_SPD;
         }
         mdelay(PANIC_TIMER_STEP);
-#endif
     }
+#endif
+
+    /* Power off when panic */
+    machine_power_off();
 }
 EXPORT_SYMBOL(panic);
 

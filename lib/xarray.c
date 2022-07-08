@@ -35,12 +35,27 @@ static inline bool xa_zero_busy(const struct xarray *xa)
     return xa->xa_flags & XA_FLAGS_ZERO_BUSY;
 }
 
+static inline bool xa_track_free(const struct xarray *xa)
+{
+    return xa->xa_flags & XA_FLAGS_TRACK_FREE;
+}
+
 /* The maximum index that can be contained in the array without expanding it */
 static unsigned long max_index(void *entry)
 {
     if (!xa_is_node(entry))
         return 0;
     return (XA_CHUNK_SIZE << xa_to_node(entry)->shift) - 1;
+}
+
+static inline unsigned long *node_marks(struct xa_node *node, xa_mark_t mark)
+{
+    return node->marks[(__force unsigned)mark];
+}
+
+static inline void node_mark_all(struct xa_node *node, xa_mark_t mark)
+{
+    bitmap_fill(node_marks(node, mark), XA_CHUNK_SIZE);
 }
 
 /**
@@ -213,6 +228,11 @@ static int xas_expand(struct xa_state *xas, void *head)
     panic("%s: max(%lu) END!\n", __func__, max);
 }
 
+static void *xas_alloc(struct xa_state *xas, unsigned int shift)
+{
+    panic("%s: shift(%lu) END!\n", __func__, shift);
+}
+
 /*
  * xas_create() - Create a slot to store an entry in.
  * @xas: XArray operation state.
@@ -261,7 +281,25 @@ static void *xas_create(struct xa_state *xas, bool allow_root)
         slot = &xa->xa_head;
     }
 
-    panic("%s: allow_root(%d) END!\n", __func__, allow_root);
+    while (shift > order) {
+        shift -= XA_CHUNK_SHIFT;
+        if (!entry) {
+            node = xas_alloc(xas, shift);
+            if (!node)
+                break;
+            if (xa_track_free(xa))
+                node_mark_all(node, XA_FREE_MARK);
+            rcu_assign_pointer(*slot, xa_mk_node(node));
+        } else if (xa_is_node(entry)) {
+            node = xa_to_node(entry);
+        } else {
+            break;
+        }
+        entry = xas_descend(xas, node);
+        slot = &node->slots[xas->xa_offset];
+    }
+
+    return entry;
 }
 
 /**
@@ -294,6 +332,6 @@ void *xas_store(struct xa_state *xas, void *entry)
         first = xas_load(xas);
     }
 
-    panic("%s: END!\n", __func__);
+    panic("%s: first(%lx) END!\n", __func__, first);
 }
 EXPORT_SYMBOL_GPL(xas_store);
