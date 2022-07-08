@@ -26,12 +26,12 @@
 #include <linux/atomic.h>
 #include <linux/gfp.h>
 #include <linux/device/bus.h>
-#include <linux/pm.h>
-#include <linux/device/driver.h>
-#if 0
-#include <linux/uidgid.h>
-#include <linux/overflow.h>
 #include <linux/device/class.h>
+#include <linux/device/driver.h>
+#include <linux/pm.h>
+#include <linux/uidgid.h>
+#if 0
+#include <linux/overflow.h>
 #include <asm/device.h>
 #endif
 
@@ -246,5 +246,14 @@ int devres_destroy(struct device *dev, dr_release_t release,
                    dr_match_t match, void *match_data);
 int devres_release(struct device *dev, dr_release_t release,
                    dr_match_t match, void *match_data);
+
+static inline struct device_node *dev_of_node(struct device *dev)
+{
+    return dev->of_node;
+}
+
+int  __must_check device_attach(struct device *dev);
+int __must_check driver_attach(struct device_driver *drv);
+void device_initial_probe(struct device *dev);
 
 #endif /* _DEVICE_H_ */

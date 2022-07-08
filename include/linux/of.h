@@ -468,4 +468,23 @@ extern int
 of_property_match_string(const struct device_node *np, const char *propname,
                          const char *string);
 
+#define for_each_available_child_of_node(parent, child) \
+    for (child = of_get_next_available_child(parent, NULL); child != NULL; \
+         child = of_get_next_available_child(parent, child))
+
+extern struct device_node *
+of_get_next_available_child(const struct device_node *node,
+                            struct device_node *prev);
+
+static inline int of_get_available_child_count(const struct device_node *np)
+{
+    struct device_node *child;
+    int num = 0;
+
+    for_each_available_child_of_node(np, child)
+        num++;
+
+    return num;
+}
+
 #endif /* _LINUX_OF_H */

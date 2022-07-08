@@ -313,11 +313,101 @@ int device_add(struct device *dev)
         goto Error;
     }
 
+#if 0
+    /* notify platform of device entry */
+    device_platform_notify(dev);
+
+    error = device_create_file(dev, &dev_attr_uevent);
+    if (error)
+        goto attrError;
+
+    error = device_add_class_symlinks(dev);
+    if (error)
+        goto SymlinkError;
+    error = device_add_attrs(dev);
+    if (error)
+        goto AttrsError;
+#endif
+
     error = bus_add_device(dev);
     if (error)
         goto BusError;
 
-    pr_warn("%s: %s END!\n", __func__, dev_name(dev));
+#if 0
+    error = dpm_sysfs_add(dev);
+    if (error)
+        goto DPMError;
+    device_pm_add(dev);
+
+    if (MAJOR(dev->devt)) {
+        error = device_create_file(dev, &dev_attr_dev);
+        if (error)
+            goto DevAttrError;
+
+        error = device_create_sys_dev_entry(dev);
+        if (error)
+            goto SysEntryError;
+
+        devtmpfs_create_node(dev);
+    }
+
+    /* Notify clients of device addition.  This call must come
+     * after dpm_sysfs_add() and before kobject_uevent().
+     */
+    if (dev->bus)
+        blocking_notifier_call_chain(&dev->bus->p->bus_notifier,
+                         BUS_NOTIFY_ADD_DEVICE, dev);
+
+    kobject_uevent(&dev->kobj, KOBJ_ADD);
+#endif
+
+    /*
+     * Check if any of the other devices (consumers) have been waiting for
+     * this device (supplier) to be added so that they can create a device
+     * link to it.
+     *
+     * This needs to happen after device_pm_add() because device_link_add()
+     * requires the supplier be registered before it's called.
+     *
+     * But this also needs to happen before bus_probe_device() to make sure
+     * waiting consumers can link to it before the driver is bound to the
+     * device and the driver sync_state callback is called for this device.
+     */
+    if (dev->fwnode && !dev->fwnode->dev) {
+        dev->fwnode->dev = dev;
+#if 0
+        fw_devlink_link_device(dev);
+#endif
+    }
+
+    bus_probe_device(dev);
+
+#if 0
+    /*
+     * If all driver registration is done and a newly added device doesn't
+     * match with any driver, don't block its consumers from probing in
+     * case the consumer device is able to operate without this supplier.
+     */
+    if (dev->fwnode && fw_devlink_drv_reg_done && !dev->can_match)
+        fw_devlink_unblock_consumers(dev);
+#endif
+
+    if (parent)
+        klist_add_tail(&dev->p->knode_parent, &parent->p->klist_children);
+
+    if (dev->class) {
+        mutex_lock(&dev->class->p->mutex);
+        /* tie the class to the device */
+        klist_add_tail(&dev->p->knode_class, &dev->class->p->klist_devices);
+
+#if 0
+        /* notify any interfaces that the device is here */
+        list_for_each_entry(class_intf, &dev->class->p->interfaces, node)
+            if (class_intf->add_dev)
+                class_intf->add_dev(dev, class_intf);
+#endif
+        mutex_unlock(&dev->class->p->mutex);
+    }
 
  done:
     put_device(dev);

@@ -454,3 +454,15 @@ int driver_attach(struct device_driver *drv)
     return bus_for_each_dev(drv->bus, NULL, drv, __driver_attach);
 }
 EXPORT_SYMBOL_GPL(driver_attach);
+
+static int __device_attach(struct device *dev, bool allow_async)
+{
+    int ret = 0;
+
+    panic("%s: END!\n", __func__);
+}
+
+void device_initial_probe(struct device *dev)
+{
+    __device_attach(dev, true);
+}

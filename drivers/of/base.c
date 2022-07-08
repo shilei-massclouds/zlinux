@@ -915,3 +915,35 @@ of_find_matching_node_and_match(struct device_node *from,
     return np;
 }
 EXPORT_SYMBOL(of_find_matching_node_and_match);
+
+/**
+ * of_get_next_available_child - Find the next available child node
+ * @node:   parent node
+ * @prev:   previous child of the parent node, or NULL to get first
+ *
+ * This function is like of_get_next_child(), except that it
+ * automatically skips any disabled nodes (i.e. status = "disabled").
+ */
+struct device_node *
+of_get_next_available_child(const struct device_node *node,
+                            struct device_node *prev)
+{
+    struct device_node *next;
+    unsigned long flags;
+
+    if (!node)
+        return NULL;
+
+    raw_spin_lock_irqsave(&devtree_lock, flags);
+    next = prev ? prev->sibling : node->child;
+    for (; next; next = next->sibling) {
+        if (!__of_device_is_available(next))
+            continue;
+        if (of_node_get(next))
+            break;
+    }
+    of_node_put(prev);
+    raw_spin_unlock_irqrestore(&devtree_lock, flags);
+    return next;
+}
+EXPORT_SYMBOL(of_get_next_available_child);

@@ -48,6 +48,23 @@
 #define BITS_PER_XA_VALUE   (BITS_PER_LONG - 1)
 
 /**
+ * xas_for_each() - Iterate over a range of an XArray.
+ * @xas: XArray operation state.
+ * @entry: Entry retrieved from the array.
+ * @max: Maximum index to retrieve from array.
+ *
+ * The loop body will be executed for each entry present in the xarray
+ * between the current xas position and @max.  @entry will be set to
+ * the entry retrieved from the xarray.  It is safe to delete entries
+ * from the array in the loop body.  You should hold either the RCU lock
+ * or the xa_lock while iterating.  If you need to drop the lock, call
+ * xas_pause() first.
+ */
+#define xas_for_each(xas, entry, max) \
+    for (entry = xas_find(xas, max); entry; \
+         entry = xas_next_entry(xas, max))
+
+/**
  * xa_mk_value() - Create an XArray entry from an integer.
  * @v: Value to store in XArray.
  *

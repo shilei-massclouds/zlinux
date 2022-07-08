@@ -69,6 +69,22 @@ static struct bus_type virtio_bus = {
     .remove     = virtio_dev_remove,
 };
 
+static int virtio_device_of_init(struct virtio_device *dev)
+{
+    struct device_node *np, *pnode = dev_of_node(dev->dev.parent);
+    char compat[] = "virtio,deviceXXXXXXXX";
+    int ret, count;
+
+    if (!pnode)
+        return 0;
+
+    count = of_get_available_child_count(pnode);
+    if (!count)
+        return 0;
+
+    panic("%s: count(%d) END!\n", __func__, count);
+}
+
 /**
  * register_virtio_device - register virtio device
  * @dev        : virtio device to be registered
@@ -90,7 +106,36 @@ int register_virtio_device(struct virtio_device *dev)
     if (err < 0)
         goto out;
 
-    panic("%s: END!\n", __func__);
+    dev->index = err;
+    dev_set_name(&dev->dev, "virtio%u", dev->index);
+
+    err = virtio_device_of_init(dev);
+    if (err)
+        goto out_ida_remove;
+
+    spin_lock_init(&dev->config_lock);
+    dev->config_enabled = false;
+    dev->config_change_pending = false;
+
+    /* We always start by resetting the device, in case a previous
+     * driver messed it up.  This also tests that code path a little. */
+    dev->config->reset(dev);
+
+    /* Acknowledge that we've seen the device. */
+    virtio_add_status(dev, VIRTIO_CONFIG_S_ACKNOWLEDGE);
+
+    INIT_LIST_HEAD(&dev->vqs);
+    spin_lock_init(&dev->vqs_list_lock);
+
+    /*
+     * device_add() causes the bus infrastructure to look for a matching
+     * driver.
+     */
+    err = device_add(&dev->dev);
+    if (err)
+        goto out_of_node_put;
+
+    panic("%s: dev_index(%d) END!\n", __func__, dev->index);
     return 0;
 
  out_of_node_put:
@@ -106,9 +151,22 @@ EXPORT_SYMBOL_GPL(register_virtio_device);
 void virtio_add_status(struct virtio_device *dev, unsigned int status)
 {
     might_sleep();
-    panic("%s: END!\n", __func__);
-#if 0
     dev->config->set_status(dev, dev->config->get_status(dev) | status);
-#endif
 }
 EXPORT_SYMBOL_GPL(virtio_add_status);
+
+static int virtio_init(void)
+{
+    if (bus_register(&virtio_bus) != 0)
+        panic("virtio bus registration failed");
+    return 0;
+}
+
+static void __exit virtio_exit(void)
+{
+    bus_unregister(&virtio_bus);
+    ida_destroy(&virtio_index_ida);
+}
+
+core_initcall(virtio_init);
+module_exit(virtio_exit);

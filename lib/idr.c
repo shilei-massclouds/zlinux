@@ -254,3 +254,55 @@ int ida_alloc_range(struct ida *ida, unsigned int min, unsigned int max,
     return -ENOSPC;
 }
 EXPORT_SYMBOL(ida_alloc_range);
+
+/**
+ * ida_free() - Release an allocated ID.
+ * @ida: IDA handle.
+ * @id: Previously allocated ID.
+ *
+ * Context: Any context. It is safe to call this function without
+ * locking in your code.
+ */
+void ida_free(struct ida *ida, unsigned int id)
+{
+    XA_STATE(xas, &ida->xa, id / IDA_BITMAP_BITS);
+    unsigned bit = id % IDA_BITMAP_BITS;
+    struct ida_bitmap *bitmap;
+    unsigned long flags;
+
+    BUG_ON((int)id < 0);
+
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL(ida_free);
+
+/**
+ * ida_destroy() - Free all IDs.
+ * @ida: IDA handle.
+ *
+ * Calling this function frees all IDs and releases all resources used
+ * by an IDA.  When this call returns, the IDA is empty and can be reused
+ * or freed.  If the IDA is already empty, there is no need to call this
+ * function.
+ *
+ * Context: Any context. It is safe to call this function without
+ * locking in your code.
+ */
+void ida_destroy(struct ida *ida)
+{
+    XA_STATE(xas, &ida->xa, 0);
+    struct ida_bitmap *bitmap;
+    unsigned long flags;
+
+    panic("%s: END!\n", __func__);
+#if 0
+    xas_lock_irqsave(&xas, flags);
+    xas_for_each(&xas, bitmap, ULONG_MAX) {
+        if (!xa_is_value(bitmap))
+            kfree(bitmap);
+        xas_store(&xas, NULL);
+    }
+    xas_unlock_irqrestore(&xas, flags);
+#endif
+}
+EXPORT_SYMBOL(ida_destroy);

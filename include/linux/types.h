@@ -126,6 +126,14 @@ typedef void (*rcu_callback_t)(struct rcu_head *head);
  */
 typedef unsigned long irq_hw_number_t;
 
+typedef __kernel_mode_t     mode_t;
+typedef unsigned short      umode_t;
+
+typedef __kernel_uid32_t    uid_t;
+typedef __kernel_gid32_t    gid_t;
+typedef __kernel_uid16_t    uid16_t;
+typedef __kernel_gid16_t    gid16_t;
+
 #endif /*  __ASSEMBLY__ */
 
 #endif /* _LINUX_TYPES_H */

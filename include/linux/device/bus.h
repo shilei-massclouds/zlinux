@@ -120,4 +120,6 @@ extern int __must_check bus_register(struct bus_type *bus);
 int bus_for_each_dev(struct bus_type *bus, struct device *start, void *data,
                      int (*fn)(struct device *dev, void *data));
 
+extern void bus_unregister(struct bus_type *bus);
+
 #endif /* _DEVICE_BUS_H_ */

@@ -26,7 +26,7 @@
 //#include <linux/wait.h>
 #include <linux/atomic.h>
 //#include <linux/workqueue.h>
-//#include <linux/uidgid.h>
+#include <linux/uidgid.h>
 
 #define UEVENT_NUM_ENVP         64      /* number of env pointers */
 #define UEVENT_BUFFER_SIZE      2048    /* buffer for the variables */

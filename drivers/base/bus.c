@@ -88,7 +88,6 @@ int bus_add_device(struct device *dev)
     int error = 0;
 
     if (bus) {
-        pr_info("bus: '%s': add device %s\n", bus->name, dev_name(dev));
 #if 0
         error = device_add_groups(dev, bus->dev_groups);
         if (error)
@@ -344,6 +343,57 @@ int bus_for_each_dev(struct bus_type *bus, struct device *start,
         error = fn(dev, data);
     klist_iter_exit(&i);
     return error;
+}
+
+/**
+ * bus_unregister - remove a bus from the system
+ * @bus: bus.
+ *
+ * Unregister the child subsystems and the bus itself.
+ * Finally, we call bus_put() to release the refcount
+ */
+void bus_unregister(struct bus_type *bus)
+{
+    pr_debug("bus: '%s': unregistering\n", bus->name);
+    if (bus->dev_root)
+        device_unregister(bus->dev_root);
+#if 0
+    bus_remove_groups(bus, bus->bus_groups);
+    remove_probe_files(bus);
+#endif
+    kset_unregister(bus->p->drivers_kset);
+    kset_unregister(bus->p->devices_kset);
+#if 0
+    bus_remove_file(bus, &bus_attr_uevent);
+#endif
+    kset_unregister(&bus->p->subsys);
+}
+EXPORT_SYMBOL_GPL(bus_unregister);
+
+/**
+ * bus_probe_device - probe drivers for a new device
+ * @dev: device to probe
+ *
+ * - Automatically probe for a driver if the bus allows it.
+ */
+void bus_probe_device(struct device *dev)
+{
+    struct bus_type *bus = dev->bus;
+    struct subsys_interface *sif;
+
+    if (!bus)
+        return;
+
+    if (bus->p->drivers_autoprobe)
+        device_initial_probe(dev);
+
+#if 0
+    mutex_lock(&bus->p->mutex);
+    list_for_each_entry(sif, &bus->p->interfaces, node)
+        if (sif->add_dev)
+            sif->add_dev(dev, sif);
+    mutex_unlock(&bus->p->mutex);
+#endif
 }
 
 int __init buses_init(void)
