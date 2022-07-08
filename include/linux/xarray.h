@@ -564,4 +564,16 @@ xa_parent_locked(const struct xarray *xa, const struct xa_node *node)
 
 bool xas_nomem(struct xa_state *, gfp_t);
 
+/**
+ * xa_to_value() - Get value stored in an XArray entry.
+ * @entry: XArray entry.
+ *
+ * Context: Any context.
+ * Return: The value stored in the XArray entry.
+ */
+static inline unsigned long xa_to_value(const void *entry)
+{
+    return (unsigned long)entry >> 1;
+}
+
 #endif /* _LINUX_XARRAY_H */

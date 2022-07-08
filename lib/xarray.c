@@ -370,7 +370,15 @@ static int xas_expand(struct xa_state *xas, void *head)
     }
     xas->xa_node = NULL;
 
-    panic("%s: max(%lu) END!\n", __func__, max);
+    printk("%s: 3 max(%lx)\n", __func__, max);
+    while (max > max_index(head)) {
+        xa_mark_t mark = 0;
+
+        panic("%s: max(%lu) END!\n", __func__, max);
+    }
+
+    xas->xa_node = node;
+    return shift;
 }
 
 static void *xas_alloc(struct xa_state *xas, unsigned int shift)

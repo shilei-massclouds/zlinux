@@ -89,7 +89,6 @@ int driver_register(struct device_driver *drv)
     kobject_uevent(&drv->p->kobj, KOBJ_ADD);
 #endif
 
-    panic("%s: END!\n", __func__);
     return ret;
 }
 EXPORT_SYMBOL_GPL(driver_register);

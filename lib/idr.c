@@ -208,6 +208,19 @@ int ida_alloc_range(struct ida *ida, unsigned int min, unsigned int max,
         goto nospc;
 
     if (xa_is_value(bitmap)) {
+        unsigned long tmp = xa_to_value(bitmap);
+
+        if (bit < BITS_PER_XA_VALUE) {
+            bit = find_next_zero_bit(&tmp, BITS_PER_XA_VALUE, bit);
+            if (xas.xa_index * IDA_BITMAP_BITS + bit > max)
+                goto nospc;
+            if (bit < BITS_PER_XA_VALUE) {
+                tmp |= 1UL << bit;
+                xas_store(&xas, xa_mk_value(tmp));
+                goto out;
+            }
+        }
+
         panic("%s: xa for value NOT SUPPORTED!\n", __func__);
     }
 
