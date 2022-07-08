@@ -135,7 +135,6 @@ int register_virtio_device(struct virtio_device *dev)
     if (err)
         goto out_of_node_put;
 
-    panic("%s: dev_index(%d) END!\n", __func__, dev->index);
     return 0;
 
  out_of_node_put:

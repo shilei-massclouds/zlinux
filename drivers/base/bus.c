@@ -396,6 +396,56 @@ void bus_probe_device(struct device *dev)
 #endif
 }
 
+static struct device_driver *next_driver(struct klist_iter *i)
+{
+    struct klist_node *n = klist_next(i);
+    struct driver_private *drv_priv;
+
+    if (n) {
+        drv_priv = container_of(n, struct driver_private, knode_bus);
+        return drv_priv->driver;
+    }
+    return NULL;
+}
+
+/**
+ * bus_for_each_drv - driver iterator
+ * @bus: bus we're dealing with.
+ * @start: driver to start iterating on.
+ * @data: data to pass to the callback.
+ * @fn: function to call for each driver.
+ *
+ * This is nearly identical to the device iterator above.
+ * We iterate over each driver that belongs to @bus, and call
+ * @fn for each. If @fn returns anything but 0, we break out
+ * and return it. If @start is not NULL, we use it as the head
+ * of the list.
+ *
+ * NOTE: we don't return the driver that returns a non-zero
+ * value, nor do we leave the reference count incremented for that
+ * driver. If the caller needs to know that info, it must set it
+ * in the callback. It must also be sure to increment the refcount
+ * so it doesn't disappear before returning to the caller.
+ */
+int bus_for_each_drv(struct bus_type *bus, struct device_driver *start,
+                     void *data, int (*fn)(struct device_driver *, void *))
+{
+    struct klist_iter i;
+    struct device_driver *drv;
+    int error = 0;
+
+    if (!bus)
+        return -EINVAL;
+
+    klist_iter_init_node(&bus->p->klist_drivers, &i,
+                         start ? &start->p->knode_bus : NULL);
+    while ((drv = next_driver(&i)) && !error)
+        error = fn(drv, data);
+    klist_iter_exit(&i);
+    return error;
+}
+EXPORT_SYMBOL_GPL(bus_for_each_drv);
+
 int __init buses_init(void)
 {
     bus_kset = kset_create_and_add("bus", &bus_uevent_ops, NULL);

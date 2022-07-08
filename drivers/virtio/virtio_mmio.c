@@ -288,7 +288,6 @@ static int virtio_mmio_probe(struct platform_device *pdev)
     if (rc)
         put_device(&vm_dev->vdev.dev);
 
-    panic("%s: END!\n", __func__);
     return rc;
 }
 
