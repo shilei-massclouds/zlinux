@@ -18,6 +18,38 @@
 #include <asm/mmiowb.h>
 //#include <asm-generic/pci_iomap.h>
 
+#ifndef ioread8
+#define ioread8 ioread8
+static inline u8 ioread8(const volatile void __iomem *addr)
+{
+    return readb(addr);
+}
+#endif
+
+#ifndef ioread16
+#define ioread16 ioread16
+static inline u16 ioread16(const volatile void __iomem *addr)
+{
+    return readw(addr);
+}
+#endif
+
+#ifndef ioread32
+#define ioread32 ioread32
+static inline u32 ioread32(const volatile void __iomem *addr)
+{
+    return readl(addr);
+}
+#endif
+
+#ifndef ioread64
+#define ioread64 ioread64
+static inline u64 ioread64(const volatile void __iomem *addr)
+{
+    return readq(addr);
+}
+#endif
+
 #ifdef __KERNEL__
 
 #ifndef phys_to_virt

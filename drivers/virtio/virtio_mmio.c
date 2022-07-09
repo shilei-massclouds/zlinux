@@ -64,11 +64,9 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/virtio.h>
+#include <linux/virtio_ring.h>
 #include <linux/virtio_config.h>
 #include <uapi/linux/virtio_mmio.h>
-#if 0
-#include <linux/virtio_ring.h>
-#endif
 #include <linux/mod_devicetable.h>
 
 #define to_virtio_mmio_device(_plat_dev) \
@@ -98,7 +96,43 @@ static void virtio_mmio_release_dev(struct device *_d)
 static void vm_get(struct virtio_device *vdev, unsigned offset,
                    void *buf, unsigned len)
 {
-    panic("%s: END!\n", __func__);
+    struct virtio_mmio_device *vm_dev = to_virtio_mmio_device(vdev);
+    void __iomem *base = vm_dev->base + VIRTIO_MMIO_CONFIG;
+    u8 b;
+    __le16 w;
+    __le32 l;
+
+    if (vm_dev->version == 1) {
+        u8 *ptr = buf;
+        int i;
+
+        for (i = 0; i < len; i++)
+            ptr[i] = readb(base + offset + i);
+        return;
+    }
+
+    switch (len) {
+    case 1:
+        b = readb(base + offset);
+        memcpy(buf, &b, sizeof b);
+        break;
+    case 2:
+        w = cpu_to_le16(readw(base + offset));
+        memcpy(buf, &w, sizeof w);
+        break;
+    case 4:
+        l = cpu_to_le32(readl(base + offset));
+        memcpy(buf, &l, sizeof l);
+        break;
+    case 8:
+        l = cpu_to_le32(readl(base + offset));
+        memcpy(buf, &l, sizeof l);
+        l = cpu_to_le32(ioread32(base + offset + sizeof l));
+        memcpy(buf + sizeof l, &l, sizeof l);
+        break;
+    default:
+        BUG();
+    }
 }
 
 static void vm_set(struct virtio_device *vdev, unsigned offset,
@@ -185,7 +219,27 @@ static u64 vm_get_features(struct virtio_device *vdev)
 
 static int vm_finalize_features(struct virtio_device *vdev)
 {
-    panic("%s: END!\n", __func__);
+    struct virtio_mmio_device *vm_dev = to_virtio_mmio_device(vdev);
+
+    /* Give virtio_ring a chance to accept features. */
+    vring_transport_features(vdev);
+
+    /* Make sure there are no mixed devices */
+    if (vm_dev->version == 2 && !__virtio_test_bit(vdev, VIRTIO_F_VERSION_1)) {
+        pr_err("New virtio-mmio devices (version 2) must provide "
+               "VIRTIO_F_VERSION_1 feature!\n");
+        return -EINVAL;
+    }
+
+    writel(1, vm_dev->base + VIRTIO_MMIO_DRIVER_FEATURES_SEL);
+    writel((u32)(vdev->features >> 32),
+           vm_dev->base + VIRTIO_MMIO_DRIVER_FEATURES);
+
+    writel(0, vm_dev->base + VIRTIO_MMIO_DRIVER_FEATURES_SEL);
+    writel((u32)vdev->features,
+           vm_dev->base + VIRTIO_MMIO_DRIVER_FEATURES);
+
+    return 0;
 }
 
 static const char *vm_bus_name(struct virtio_device *vdev)

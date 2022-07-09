@@ -104,4 +104,31 @@ static inline u32 __raw_readl(const volatile void __iomem *addr)
 #define writel(v, c) \
     ({ __io_bw(); writel_cpu((v), (c)); __io_aw(); })
 
+#define readq_cpu(c) \
+    ({ u64 __r = le64_to_cpu((__force __le64)__raw_readq(c)); __r; })
+
+#define writeq_cpu(v, c) \
+    ((void)__raw_writeq((__force u64)cpu_to_le64(v), (c)))
+
+#define readq(c) \
+    ({ u64 __v; __io_br(); __v = readq_cpu(c); __io_ar(__v); __v; })
+
+#define writeq(v, c) \
+    ({ __io_bw(); writeq_cpu((v), (c)); __io_aw(); })
+
+#define __raw_readq __raw_readq
+static inline u64 __raw_readq(const volatile void __iomem *addr)
+{
+    u64 val;
+
+    asm volatile("ld %0, 0(%1)" : "=r" (val) : "r" (addr));
+    return val;
+}
+
+#define __raw_writeq __raw_writeq
+static inline void __raw_writeq(u64 val, volatile void __iomem *addr)
+{
+    asm volatile("sd %0, 0(%1)" : : "r" (val), "r" (addr));
+}
+
 #endif /* _ASM_RISCV_MMIO_H */

@@ -34,6 +34,26 @@ static int virtio_dev_match(struct device *_dv, struct device_driver *_dr)
     return 0;
 }
 
+/* Do some validation, then set FEATURES_OK */
+static int virtio_features_ok(struct virtio_device *dev)
+{
+    unsigned status;
+    int ret;
+
+    might_sleep();
+
+    if (!virtio_has_feature(dev, VIRTIO_F_VERSION_1))
+        return 0;
+
+    virtio_add_status(dev, VIRTIO_CONFIG_S_FEATURES_OK);
+    status = dev->config->get_status(dev);
+    if (!(status & VIRTIO_CONFIG_S_FEATURES_OK)) {
+        pr_err("virtio: device refuses features: %x\n", status);
+        return -ENODEV;
+    }
+    return 0;
+}
+
 static int virtio_dev_probe(struct device *_d)
 {
     int err, i;
@@ -74,7 +94,44 @@ static int virtio_dev_probe(struct device *_d)
     else
         dev->features = driver_features_legacy & device_features;
 
+    /* Transport features always preserved to pass to finalize_features. */
+    for (i = VIRTIO_TRANSPORT_F_START; i < VIRTIO_TRANSPORT_F_END; i++)
+        if (device_features & (1ULL << i))
+            __virtio_set_bit(dev, i);
+
+    err = dev->config->finalize_features(dev);
+    if (err)
+        goto err;
+
+    if (drv->validate) {
+        u64 features = dev->features;
+
+        err = drv->validate(dev);
+        if (err)
+            goto err;
+
+        /* Did validation change any features? Then write them again. */
+        if (features != dev->features) {
+            err = dev->config->finalize_features(dev);
+            if (err)
+                goto err;
+        }
+    }
+
+    err = virtio_features_ok(dev);
+    if (err)
+        goto err;
+
+    err = drv->probe(dev);
+    if (err)
+        goto err;
+
     panic("%s: END!\n", __func__);
+    return 0;
+
+ err:
+    virtio_add_status(dev, VIRTIO_CONFIG_S_FAILED);
+    return err;
 }
 
 static void virtio_dev_remove(struct device *_d)
@@ -191,6 +248,26 @@ void virtio_add_status(struct virtio_device *dev, unsigned int status)
     dev->config->set_status(dev, dev->config->get_status(dev) | status);
 }
 EXPORT_SYMBOL_GPL(virtio_add_status);
+
+void virtio_check_driver_offered_feature(const struct virtio_device *vdev,
+                                         unsigned int fbit)
+{
+    unsigned int i;
+    struct virtio_driver *drv = drv_to_virtio(vdev->dev.driver);
+
+    for (i = 0; i < drv->feature_table_size; i++)
+        if (drv->feature_table[i] == fbit)
+            return;
+
+    if (drv->feature_table_legacy) {
+        for (i = 0; i < drv->feature_table_size_legacy; i++)
+            if (drv->feature_table_legacy[i] == fbit)
+                return;
+    }
+
+    BUG();
+}
+EXPORT_SYMBOL_GPL(virtio_check_driver_offered_feature);
 
 int register_virtio_driver(struct virtio_driver *driver)
 {
