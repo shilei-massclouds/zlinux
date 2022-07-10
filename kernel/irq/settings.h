@@ -95,3 +95,33 @@ static inline void irq_settings_set_level(struct irq_desc *desc)
 {
     desc->status_use_accessors |= _IRQ_LEVEL;
 }
+
+static inline bool irq_settings_can_request(struct irq_desc *desc)
+{
+    return !(desc->status_use_accessors & _IRQ_NOREQUEST);
+}
+
+static inline bool irq_settings_is_nested_thread(struct irq_desc *desc)
+{
+    return desc->status_use_accessors & _IRQ_NESTED_THREAD;
+}
+
+static inline bool irq_settings_can_thread(struct irq_desc *desc)
+{
+    return !(desc->status_use_accessors & _IRQ_NOTHREAD);
+}
+
+static inline void irq_settings_set_no_debug(struct irq_desc *desc)
+{
+    desc->status_use_accessors |= _IRQ_NO_DEBUG;
+}
+
+static inline void irq_settings_set_no_balancing(struct irq_desc *desc)
+{
+    desc->status_use_accessors |= _IRQ_NO_BALANCING;
+}
+
+static inline bool irq_settings_can_autoenable(struct irq_desc *desc)
+{
+    return !(desc->status_use_accessors & _IRQ_NOAUTOEN);
+}

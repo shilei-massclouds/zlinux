@@ -354,8 +354,6 @@ unsigned int irq_create_fwspec_mapping(struct irq_fwspec *fwspec)
      */
     virq = irq_find_mapping(domain, hwirq);
     if (virq) {
-        panic("%s: has virq!\n", __func__);
-#if 0
         /*
          * If the trigger type is not specified or matches the
          * current trigger type then we are done so return the
@@ -364,6 +362,8 @@ unsigned int irq_create_fwspec_mapping(struct irq_fwspec *fwspec)
         if (type == IRQ_TYPE_NONE || type == irq_get_trigger_type(virq))
             return virq;
 
+        panic("%s: has virq!\n", __func__);
+#if 0
         /*
          * If the trigger type has not been set yet, then set
          * it now and return the interrupt number.
@@ -450,12 +450,9 @@ __irq_resolve_mapping(struct irq_domain *domain,
         data = radix_tree_lookup(&domain->revmap_tree, hwirq);
 
     if (likely(data)) {
-        panic("%s: has data!\n", __func__);
-#if 0
         desc = irq_data_to_desc(data);
         if (irq)
             *irq = data->irq;
-#endif
     }
 
     rcu_read_unlock();

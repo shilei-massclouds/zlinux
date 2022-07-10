@@ -67,4 +67,8 @@ struct module {
 #define MODULE_DEVICE_TABLE(type, name)
 #endif
 
+/* This is the Right Way to get a module: if it fails, it's being removed,
+ * so pretend it's not there. */
+extern bool try_module_get(struct module *module);
+
 #endif /* _LINUX_MODULE_H */

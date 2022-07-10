@@ -28,6 +28,8 @@
 #define IRQ_START_FORCE true
 #define IRQ_START_COND  false
 
+extern bool noirqdebug;
+
 /*
  * Bit masks for desc->core_internal_state__do_not_mess_with_it
  *
@@ -55,6 +57,22 @@ enum {
     IRQS_NMI        = 0x00002000,
 };
 
+/*
+ * Bits used by threaded handlers:
+ * IRQTF_RUNTHREAD - signals that the interrupt handler thread should run
+ * IRQTF_WARNED    - warning "IRQ_WAKE_THREAD w/o thread_fn" has been printed
+ * IRQTF_AFFINITY  - irq thread is requested to adjust affinity
+ * IRQTF_FORCED_THREAD  - irq action is force threaded
+ * IRQTF_READY     - signals that irq thread is ready
+ */
+enum {
+    IRQTF_RUNTHREAD,
+    IRQTF_WARNED,
+    IRQTF_AFFINITY,
+    IRQTF_FORCED_THREAD,
+    IRQTF_READY,
+};
+
 extern int __irq_set_trigger(struct irq_desc *desc, unsigned long flags);
 extern void __disable_irq(struct irq_desc *desc);
 extern void __enable_irq(struct irq_desc *desc);
@@ -79,6 +97,11 @@ static inline void irqd_set_managed_shutdown(struct irq_data *d)
 static inline void irqd_clr_managed_shutdown(struct irq_data *d)
 {
     __irqd_to_state(d) &= ~IRQD_MANAGED_SHUTDOWN;
+}
+
+static inline bool irqd_has_set(struct irq_data *d, unsigned int mask)
+{
+    return __irqd_to_state(d) & mask;
 }
 
 #undef __irqd_to_state
@@ -179,3 +202,6 @@ extern int irq_do_set_affinity(struct irq_data *data,
                                const struct cpumask *dest, bool force);
 
 extern int irq_setup_affinity(struct irq_desc *desc);
+
+#define for_each_action_of_desc(desc, act)          \
+    for (act = desc->action; act; act = act->next)

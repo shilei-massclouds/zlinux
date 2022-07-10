@@ -28,6 +28,9 @@ extern unsigned int irq_create_of_mapping(struct of_phandle_args *irq_data);
  * implements it differently.  However, the prototype is the same for all,
  * so declare it here regardless of the CONFIG_OF_IRQ setting.
  */
-extern unsigned int irq_of_parse_and_map(struct device_node *node, int index);
+extern unsigned int
+irq_of_parse_and_map(struct device_node *node, int index);
+
+extern int of_irq_get(struct device_node *dev, int index);
 
 #endif /* __OF_IRQ_H */

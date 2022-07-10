@@ -12,10 +12,10 @@
 
 #include <linux/sched/mm.h>
 #include <linux/sched/debug.h>
+#include <linux/sched/isolation.h>
 #if 0
 #include <linux/sched/clock.h>
 #include <linux/sched/cputime.h>
-#include <linux/sched/isolation.h>
 #include <linux/sched/loadavg.h>
 #include <linux/sched/rseq_api.h>
 #include <linux/sched/task_stack.h>
@@ -66,3 +66,5 @@
 #include "swait.c"
 
 #include "stop_task.c"
+
+#include "isolation.c"

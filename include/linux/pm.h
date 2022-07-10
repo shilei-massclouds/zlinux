@@ -21,6 +21,8 @@
 #endif
 #include <linux/completion.h>
 
+struct device;
+
 /*
  * Callbacks for platform drivers to implement.
  */

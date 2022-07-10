@@ -69,6 +69,10 @@
 #include <uapi/linux/virtio_mmio.h>
 #include <linux/mod_devicetable.h>
 
+/* The alignment to use between consumer and producer parts of vring.
+ * Currently hardcoded to the page size. */
+#define VIRTIO_MMIO_VRING_ALIGN PAGE_SIZE
+
 #define to_virtio_mmio_device(_plat_dev) \
     container_of(_plat_dev, struct virtio_mmio_device, vdev)
 
@@ -82,6 +86,14 @@ struct virtio_mmio_device {
     /* a list of queues so we can dispatch IRQs */
     spinlock_t lock;
     struct list_head virtqueues;
+};
+
+struct virtio_mmio_vq_info {
+    /* the actual virtqueue */
+    struct virtqueue *vq;
+
+    /* the list node for the virtqueues list */
+    struct list_head node;
 };
 
 static void virtio_mmio_release_dev(struct device *_d)
@@ -141,6 +153,19 @@ static void vm_set(struct virtio_device *vdev, unsigned offset,
     panic("%s: END!\n", __func__);
 }
 
+/* Transport interface */
+
+/* the notify function used when creating a virt queue */
+static bool vm_notify(struct virtqueue *vq)
+{
+    struct virtio_mmio_device *vm_dev = to_virtio_mmio_device(vq->vdev);
+
+    /* We write the queue's selector into the notification register to
+     * signal the other end */
+    writel(vq->index, vm_dev->base + VIRTIO_MMIO_QUEUE_NOTIFY);
+    return true;
+}
+
 static u32 vm_generation(struct virtio_device *vdev)
 {
     struct virtio_mmio_device *vm_dev = to_virtio_mmio_device(vdev);
@@ -176,14 +201,10 @@ static void vm_reset(struct virtio_device *vdev)
     writel(0, vm_dev->base + VIRTIO_MMIO_STATUS);
 }
 
-static int vm_find_vqs(struct virtio_device *vdev, unsigned nvqs,
-                       struct virtqueue *vqs[],
-                       vq_callback_t *callbacks[],
-                       const char * const names[],
-                       const bool *ctx,
-                       struct irq_affinity *desc)
+/* Notify all virtqueues on an interrupt. */
+static irqreturn_t vm_interrupt(int irq, void *opaque)
 {
-    panic("%s: END!\n", __func__);
+    panic("%s: irq(%d) END!\n", __func__, irq);
 }
 
 static void vm_del_vqs(struct virtio_device *vdev)
@@ -198,6 +219,167 @@ static void vm_del_vqs(struct virtio_device *vdev)
 
     free_irq(platform_get_irq(vm_dev->pdev, 0), vm_dev);
 #endif
+}
+
+static struct virtqueue *
+vring_create_virtqueue_packed(unsigned int index,
+                              unsigned int num,
+                              unsigned int vring_align,
+                              struct virtio_device *vdev,
+                              bool weak_barriers,
+                              bool may_reduce_num,
+                              bool context,
+                              bool (*notify)(struct virtqueue *),
+                              void (*callback)(struct virtqueue *),
+                              const char *name)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static struct virtqueue *
+vring_create_virtqueue_split(unsigned int index,
+                             unsigned int num,
+                             unsigned int vring_align,
+                             struct virtio_device *vdev,
+                             bool weak_barriers,
+                             bool may_reduce_num,
+                             bool context,
+                             bool (*notify)(struct virtqueue *),
+                             void (*callback)(struct virtqueue *),
+                             const char *name)
+{
+    panic("%s: END!\n", __func__);
+}
+
+struct virtqueue *vring_create_virtqueue(
+    unsigned int index,
+    unsigned int num,
+    unsigned int vring_align,
+    struct virtio_device *vdev,
+    bool weak_barriers,
+    bool may_reduce_num,
+    bool context,
+    bool (*notify)(struct virtqueue *),
+    void (*callback)(struct virtqueue *),
+    const char *name)
+{
+
+    if (virtio_has_feature(vdev, VIRTIO_F_RING_PACKED))
+        return vring_create_virtqueue_packed(index, num, vring_align,
+                                             vdev, weak_barriers,
+                                             may_reduce_num, context,
+                                             notify, callback, name);
+
+    return vring_create_virtqueue_split(index, num, vring_align,
+                                        vdev, weak_barriers,
+                                        may_reduce_num, context,
+                                        notify, callback, name);
+}
+EXPORT_SYMBOL_GPL(vring_create_virtqueue);
+
+static struct virtqueue *
+vm_setup_vq(struct virtio_device *vdev, unsigned index,
+            void (*callback)(struct virtqueue *vq),
+            const char *name, bool ctx)
+{
+    struct virtio_mmio_device *vm_dev = to_virtio_mmio_device(vdev);
+    struct virtio_mmio_vq_info *info;
+    struct virtqueue *vq;
+    unsigned long flags;
+    unsigned int num;
+    int err;
+
+    if (!name)
+        return NULL;
+
+    /* Select the queue we're interested in */
+    writel(index, vm_dev->base + VIRTIO_MMIO_QUEUE_SEL);
+
+    /* Queue shouldn't already be set up. */
+    if (readl(vm_dev->base + (vm_dev->version == 1 ?
+                              VIRTIO_MMIO_QUEUE_PFN :
+                              VIRTIO_MMIO_QUEUE_READY))) {
+        err = -ENOENT;
+        goto error_available;
+    }
+
+    /* Allocate and fill out our active queue description */
+    info = kmalloc(sizeof(*info), GFP_KERNEL);
+    if (!info) {
+        err = -ENOMEM;
+        goto error_kmalloc;
+    }
+
+    num = readl(vm_dev->base + VIRTIO_MMIO_QUEUE_NUM_MAX);
+    if (num == 0) {
+        err = -ENOENT;
+        goto error_new_virtqueue;
+    }
+
+    /* Create the vring */
+    vq = vring_create_virtqueue(index, num, VIRTIO_MMIO_VRING_ALIGN,
+                                vdev, true, true, ctx, vm_notify,
+                                callback, name);
+    if (!vq) {
+        err = -ENOMEM;
+        goto error_new_virtqueue;
+    }
+
+    panic("%s: name(%s) num(%d) END!\n", __func__, name, num);
+    return vq;
+
+ error_bad_pfn:
+    vring_del_virtqueue(vq);
+
+ error_new_virtqueue:
+    if (vm_dev->version == 1) {
+        writel(0, vm_dev->base + VIRTIO_MMIO_QUEUE_PFN);
+    } else {
+        writel(0, vm_dev->base + VIRTIO_MMIO_QUEUE_READY);
+        WARN_ON(readl(vm_dev->base + VIRTIO_MMIO_QUEUE_READY));
+    }
+    kfree(info);
+error_kmalloc:
+error_available:
+    return ERR_PTR(err);
+
+}
+
+static int vm_find_vqs(struct virtio_device *vdev, unsigned nvqs,
+                       struct virtqueue *vqs[],
+                       vq_callback_t *callbacks[],
+                       const char * const names[],
+                       const bool *ctx,
+                       struct irq_affinity *desc)
+{
+    struct virtio_mmio_device *vm_dev = to_virtio_mmio_device(vdev);
+    int irq = platform_get_irq(vm_dev->pdev, 0);
+    int i, err, queue_idx = 0;
+
+    if (irq < 0)
+        return irq;
+
+    err = request_irq(irq, vm_interrupt, IRQF_SHARED,
+                      dev_name(&vdev->dev), vm_dev);
+    if (err)
+        return err;
+
+    for (i = 0; i < nvqs; ++i) {
+        if (!names[i]) {
+            vqs[i] = NULL;
+            continue;
+        }
+
+        vqs[i] = vm_setup_vq(vdev, queue_idx++, callbacks[i], names[i],
+                             ctx ? ctx[i] : false);
+        if (IS_ERR(vqs[i])) {
+            vm_del_vqs(vdev);
+            return PTR_ERR(vqs[i]);
+        }
+    }
+
+    panic("%s: irq(%d) END!\n", __func__, irq);
+    return 0;
 }
 
 /* Configuration interface */

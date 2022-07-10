@@ -9,4 +9,6 @@ extern int tsk_fork_get_node(struct task_struct *tsk);
 
 bool set_kthread_struct(struct task_struct *p);
 
+int kthread_stop(struct task_struct *k);
+
 #endif /* _LINUX_KTHREAD_H */

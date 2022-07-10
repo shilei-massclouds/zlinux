@@ -41,3 +41,9 @@ void vring_transport_features(struct virtio_device *vdev)
     }
 }
 EXPORT_SYMBOL_GPL(vring_transport_features);
+
+void vring_del_virtqueue(struct virtqueue *_vq)
+{
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL_GPL(vring_del_virtqueue);

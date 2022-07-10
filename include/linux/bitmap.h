@@ -149,6 +149,44 @@ bitmap_find_next_zero_area(unsigned long *map, unsigned long size,
     return bitmap_find_next_zero_area_off(map, size, start, nr, align_mask, 0);
 }
 
+int __bitmap_and(unsigned long *dst, const unsigned long *bitmap1,
+                 const unsigned long *bitmap2, unsigned int nbits);
+void __bitmap_or(unsigned long *dst, const unsigned long *bitmap1,
+                 const unsigned long *bitmap2, unsigned int nbits);
+
+static inline int
+bitmap_and(unsigned long *dst, const unsigned long *src1,
+           const unsigned long *src2, unsigned int nbits)
+{
+    if (small_const_nbits(nbits))
+        return (*dst = *src1 & *src2 & BITMAP_LAST_WORD_MASK(nbits)) != 0;
+    return __bitmap_and(dst, src1, src2, nbits);
+}
+
+static inline void
+bitmap_or(unsigned long *dst, const unsigned long *src1,
+          const unsigned long *src2, unsigned int nbits)
+{
+    if (small_const_nbits(nbits))
+        *dst = *src1 | *src2;
+    else
+        __bitmap_or(dst, src1, src2, nbits);
+}
+
+int __bitmap_intersects(const unsigned long *bitmap1,
+                        const unsigned long *bitmap2,
+                        unsigned int nbits);
+
+static inline int bitmap_intersects(const unsigned long *src1,
+                                    const unsigned long *src2,
+                                    unsigned int nbits)
+{
+    if (small_const_nbits(nbits))
+        return ((*src1 & *src2) & BITMAP_LAST_WORD_MASK(nbits)) != 0;
+    else
+        return __bitmap_intersects(src1, src2, nbits);
+}
+
 #endif /* __ASSEMBLY__ */
 
 #endif /* __LINUX_BITMAP_H */

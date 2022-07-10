@@ -372,4 +372,46 @@ zalloc_cpumask_var_node(cpumask_var_t *mask, gfp_t flags, int node)
     return true;
 }
 
+/**
+ * cpumask_and - *dstp = *src1p & *src2p
+ * @dstp: the cpumask result
+ * @src1p: the first input
+ * @src2p: the second input
+ *
+ * If *@dstp is empty, returns 0, else returns 1
+ */
+static inline int cpumask_and(struct cpumask *dstp,
+                              const struct cpumask *src1p,
+                              const struct cpumask *src2p)
+{
+    return bitmap_and(cpumask_bits(dstp), cpumask_bits(src1p),
+                      cpumask_bits(src2p), nr_cpumask_bits);
+}
+
+/**
+ * cpumask_or - *dstp = *src1p | *src2p
+ * @dstp: the cpumask result
+ * @src1p: the first input
+ * @src2p: the second input
+ */
+static inline void cpumask_or(struct cpumask *dstp,
+                              const struct cpumask *src1p,
+                              const struct cpumask *src2p)
+{
+    bitmap_or(cpumask_bits(dstp), cpumask_bits(src1p),
+              cpumask_bits(src2p), nr_cpumask_bits);
+}
+
+/**
+ * cpumask_intersects - (*src1p & *src2p) != 0
+ * @src1p: the first input
+ * @src2p: the second input
+ */
+static inline bool cpumask_intersects(const struct cpumask *src1p,
+                                      const struct cpumask *src2p)
+{
+    return bitmap_intersects(cpumask_bits(src1p), cpumask_bits(src2p),
+                             nr_cpumask_bits);
+}
+
 #endif /* __LINUX_CPUMASK_H */

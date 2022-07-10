@@ -25,6 +25,7 @@
 #include <uapi/linux/virtio_ring.h>
 
 #define PART_BITS 4
+#define VQ_NAME_LEN 16
 
 /* The maximum number of sg elements that fit into a virtqueue */
 #define VIRTIO_BLK_MAX_SG_ELEMS 32768
@@ -33,8 +34,17 @@
 static struct workqueue_struct *virtblk_wq;
 #endif
 
+static unsigned int num_request_queues;
+//module_param(num_request_queues, uint, 0644);
+
 static int major;
 static DEFINE_IDA(vd_index_ida);
+
+struct virtio_blk_vq {
+    struct virtqueue *vq;
+    spinlock_t lock;
+    char name[VQ_NAME_LEN];
+} ____cacheline_aligned_in_smp;
 
 struct virtio_blk {
     /*
@@ -62,10 +72,17 @@ struct virtio_blk {
     /* Ida index - used to track minor number allocations. */
     int index;
 
-#if 0
     /* num of vqs */
     int num_vqs;
     struct virtio_blk_vq *vqs;
+};
+
+struct virtblk_req {
+#if 0
+    struct virtio_blk_outhdr out_hdr;
+    u8 status;
+    struct sg_table sg_table;
+    struct scatterlist sg[];
 #endif
 };
 
@@ -88,9 +105,89 @@ static unsigned int features[] = {
     VIRTIO_BLK_F_MQ, VIRTIO_BLK_F_DISCARD, VIRTIO_BLK_F_WRITE_ZEROES,
 };
 
+static unsigned int virtblk_queue_depth;
+//module_param_named(queue_depth, virtblk_queue_depth, uint, 0444);
+
 static int minor_to_index(int minor)
 {
     return minor >> PART_BITS;
+}
+
+static void virtblk_done(struct virtqueue *vq)
+{
+    struct virtio_blk *vblk = vq->vdev->priv;
+    bool req_done = false;
+    int qid = vq->index;
+    struct virtblk_req *vbr;
+    unsigned long flags;
+    unsigned int len;
+
+    panic("%s: END!\n", __func__);
+}
+
+static int init_vq(struct virtio_blk *vblk)
+{
+    int err;
+    int i;
+    vq_callback_t **callbacks;
+    const char **names;
+    struct virtqueue **vqs;
+    unsigned short num_vqs;
+    struct virtio_device *vdev = vblk->vdev;
+    struct irq_affinity desc = { 0, };
+
+    err = virtio_cread_feature(vdev, VIRTIO_BLK_F_MQ,
+                               struct virtio_blk_config, num_queues,
+                               &num_vqs);
+    if (err)
+        num_vqs = 1;
+    if (!err && !num_vqs) {
+        pr_err("MQ advertised but zero queues reported\n");
+        return -EINVAL;
+    }
+
+    num_vqs = min_t(unsigned int,
+                    min_not_zero(num_request_queues, nr_cpu_ids),
+                    num_vqs);
+
+    vblk->vqs = kmalloc_array(num_vqs, sizeof(*vblk->vqs), GFP_KERNEL);
+    if (!vblk->vqs)
+        return -ENOMEM;
+
+    names = kmalloc_array(num_vqs, sizeof(*names), GFP_KERNEL);
+    callbacks = kmalloc_array(num_vqs, sizeof(*callbacks), GFP_KERNEL);
+    vqs = kmalloc_array(num_vqs, sizeof(*vqs), GFP_KERNEL);
+    if (!names || !callbacks || !vqs) {
+        err = -ENOMEM;
+        goto out;
+    }
+
+    for (i = 0; i < num_vqs; i++) {
+        callbacks[i] = virtblk_done;
+        snprintf(vblk->vqs[i].name, VQ_NAME_LEN, "req.%d", i);
+        names[i] = vblk->vqs[i].name;
+    }
+
+    /* Discover virtqueues and write information to configuration.  */
+    err = virtio_find_vqs(vdev, num_vqs, vqs, callbacks, names, &desc);
+    if (err)
+        goto out;
+
+    for (i = 0; i < num_vqs; i++) {
+        spin_lock_init(&vblk->vqs[i].lock);
+        vblk->vqs[i].vq = vqs[i];
+    }
+    vblk->num_vqs = num_vqs;
+
+    panic("%s: num_vqs(%d) END!\n", __func__, num_vqs);
+
+ out:
+    kfree(vqs);
+    kfree(callbacks);
+    kfree(names);
+    if (err)
+        kfree(vblk->vqs);
+    return err;
 }
 
 static int virtblk_probe(struct virtio_device *vdev)
@@ -141,6 +238,20 @@ static int virtblk_probe(struct virtio_device *vdev)
     INIT_WORK(&vblk->config_work, virtblk_config_changed_work);
 #endif
 
+    err = init_vq(vblk);
+    if (err)
+        goto out_free_vblk;
+
+    /* Default queue sizing is to fill the ring. */
+    if (!virtblk_queue_depth) {
+        queue_depth = vblk->vqs[0].vq->num_free;
+        /* ... but without indirect descs, we use 2 descs per req */
+        if (!virtio_has_feature(vdev, VIRTIO_RING_F_INDIRECT_DESC))
+            queue_depth /= 2;
+    } else {
+        queue_depth = virtblk_queue_depth;
+    }
+
     panic("%s: sg_elems(%d) END!\n", __func__, sg_elems);
     return 0;
 
@@ -152,9 +263,9 @@ out_free_tags:
 out_free_vq:
     vdev->config->del_vqs(vdev);
     kfree(vblk->vqs);
+#endif
 out_free_vblk:
     kfree(vblk);
-#endif
 out_free_index:
     ida_simple_remove(&vd_index_ida, index);
 out:

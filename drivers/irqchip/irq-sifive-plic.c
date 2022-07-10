@@ -108,6 +108,23 @@ static void plic_set_threshold(struct plic_handler *handler, u32 threshold)
     writel(threshold, handler->hart_base + CONTEXT_THRESHOLD);
 }
 
+static inline void plic_irq_toggle(const struct cpumask *mask,
+                                   struct irq_data *d, int enable)
+{
+    int cpu;
+    struct plic_priv *priv = irq_data_get_irq_chip_data(d);
+
+    writel(enable,
+           priv->regs + PRIORITY_BASE + d->hwirq * PRIORITY_PER_ID);
+    for_each_cpu(cpu, mask) {
+        struct plic_handler *handler = per_cpu_ptr(&plic_handlers, cpu);
+
+        if (handler->present &&
+            cpumask_test_cpu(cpu, &handler->priv->lmask))
+            plic_toggle(handler, d->hwirq, enable);
+    }
+}
+
 static void plic_irq_mask(struct irq_data *d)
 {
     panic("%s: END!\n", __func__);
@@ -120,8 +137,6 @@ static void plic_irq_mask(struct irq_data *d)
 
 static void plic_irq_unmask(struct irq_data *d)
 {
-    panic("%s: END!\n", __func__);
-#if 0
     struct cpumask amask;
     unsigned int cpu;
     struct plic_priv *priv = irq_data_get_irq_chip_data(d);
@@ -130,8 +145,8 @@ static void plic_irq_unmask(struct irq_data *d)
     cpu = cpumask_any_and(irq_data_get_affinity_mask(d), &amask);
     if (WARN_ON_ONCE(cpu >= nr_cpu_ids))
         return;
+
     plic_irq_toggle(cpumask_of(cpu), d, 1);
-#endif
 }
 
 static void plic_irq_eoi(struct irq_data *d)
@@ -153,8 +168,6 @@ static void plic_irq_eoi(struct irq_data *d)
 static int plic_set_affinity(struct irq_data *d,
                              const struct cpumask *mask_val, bool force)
 {
-    panic("%s: END!\n", __func__);
-#if 0
     unsigned int cpu;
     struct cpumask amask;
     struct plic_priv *priv = irq_data_get_irq_chip_data(d);
@@ -172,10 +185,7 @@ static int plic_set_affinity(struct irq_data *d,
     plic_irq_toggle(&priv->lmask, d, 0);
     plic_irq_toggle(cpumask_of(cpu), d, !irqd_irq_masked(d));
 
-    irq_data_update_effective_affinity(d, cpumask_of(cpu));
-
     return IRQ_SET_MASK_OK_DONE;
-#endif
 }
 
 static struct irq_chip plic_chip = {

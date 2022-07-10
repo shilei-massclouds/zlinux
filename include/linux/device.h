@@ -256,4 +256,7 @@ int  __must_check device_attach(struct device *dev);
 int __must_check driver_attach(struct device_driver *drv);
 void device_initial_probe(struct device *dev);
 
+int dev_err_probe(const struct device *dev,
+                  int err, const char *fmt, ...);
+
 #endif /* _DEVICE_H_ */

@@ -245,6 +245,11 @@ extern int irq_set_handler_data(unsigned int irq, void *data);
 
 #define __irqd_to_state(d) ACCESS_PRIVATE((d)->common, state_use_accessors)
 
+static inline bool irqd_is_setaffinity_pending(struct irq_data *d)
+{
+    return __irqd_to_state(d) & IRQD_SETAFFINITY_PENDING;
+}
+
 static inline void irqd_clr_activated(struct irq_data *d)
 {
     __irqd_to_state(d) &= ~IRQD_ACTIVATED;
@@ -503,7 +508,8 @@ extern int irq_set_percpu_devid_partition(unsigned int irq,
 
 extern void handle_percpu_devid_irq(struct irq_desc *desc);
 
-static inline struct cpumask *irq_data_get_affinity_mask(struct irq_data *d)
+static inline struct cpumask *
+irq_data_get_affinity_mask(struct irq_data *d)
 {
     return d->common->affinity;
 }
@@ -548,6 +554,17 @@ extern int irq_chip_retrigger_hierarchy(struct irq_data *data);
 static inline int irq_data_get_node(struct irq_data *d)
 {
     return irq_common_data_get_node(d->common);
+}
+
+static inline u32 irq_get_trigger_type(unsigned int irq)
+{
+    struct irq_data *d = irq_get_irq_data(irq);
+    return d ? irqd_get_trigger_type(d) : 0;
+}
+
+static inline void *irq_data_get_irq_chip_data(struct irq_data *d)
+{
+    return d->chip_data;
 }
 
 #include <linux/irqdesc.h>

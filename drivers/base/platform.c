@@ -340,3 +340,73 @@ void __iomem *devm_platform_ioremap_resource(struct platform_device *pdev,
     return devm_platform_get_and_ioremap_resource(pdev, index, NULL);
 }
 EXPORT_SYMBOL_GPL(devm_platform_ioremap_resource);
+
+/**
+ * platform_get_irq_optional - get an optional IRQ for a device
+ * @dev: platform device
+ * @num: IRQ number index
+ *
+ * Gets an IRQ for a platform device. Device drivers should check the return
+ * value for errors so as to not pass a negative integer value to the
+ * request_irq() APIs. This is the same as platform_get_irq(), except that it
+ * does not print an error message if an IRQ can not be obtained.
+ *
+ * For example::
+ *
+ *      int irq = platform_get_irq_optional(pdev, 0);
+ *      if (irq < 0)
+ *          return irq;
+ *
+ * Return: non-zero IRQ number on success, negative error number on failure.
+ */
+int platform_get_irq_optional(struct platform_device *dev,
+                              unsigned int num)
+{
+    int ret;
+    struct resource *r;
+
+    if (dev->dev.of_node) {
+        ret = of_irq_get(dev->dev.of_node, num);
+        if (ret > 0 || ret == -EPROBE_DEFER)
+            goto out;
+    }
+
+    panic("%s: END!\n", __func__);
+
+ out_not_found:
+    ret = -ENXIO;
+
+ out:
+    WARN(ret == 0, "0 is an invalid IRQ number\n");
+    return ret;
+}
+
+/**
+ * platform_get_irq - get an IRQ for a device
+ * @dev: platform device
+ * @num: IRQ number index
+ *
+ * Gets an IRQ for a platform device and prints an error message if finding the
+ * IRQ fails. Device drivers should check the return value for errors so as to
+ * not pass a negative integer value to the request_irq() APIs.
+ *
+ * For example::
+ *
+ *      int irq = platform_get_irq(pdev, 0);
+ *      if (irq < 0)
+ *          return irq;
+ *
+ * Return: non-zero IRQ number on success, negative error number on failure.
+ */
+int platform_get_irq(struct platform_device *dev, unsigned int num)
+{
+    int ret;
+
+    ret = platform_get_irq_optional(dev, num);
+    if (ret < 0)
+        return dev_err_probe(&dev->dev, ret,
+                             "IRQ index %u not found\n", num);
+
+    return ret;
+}
+EXPORT_SYMBOL_GPL(platform_get_irq);
