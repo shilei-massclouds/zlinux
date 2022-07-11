@@ -23,4 +23,16 @@ typedef struct {
 
 u64 siphash_1u64(const u64 a, const siphash_key_t *key);
 
+/*
+ * These macros expose the raw SipHash and HalfSipHash permutations.
+ * Do not use them directly! If you think you have a use for them,
+ * be sure to CC the maintainer of this file explaining why.
+ */
+
+#define SIPHASH_PERMUTATION(a, b, c, d) ( \
+    (a) += (b), (b) = rol64((b), 13), (b) ^= (a), (a) = rol64((a), 32), \
+    (c) += (d), (d) = rol64((d), 16), (d) ^= (c), \
+    (a) += (d), (d) = rol64((d), 21), (d) ^= (a), \
+    (c) += (b), (b) = rol64((b), 17), (b) ^= (c), (c) = rol64((c), 32))
+
 #endif /* _LINUX_SIPHASH_H */

@@ -236,6 +236,18 @@ do {                                    \
     DECLARE_PER_CPU_SECTION(type, name, PER_CPU_ALIGNED_SECTION)    \
     ____cacheline_aligned
 
+#define get_cpu_ptr(var)    \
+({                          \
+    preempt_disable();      \
+    this_cpu_ptr(var);      \
+})
+
+#define put_cpu_ptr(var)    \
+do {                        \
+    (void)(var);            \
+    preempt_enable();       \
+} while (0)
+
 #endif /* __ASSEMBLY__ */
 
 #endif /* _LINUX_PERCPU_DEFS_H */

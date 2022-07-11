@@ -117,4 +117,18 @@ struct virtio_blk_config {
     __u8 unused1[3];
 } __attribute__((packed));
 
+/*
+ * This comes first in the read scatter-gather list.
+ * For legacy virtio, if VIRTIO_F_ANY_LAYOUT is not negotiated,
+ * this is the first element of the read scatter-gather list.
+ */
+struct virtio_blk_outhdr {
+    /* VIRTIO_BLK_T* */
+    __virtio32 type;
+    /* io priority. */
+    __virtio32 ioprio;
+    /* Sector (ie. 512 byte offset) */
+    __virtio64 sector;
+};
+
 #endif /* _LINUX_VIRTIO_BLK_H */

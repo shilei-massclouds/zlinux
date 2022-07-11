@@ -73,4 +73,12 @@ typedef int (pcpu_fc_cpu_distance_fn_t)(unsigned int from, unsigned int to);
 #define alloc_percpu(type) \
     (typeof(type) __percpu *)__alloc_percpu(sizeof(type), __alignof__(type))
 
+
+extern void __percpu *__alloc_percpu_gfp(size_t size, size_t align, gfp_t gfp)
+    __alloc_size(1);
+
+#define alloc_percpu_gfp(type, gfp) \
+    (typeof(type) __percpu *)__alloc_percpu_gfp(sizeof(type), \
+                                                __alignof__(type), gfp)
+
 #endif /* __LINUX_PERCPU_H */

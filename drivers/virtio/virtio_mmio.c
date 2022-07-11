@@ -222,62 +222,6 @@ static void vm_del_vqs(struct virtio_device *vdev)
 }
 
 static struct virtqueue *
-vring_create_virtqueue_packed(unsigned int index,
-                              unsigned int num,
-                              unsigned int vring_align,
-                              struct virtio_device *vdev,
-                              bool weak_barriers,
-                              bool may_reduce_num,
-                              bool context,
-                              bool (*notify)(struct virtqueue *),
-                              void (*callback)(struct virtqueue *),
-                              const char *name)
-{
-    panic("%s: END!\n", __func__);
-}
-
-static struct virtqueue *
-vring_create_virtqueue_split(unsigned int index,
-                             unsigned int num,
-                             unsigned int vring_align,
-                             struct virtio_device *vdev,
-                             bool weak_barriers,
-                             bool may_reduce_num,
-                             bool context,
-                             bool (*notify)(struct virtqueue *),
-                             void (*callback)(struct virtqueue *),
-                             const char *name)
-{
-    panic("%s: END!\n", __func__);
-}
-
-struct virtqueue *vring_create_virtqueue(
-    unsigned int index,
-    unsigned int num,
-    unsigned int vring_align,
-    struct virtio_device *vdev,
-    bool weak_barriers,
-    bool may_reduce_num,
-    bool context,
-    bool (*notify)(struct virtqueue *),
-    void (*callback)(struct virtqueue *),
-    const char *name)
-{
-
-    if (virtio_has_feature(vdev, VIRTIO_F_RING_PACKED))
-        return vring_create_virtqueue_packed(index, num, vring_align,
-                                             vdev, weak_barriers,
-                                             may_reduce_num, context,
-                                             notify, callback, name);
-
-    return vring_create_virtqueue_split(index, num, vring_align,
-                                        vdev, weak_barriers,
-                                        may_reduce_num, context,
-                                        notify, callback, name);
-}
-EXPORT_SYMBOL_GPL(vring_create_virtqueue);
-
-static struct virtqueue *
 vm_setup_vq(struct virtio_device *vdev, unsigned index,
             void (*callback)(struct virtqueue *vq),
             const char *name, bool ctx)
@@ -325,7 +269,38 @@ vm_setup_vq(struct virtio_device *vdev, unsigned index,
         goto error_new_virtqueue;
     }
 
-    panic("%s: name(%s) num(%d) END!\n", __func__, name, num);
+    /* Activate the queue */
+    writel(virtqueue_get_vring_size(vq), vm_dev->base + VIRTIO_MMIO_QUEUE_NUM);
+
+    if (vm_dev->version == 1) {
+        u64 q_pfn = virtqueue_get_desc_addr(vq) >> PAGE_SHIFT;
+
+        /*
+         * virtio-mmio v1 uses a 32bit QUEUE PFN. If we have something
+         * that doesn't fit in 32bit, fail the setup rather than
+         * pretending to be successful.
+         */
+        if (q_pfn >> 32) {
+            pr_err("platform bug: legacy virtio-mmio must not be used "
+                   "with RAM above 0x%llxGB\n",
+                   0x1ULL << (32 + PAGE_SHIFT - 30));
+            err = -E2BIG;
+            goto error_bad_pfn;
+        }
+
+        writel(PAGE_SIZE, vm_dev->base + VIRTIO_MMIO_QUEUE_ALIGN);
+        writel(q_pfn, vm_dev->base + VIRTIO_MMIO_QUEUE_PFN);
+    } else {
+        panic("%s: version is NOT 1!\n", __func__);
+    }
+
+    vq->priv = info;
+    info->vq = vq;
+
+    spin_lock_irqsave(&vm_dev->lock, flags);
+    list_add(&info->node, &vm_dev->virtqueues);
+    spin_unlock_irqrestore(&vm_dev->lock, flags);
+
     return vq;
 
  error_bad_pfn:
@@ -342,7 +317,6 @@ vm_setup_vq(struct virtio_device *vdev, unsigned index,
 error_kmalloc:
 error_available:
     return ERR_PTR(err);
-
 }
 
 static int vm_find_vqs(struct virtio_device *vdev, unsigned nvqs,
@@ -378,7 +352,6 @@ static int vm_find_vqs(struct virtio_device *vdev, unsigned nvqs,
         }
     }
 
-    panic("%s: irq(%d) END!\n", __func__, irq);
     return 0;
 }
 

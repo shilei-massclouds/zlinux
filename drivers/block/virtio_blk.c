@@ -2,8 +2,8 @@
 //#define DEBUG
 #include <linux/spinlock.h>
 #include <linux/slab.h>
-#if 0
 #include <linux/blkdev.h>
+#if 0
 #include <linux/hdreg.h>
 #endif
 #include <linux/module.h>
@@ -11,15 +11,11 @@
 #include <linux/interrupt.h>
 #include <linux/virtio.h>
 #include <linux/virtio_blk.h>
-#if 0
 #include <linux/scatterlist.h>
-#endif
 #include <linux/string_helpers.h>
 #include <linux/idr.h>
-#if 0
 #include <linux/blk-mq.h>
 #include <linux/blk-mq-virtio.h>
-#endif
 #include <linux/numa.h>
 #include <linux/kdev_t.h>
 #include <uapi/linux/virtio_ring.h>
@@ -29,6 +25,8 @@
 
 /* The maximum number of sg elements that fit into a virtqueue */
 #define VIRTIO_BLK_MAX_SG_ELEMS 32768
+
+#define VIRTIO_BLK_INLINE_SG_CNT    2
 
 #if 0
 static struct workqueue_struct *virtblk_wq;
@@ -61,10 +59,12 @@ struct virtio_blk {
 #if 0
     /* The disk structure for the kernel. */
     struct gendisk *disk;
+#endif
 
     /* Block layer tags. */
     struct blk_mq_tag_set tag_set;
 
+#if 0
     /* Process context for config space updates */
     struct work_struct config_work;
 #endif
@@ -78,12 +78,10 @@ struct virtio_blk {
 };
 
 struct virtblk_req {
-#if 0
     struct virtio_blk_outhdr out_hdr;
     u8 status;
     struct sg_table sg_table;
     struct scatterlist sg[];
-#endif
 };
 
 static const struct virtio_device_id id_table[] = {
@@ -179,8 +177,6 @@ static int init_vq(struct virtio_blk *vblk)
     }
     vblk->num_vqs = num_vqs;
 
-    panic("%s: num_vqs(%d) END!\n", __func__, num_vqs);
-
  out:
     kfree(vqs);
     kfree(callbacks);
@@ -189,6 +185,56 @@ static int init_vq(struct virtio_blk *vblk)
         kfree(vblk->vqs);
     return err;
 }
+
+static blk_status_t virtio_queue_rq(struct blk_mq_hw_ctx *hctx,
+                                    const struct blk_mq_queue_data *bd)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static inline void virtblk_request_done(struct request *req)
+{
+#if 0
+    struct virtblk_req *vbr = blk_mq_rq_to_pdu(req);
+
+    virtblk_unmap_data(req, vbr);
+    virtblk_cleanup_cmd(req);
+    blk_mq_end_request(req, virtblk_result(vbr));
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+static void virtio_commit_rqs(struct blk_mq_hw_ctx *hctx)
+{
+#if 0
+    struct virtio_blk *vblk = hctx->queue->queuedata;
+    struct virtio_blk_vq *vq = &vblk->vqs[hctx->queue_num];
+    bool kick;
+
+    spin_lock_irq(&vq->lock);
+    kick = virtqueue_kick_prepare(vq->vq);
+    spin_unlock_irq(&vq->lock);
+
+    if (kick)
+        virtqueue_notify(vq->vq);
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+static int virtblk_map_queues(struct blk_mq_tag_set *set)
+{
+    struct virtio_blk *vblk = set->driver_data;
+
+    return blk_mq_virtio_map_queues(&set->map[HCTX_TYPE_DEFAULT],
+                                    vblk->vdev, 0);
+}
+
+static const struct blk_mq_ops virtio_mq_ops = {
+    .queue_rq   = virtio_queue_rq,
+    .commit_rqs = virtio_commit_rqs,
+    .complete   = virtblk_request_done,
+    .map_queues = virtblk_map_queues,
+};
 
 static int virtblk_probe(struct virtio_device *vdev)
 {
@@ -252,7 +298,21 @@ static int virtblk_probe(struct virtio_device *vdev)
         queue_depth = virtblk_queue_depth;
     }
 
-    panic("%s: sg_elems(%d) END!\n", __func__, sg_elems);
+    memset(&vblk->tag_set, 0, sizeof(vblk->tag_set));
+    vblk->tag_set.ops = &virtio_mq_ops;
+    vblk->tag_set.queue_depth = queue_depth;
+    vblk->tag_set.numa_node = NUMA_NO_NODE;
+    vblk->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
+    vblk->tag_set.cmd_size = sizeof(struct virtblk_req) +
+        sizeof(struct scatterlist) * VIRTIO_BLK_INLINE_SG_CNT;
+    vblk->tag_set.driver_data = vblk;
+    vblk->tag_set.nr_hw_queues = vblk->num_vqs;
+
+    err = blk_mq_alloc_tag_set(&vblk->tag_set);
+    if (err)
+        goto out_free_vq;
+
+    panic("%s: queue_depth(%d) END!\n", __func__, queue_depth);
     return 0;
 
 #if 0
@@ -260,10 +320,10 @@ out_cleanup_disk:
     blk_cleanup_disk(vblk->disk);
 out_free_tags:
     blk_mq_free_tag_set(&vblk->tag_set);
+#endif
 out_free_vq:
     vdev->config->del_vqs(vdev);
     kfree(vblk->vqs);
-#endif
 out_free_vblk:
     kfree(vblk);
 out_free_index:

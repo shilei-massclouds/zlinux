@@ -17,6 +17,7 @@
 #define VM_ALLOC            0x00000002  /* vmalloc() */
 #define VM_UNINITIALIZED    0x00000020  /* vm_struct is not fully initialized */
 #define VM_NO_GUARD         0x00000040  /* ***DANGEROUS*** don't add guard page */
+#define VM_ALLOW_HUGE_VMAP  0x00000400  /* Allow for huge pages on archs with HAVE_ARCH_HUGE_VMALLOC */
 
 #define VMALLOC_TOTAL (VMALLOC_END - VMALLOC_START)
 

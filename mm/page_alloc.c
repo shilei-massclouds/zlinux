@@ -3186,3 +3186,86 @@ void warn_alloc(gfp_t gfp_mask, nodemask_t *nodemask, const char *fmt, ...)
     warn_alloc_show_mem(gfp_mask, nodemask);
 #endif
 }
+
+/*
+ * split_page takes a non-compound higher-order page, and splits it into
+ * n (1<<order) sub-pages: page[0..n]
+ * Each sub-page must be freed individually.
+ *
+ * Note: this is probably too low level an operation for use in drivers.
+ * Please consult with lkml before using this in your driver.
+ */
+void split_page(struct page *page, unsigned int order)
+{
+    int i;
+
+    VM_BUG_ON_PAGE(PageCompound(page), page);
+    VM_BUG_ON_PAGE(!page_count(page), page);
+
+    for (i = 1; i < (1 << order); i++)
+        set_page_refcounted(page + i);
+}
+EXPORT_SYMBOL_GPL(split_page);
+
+static void *make_alloc_exact(unsigned long addr, unsigned int order,
+                              size_t size)
+{
+    if (addr) {
+        unsigned long alloc_end = addr + (PAGE_SIZE << order);
+        unsigned long used = addr + PAGE_ALIGN(size);
+
+        split_page(virt_to_page((void *)addr), order);
+        while (used < alloc_end) {
+            free_page(used);
+            used += PAGE_SIZE;
+        }
+    }
+    return (void *)addr;
+}
+
+/**
+ * alloc_pages_exact - allocate an exact number physically-contiguous pages.
+ * @size: the number of bytes to allocate
+ * @gfp_mask: GFP flags for the allocation, must not contain __GFP_COMP
+ *
+ * This function is similar to alloc_pages(), except that it allocates the
+ * minimum number of pages to satisfy the request.  alloc_pages() can only
+ * allocate memory in power-of-two pages.
+ *
+ * This function is also limited by MAX_ORDER.
+ *
+ * Memory allocated by this function must be released by free_pages_exact().
+ *
+ * Return: pointer to the allocated area or %NULL in case of error.
+ */
+void *alloc_pages_exact(size_t size, gfp_t gfp_mask)
+{
+    unsigned int order = get_order(size);
+    unsigned long addr;
+
+    if (WARN_ON_ONCE(gfp_mask & (__GFP_COMP | __GFP_HIGHMEM)))
+        gfp_mask &= ~(__GFP_COMP | __GFP_HIGHMEM);
+
+    addr = __get_free_pages(gfp_mask, order);
+    return make_alloc_exact(addr, order, size);
+}
+EXPORT_SYMBOL(alloc_pages_exact);
+
+/**
+ * free_pages_exact - release memory allocated via alloc_pages_exact()
+ * @virt: the value returned by alloc_pages_exact.
+ * @size: size of allocation, same value as passed to alloc_pages_exact().
+ *
+ * Release the memory allocated by a previous call to alloc_pages_exact.
+ */
+void free_pages_exact(void *virt, size_t size)
+{
+    unsigned long addr = (unsigned long)virt;
+    unsigned long end = addr + PAGE_ALIGN(size);
+
+    while (addr < end) {
+        free_page(addr);
+        addr += PAGE_SIZE;
+    }
+}
+EXPORT_SYMBOL(free_pages_exact);

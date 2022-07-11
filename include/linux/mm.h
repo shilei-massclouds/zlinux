@@ -7,18 +7,20 @@
 #include <linux/bug.h>
 #include <linux/list.h>
 #include <linux/mmzone.h>
-//#include <linux/rbtree.h>
+#include <linux/rbtree.h>
 #include <linux/atomic.h>
 //#include <linux/debug_locks.h>
 #include <linux/mm_types.h>
 //#include <linux/mmap_lock.h>
 //#include <linux/range.h>
 #include <linux/pfn.h>
-//#include <linux/percpu-refcount.h>
-//#include <linux/bit_spinlock.h>
-//#include <linux/shrinker.h>
-//#include <linux/resource.h>
-//#include <linux/page_ext.h>
+#if 0
+/#include <linux/percpu-refcount.h>
+/#include <linux/bit_spinlock.h>
+#include <linux/shrinker.h>
+#include <linux/resource.h>
+#include <linux/page_ext.h>
+#endif
 #include <linux/err.h>
 #include <linux/page-flags.h>
 #include <linux/page_ref.h>
@@ -477,5 +479,8 @@ static inline spinlock_t *pud_lock(struct mm_struct *mm, pud_t *pud)
     spin_lock(ptl);
     return ptl;
 }
+
+extern bool is_vmalloc_addr(const void *x);
+extern int is_vmalloc_or_module_addr(const void *x);
 
 #endif /* _LINUX_MM_H */

@@ -24,6 +24,17 @@ typedef void (*smp_call_func_t)(void *info);
 typedef bool (*smp_cond_func_t)(int cpu, void *info);
 
 /*
+ * structure shares (partial) layout with struct irq_work
+ */
+struct __call_single_data {
+#if 0
+    struct __call_single_node node;
+#endif
+    smp_call_func_t func;
+    void *info;
+};
+
+/*
  * Allow the architecture to differentiate between a stable and unstable read.
  * For example, x86 uses an IRQ-safe asm-volatile read for the unstable but a
  * regular asm read for the stable.

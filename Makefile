@@ -156,7 +156,8 @@ include $(srctree)/scripts/Kbuild.include
 
 # Objects we will link into vmlinux / subdirs we need to visit
 core-y := init/ #usr/
-core-y += kernel/ mm/ #fs/ ipc/ security/ crypto/ block/
+core-y += kernel/ mm/ #fs/ ipc/ security/ crypto/
+core-y += block/
 
 drivers-y := drivers/ #sound/
 drivers-y += #net/ virt/

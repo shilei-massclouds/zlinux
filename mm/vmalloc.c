@@ -1857,3 +1857,11 @@ void __init vmalloc_init(void)
     vmap_init_free_space();
     vmap_initialized = true;
 }
+
+bool is_vmalloc_addr(const void *x)
+{
+    unsigned long addr = (unsigned long)(x);
+
+    return addr >= VMALLOC_START && addr < VMALLOC_END;
+}
+EXPORT_SYMBOL(is_vmalloc_addr);

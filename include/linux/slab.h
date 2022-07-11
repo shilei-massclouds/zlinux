@@ -503,4 +503,32 @@ void *kcalloc(size_t n, size_t size, gfp_t flags)
 void *kmem_cache_alloc_lru(struct kmem_cache *s, struct list_lru *lru,
                            gfp_t gfpflags) __assume_slab_alignment __malloc;
 
+static inline __alloc_size(1, 2)
+void *kmalloc_array_node(size_t n, size_t size, gfp_t flags, int node)
+{
+    size_t bytes;
+
+    if (unlikely(check_mul_overflow(n, size, &bytes)))
+        return NULL;
+    if (__builtin_constant_p(n) && __builtin_constant_p(size))
+        return kmalloc_node(bytes, flags, node);
+    return __kmalloc_node(bytes, flags, node);
+}
+
+static inline __alloc_size(1, 2)
+void *kcalloc_node(size_t n, size_t size, gfp_t flags, int node)
+{
+    return kmalloc_array_node(n, size, flags | __GFP_ZERO, node);
+}
+
+extern void kvfree(const void *addr);
+
+extern void *kvmalloc_node(size_t size, gfp_t flags, int node) __alloc_size(1);
+
+static inline __alloc_size(1)
+void *kvzalloc_node(size_t size, gfp_t flags, int node)
+{
+    return kvmalloc_node(size, flags | __GFP_ZERO, node);
+}
+
 #endif  /* _LINUX_SLAB_H */

@@ -117,4 +117,12 @@ void virtio_add_status(struct virtio_device *dev, unsigned int status);
 int register_virtio_driver(struct virtio_driver *drv);
 void unregister_virtio_driver(struct virtio_driver *drv);
 
+unsigned int virtqueue_get_vring_size(struct virtqueue *vq);
+
+const struct vring *virtqueue_get_vring(struct virtqueue *vq);
+dma_addr_t virtqueue_get_desc_addr(struct virtqueue *vq);
+dma_addr_t virtqueue_get_avail_addr(struct virtqueue *vq);
+dma_addr_t virtqueue_get_used_addr(struct virtqueue *vq);
+
+
 #endif /* _LINUX_VIRTIO_H */
