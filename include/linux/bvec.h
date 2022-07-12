@@ -35,4 +35,14 @@ struct bio_vec {
     unsigned int    bv_offset;
 };
 
+struct bvec_iter {
+    sector_t            bi_sector;  /* device address in 512 byte sectors */
+    unsigned int        bi_size;    /* residual I/O count */
+
+    unsigned int        bi_idx;     /* current index into bvl_vec */
+
+    unsigned int        bi_bvec_done;   /* number of bytes completed in
+                                           current bvec */
+} __packed;
+
 #endif /* __LINUX_BVEC_H */

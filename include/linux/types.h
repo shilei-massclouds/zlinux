@@ -70,6 +70,7 @@ typedef phys_addr_t resource_size_t;
 
 typedef unsigned int __bitwise gfp_t;
 typedef unsigned int __bitwise slab_flags_t;
+typedef unsigned int __bitwise fmode_t;
 
 typedef struct {
     int counter;

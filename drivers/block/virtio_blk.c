@@ -56,10 +56,8 @@ struct virtio_blk {
     struct mutex vdev_mutex;
     struct virtio_device *vdev;
 
-#if 0
     /* The disk structure for the kernel. */
     struct gendisk *disk;
-#endif
 
     /* Block layer tags. */
     struct blk_mq_tag_set tag_set;
@@ -105,6 +103,32 @@ static unsigned int features[] = {
 
 static unsigned int virtblk_queue_depth;
 //module_param_named(queue_depth, virtblk_queue_depth, uint, 0444);
+
+/* We provide getgeo only to please some old bootloader/partitioning tools */
+static int virtblk_getgeo(struct block_device *bd, struct hd_geometry *geo)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static void virtblk_free_disk(struct gendisk *disk)
+{
+    struct virtio_blk *vblk = disk->private_data;
+
+    ida_simple_remove(&vd_index_ida, vblk->index);
+    mutex_destroy(&vblk->vdev_mutex);
+    kfree(vblk);
+}
+
+static const struct block_device_operations virtblk_fops = {
+    .owner      = THIS_MODULE,
+    .getgeo     = virtblk_getgeo,
+    .free_disk  = virtblk_free_disk,
+};
+
+static int index_to_minor(int index)
+{
+    return index << PART_BITS;
+}
 
 static int minor_to_index(int minor)
 {
@@ -236,6 +260,60 @@ static const struct blk_mq_ops virtio_mq_ops = {
     .map_queues = virtblk_map_queues,
 };
 
+/*
+ * Legacy naming scheme used for virtio devices.  We are stuck with it for
+ * virtio blk but don't ever use it for any new driver.
+ */
+static int virtblk_name_format(char *prefix, int index, char *buf, int buflen)
+{
+    const int base = 'z' - 'a' + 1;
+    char *begin = buf + strlen(prefix);
+    char *end = buf + buflen;
+    char *p;
+    int unit;
+
+    p = end - 1;
+    *p = '\0';
+    unit = base;
+    do {
+        if (p == begin)
+            return -EINVAL;
+        *--p = 'a' + (index % unit);
+        index = (index / unit) - 1;
+    } while (index >= 0);
+
+    memmove(begin, p, end - p);
+    memcpy(buf, prefix, strlen(prefix));
+
+    return 0;
+}
+
+static int virtblk_get_cache_mode(struct virtio_device *vdev)
+{
+    u8 writeback;
+    int err;
+
+    err = virtio_cread_feature(vdev, VIRTIO_BLK_F_CONFIG_WCE,
+                               struct virtio_blk_config, wce, &writeback);
+
+    /*
+     * If WCE is not configurable and flush is not available,
+     * assume no writeback cache is in use.
+     */
+    if (err)
+        writeback = virtio_has_feature(vdev, VIRTIO_BLK_F_FLUSH);
+
+    return writeback;
+}
+
+static void virtblk_update_cache_mode(struct virtio_device *vdev)
+{
+    u8 writeback = virtblk_get_cache_mode(vdev);
+    struct virtio_blk *vblk = vdev->priv;
+
+    blk_queue_write_cache(vblk->disk->queue, writeback, false);
+}
+
 static int virtblk_probe(struct virtio_device *vdev)
 {
     struct virtio_blk *vblk;
@@ -312,15 +390,42 @@ static int virtblk_probe(struct virtio_device *vdev)
     if (err)
         goto out_free_vq;
 
-    panic("%s: queue_depth(%d) END!\n", __func__, queue_depth);
+    vblk->disk = blk_mq_alloc_disk(&vblk->tag_set, vblk);
+    if (IS_ERR(vblk->disk)) {
+        err = PTR_ERR(vblk->disk);
+        goto out_free_tags;
+    }
+    q = vblk->disk->queue;
+
+    virtblk_name_format("vd", index, vblk->disk->disk_name, DISK_NAME_LEN);
+
+    vblk->disk->major = major;
+    vblk->disk->first_minor = index_to_minor(index);
+    vblk->disk->minors = 1 << PART_BITS;
+    vblk->disk->private_data = vblk;
+    vblk->disk->fops = &virtblk_fops;
+    vblk->index = index;
+
+    /* configure queue flush support */
+    virtblk_update_cache_mode(vdev);
+
+    /* If disk is read-only in the host, the guest should obey */
+    if (virtio_has_feature(vdev, VIRTIO_BLK_F_RO))
+        set_disk_ro(vblk->disk, 1);
+
+    /* We can handle whatever the host told us to handle. */
+    blk_queue_max_segments(q, sg_elems);
+
+    /* No real sector limit. */
+    blk_queue_max_hw_sectors(q, -1U);
+
+    panic("%s: name(%s) END!\n", __func__, vblk->disk->disk_name);
     return 0;
 
-#if 0
 out_cleanup_disk:
-    blk_cleanup_disk(vblk->disk);
+    //blk_cleanup_disk(vblk->disk);
 out_free_tags:
-    blk_mq_free_tag_set(&vblk->tag_set);
-#endif
+    //blk_mq_free_tag_set(&vblk->tag_set);
 out_free_vq:
     vdev->config->del_vqs(vdev);
     kfree(vblk->vqs);

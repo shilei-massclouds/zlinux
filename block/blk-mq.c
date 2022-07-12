@@ -38,13 +38,13 @@
 #include "blk-mq.h"
 #if 0
 #include <linux/t10-pi.h>
-#include "blk.h"
 #include "blk-mq-debugfs.h"
 #include "blk-pm.h"
 #include "blk-stat.h"
 #include "blk-mq-sched.h"
 #include "blk-rq-qos.h"
 #endif
+#include "blk.h"
 #include "blk-mq-tag.h"
 
 static int blk_mq_realloc_tag_set_tags(struct blk_mq_tag_set *set,
@@ -180,11 +180,108 @@ blk_mq_alloc_rq_map(struct blk_mq_tag_set *set,
     return tags;
 }
 
+static int blk_mq_init_request(struct blk_mq_tag_set *set, struct request *rq,
+                   unsigned int hctx_idx, int node)
+{
+    int ret;
+
+    if (set->ops->init_request) {
+        ret = set->ops->init_request(set, rq, hctx_idx, node);
+        if (ret)
+            return ret;
+    }
+
+    WRITE_ONCE(rq->state, MQ_RQ_IDLE);
+    return 0;
+}
+
+void blk_mq_free_rqs(struct blk_mq_tag_set *set, struct blk_mq_tags *tags,
+                     unsigned int hctx_idx)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static size_t order_to_size(unsigned int order)
+{
+    return (size_t)PAGE_SIZE << order;
+}
+
 static int blk_mq_alloc_rqs(struct blk_mq_tag_set *set,
                             struct blk_mq_tags *tags,
                             unsigned int hctx_idx, unsigned int depth)
 {
-    panic("%s: END!\n", __func__);
+    unsigned int i, j, entries_per_page, max_order = 4;
+    int node = blk_mq_get_hctx_node(set, hctx_idx);
+    size_t rq_size, left;
+
+    if (node == NUMA_NO_NODE)
+        node = set->numa_node;
+
+    INIT_LIST_HEAD(&tags->page_list);
+
+    /*
+     * rq_size is the size of the request plus driver payload, rounded
+     * to the cacheline size
+     */
+    rq_size = round_up(sizeof(struct request) + set->cmd_size,
+                       cache_line_size());
+    left = rq_size * depth;
+
+    for (i = 0; i < depth; ) {
+        int this_order = max_order;
+        struct page *page;
+        int to_do;
+        void *p;
+
+        while (this_order && left < order_to_size(this_order - 1))
+            this_order--;
+
+        do {
+            page = alloc_pages_node(node,
+                                    GFP_NOIO | __GFP_NOWARN |
+                                    __GFP_NORETRY | __GFP_ZERO,
+                                    this_order);
+            if (page)
+                break;
+            if (!this_order--)
+                break;
+            if (order_to_size(this_order) < rq_size)
+                break;
+        } while (1);
+
+        if (!page)
+            goto fail;
+
+        page->private = this_order;
+        list_add_tail(&page->lru, &tags->page_list);
+
+        p = page_address(page);
+        /*
+         * Allow kmemleak to scan these pages as they contain pointers
+         * to additional allocations like via ops->init_request().
+         */
+        entries_per_page = order_to_size(this_order) / rq_size;
+        to_do = min(entries_per_page, depth - i);
+        left -= to_do * rq_size;
+        for (j = 0; j < to_do; j++) {
+            struct request *rq = p;
+
+            tags->static_rqs[i] = rq;
+            if (blk_mq_init_request(set, rq, hctx_idx, node)) {
+                tags->static_rqs[i] = NULL;
+                goto fail;
+            }
+
+            p += rq_size;
+            i++;
+        }
+    }
+
+    return 0;
+
+ fail:
+    blk_mq_free_rqs(set, tags, hctx_idx);
+    return -ENOMEM;
 }
 
 struct blk_mq_tags *blk_mq_alloc_map_and_rqs(struct blk_mq_tag_set *set,
@@ -375,7 +472,9 @@ int blk_mq_alloc_tag_set(struct blk_mq_tag_set *set)
     if (ret)
         goto out_free_mq_map;
 
-    panic("%s: END!\n", __func__);
+    mutex_init(&set->tag_list_lock);
+    INIT_LIST_HEAD(&set->tag_list);
+
     return 0;
 
  out_free_mq_map:
@@ -387,3 +486,125 @@ int blk_mq_alloc_tag_set(struct blk_mq_tag_set *set)
     set->tags = NULL;
     return ret;
 }
+
+static void blk_mq_update_poll_flag(struct request_queue *q)
+{
+    struct blk_mq_tag_set *set = q->tag_set;
+
+    if (set->nr_maps > HCTX_TYPE_POLL && set->map[HCTX_TYPE_POLL].nr_queues)
+        blk_queue_flag_set(QUEUE_FLAG_POLL, q);
+    else
+        blk_queue_flag_clear(QUEUE_FLAG_POLL, q);
+}
+
+int blk_mq_init_allocated_queue(struct blk_mq_tag_set *set,
+                                struct request_queue *q)
+{
+    WARN_ON_ONCE(blk_queue_has_srcu(q) != !!(set->flags & BLK_MQ_F_BLOCKING));
+
+    /* mark the queue as mq asap */
+    q->mq_ops = set->ops;
+
+#if 0
+    q->poll_cb = blk_stat_alloc_callback(blk_mq_poll_stats_fn,
+                                         blk_mq_poll_stats_bkt,
+                                         BLK_MQ_POLL_STATS_BKTS, q);
+    if (!q->poll_cb)
+        goto err_exit;
+
+    if (blk_mq_alloc_ctxs(q))
+        goto err_poll;
+
+    /* init q->mq_kobj and sw queues' kobjects */
+    blk_mq_sysfs_init(q);
+
+    INIT_LIST_HEAD(&q->unused_hctx_list);
+    spin_lock_init(&q->unused_hctx_lock);
+
+    xa_init(&q->hctx_table);
+
+    blk_mq_realloc_hw_ctxs(set, q);
+    if (!q->nr_hw_queues)
+        goto err_hctxs;
+
+    INIT_WORK(&q->timeout_work, blk_mq_timeout_work);
+    blk_queue_rq_timeout(q, set->timeout ? set->timeout : 30 * HZ);
+#endif
+
+    q->tag_set = set;
+
+    q->queue_flags |= QUEUE_FLAG_MQ_DEFAULT;
+    blk_mq_update_poll_flag(q);
+
+#if 0
+    INIT_DELAYED_WORK(&q->requeue_work, blk_mq_requeue_work);
+#endif
+    INIT_LIST_HEAD(&q->requeue_list);
+    spin_lock_init(&q->requeue_lock);
+
+    q->nr_requests = set->queue_depth;
+
+    /*
+     * Default to classic polling
+     */
+    q->poll_nsec = BLK_MQ_POLL_CLASSIC;
+
+#if 0
+    blk_mq_init_cpu_queues(q, set->nr_hw_queues);
+    blk_mq_add_queue_tag_set(set, q);
+    blk_mq_map_swqueue(q);
+#endif
+
+    return 0;
+
+err_hctxs:
+    //xa_destroy(&q->hctx_table);
+    q->nr_hw_queues = 0;
+    //blk_mq_sysfs_deinit(q);
+err_poll:
+#if 0
+    blk_stat_free_callback(q->poll_cb);
+    q->poll_cb = NULL;
+#endif
+err_exit:
+    q->mq_ops = NULL;
+    return -ENOMEM;
+}
+
+static struct request_queue *
+blk_mq_init_queue_data(struct blk_mq_tag_set *set, void *queuedata)
+{
+    struct request_queue *q;
+    int ret;
+
+    q = blk_alloc_queue(set->numa_node, set->flags & BLK_MQ_F_BLOCKING);
+    if (!q)
+        return ERR_PTR(-ENOMEM);
+    q->queuedata = queuedata;
+    ret = blk_mq_init_allocated_queue(set, q);
+    if (ret) {
+        blk_cleanup_queue(q);
+        return ERR_PTR(ret);
+    }
+    return q;
+}
+
+struct gendisk *
+__blk_mq_alloc_disk(struct blk_mq_tag_set *set, void *queuedata,
+                    struct lock_class_key *lkclass)
+{
+    struct request_queue *q;
+    struct gendisk *disk;
+
+    q = blk_mq_init_queue_data(set, queuedata);
+    if (IS_ERR(q))
+        return ERR_CAST(q);
+
+    disk = __alloc_disk_node(q, set->numa_node, lkclass);
+    if (!disk) {
+        blk_cleanup_queue(q);
+        return ERR_PTR(-ENOMEM);
+    }
+    return disk;
+}
+EXPORT_SYMBOL(__blk_mq_alloc_disk);

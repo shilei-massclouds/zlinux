@@ -87,9 +87,11 @@ enum {
  * especially blk_mq_rq_ctx_init() to take care of the added fields.
  */
 struct request {
+#if 0
     struct request_queue *q;
     struct blk_mq_ctx *mq_ctx;
     struct blk_mq_hw_ctx *mq_hctx;
+#endif
 
     unsigned int cmd_flags;     /* op and common flags */
     req_flags_t rq_flags;
@@ -106,6 +108,7 @@ struct request {
     struct bio *bio;
     struct bio *biotail;
 
+#if 0
     union {
         struct list_head queuelist;
         struct request *rq_next;
@@ -133,12 +136,14 @@ struct request {
 
     unsigned short write_hint;
     unsigned short ioprio;
+#endif
 
     enum mq_rq_state state;
     atomic_t ref;
 
     unsigned long deadline;
 
+#if 0
     /*
      * The hash is used inside the scheduler, and killed once the
      * request reaches the dispatch list. The ipi_list is only used
@@ -191,6 +196,7 @@ struct request {
      */
     rq_end_io_fn *end_io;
     void *end_io_data;
+#endif
 };
 
 /**
@@ -414,5 +420,16 @@ struct blk_mq_tags {
 int blk_mq_alloc_tag_set(struct blk_mq_tag_set *set);
 
 int blk_mq_map_queues(struct blk_mq_queue_map *qmap);
+
+struct gendisk *
+__blk_mq_alloc_disk(struct blk_mq_tag_set *set, void *queuedata,
+                    struct lock_class_key *lkclass);
+
+#define blk_mq_alloc_disk(set, queuedata)       \
+({                                              \
+    static struct lock_class_key __key;         \
+                                                \
+    __blk_mq_alloc_disk(set, queuedata, &__key);\
+})
 
 #endif /* BLK_MQ_H */
