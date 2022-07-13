@@ -174,4 +174,16 @@ atomic_try_cmpxchg_relaxed(atomic_t *v, int *old, int new)
     return arch_atomic_try_cmpxchg_relaxed(v, old, new);
 }
 
+static __always_inline bool
+atomic_inc_not_zero(atomic_t *v)
+{
+    return arch_atomic_inc_not_zero(v);
+}
+
+static __always_inline int
+atomic_dec_if_positive(atomic_t *v)
+{
+    return arch_atomic_dec_if_positive(v);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */

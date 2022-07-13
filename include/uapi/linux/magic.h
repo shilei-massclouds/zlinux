@@ -4,4 +4,6 @@
 
 #define STACK_END_MAGIC     0x57AC6E9D
 
+#define BDEVFS_MAGIC        0x62646576
+
 #endif /* __LINUX_MAGIC_H__ */

@@ -10,9 +10,7 @@
 #define _LINUX_BACKING_DEV_H
 
 #include <linux/kernel.h>
-#if 0
 #include <linux/fs.h>
-#endif
 #include <linux/sched.h>
 #include <linux/device.h>
 #include <linux/writeback.h>

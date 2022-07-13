@@ -40,4 +40,6 @@ typedef unsigned int    __kernel_gid32_t;
 typedef unsigned short  __kernel_uid16_t;
 typedef unsigned short  __kernel_gid16_t;
 
+typedef long long       __kernel_loff_t;
+
 #endif /* __ASM_GENERIC_POSIX_TYPES_H */

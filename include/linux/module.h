@@ -29,7 +29,33 @@
 #define __INITDATA_OR_MODULE    .data
 #define __INITRODATA_OR_MODULE  .section ".rodata","a",%progbits
 
+enum module_state {
+    MODULE_STATE_LIVE,  /* Normal state. */
+    MODULE_STATE_COMING,    /* Full formed, running module_init. */
+    MODULE_STATE_GOING, /* Going away. */
+    MODULE_STATE_UNFORMED,  /* Still setting it up. */
+};
+
 struct module {
+    enum module_state state;
+
+    /* Member of list of modules */
+    struct list_head list;
+
+    /* Unique handle for this module */
+    char name[MODULE_NAME_LEN];
+
+    /* OTHERS */
+
+    /* What modules depend on me? */
+    struct list_head source_list;
+    /* What modules do I depend on? */
+    struct list_head target_list;
+
+    /* Destruction function. */
+    void (*exit)(void);
+
+    atomic_t refcnt;
 } ____cacheline_aligned __randomize_layout;
 
 #ifndef MODULE
@@ -67,8 +93,22 @@ struct module {
 #define MODULE_DEVICE_TABLE(type, name)
 #endif
 
+/* Sometimes we know we already have a refcount, and it's easier not
+   to handle the error case (which only happens with rmmod --wait). */
+extern void __module_get(struct module *module);
+
 /* This is the Right Way to get a module: if it fails, it's being removed,
  * so pretend it's not there. */
 extern bool try_module_get(struct module *module);
+
+extern void module_put(struct module *module);
+
+/* FIXME: It'd be nice to isolate modules during init, too, so they
+   aren't used before they (may) fail.  But presently too much code
+   (IDE & SCSI) require entry into the module during init.*/
+static inline bool module_is_live(struct module *mod)
+{
+    return mod->state != MODULE_STATE_GOING;
+}
 
 #endif /* _LINUX_MODULE_H */

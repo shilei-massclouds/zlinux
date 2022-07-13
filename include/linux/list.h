@@ -292,5 +292,10 @@ list_splice(const struct list_head *list, struct list_head *head)
          pos = list_prev_entry(pos, member))
 
 #define INIT_HLIST_HEAD(ptr) ((ptr)->first = NULL)
+static inline void INIT_HLIST_NODE(struct hlist_node *h)
+{
+    h->next = NULL;
+    h->pprev = NULL;
+}
 
 #endif /* _LINUX_LIST_H */

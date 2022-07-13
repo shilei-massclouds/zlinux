@@ -6,9 +6,7 @@
  * Copyright 1995 Linus Torvalds
  */
 #include <linux/mm.h>
-#if 0
 #include <linux/fs.h>
-#endif
 #include <linux/list.h>
 #include <linux/highmem.h>
 #include <linux/compiler.h>

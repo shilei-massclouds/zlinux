@@ -146,6 +146,11 @@ typedef __kernel_gid16_t    gid16_t;
 typedef u64 sector_t;
 typedef u64 blkcnt_t;
 
+typedef u32 __kernel_dev_t;
+
+typedef __kernel_dev_t      dev_t;
+typedef __kernel_loff_t     loff_t;
+
 #endif /*  __ASSEMBLY__ */
 
 #endif /* _LINUX_TYPES_H */

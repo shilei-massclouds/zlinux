@@ -27,6 +27,7 @@
 #include <linux/kallsyms.h>
 #include <linux/device/driver.h>
 #include <linux/irq.h>
+#include <linux/fs.h>
 
 #include <asm/setup.h>
 #include "z_tests.h"
@@ -680,6 +681,8 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
     pid_idr_init();
 
     fork_init();
+
+    vfs_caches_init();
 
     /* Do the rest non-__init'ed, we're now alive */
     arch_call_rest_init();

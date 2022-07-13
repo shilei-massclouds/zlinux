@@ -5,7 +5,7 @@
 
 obj-y = fork.o panic.o params.o cpu.o kthread.o \
 	pid.o nsproxy.o pid_namespace.o softirq.o \
-	resource.o
+	resource.o module.o
 
 obj-y += sched/
 obj-y += locking/
