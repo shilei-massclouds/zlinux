@@ -437,3 +437,16 @@ dma_addr_t virtqueue_get_desc_addr(struct virtqueue *_vq)
     return vq->split.queue_dma_addr;
 }
 EXPORT_SYMBOL_GPL(virtqueue_get_desc_addr);
+
+size_t virtio_max_dma_size(struct virtio_device *vdev)
+{
+    size_t max_segment_size = SIZE_MAX;
+
+    if (vring_use_dma_api(vdev)) {
+        panic("%s: USE DMA API!\n", __func__);
+        //max_segment_size = dma_max_mapping_size(vdev->dev.parent);
+    }
+
+    return max_segment_size;
+}
+EXPORT_SYMBOL_GPL(virtio_max_dma_size);

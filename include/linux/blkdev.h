@@ -431,4 +431,67 @@ extern void blk_queue_max_segments(struct request_queue *, unsigned short);
 
 extern void blk_queue_max_hw_sectors(struct request_queue *, unsigned int);
 
+extern void blk_queue_max_segment_size(struct request_queue *, unsigned int);
+
+extern void blk_queue_logical_block_size(struct request_queue *, unsigned int);
+
+extern void blk_queue_physical_block_size(struct request_queue *, unsigned int);
+
+extern void blk_queue_alignment_offset(struct request_queue *q,
+                                       unsigned int alignment);
+
+extern void blk_queue_io_opt(struct request_queue *q, unsigned int opt);
+
+extern void blk_queue_io_min(struct request_queue *q, unsigned int min);
+
+extern void blk_queue_max_discard_sectors(struct request_queue *q,
+                                          unsigned int max_discard_sectors);
+
+extern void blk_queue_max_discard_segments(struct request_queue *,
+                                           unsigned short);
+
+extern void
+blk_queue_max_write_zeroes_sectors(struct request_queue *q,
+                                   unsigned int max_write_same_sectors);
+
+static inline int blk_validate_block_size(unsigned long bsize)
+{
+    if (bsize < 512 || bsize > PAGE_SIZE || !is_power_of_2(bsize))
+        return -EINVAL;
+
+    return 0;
+}
+
+static inline unsigned queue_logical_block_size(const struct request_queue *q)
+{
+    int retval = 512;
+
+    if (q && q->limits.logical_block_size)
+        retval = q->limits.logical_block_size;
+
+    return retval;
+}
+
+static inline unsigned int queue_io_opt(const struct request_queue *q)
+{
+    return q->limits.io_opt;
+}
+
+static inline sector_t bdev_nr_sectors(struct block_device *bdev)
+{
+    return bdev->bd_nr_sectors;
+}
+
+static inline sector_t get_capacity(struct gendisk *disk)
+{
+    return bdev_nr_sectors(disk->part0);
+}
+
+bool set_capacity_and_notify(struct gendisk *disk, sector_t size);
+
+struct block_device *bdev_alloc(struct gendisk *disk, u8 partno);
+
+int __must_check device_add_disk(struct device *parent, struct gendisk *disk,
+                                 const struct attribute_group **groups);
+
 #endif /* _LINUX_BLKDEV_H */

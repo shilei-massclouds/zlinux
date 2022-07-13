@@ -55,6 +55,40 @@ typedef u16 blk_short_t;
 #define REQ_OP_MASK     ((1 << REQ_OP_BITS) - 1)
 #define REQ_FLAG_BITS   24
 
+struct block_device {
+    sector_t        bd_start_sect;
+    sector_t        bd_nr_sectors;
+    //struct disk_stats __percpu *bd_stats;
+    unsigned long       bd_stamp;
+    bool            bd_read_only;   /* read-only policy */
+    //dev_t           bd_dev;
+    int         bd_openers;
+#if 0
+    struct inode *      bd_inode;   /* will die */
+    struct super_block *    bd_super;
+#endif
+    void *          bd_claiming;
+    struct device       bd_device;
+    void *          bd_holder;
+    int         bd_holders;
+    bool            bd_write_holder;
+    struct kobject      *bd_holder_dir;
+    u8          bd_partno;
+    spinlock_t      bd_size_lock; /* for bd_inode->i_size updates */
+    struct gendisk *    bd_disk;
+    struct request_queue *  bd_queue;
+
+    /* The counter of freeze processes */
+    int         bd_fsfreeze_count;
+    /* Mutex for freeze */
+    struct mutex        bd_fsfreeze_mutex;
+#if 0
+    struct super_block  *bd_fsfreeze_sb;
+
+    struct partition_meta_info *bd_meta_info;
+#endif
+} __randomize_layout;
+
 /*
  * main unit of I/O for the block layer and lower layers (ie drivers and
  * stacking drivers)

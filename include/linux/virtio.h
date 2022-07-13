@@ -124,5 +124,6 @@ dma_addr_t virtqueue_get_desc_addr(struct virtqueue *vq);
 dma_addr_t virtqueue_get_avail_addr(struct virtqueue *vq);
 dma_addr_t virtqueue_get_used_addr(struct virtqueue *vq);
 
+size_t virtio_max_dma_size(struct virtio_device *vdev);
 
 #endif /* _LINUX_VIRTIO_H */

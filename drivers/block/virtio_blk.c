@@ -22,6 +22,7 @@
 
 #define PART_BITS 4
 #define VQ_NAME_LEN 16
+#define MAX_DISCARD_SEGMENTS 256u
 
 /* The maximum number of sg elements that fit into a virtqueue */
 #define VIRTIO_BLK_MAX_SG_ELEMS 32768
@@ -314,6 +315,48 @@ static void virtblk_update_cache_mode(struct virtio_device *vdev)
     blk_queue_write_cache(vblk->disk->queue, writeback, false);
 }
 
+/* The queue's logical block size must be set before calling this */
+static void virtblk_update_capacity(struct virtio_blk *vblk, bool resize)
+{
+    struct virtio_device *vdev = vblk->vdev;
+    struct request_queue *q = vblk->disk->queue;
+    char cap_str_2[10], cap_str_10[10];
+    unsigned long long nblocks;
+    u64 capacity;
+
+    /* Host must always specify the capacity. */
+    virtio_cread(vdev, struct virtio_blk_config, capacity, &capacity);
+
+    nblocks = DIV_ROUND_UP_ULL(capacity, queue_logical_block_size(q) >> 9);
+
+    string_get_size(nblocks, queue_logical_block_size(q),
+                    STRING_UNITS_2, cap_str_2, sizeof(cap_str_2));
+    string_get_size(nblocks, queue_logical_block_size(q),
+                    STRING_UNITS_10, cap_str_10, sizeof(cap_str_10));
+
+    pr_notice("[%s] %s%llu %d-byte logical blocks (%s/%s)\n",
+              vblk->disk->disk_name,
+              resize ? "new size: " : "",
+              nblocks,
+              queue_logical_block_size(q),
+              cap_str_10,
+              cap_str_2);
+
+    set_capacity_and_notify(vblk->disk, capacity);
+}
+
+static const struct attribute_group virtblk_attr_group = {
+#if 0
+    .attrs = virtblk_attrs,
+    .is_visible = virtblk_attrs_are_visible,
+#endif
+};
+
+static const struct attribute_group *virtblk_attr_groups[] = {
+    &virtblk_attr_group,
+    NULL,
+};
+
 static int virtblk_probe(struct virtio_device *vdev)
 {
     struct virtio_blk *vblk;
@@ -419,7 +462,94 @@ static int virtblk_probe(struct virtio_device *vdev)
     /* No real sector limit. */
     blk_queue_max_hw_sectors(q, -1U);
 
-    panic("%s: name(%s) END!\n", __func__, vblk->disk->disk_name);
+    max_size = virtio_max_dma_size(vdev);
+
+    /* Host can optionally specify maximum segment size and number of
+     * segments. */
+    err = virtio_cread_feature(vdev, VIRTIO_BLK_F_SIZE_MAX,
+                               struct virtio_blk_config, size_max, &v);
+    if (!err)
+        max_size = min(max_size, v);
+
+    blk_queue_max_segment_size(q, max_size);
+
+    /* Host can optionally specify the block size of the device */
+    err = virtio_cread_feature(vdev, VIRTIO_BLK_F_BLK_SIZE,
+                               struct virtio_blk_config, blk_size,
+                               &blk_size);
+    if (!err) {
+        err = blk_validate_block_size(blk_size);
+        if (err) {
+            pr_err("virtio_blk: invalid block size: 0x%x\n", blk_size);
+            goto out_cleanup_disk;
+        }
+
+        blk_queue_logical_block_size(q, blk_size);
+    } else
+        blk_size = queue_logical_block_size(q);
+
+    /* Use topology information if available */
+    err = virtio_cread_feature(vdev, VIRTIO_BLK_F_TOPOLOGY,
+                               struct virtio_blk_config, physical_block_exp,
+                               &physical_block_exp);
+    if (!err && physical_block_exp)
+        blk_queue_physical_block_size(q, blk_size * (1 << physical_block_exp));
+
+    err = virtio_cread_feature(vdev, VIRTIO_BLK_F_TOPOLOGY,
+                               struct virtio_blk_config, alignment_offset,
+                               &alignment_offset);
+    if (!err && alignment_offset)
+        blk_queue_alignment_offset(q, blk_size * alignment_offset);
+
+    err = virtio_cread_feature(vdev, VIRTIO_BLK_F_TOPOLOGY,
+                               struct virtio_blk_config, min_io_size,
+                               &min_io_size);
+    if (!err && min_io_size)
+        blk_queue_io_min(q, blk_size * min_io_size);
+
+    err = virtio_cread_feature(vdev, VIRTIO_BLK_F_TOPOLOGY,
+                               struct virtio_blk_config, opt_io_size,
+                               &opt_io_size);
+    if (!err && opt_io_size)
+        blk_queue_io_opt(q, blk_size * opt_io_size);
+
+    if (virtio_has_feature(vdev, VIRTIO_BLK_F_DISCARD)) {
+        q->limits.discard_granularity = blk_size;
+
+        virtio_cread(vdev, struct virtio_blk_config,
+                     discard_sector_alignment, &v);
+        q->limits.discard_alignment = v ? v << SECTOR_SHIFT : 0;
+
+        virtio_cread(vdev, struct virtio_blk_config, max_discard_sectors, &v);
+        blk_queue_max_discard_sectors(q, v ? v : UINT_MAX);
+
+        virtio_cread(vdev, struct virtio_blk_config, max_discard_seg, &v);
+
+        /*
+         * max_discard_seg == 0 is out of spec but we always
+         * handled it.
+         */
+        if (!v)
+            v = sg_elems;
+        blk_queue_max_discard_segments(q, min(v, MAX_DISCARD_SEGMENTS));
+
+        blk_queue_flag_set(QUEUE_FLAG_DISCARD, q);
+    }
+
+    if (virtio_has_feature(vdev, VIRTIO_BLK_F_WRITE_ZEROES)) {
+        virtio_cread(vdev, struct virtio_blk_config,
+                     max_write_zeroes_sectors, &v);
+        blk_queue_max_write_zeroes_sectors(q, v ? v : UINT_MAX);
+    }
+
+    virtblk_update_capacity(vblk, false);
+    virtio_device_ready(vdev);
+
+    err = device_add_disk(&vdev->dev, vblk->disk, virtblk_attr_groups);
+    if (err)
+        goto out_cleanup_disk;
+
+    panic("%s: blk_size(%lx) END!\n", __func__, blk_size);
     return 0;
 
 out_cleanup_disk:

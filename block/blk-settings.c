@@ -110,3 +110,222 @@ void blk_queue_max_hw_sectors(struct request_queue *q,
     q->disk->bdi->io_pages = max_sectors >> (PAGE_SHIFT - 9);
 }
 EXPORT_SYMBOL(blk_queue_max_hw_sectors);
+
+/**
+ * blk_queue_max_segment_size - set max segment size for blk_rq_map_sg
+ * @q:  the request queue for the device
+ * @max_size:  max size of segment in bytes
+ *
+ * Description:
+ *    Enables a low level driver to set an upper limit on the size of a
+ *    coalesced segment
+ **/
+void blk_queue_max_segment_size(struct request_queue *q, unsigned int max_size)
+{
+    if (max_size < PAGE_SIZE) {
+        max_size = PAGE_SIZE;
+        printk(KERN_INFO "%s: set to minimum %d\n", __func__, max_size);
+    }
+
+    /* see blk_queue_virt_boundary() for the explanation */
+    WARN_ON_ONCE(q->limits.virt_boundary_mask);
+
+    q->limits.max_segment_size = max_size;
+}
+EXPORT_SYMBOL(blk_queue_max_segment_size);
+
+/**
+ * blk_queue_logical_block_size - set logical block size for the queue
+ * @q:  the request queue for the device
+ * @size:  the logical block size, in bytes
+ *
+ * Description:
+ *   This should be set to the lowest possible block size that the
+ *   storage device can address.  The default of 512 covers most
+ *   hardware.
+ **/
+void blk_queue_logical_block_size(struct request_queue *q, unsigned int size)
+{
+    struct queue_limits *limits = &q->limits;
+
+    limits->logical_block_size = size;
+
+    if (limits->physical_block_size < size)
+        limits->physical_block_size = size;
+
+    if (limits->io_min < limits->physical_block_size)
+        limits->io_min = limits->physical_block_size;
+
+    limits->max_hw_sectors =
+        round_down(limits->max_hw_sectors, size >> SECTOR_SHIFT);
+    limits->max_sectors =
+        round_down(limits->max_sectors, size >> SECTOR_SHIFT);
+}
+EXPORT_SYMBOL(blk_queue_logical_block_size);
+
+/**
+ * blk_queue_physical_block_size - set physical block size for the queue
+ * @q:  the request queue for the device
+ * @size:  the physical block size, in bytes
+ *
+ * Description:
+ *   This should be set to the lowest possible sector size that the
+ *   hardware can operate on without reverting to read-modify-write
+ *   operations.
+ */
+void blk_queue_physical_block_size(struct request_queue *q, unsigned int size)
+{
+    q->limits.physical_block_size = size;
+
+    if (q->limits.physical_block_size < q->limits.logical_block_size)
+        q->limits.physical_block_size = q->limits.logical_block_size;
+
+    if (q->limits.io_min < q->limits.physical_block_size)
+        q->limits.io_min = q->limits.physical_block_size;
+}
+EXPORT_SYMBOL(blk_queue_physical_block_size);
+
+/**
+ * blk_queue_alignment_offset - set physical block alignment offset
+ * @q:  the request queue for the device
+ * @offset: alignment offset in bytes
+ *
+ * Description:
+ *   Some devices are naturally misaligned to compensate for things like
+ *   the legacy DOS partition table 63-sector offset.  Low-level drivers
+ *   should call this function for devices whose first sector is not
+ *   naturally aligned.
+ */
+void blk_queue_alignment_offset(struct request_queue *q, unsigned int offset)
+{
+    q->limits.alignment_offset = offset & (q->limits.physical_block_size - 1);
+    q->limits.misaligned = 0;
+}
+EXPORT_SYMBOL(blk_queue_alignment_offset);
+
+/**
+ * blk_limits_io_min - set minimum request size for a device
+ * @limits: the queue limits
+ * @min:  smallest I/O size in bytes
+ *
+ * Description:
+ *   Some devices have an internal block size bigger than the reported
+ *   hardware sector size.  This function can be used to signal the
+ *   smallest I/O the device can perform without incurring a performance
+ *   penalty.
+ */
+void blk_limits_io_min(struct queue_limits *limits, unsigned int min)
+{
+    limits->io_min = min;
+
+    if (limits->io_min < limits->logical_block_size)
+        limits->io_min = limits->logical_block_size;
+
+    if (limits->io_min < limits->physical_block_size)
+        limits->io_min = limits->physical_block_size;
+}
+EXPORT_SYMBOL(blk_limits_io_min);
+
+/**
+ * blk_queue_io_min - set minimum request size for the queue
+ * @q:  the request queue for the device
+ * @min:  smallest I/O size in bytes
+ *
+ * Description:
+ *   Storage devices may report a granularity or preferred minimum I/O
+ *   size which is the smallest request the device can perform without
+ *   incurring a performance penalty.  For disk drives this is often the
+ *   physical block size.  For RAID arrays it is often the stripe chunk
+ *   size.  A properly aligned multiple of minimum_io_size is the
+ *   preferred request size for workloads where a high number of I/O
+ *   operations is desired.
+ */
+void blk_queue_io_min(struct request_queue *q, unsigned int min)
+{
+    blk_limits_io_min(&q->limits, min);
+}
+EXPORT_SYMBOL(blk_queue_io_min);
+
+/**
+ * blk_limits_io_opt - set optimal request size for a device
+ * @limits: the queue limits
+ * @opt:  smallest I/O size in bytes
+ *
+ * Description:
+ *   Storage devices may report an optimal I/O size, which is the
+ *   device's preferred unit for sustained I/O.  This is rarely reported
+ *   for disk drives.  For RAID arrays it is usually the stripe width or
+ *   the internal track size.  A properly aligned multiple of
+ *   optimal_io_size is the preferred request size for workloads where
+ *   sustained throughput is desired.
+ */
+void blk_limits_io_opt(struct queue_limits *limits, unsigned int opt)
+{
+    limits->io_opt = opt;
+}
+EXPORT_SYMBOL(blk_limits_io_opt);
+
+/**
+ * blk_queue_io_opt - set optimal request size for the queue
+ * @q:  the request queue for the device
+ * @opt:  optimal request size in bytes
+ *
+ * Description:
+ *   Storage devices may report an optimal I/O size, which is the
+ *   device's preferred unit for sustained I/O.  This is rarely reported
+ *   for disk drives.  For RAID arrays it is usually the stripe width or
+ *   the internal track size.  A properly aligned multiple of
+ *   optimal_io_size is the preferred request size for workloads where
+ *   sustained throughput is desired.
+ */
+void blk_queue_io_opt(struct request_queue *q, unsigned int opt)
+{
+    blk_limits_io_opt(&q->limits, opt);
+    if (!q->disk)
+        return;
+    q->disk->bdi->ra_pages =
+        max(queue_io_opt(q) * 2 / PAGE_SIZE, VM_READAHEAD_PAGES);
+}
+EXPORT_SYMBOL(blk_queue_io_opt);
+
+/**
+ * blk_queue_max_discard_sectors - set max sectors for a single discard
+ * @q:  the request queue for the device
+ * @max_discard_sectors: maximum number of sectors to discard
+ **/
+void blk_queue_max_discard_sectors(struct request_queue *q,
+                                   unsigned int max_discard_sectors)
+{
+    q->limits.max_hw_discard_sectors = max_discard_sectors;
+    q->limits.max_discard_sectors = max_discard_sectors;
+}
+EXPORT_SYMBOL(blk_queue_max_discard_sectors);
+
+/**
+ * blk_queue_max_discard_segments - set max segments for discard requests
+ * @q:  the request queue for the device
+ * @max_segments:  max number of segments
+ *
+ * Description:
+ *    Enables a low level driver to set an upper limit on the number of
+ *    segments in a discard request.
+ **/
+void blk_queue_max_discard_segments(struct request_queue *q,
+                                    unsigned short max_segments)
+{
+    q->limits.max_discard_segments = max_segments;
+}
+EXPORT_SYMBOL_GPL(blk_queue_max_discard_segments);
+
+/**
+ * blk_queue_max_write_zeroes_sectors - set max sectors for a single
+ *                                      write zeroes
+ * @q:  the request queue for the device
+ * @max_write_zeroes_sectors: maximum number of sectors to write per command
+ **/
+void blk_queue_max_write_zeroes_sectors(struct request_queue *q,
+        unsigned int max_write_zeroes_sectors)
+{
+    q->limits.max_write_zeroes_sectors = max_write_zeroes_sectors;
+}
+EXPORT_SYMBOL(blk_queue_max_write_zeroes_sectors);

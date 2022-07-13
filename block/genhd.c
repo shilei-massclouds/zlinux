@@ -57,11 +57,11 @@ struct gendisk *__alloc_disk_node(struct request_queue *q, int node_id,
     /* bdev_alloc() might need the queue, set before the first call */
     disk->queue = q;
 
-#if 0
     disk->part0 = bdev_alloc(disk, 0);
     if (!disk->part0)
         goto out_free_bdi;
 
+#if 0
     disk->node_id = node_id;
     mutex_init(&disk->open_mutex);
     xa_init(&disk->part_tbl);
@@ -125,6 +125,71 @@ void set_disk_ro(struct gendisk *disk, bool read_only)
     //set_disk_ro_uevent(disk, read_only);
 }
 EXPORT_SYMBOL(set_disk_ro);
+
+void set_capacity(struct gendisk *disk, sector_t sectors)
+{
+    struct block_device *bdev = disk->part0;
+
+    spin_lock(&bdev->bd_size_lock);
+    //i_size_write(bdev->bd_inode, (loff_t)sectors << SECTOR_SHIFT);
+    bdev->bd_nr_sectors = sectors;
+    spin_unlock(&bdev->bd_size_lock);
+}
+EXPORT_SYMBOL(set_capacity);
+
+/**
+ * device_add_disk - add disk information to kernel list
+ * @parent: parent device for the disk
+ * @disk: per-device partitioning information
+ * @groups: Additional per-device sysfs groups
+ *
+ * This function registers the partitioning information in @disk
+ * with the kernel.
+ */
+int __must_check device_add_disk(struct device *parent, struct gendisk *disk,
+                                 const struct attribute_group **groups)
+
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * Set disk capacity and notify if the size is not currently zero and will not
+ * be set to zero.  Returns true if a uevent was sent, otherwise false.
+ */
+bool set_capacity_and_notify(struct gendisk *disk, sector_t size)
+{
+    sector_t capacity = get_capacity(disk);
+    char *envp[] = { "RESIZE=1", NULL };
+
+    set_capacity(disk, size);
+
+#if 0
+    /*
+     * Only print a message and send a uevent if the gendisk is user visible
+     * and alive.  This avoids spamming the log and udev when setting the
+     * initial capacity during probing.
+     */
+    if (size == capacity ||
+        !disk_live(disk) ||
+        (disk->flags & GENHD_FL_HIDDEN))
+        return false;
+
+    pr_info("%s: detected capacity change from %lld to %lld\n",
+        disk->disk_name, capacity, size);
+
+    /*
+     * Historically we did not send a uevent for changes to/from an empty
+     * device.
+     */
+    if (!capacity || !size)
+        return false;
+    kobject_uevent_env(&disk_to_dev(disk)->kobj, KOBJ_CHANGE, envp);
+#endif
+    panic("%s: END!\n", __func__);
+    return true;
+}
+EXPORT_SYMBOL_GPL(set_capacity_and_notify);
 
 static int __init genhd_device_init(void)
 {
