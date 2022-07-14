@@ -15,6 +15,7 @@
 #define EEXIST      17  /* File exists */
 #define ENODEV      19  /* No such device */
 #define EINVAL      22  /* Invalid argument */
+#define EMFILE      24  /* Too many open files */
 #define ENOSPC      28  /* No space left on device */
 
 #endif /* _ASM_GENERIC_ERRNO_BASE_H */

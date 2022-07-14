@@ -531,4 +531,15 @@ void *kvzalloc_node(size_t size, gfp_t flags, int node)
     return kvmalloc_node(size, flags | __GFP_ZERO, node);
 }
 
+/*
+ * To whitelist a single field for copying to/from usercopy, use this
+ * macro instead for KMEM_CACHE() above.
+ */
+#define KMEM_CACHE_USERCOPY(__struct, __flags, __field) \
+    kmem_cache_create_usercopy(#__struct,               \
+                               sizeof(struct __struct), \
+                               __alignof__(struct __struct), (__flags), \
+                               offsetof(struct __struct, __field),      \
+                               sizeof_field(struct __struct, __field), NULL)
+
 #endif  /* _LINUX_SLAB_H */

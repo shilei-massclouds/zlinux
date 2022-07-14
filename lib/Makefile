@@ -12,6 +12,7 @@ lib-y := ctype.o string.o vsprintf.o cmdline.o siphash.o rbtree.o radix-tree.o
 lib-y += kobject.o klist.o refcount.o idr.o xarray.o random32.o
 obj-y += kstrtox.o
 obj-y += hexdump.o
+obj-y += lockref.o
 obj-y += hweight.o bitmap.o sbitmap.o
 obj-y += kasprintf.o string_helpers.o
 

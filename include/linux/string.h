@@ -117,4 +117,6 @@ extern const char *kstrdup_const(const char *s, gfp_t gfp);
 
 char *strreplace(char *s, char old, char new);
 
+extern char *kmemdup_nul(const char *s, size_t len, gfp_t gfp);
+
 #endif /* _LINUX_STRING_H_ */

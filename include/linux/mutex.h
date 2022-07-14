@@ -14,11 +14,11 @@
 #include <asm/current.h>
 #include <linux/list.h>
 #include <linux/spinlock_types.h>
+#include <linux/lockdep.h>
 #include <linux/atomic.h>
 #include <asm/processor.h>
 //#include <linux/osq_lock.h>
 //#include <linux/debug_locks.h>
-#include <linux/lockdep_types.h>
 
 /**
  * mutex_init - initialize the mutex

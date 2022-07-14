@@ -32,4 +32,6 @@ struct vfsmount {
 #endif
 } __randomize_layout;
 
+extern struct vfsmount *vfs_create_mount(struct fs_context *fc);
+
 #endif /* _LINUX_MOUNT_H */

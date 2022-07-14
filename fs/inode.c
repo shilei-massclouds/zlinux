@@ -20,20 +20,122 @@
 #include <linux/posix_acl.h>
 #endif
 #include <linux/prefetch.h>
+#include <linux/list_lru.h>
 #if 0
 #include <linux/buffer_head.h> /* for inode_has_buffers */
 #include <linux/ratelimit.h>
-#include <linux/list_lru.h>
 #include <linux/iversion.h>
 #include "internal.h"
 #endif
+
+static struct kmem_cache *inode_cachep __read_mostly;
+
+static DEFINE_PER_CPU(unsigned long, nr_inodes);
+
+static void i_callback(struct rcu_head *head)
+{
+#if 0
+    struct inode *inode = container_of(head, struct inode, i_rcu);
+    if (inode->free_inode)
+        inode->free_inode(inode);
+    else
+        free_inode_nonrcu(inode);
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+static int no_open(struct inode *inode, struct file *file)
+{
+    return -ENXIO;
+}
+
+/**
+ * inode_init_always - perform inode structure initialisation
+ * @sb: superblock inode belongs to
+ * @inode: inode to initialise
+ *
+ * These are initializations that need to be done on every inode
+ * allocation as the fields are not initialised by slab allocation.
+ */
+int inode_init_always(struct super_block *sb, struct inode *inode)
+{
+    static const struct inode_operations empty_iops;
+    static const struct file_operations no_open_fops = {.open = no_open};
+    struct address_space *const mapping = &inode->i_data;
+
+    inode->i_sb = sb;
+    inode->i_blkbits = sb->s_blocksize_bits;
+    inode->i_flags = 0;
+    atomic64_set(&inode->i_sequence, 0);
+    atomic_set(&inode->i_count, 1);
+    inode->i_op = &empty_iops;
+    inode->i_fop = &no_open_fops;
+    inode->i_ino = 0;
+    inode->__i_nlink = 1;
+    inode->i_opflags = 0;
+#if 0
+    if (sb->s_xattr)
+        inode->i_opflags |= IOP_XATTR;
+    i_uid_write(inode, 0);
+    i_gid_write(inode, 0);
+#endif
+    atomic_set(&inode->i_writecount, 0);
+    inode->i_size = 0;
+    inode->i_write_hint = WRITE_LIFE_NOT_SET;
+    inode->i_blocks = 0;
+    inode->i_bytes = 0;
+    inode->i_generation = 0;
+#if 0
+    inode->i_pipe = NULL;
+    inode->i_cdev = NULL;
+#endif
+    inode->i_link = NULL;
+    inode->i_dir_seq = 0;
+    inode->i_rdev = 0;
+    inode->dirtied_when = 0;
+
+    spin_lock_init(&inode->i_lock);
+
+    init_rwsem(&inode->i_rwsem);
+
+    atomic_set(&inode->i_dio_count, 0);
+
+#if 0
+    mapping->a_ops = &empty_aops;
+    mapping->host = inode;
+    mapping->flags = 0;
+    mapping->wb_err = 0;
+    atomic_set(&mapping->i_mmap_writable, 0);
+
+    mapping_set_gfp_mask(mapping, GFP_HIGHUSER_MOVABLE);
+    mapping->private_data = NULL;
+    mapping->writeback_index = 0;
+    init_rwsem(&mapping->invalidate_lock);
+    inode->i_private = NULL;
+    inode->i_mapping = mapping;
+#endif
+    INIT_HLIST_HEAD(&inode->i_dentry);  /* buggered by rcu freeing */
+#if 0
+    inode->i_acl = inode->i_default_acl = ACL_NOT_CACHED;
+#endif
+
+#if 0
+    inode->i_fsnotify_mask = 0;
+    inode->i_flctx = NULL;
+#endif
+    this_cpu_inc(nr_inodes);
+
+    return 0;
+out:
+    return -ENOMEM;
+}
+EXPORT_SYMBOL(inode_init_always);
 
 static struct inode *alloc_inode(struct super_block *sb)
 {
     const struct super_operations *ops = sb->s_op;
     struct inode *inode;
 
-#if 0
     if (ops->alloc_inode)
         inode = ops->alloc_inode(sb);
     else
@@ -48,11 +150,10 @@ static struct inode *alloc_inode(struct super_block *sb)
             if (!ops->free_inode)
                 return NULL;
         }
-        inode->free_inode = ops->free_inode;
+        //inode->free_inode = ops->free_inode;
         i_callback(&inode->i_rcu);
         return NULL;
     }
-#endif
 
     return inode;
 }
@@ -81,6 +182,18 @@ struct inode *new_inode_pseudo(struct super_block *sb)
 }
 
 /**
+ * inode_sb_list_add - add inode to the superblock list of inodes
+ * @inode: inode to add
+ */
+void inode_sb_list_add(struct inode *inode)
+{
+    spin_lock(&inode->i_sb->s_inode_list_lock);
+    list_add(&inode->i_sb_list, &inode->i_sb->s_inodes);
+    spin_unlock(&inode->i_sb->s_inode_list_lock);
+}
+EXPORT_SYMBOL_GPL(inode_sb_list_add);
+
+/**
  *  new_inode   - obtain an inode
  *  @sb: superblock
  *
@@ -99,11 +212,8 @@ struct inode *new_inode(struct super_block *sb)
     spin_lock_prefetch(&sb->s_inode_list_lock);
 
     inode = new_inode_pseudo(sb);
-#if 0
     if (inode)
         inode_sb_list_add(inode);
-#endif
-    panic("%s: END!\n", __func__);
     return inode;
 }
 EXPORT_SYMBOL(new_inode);
@@ -118,6 +228,38 @@ static void __address_space_init_once(struct address_space *mapping)
     mapping->i_mmap = RB_ROOT_CACHED;
 #endif
 }
+
+/**
+ *  iput    - put an inode
+ *  @inode: inode to put
+ *
+ *  Puts an inode, dropping its usage count. If the inode use count hits
+ *  zero, the inode is then freed and may also be destroyed.
+ *
+ *  Consequently, iput() can sleep.
+ */
+void iput(struct inode *inode)
+{
+    if (!inode)
+        return;
+
+    panic("%s: END!\n", __func__);
+#if 0
+    BUG_ON(inode->i_state & I_CLEAR);
+retry:
+    if (atomic_dec_and_lock(&inode->i_count, &inode->i_lock)) {
+        if (inode->i_nlink && (inode->i_state & I_DIRTY_TIME)) {
+            atomic_inc(&inode->i_count);
+            spin_unlock(&inode->i_lock);
+            trace_writeback_lazytime_iput(inode);
+            mark_inode_dirty_sync(inode);
+            goto retry;
+        }
+        iput_final(inode);
+    }
+#endif
+}
+EXPORT_SYMBOL(iput);
 
 /*
  * These are initializations that only need to be done
@@ -135,3 +277,38 @@ void inode_init_once(struct inode *inode)
     //__address_space_init_once(&inode->i_data);
 }
 EXPORT_SYMBOL(inode_init_once);
+
+static void init_once(void *foo)
+{
+    struct inode *inode = (struct inode *) foo;
+
+    inode_init_once(inode);
+}
+
+void __init inode_init(void)
+{
+    /* inode slab cache */
+    inode_cachep = kmem_cache_create("inode_cache",
+                                     sizeof(struct inode),
+                                     0,
+                                     (SLAB_RECLAIM_ACCOUNT|SLAB_PANIC|
+                                      SLAB_MEM_SPREAD|SLAB_ACCOUNT),
+                                     init_once);
+
+#if 0
+    /* Hash may have been set up in inode_init_early */
+    if (!hashdist)
+        return;
+
+    inode_hashtable =
+        alloc_large_system_hash("Inode-cache",
+                                sizeof(struct hlist_head),
+                                ihash_entries,
+                                14,
+                                HASH_ZERO,
+                                &i_hash_shift,
+                                &i_hash_mask,
+                                0,
+                                0);
+#endif
+}

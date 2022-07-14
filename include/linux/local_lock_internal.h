@@ -4,6 +4,7 @@
 #endif
 
 #include <linux/percpu-defs.h>
+#include <linux/lockdep.h>
 
 typedef struct {
 } local_lock_t;

@@ -7,4 +7,4 @@
 #
 
 obj-y := inode.o super.o filesystems.o libfs.o dcache.o namespace.o
-obj-y += fs_context.o
+obj-y += fs_context.o fs_parser.o

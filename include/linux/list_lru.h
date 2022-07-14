@@ -33,4 +33,6 @@ struct list_lru {
     struct list_lru_node *node;
 };
 
+void list_lru_destroy(struct list_lru *lru);
+
 #endif /* _LRU_LIST_H */

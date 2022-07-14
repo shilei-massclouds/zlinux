@@ -11,6 +11,7 @@
 #include <linux/irqflags.h>
 #include <linux/preempt.h>
 //#include <linux/bottom_half.h>
+#include <linux/lockdep.h>
 #include <asm/processor.h>
 #include <linux/cpumask.h>
 

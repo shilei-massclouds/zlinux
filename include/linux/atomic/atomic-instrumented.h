@@ -186,4 +186,16 @@ atomic_dec_if_positive(atomic_t *v)
     return arch_atomic_dec_if_positive(v);
 }
 
+static __always_inline long
+atomic_long_fetch_add_release(long i, atomic_long_t *v)
+{
+    return arch_atomic_long_fetch_add_release(i, v);
+}
+
+static __always_inline void
+atomic64_set(atomic64_t *v, s64 i)
+{
+    arch_atomic64_set(v, i);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */

@@ -9,7 +9,7 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #include <linux/module.h>
 #include <linux/fs_context.h>
-//#include <linux/fs_parser.h>
+#include <linux/fs_parser.h>
 #include <linux/fs.h>
 #include <linux/mount.h>
 //#include <linux/nsproxy.h>
@@ -25,6 +25,194 @@
 #include <asm/sections.h>
 //#include "mount.h"
 #include "internal.h"
+
+enum legacy_fs_param {
+    LEGACY_FS_UNSET_PARAMS,
+    LEGACY_FS_MONOLITHIC_PARAMS,
+    LEGACY_FS_INDIVIDUAL_PARAMS,
+};
+
+struct legacy_fs_context {
+    char    *legacy_data;   /* Data page for legacy filesystems */
+    size_t  data_size;
+    enum legacy_fs_param param_type;
+};
+
+/*
+ * Free the config for a filesystem that doesn't support fs_context.
+ */
+static void legacy_fs_context_free(struct fs_context *fc)
+{
+#if 0
+    struct legacy_fs_context *ctx = fc->fs_private;
+
+    if (ctx) {
+        if (ctx->param_type == LEGACY_FS_INDIVIDUAL_PARAMS)
+            kfree(ctx->legacy_data);
+        kfree(ctx);
+    }
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * Duplicate a legacy config.
+ */
+static int legacy_fs_context_dup(struct fs_context *fc, struct fs_context *src_fc)
+{
+#if 0
+    struct legacy_fs_context *ctx;
+    struct legacy_fs_context *src_ctx = src_fc->fs_private;
+
+    ctx = kmemdup(src_ctx, sizeof(*src_ctx), GFP_KERNEL);
+    if (!ctx)
+        return -ENOMEM;
+
+    if (ctx->param_type == LEGACY_FS_INDIVIDUAL_PARAMS) {
+        ctx->legacy_data = kmemdup(src_ctx->legacy_data,
+                                   src_ctx->data_size, GFP_KERNEL);
+        if (!ctx->legacy_data) {
+            kfree(ctx);
+            return -ENOMEM;
+        }
+    }
+
+    fc->fs_private = ctx;
+#endif
+    panic("%s: END!\n", __func__);
+    return 0;
+}
+
+/*
+ * Add a parameter to a legacy config.  We build up a comma-separated list of
+ * options.
+ */
+static int legacy_parse_param(struct fs_context *fc, struct fs_parameter *param)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * Add monolithic mount data.
+ */
+static int legacy_parse_monolithic(struct fs_context *fc, void *data)
+{
+#if 0
+    struct legacy_fs_context *ctx = fc->fs_private;
+
+    if (ctx->param_type != LEGACY_FS_UNSET_PARAMS) {
+        pr_warn("VFS: Can't mix monolithic and individual options\n");
+        return -EINVAL;
+    }
+
+    ctx->legacy_data = data;
+    ctx->param_type = LEGACY_FS_MONOLITHIC_PARAMS;
+    if (!ctx->legacy_data)
+        return 0;
+
+    if (fc->fs_type->fs_flags & FS_BINARY_MOUNTDATA)
+        return 0;
+    return security_sb_eat_lsm_opts(ctx->legacy_data, &fc->security);
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * Get a mountable root with the legacy mount command.
+ */
+static int legacy_get_tree(struct fs_context *fc)
+{
+#if 0
+    struct legacy_fs_context *ctx = fc->fs_private;
+    struct super_block *sb;
+    struct dentry *root;
+
+    root = fc->fs_type->mount(fc->fs_type, fc->sb_flags,
+                              fc->source, ctx->legacy_data);
+    if (IS_ERR(root))
+        return PTR_ERR(root);
+
+    sb = root->d_sb;
+    BUG_ON(!sb);
+
+    fc->root = root;
+#endif
+    panic("%s: END!\n", __func__);
+    return 0;
+}
+
+/*
+ * Handle remount.
+ */
+static int legacy_reconfigure(struct fs_context *fc)
+{
+#if 0
+    struct legacy_fs_context *ctx = fc->fs_private;
+    struct super_block *sb = fc->root->d_sb;
+
+    if (!sb->s_op->remount_fs)
+        return 0;
+
+    return sb->s_op->remount_fs(sb, &fc->sb_flags,
+                                ctx ? ctx->legacy_data : NULL);
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+const struct fs_context_operations legacy_fs_context_ops = {
+    .free               = legacy_fs_context_free,
+    .dup                = legacy_fs_context_dup,
+    .parse_param        = legacy_parse_param,
+    .parse_monolithic   = legacy_parse_monolithic,
+    .get_tree           = legacy_get_tree,
+    .reconfigure        = legacy_reconfigure,
+};
+
+/*
+ * Initialise a legacy context for a filesystem that doesn't support
+ * fs_context.
+ */
+static int legacy_init_fs_context(struct fs_context *fc)
+{
+    fc->fs_private = kzalloc(sizeof(struct legacy_fs_context),
+                             GFP_KERNEL_ACCOUNT);
+    if (!fc->fs_private)
+        return -ENOMEM;
+    fc->ops = &legacy_fs_context_ops;
+    return 0;
+}
+
+/**
+ * put_fs_context - Dispose of a superblock configuration context.
+ * @fc: The context to dispose of.
+ */
+void put_fs_context(struct fs_context *fc)
+{
+    struct super_block *sb;
+
+#if 0
+    if (fc->root) {
+        sb = fc->root->d_sb;
+        dput(fc->root);
+        fc->root = NULL;
+        deactivate_super(sb);
+    }
+
+    if (fc->need_free && fc->ops && fc->ops->free)
+        fc->ops->free(fc);
+
+    security_free_mnt_opts(&fc->security);
+    put_net(fc->net_ns);
+    put_user_ns(fc->user_ns);
+    put_cred(fc->cred);
+    put_fc_log(fc);
+    put_filesystem(fc->fs_type);
+    kfree(fc->source);
+    kfree(fc);
+#endif
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL(put_fs_context);
 
 /**
  * alloc_fs_context - Create a filesystem context.
@@ -64,7 +252,38 @@ alloc_fs_context(struct file_system_type *fs_type,
     fc->log.prefix  = fs_type->name;
 #endif
 
-    panic("%s: END!\n", __func__);
+    mutex_init(&fc->uapi_mutex);
+
+#if 0
+    switch (purpose) {
+    case FS_CONTEXT_FOR_MOUNT:
+        fc->user_ns = get_user_ns(fc->cred->user_ns);
+        break;
+    case FS_CONTEXT_FOR_SUBMOUNT:
+        fc->user_ns = get_user_ns(reference->d_sb->s_user_ns);
+        break;
+    case FS_CONTEXT_FOR_RECONFIGURE:
+        atomic_inc(&reference->d_sb->s_active);
+        fc->user_ns = get_user_ns(reference->d_sb->s_user_ns);
+        fc->root = dget(reference);
+        break;
+    }
+#endif
+
+    /* TODO: Make all filesystems support this unconditionally */
+    init_fs_context = fc->fs_type->init_fs_context;
+    if (!init_fs_context)
+        init_fs_context = legacy_init_fs_context;
+
+    ret = init_fs_context(fc);
+    if (ret < 0)
+        goto err_fc;
+    fc->need_free = true;
+    return fc;
+
+ err_fc:
+    put_fs_context(fc);
+    return ERR_PTR(ret);
 }
 
 struct fs_context *
@@ -73,3 +292,254 @@ fs_context_for_mount(struct file_system_type *fs_type, unsigned int sb_flags)
     return alloc_fs_context(fs_type, NULL, sb_flags, 0, FS_CONTEXT_FOR_MOUNT);
 }
 EXPORT_SYMBOL(fs_context_for_mount);
+
+/**
+ * vfs_parse_fs_string - Convenience function to just parse a string.
+ */
+int vfs_parse_fs_string(struct fs_context *fc, const char *key,
+                        const char *value, size_t v_size)
+{
+    int ret;
+
+    struct fs_parameter param = {
+        .key    = key,
+        .type   = fs_value_is_flag,
+        .size   = v_size,
+    };
+
+    if (value) {
+        param.string = kmemdup_nul(value, v_size, GFP_KERNEL);
+        if (!param.string)
+            return -ENOMEM;
+        param.type = fs_value_is_string;
+    }
+
+    ret = vfs_parse_fs_param(fc, &param);
+    kfree(param.string);
+    return ret;
+}
+EXPORT_SYMBOL(vfs_parse_fs_string);
+
+static const struct constant_table common_set_sb_flag[] = {
+    { "dirsync",    SB_DIRSYNC },
+    { "lazytime",   SB_LAZYTIME },
+    { "mand",   SB_MANDLOCK },
+    { "ro",     SB_RDONLY },
+    { "sync",   SB_SYNCHRONOUS },
+    { },
+};
+
+static const struct constant_table common_clear_sb_flag[] = {
+    { "async",  SB_SYNCHRONOUS },
+    { "nolazytime", SB_LAZYTIME },
+    { "nomand", SB_MANDLOCK },
+    { "rw",     SB_RDONLY },
+    { },
+};
+
+/*
+ * Check for a common mount option that manipulates s_flags.
+ */
+static int vfs_parse_sb_flag(struct fs_context *fc, const char *key)
+{
+    unsigned int token;
+
+    token = lookup_constant(common_set_sb_flag, key, 0);
+    if (token) {
+        fc->sb_flags |= token;
+        fc->sb_flags_mask |= token;
+        return 0;
+    }
+
+    token = lookup_constant(common_clear_sb_flag, key, 0);
+    if (token) {
+        fc->sb_flags &= ~token;
+        fc->sb_flags_mask |= token;
+        return 0;
+    }
+
+    return -ENOPARAM;
+}
+
+/**
+ * vfs_parse_fs_param_source - Handle setting "source" via parameter
+ * @fc: The filesystem context to modify
+ * @param: The parameter
+ *
+ * This is a simple helper for filesystems to verify that the "source" they
+ * accept is sane.
+ *
+ * Returns 0 on success, -ENOPARAM if this is not  "source" parameter, and
+ * -EINVAL otherwise. In the event of failure, supplementary error information
+ *  is logged.
+ */
+int vfs_parse_fs_param_source(struct fs_context *fc, struct fs_parameter *param)
+{
+    if (strcmp(param->key, "source") != 0)
+        return -ENOPARAM;
+
+    if (param->type != fs_value_is_string)
+        return invalf(fc, "Non-string source");
+
+    if (fc->source)
+        return invalf(fc, "Multiple sources");
+
+    fc->source = param->string;
+    param->string = NULL;
+    return 0;
+}
+EXPORT_SYMBOL(vfs_parse_fs_param_source);
+
+/**
+ * vfs_parse_fs_param - Add a single parameter to a superblock config
+ * @fc: The filesystem context to modify
+ * @param: The parameter
+ *
+ * A single mount option in string form is applied to the filesystem context
+ * being set up.  Certain standard options (for example "ro") are translated
+ * into flag bits without going to the filesystem.  The active security module
+ * is allowed to observe and poach options.  Any other options are passed over
+ * to the filesystem to parse.
+ *
+ * This may be called multiple times for a context.
+ *
+ * Returns 0 on success and a negative error code on failure.  In the event of
+ * failure, supplementary error information may have been set.
+ */
+int vfs_parse_fs_param(struct fs_context *fc, struct fs_parameter *param)
+{
+    int ret;
+
+    if (!param->key)
+        return invalf(fc, "Unnamed parameter\n");
+
+    ret = vfs_parse_sb_flag(fc, param->key);
+    if (ret != -ENOPARAM)
+        return ret;
+
+    if (fc->ops->parse_param) {
+        ret = fc->ops->parse_param(fc, param);
+        if (ret != -ENOPARAM)
+            return ret;
+    }
+
+    /* If the filesystem doesn't take any arguments, give it the
+     * default handling of source.
+     */
+    ret = vfs_parse_fs_param_source(fc, param);
+    if (ret != -ENOPARAM)
+        return ret;
+
+    return invalf(fc, "%s: Unknown parameter '%s'",
+                  fc->fs_type->name, param->key);
+}
+EXPORT_SYMBOL(vfs_parse_fs_param);
+
+/**
+ * logfc - Log a message to a filesystem context
+ * @fc: The filesystem context to log to.
+ * @fmt: The format of the buffer.
+ */
+void logfc(struct fc_log *log, const char *prefix, char level,
+           const char *fmt, ...)
+{
+    va_list va;
+    struct va_format vaf = {.fmt = fmt, .va = &va};
+
+    va_start(va, fmt);
+    if (!log) {
+        switch (level) {
+        case 'w':
+            printk(KERN_WARNING "%s%s%pV\n", prefix ? prefix : "",
+                   prefix ? ": " : "", &vaf);
+            break;
+        case 'e':
+            printk(KERN_ERR "%s%s%pV\n", prefix ? prefix : "",
+                   prefix ? ": " : "", &vaf);
+            break;
+        default:
+            printk(KERN_NOTICE "%s%s%pV\n", prefix ? prefix : "",
+                   prefix ? ": " : "", &vaf);
+            break;
+        }
+    } else {
+#if 0
+        unsigned int logsize = ARRAY_SIZE(log->buffer);
+        u8 index;
+        char *q = kasprintf(GFP_KERNEL, "%c %s%s%pV\n", level,
+                            prefix ? prefix : "",
+                            prefix ? ": " : "", &vaf);
+
+        index = log->head & (logsize - 1);
+        BUILD_BUG_ON(sizeof(log->head) != sizeof(u8) ||
+                     sizeof(log->tail) != sizeof(u8));
+        if ((u8)(log->head - log->tail) == logsize) {
+            /* The buffer is full, discard the oldest message */
+            if (log->need_free & (1 << index))
+                kfree(log->buffer[index]);
+            log->tail++;
+        }
+
+        log->buffer[index] = q ? q : "OOM: Can't store error string";
+        if (q)
+            log->need_free |= 1 << index;
+        else
+            log->need_free &= ~(1 << index);
+        log->head++;
+#endif
+        panic("%s: NO log file!\n", __func__);
+    }
+    va_end(va);
+}
+EXPORT_SYMBOL(logfc);
+
+/**
+ * generic_parse_monolithic - Parse key[=val][,key[=val]]* mount data
+ * @ctx: The superblock configuration to fill in.
+ * @data: The data to parse
+ *
+ * Parse a blob of data that's in key[=val][,key[=val]]* form.  This can be
+ * called from the ->monolithic_mount_data() fs_context operation.
+ *
+ * Returns 0 on success or the error returned by the ->parse_option() fs_context
+ * operation on failure.
+ */
+int generic_parse_monolithic(struct fs_context *fc, void *data)
+{
+    char *options = data, *key;
+    int ret = 0;
+
+    if (!options)
+        return 0;
+
+    while ((key = strsep(&options, ",")) != NULL) {
+        if (*key) {
+            size_t v_len = 0;
+            char *value = strchr(key, '=');
+
+            if (value) {
+                if (value == key)
+                    continue;
+                *value++ = 0;
+                v_len = strlen(value);
+            }
+            ret = vfs_parse_fs_string(fc, key, value, v_len);
+            if (ret < 0)
+                break;
+        }
+    }
+
+    return ret;
+}
+EXPORT_SYMBOL(generic_parse_monolithic);
+
+int parse_monolithic_mount_data(struct fs_context *fc, void *data)
+{
+    int (*monolithic_mount_data)(struct fs_context *, void *);
+
+    monolithic_mount_data = fc->ops->parse_monolithic;
+    if (!monolithic_mount_data)
+        monolithic_mount_data = generic_parse_monolithic;
+
+    return monolithic_mount_data(fc, data);
+}

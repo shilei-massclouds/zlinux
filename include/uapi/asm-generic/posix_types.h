@@ -13,6 +13,12 @@ typedef long            __kernel_long_t;
 typedef unsigned long   __kernel_ulong_t;
 #endif
 
+#ifndef __kernel_fsid_t
+typedef struct {
+    int val[2];
+} __kernel_fsid_t;
+#endif
+
 /*
  * Most 32 bit architectures use "unsigned int" size_t,
  * and all 64 bit architectures use "unsigned long" size_t.

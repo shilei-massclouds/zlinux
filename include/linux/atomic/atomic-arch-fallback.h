@@ -178,4 +178,14 @@ arch_atomic_inc_not_zero(atomic_t *v)
 #define arch_atomic_inc_not_zero arch_atomic_inc_not_zero
 #endif
 
+#ifndef arch_atomic64_fetch_add_release
+static __always_inline s64
+arch_atomic64_fetch_add_release(s64 i, atomic64_t *v)
+{
+    __atomic_release_fence();
+    return arch_atomic64_fetch_add_relaxed(i, v);
+}
+#define arch_atomic64_fetch_add_release arch_atomic64_fetch_add_release
+#endif
+
 #endif /* _LINUX_ATOMIC_FALLBACK_H */

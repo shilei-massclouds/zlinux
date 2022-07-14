@@ -21,3 +21,5 @@ struct pipe_inode_info;
  * block/bdev.c
  */
 extern void __init bdev_cache_init(void);
+
+extern int parse_monolithic_mount_data(struct fs_context *, void *);

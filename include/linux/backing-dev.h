@@ -33,4 +33,6 @@ struct blkcg;
 
 struct backing_dev_info *bdi_alloc(int node_id);
 
+extern struct backing_dev_info noop_backing_dev_info;
+
 #endif  /* _LINUX_BACKING_DEV_H */

@@ -98,4 +98,10 @@ arch_atomic_long_add_return(long i, atomic_long_t *v)
     return arch_atomic64_add_return(i, v);
 }
 
+static __always_inline long
+arch_atomic_long_fetch_add_release(long i, atomic_long_t *v)
+{
+    return arch_atomic64_fetch_add_release(i, v);
+}
+
 #endif /* _LINUX_ATOMIC_LONG_H */

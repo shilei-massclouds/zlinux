@@ -30,6 +30,7 @@
 #endif
 
 #include <linux/uaccess.h>
+#include <linux/statfs.h>
 
 #include "internal.h"
 
@@ -38,10 +39,55 @@ static void pseudo_fs_free(struct fs_context *fc)
     kfree(fc->fs_private);
 }
 
+int simple_statfs(struct dentry *dentry, struct kstatfs *buf)
+{
+    buf->f_type = dentry->d_sb->s_magic;
+    buf->f_bsize = PAGE_SIZE;
+    buf->f_namelen = NAME_MAX;
+    return 0;
+}
+EXPORT_SYMBOL(simple_statfs);
+
+static const struct super_operations simple_super_operations = {
+    .statfs     = simple_statfs,
+};
+
+static int pseudo_fs_fill_super(struct super_block *s, struct fs_context *fc)
+{
+    struct pseudo_fs_context *ctx = fc->fs_private;
+    struct inode *root;
+
+    s->s_maxbytes = MAX_LFS_FILESIZE;
+    s->s_blocksize = PAGE_SIZE;
+    s->s_blocksize_bits = PAGE_SHIFT;
+    s->s_magic = ctx->magic;
+    s->s_op = ctx->ops ?: &simple_super_operations;
+#if 0
+    s->s_xattr = ctx->xattr;
+#endif
+    s->s_time_gran = 1;
+    root = new_inode(s);
+    if (!root)
+        return -ENOMEM;
+
+    /*
+     * since this is the first inode, make it number 1. New inodes created
+     * after this must take care not to collide with it (by passing
+     * max_reserved of 1 to iunique).
+     */
+    root->i_ino = 1;
+    root->i_mode = S_IFDIR | S_IRUSR | S_IWUSR;
+    //root->i_atime = root->i_mtime = root->i_ctime = current_time(root);
+    s->s_root = d_make_root(root);
+    if (!s->s_root)
+        return -ENOMEM;
+    s->s_d_op = ctx->dops;
+    return 0;
+}
+
 static int pseudo_fs_get_tree(struct fs_context *fc)
 {
-    panic("%s: END!\n", __func__);
-    //return get_tree_nodev(fc, pseudo_fs_fill_super);
+    return get_tree_nodev(fc, pseudo_fs_fill_super);
 }
 
 static const struct fs_context_operations pseudo_fs_context_ops = {
