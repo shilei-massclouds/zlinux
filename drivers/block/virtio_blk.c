@@ -549,7 +549,6 @@ static int virtblk_probe(struct virtio_device *vdev)
     if (err)
         goto out_cleanup_disk;
 
-    panic("%s: blk_size(%lx) END!\n", __func__, blk_size);
     return 0;
 
 out_cleanup_disk:
@@ -628,13 +627,13 @@ static int __init virtio_blk_init(void)
     virtblk_wq = alloc_workqueue("virtio-blk", 0, 0);
     if (!virtblk_wq)
         return -ENOMEM;
+#endif
 
     major = register_blkdev(0, "virtblk");
     if (major < 0) {
         error = major;
         goto out_destroy_workqueue;
     }
-#endif
 
     error = register_virtio_driver(&virtio_blk);
     if (error)

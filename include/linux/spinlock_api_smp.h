@@ -84,6 +84,21 @@ static inline void __raw_spin_lock(raw_spinlock_t *lock)
     do_raw_spin_lock(lock);
 }
 
+static inline void __raw_spin_lock_bh(raw_spinlock_t *lock)
+{
+    __local_bh_disable_ip(_RET_IP_, SOFTIRQ_LOCK_OFFSET);
+    do_raw_spin_lock(lock);
+}
+
+static inline void __raw_spin_unlock_bh(raw_spinlock_t *lock)
+{
+    do_raw_spin_unlock(lock);
+    __local_bh_enable_ip(_RET_IP_, SOFTIRQ_LOCK_OFFSET);
+}
+
+void __lockfunc _raw_spin_lock_bh(raw_spinlock_t *lock) __acquires(lock);
+void __lockfunc _raw_spin_unlock_bh(raw_spinlock_t *lock) __releases(lock);
+
 #define assert_raw_spin_locked(x)   BUG_ON(!raw_spin_is_locked(x))
 
 #include <linux/rwlock_api_smp.h>

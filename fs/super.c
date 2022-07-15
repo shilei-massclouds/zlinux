@@ -540,3 +540,21 @@ int vfs_get_super(struct fs_context *fc, enum vfs_get_super_keying keying,
     return err;
 }
 EXPORT_SYMBOL(vfs_get_super);
+
+/**
+ *  deactivate_super    -   drop an active reference to superblock
+ *  @s: superblock to deactivate
+ *
+ *  Variant of deactivate_locked_super(), except that superblock is *not*
+ *  locked by caller.  If we are going to drop the final active reference,
+ *  lock will be acquired prior to that.
+ */
+void deactivate_super(struct super_block *s)
+{
+    if (!atomic_add_unless(&s->s_active, -1, 1)) {
+        down_write(&s->s_umount);
+        deactivate_locked_super(s);
+    }
+}
+
+EXPORT_SYMBOL(deactivate_super);

@@ -86,6 +86,8 @@
 
 #define __must_check    __attribute__((__warn_unused_result__))
 
+/* context/locking */
+#define __must_hold(x)
 #define __acquires(x)
 #define __releases(x)
 #define __acquire(x)    (void)0

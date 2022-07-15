@@ -23,13 +23,13 @@ struct dentry;
 struct mnt_namespace;
 struct fs_context;
 
+#define MNT_INTERNAL    0x4000
+
 struct vfsmount {
     struct dentry *mnt_root;    /* root of the mounted tree */
     struct super_block *mnt_sb; /* pointer to superblock */
     int mnt_flags;
-#if 0
     struct user_namespace *mnt_userns;
-#endif
 } __randomize_layout;
 
 extern struct vfsmount *vfs_create_mount(struct fs_context *fc);

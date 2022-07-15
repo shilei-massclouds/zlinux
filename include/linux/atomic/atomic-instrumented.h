@@ -198,4 +198,16 @@ atomic64_set(atomic64_t *v, s64 i)
     arch_atomic64_set(v, i);
 }
 
+static __always_inline bool
+atomic_add_unless(atomic_t *v, int a, int u)
+{
+    return arch_atomic_add_unless(v, a, u);
+}
+
+static __always_inline s64
+atomic64_inc_return(atomic64_t *v)
+{
+    return arch_atomic64_inc_return(v);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */

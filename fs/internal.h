@@ -17,6 +17,8 @@ struct fs_context;
 struct user_namespace;
 struct pipe_inode_info;
 
+extern void __init mnt_init(void);
+
 /*
  * block/bdev.c
  */

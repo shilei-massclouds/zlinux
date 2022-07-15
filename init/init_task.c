@@ -59,6 +59,8 @@ struct task_struct init_task __aligned(L1_CACHE_BYTES) = {
     .nr_cpus_allowed= NR_CPUS,
     .mm             = NULL,
     .active_mm      = &init_mm,
+    RCU_POINTER_INITIALIZER(real_cred, &init_cred),
+    RCU_POINTER_INITIALIZER(cred, &init_cred),
     .comm           = INIT_TASK_COMM,
     .signal         = &init_signals,
     .pi_lock        = __RAW_SPIN_LOCK_UNLOCKED(init_task.pi_lock),

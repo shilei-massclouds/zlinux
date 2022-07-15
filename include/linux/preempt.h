@@ -61,7 +61,26 @@
 
 #define PREEMPT_DISABLE_OFFSET PREEMPT_OFFSET
 
+#define SOFTIRQ_DISABLE_OFFSET  (2 * SOFTIRQ_OFFSET)
+
 #define PREEMPT_DISABLED    (PREEMPT_DISABLE_OFFSET + PREEMPT_ENABLED)
+
+#define PREEMPT_LOCK_OFFSET PREEMPT_DISABLE_OFFSET
+
+/*
+ * The preempt_count offset needed for things like:
+ *
+ *  spin_lock_bh()
+ *
+ * Which need to disable both preemption (CONFIG_PREEMPT_COUNT) and
+ * softirqs, such that unlock sequences of:
+ *
+ *  spin_unlock();
+ *  local_bh_enable();
+ *
+ * Work as expected.
+ */
+#define SOFTIRQ_LOCK_OFFSET (SOFTIRQ_DISABLE_OFFSET + PREEMPT_LOCK_OFFSET)
 
 /*
  * Initial preempt_count value; reflects the preempt_count schedule invariant

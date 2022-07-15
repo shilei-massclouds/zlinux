@@ -15,11 +15,10 @@
 #if 0
 #include <linux/capability.h>
 #include <linux/mnt_namespace.h>
-#include <linux/user_namespace.h>
 #include <linux/namei.h>
-#include <linux/security.h>
-#include <linux/cred.h>
 #endif
+#include <linux/cred.h>
+#include <linux/user_namespace.h>
 #include <linux/idr.h>
 #include <linux/init.h>         /* init_rootfs */
 #if 0
@@ -39,15 +38,104 @@
 #if 0
 #include <uapi/linux/mount.h>
 #include <linux/shmem_fs.h>
-#include <linux/mnt_idmapping.h>
 #endif
+#include <linux/mnt_idmapping.h>
 #include <linux/fs.h>
 #include <linux/fs_context.h>
 
 #if 0
 #include "pnode.h"
 #endif
+#include "mount.h"
 #include "internal.h"
+
+static struct kmem_cache *mnt_cache __read_mostly;
+
+static DEFINE_IDA(mnt_id_ida);
+static DEFINE_IDA(mnt_group_ida);
+
+/*
+ * vfsmount lock may be taken for read to prevent changes to the
+ * vfsmount hash, ie. during mountpoint lookups or walking back
+ * up the tree.
+ *
+ * It should be taken for write in all cases where the vfsmount
+ * tree or hash is modified or when a vfsmount structure is modified.
+ */
+__cacheline_aligned_in_smp DEFINE_SEQLOCK(mount_lock);
+
+static inline void lock_mount_hash(void)
+{
+    write_seqlock(&mount_lock);
+}
+
+static inline void unlock_mount_hash(void)
+{
+    write_sequnlock(&mount_lock);
+}
+
+static int mnt_alloc_id(struct mount *mnt)
+{
+    int res = ida_alloc(&mnt_id_ida, GFP_KERNEL);
+
+    if (res < 0)
+        return res;
+    mnt->mnt_id = res;
+    return 0;
+}
+
+static void mnt_free_id(struct mount *mnt)
+{
+    ida_free(&mnt_id_ida, mnt->mnt_id);
+}
+
+static struct mount *alloc_vfsmnt(const char *name)
+{
+    struct mount *mnt = kmem_cache_zalloc(mnt_cache, GFP_KERNEL);
+    if (mnt) {
+        int err;
+
+        err = mnt_alloc_id(mnt);
+        if (err)
+            goto out_free_cache;
+
+        if (name) {
+            mnt->mnt_devname = kstrdup_const(name, GFP_KERNEL_ACCOUNT);
+            if (!mnt->mnt_devname)
+                goto out_free_id;
+        }
+
+        mnt->mnt_pcp = alloc_percpu(struct mnt_pcp);
+        if (!mnt->mnt_pcp)
+            goto out_free_devname;
+
+        this_cpu_add(mnt->mnt_pcp->mnt_count, 1);
+
+        INIT_HLIST_NODE(&mnt->mnt_hash);
+        INIT_LIST_HEAD(&mnt->mnt_child);
+        INIT_LIST_HEAD(&mnt->mnt_mounts);
+        INIT_LIST_HEAD(&mnt->mnt_list);
+        INIT_LIST_HEAD(&mnt->mnt_expire);
+        INIT_LIST_HEAD(&mnt->mnt_share);
+        INIT_LIST_HEAD(&mnt->mnt_slave_list);
+        INIT_LIST_HEAD(&mnt->mnt_slave);
+        INIT_HLIST_NODE(&mnt->mnt_mp_list);
+        INIT_LIST_HEAD(&mnt->mnt_umounting);
+        INIT_HLIST_HEAD(&mnt->mnt_stuck_children);
+        mnt->mnt.mnt_userns = &init_user_ns;
+    }
+    return mnt;
+
+ out_free_devname:
+    kfree_const(mnt->mnt_devname);
+
+ out_free_id:
+    mnt_free_id(mnt);
+
+ out_free_cache:
+    kmem_cache_free(mnt_cache, mnt);
+    return NULL;
+}
 
 /**
  * vfs_create_mount - Create a mount for a configured superblock
@@ -66,7 +154,6 @@ struct vfsmount *vfs_create_mount(struct fs_context *fc)
     if (!fc->root)
         return ERR_PTR(-EINVAL);
 
-#if 0
     mnt = alloc_vfsmnt(fc->source ?: "none");
     if (!mnt)
         return ERR_PTR(-ENOMEM);
@@ -88,8 +175,6 @@ struct vfsmount *vfs_create_mount(struct fs_context *fc)
     list_add_tail(&mnt->mnt_instance, &mnt->mnt.mnt_sb->s_mounts);
     unlock_mount_hash();
     return &mnt->mnt;
-#endif
-    panic("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL(vfs_create_mount);
 
@@ -129,7 +214,6 @@ vfs_kern_mount(struct file_system_type *type, int flags, const char *name,
         mnt = ERR_PTR(ret);
 
     put_fs_context(fc);
-    panic("%s: END!\n", __func__);
     return mnt;
 }
 EXPORT_SYMBOL_GPL(vfs_kern_mount);
@@ -138,7 +222,6 @@ struct vfsmount *kern_mount(struct file_system_type *type)
 {
     struct vfsmount *mnt;
     mnt = vfs_kern_mount(type, SB_KERNMOUNT, type->name, NULL);
-#if 0
     if (!IS_ERR(mnt)) {
         /*
          * it is a longterm mount, don't release mnt until
@@ -146,8 +229,44 @@ struct vfsmount *kern_mount(struct file_system_type *type)
         */
         real_mount(mnt)->mnt_ns = MNT_NS_INTERNAL;
     }
-#endif
-    panic("%s: END!\n", __func__);
     return mnt;
 }
 EXPORT_SYMBOL_GPL(kern_mount);
+
+void __init mnt_init(void)
+{
+    int err;
+
+    mnt_cache =
+        kmem_cache_create("mnt_cache", sizeof(struct mount),
+                          0, SLAB_HWCACHE_ALIGN|SLAB_PANIC|SLAB_ACCOUNT, NULL);
+
+#if 0
+    mount_hashtable = alloc_large_system_hash("Mount-cache",
+                sizeof(struct hlist_head),
+                mhash_entries, 19,
+                HASH_ZERO,
+                &m_hash_shift, &m_hash_mask, 0, 0);
+    mountpoint_hashtable = alloc_large_system_hash("Mountpoint-cache",
+                sizeof(struct hlist_head),
+                mphash_entries, 19,
+                HASH_ZERO,
+                &mp_hash_shift, &mp_hash_mask, 0, 0);
+
+    if (!mount_hashtable || !mountpoint_hashtable)
+        panic("Failed to allocate mount hash table\n");
+
+    kernfs_init();
+
+    err = sysfs_init();
+    if (err)
+        printk(KERN_WARNING "%s: sysfs_init error: %d\n",
+            __func__, err);
+    fs_kobj = kobject_create_and_add("fs", NULL);
+    if (!fs_kobj)
+        printk(KERN_WARNING "%s: kobj create error\n", __func__);
+    shmem_init();
+    init_rootfs();
+    init_mount_tree();
+#endif
+}

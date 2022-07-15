@@ -25,8 +25,8 @@ void __init driver_init(void)
     //devtmpfs_init();
     devices_init();
     buses_init();
-#if 0
     classes_init();
+#if 0
     firmware_init();
     hypervisor_init();
 

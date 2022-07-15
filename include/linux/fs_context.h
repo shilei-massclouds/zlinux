@@ -100,8 +100,8 @@ struct fs_context {
     struct user_namespace *user_ns;   /* The user namespace for this mount */
 #if 0
     struct net *net_ns;    /* The network namespace for this mount */
-    const struct cred *cred;      /* The mounter's credentials */
 #endif
+    const struct cred *cred;      /* The mounter's credentials */
     struct p_log    log;        /* Logging buffer */
     const char      *source;    /* The source name (eg. dev path) */
     void            *security;  /* Linux S&M options */

@@ -138,4 +138,52 @@ static inline int d_in_lookup(const struct dentry *dentry)
     return dentry->d_flags & DCACHE_PAR_LOOKUP;
 }
 
+extern void dput(struct dentry *);
+
+/**
+ *  d_unhashed -    is dentry hashed
+ *  @dentry: entry to check
+ *
+ *  Returns true if the dentry passed is not currently hashed.
+ */
+
+static inline int d_unhashed(const struct dentry *dentry)
+{
+    return hlist_bl_unhashed(&dentry->d_hash);
+}
+
+/*
+ * Locking rules for dentry_operations callbacks are to be found in
+ * Documentation/filesystems/locking.rst. Keep it updated!
+ *
+ * FUrther descriptions are found in Documentation/filesystems/vfs.rst.
+ * Keep it updated too!
+ */
+
+/* d_flags entries */
+#define DCACHE_OP_HASH          0x00000001
+#define DCACHE_OP_COMPARE       0x00000002
+#define DCACHE_OP_REVALIDATE        0x00000004
+#define DCACHE_OP_DELETE        0x00000008
+#define DCACHE_OP_PRUNE         0x00000010
+
+#define DCACHE_DISCONNECTED     0x00000020
+     /* This dentry is possibly not currently connected to the dcache tree, in
+      * which case its parent will either be itself, or will have this flag as
+      * well.  nfsd will not use a dentry with this bit set, but will first
+      * endeavour to clear the bit either by discovering that it is connected,
+      * or by performing lookup operations.   Any filesystem which supports
+      * nfsd_operations MUST have a lookup function which, if it finds a
+      * directory inode with a DCACHE_DISCONNECTED dentry, will d_move that
+      * dentry into place and return that dentry rather than the passed one,
+      * typically using d_splice_alias. */
+
+#define DCACHE_REFERENCED       0x00000040 /* Recently used, don't discard. */
+
+#define DCACHE_DONTCACHE        0x00000080 /* Purge from memory on final dput() */
+
+#define DCACHE_CANT_MOUNT       0x00000100
+#define DCACHE_GENOCIDE         0x00000200
+#define DCACHE_SHRINK_LIST      0x00000400
+
 #endif  /* __LINUX_DCACHE_H */

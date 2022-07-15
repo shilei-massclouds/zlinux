@@ -10,7 +10,7 @@
 #include <linux/thread_info.h>
 #include <linux/kernel.h>
 #include <linux/stringify.h>
-//#include <linux/bottom_half.h>
+#include <linux/bottom_half.h>
 #include <linux/lockdep.h>
 #include <asm/barrier.h>
 #include <asm/mmiowb.h>
@@ -44,6 +44,8 @@
 
 #define raw_spin_lock_irq(lock)     _raw_spin_lock_irq(lock)
 #define raw_spin_unlock_irq(lock)   _raw_spin_unlock_irq(lock)
+#define raw_spin_lock_bh(lock)      _raw_spin_lock_bh(lock)
+#define raw_spin_unlock_bh(lock)    _raw_spin_unlock_bh(lock)
 
 /*
  * Define the various spin_lock methods.  Note we define these
@@ -127,6 +129,16 @@ static __always_inline void spin_lock_irq(spinlock_t *lock)
 static __always_inline void spin_unlock_irq(spinlock_t *lock)
 {
     raw_spin_unlock_irq(&lock->rlock);
+}
+
+static __always_inline void spin_lock_bh(spinlock_t *lock)
+{
+    raw_spin_lock_bh(&lock->rlock);
+}
+
+static __always_inline void spin_unlock_bh(spinlock_t *lock)
+{
+    raw_spin_unlock_bh(&lock->rlock);
 }
 
 /*

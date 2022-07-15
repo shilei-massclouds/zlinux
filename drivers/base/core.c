@@ -34,6 +34,11 @@
 
 #include "base.h"
 
+struct class_dir {
+    struct kobject kobj;
+    struct class *class;
+};
+
 /* /sys/devices/ */
 struct kset *devices_kset;
 
@@ -47,6 +52,9 @@ static struct kobj_type device_ktype = {
     .get_ownership  = device_get_ownership,
 #endif
 };
+
+struct kobject *sysfs_dev_char_kobj;
+struct kobject *sysfs_dev_block_kobj;
 
 /**
  * dev_set_name - set a device name
@@ -65,11 +73,97 @@ int dev_set_name(struct device *dev, const char *fmt, ...)
 }
 EXPORT_SYMBOL_GPL(dev_set_name);
 
+struct kobject *virtual_device_parent(struct device *dev)
+{
+    static struct kobject *virtual_dir = NULL;
+
+    if (!virtual_dir)
+        virtual_dir = kobject_create_and_add("virtual", &devices_kset->kobj);
+
+    return virtual_dir;
+}
+
+static DEFINE_MUTEX(gdp_mutex);
+
+#define to_class_dir(obj) container_of(obj, struct class_dir, kobj)
+
+static void class_dir_release(struct kobject *kobj)
+{
+    struct class_dir *dir = to_class_dir(kobj);
+    kfree(dir);
+}
+
+static struct kobj_type class_dir_ktype = {
+    .release    = class_dir_release,
+#if 0
+    .sysfs_ops  = &kobj_sysfs_ops,
+    .child_ns_type  = class_dir_child_ns_type
+#endif
+};
+
+static struct kobject *
+class_dir_create_and_add(struct class *class, struct kobject *parent_kobj)
+{
+    struct class_dir *dir;
+    int retval;
+
+    dir = kzalloc(sizeof(*dir), GFP_KERNEL);
+    if (!dir)
+        return ERR_PTR(-ENOMEM);
+
+    dir->class = class;
+    kobject_init(&dir->kobj, &class_dir_ktype);
+
+    dir->kobj.kset = &class->p->glue_dirs;
+
+    retval = kobject_add(&dir->kobj, parent_kobj, "%s", class->name);
+    if (retval < 0) {
+        kobject_put(&dir->kobj);
+        return ERR_PTR(retval);
+    }
+    return &dir->kobj;
+}
+
 static struct kobject *
 get_device_parent(struct device *dev, struct device *parent)
 {
     if (dev->class) {
-        panic("%s: NO implementation!\n", __func__);
+        struct kobject *kobj = NULL;
+        struct kobject *parent_kobj;
+        struct kobject *k;
+
+        /*
+         * If we have no parent, we live in "virtual".
+         * Class-devices with a non class-device as parent, live
+         * in a "glue" directory to prevent namespace collisions.
+         */
+        if (parent == NULL)
+            parent_kobj = virtual_device_parent(dev);
+        else if (parent->class && !dev->class->ns_type)
+            return &parent->kobj;
+        else
+            parent_kobj = &parent->kobj;
+
+        mutex_lock(&gdp_mutex);
+
+        /* find our class-directory at the parent and reference it */
+        spin_lock(&dev->class->p->glue_dirs.list_lock);
+        list_for_each_entry(k, &dev->class->p->glue_dirs.list, entry)
+            if (k->parent == parent_kobj) {
+                kobj = kobject_get(k);
+                break;
+            }
+        spin_unlock(&dev->class->p->glue_dirs.list_lock);
+        if (kobj) {
+            mutex_unlock(&gdp_mutex);
+            return kobj;
+        }
+
+        /* or create a new class-directory at the parent device */
+        k = class_dir_create_and_add(dev->class, parent_kobj);
+        /* do not emit an uevent for this simple "glue" directory */
+        mutex_unlock(&gdp_mutex);
+        return k;
     }
 
     /* subsystems can specify a default root directory for their devices */
@@ -466,14 +560,12 @@ int __init devices_init(void)
     dev_kobj = kobject_create_and_add("dev", NULL);
     if (!dev_kobj)
         goto dev_kobj_err;
-#if 0
     sysfs_dev_block_kobj = kobject_create_and_add("block", dev_kobj);
     if (!sysfs_dev_block_kobj)
         goto block_kobj_err;
     sysfs_dev_char_kobj = kobject_create_and_add("char", dev_kobj);
     if (!sysfs_dev_char_kobj)
         goto char_kobj_err;
-#endif
 
     return 0;
 

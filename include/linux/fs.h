@@ -617,6 +617,8 @@ extern int inode_init_always(struct super_block *, struct inode *);
 
 extern void iput(struct inode *);
 
+void deactivate_super(struct super_block *sb);
+
 /*
  * Inode flags - they have no relation to superblock flags now
  */
@@ -653,5 +655,10 @@ extern void iput(struct inode *);
 
 #define IS_WHITEOUT(inode)  (S_ISCHR(inode->i_mode) && \
                  (inode)->i_rdev == WHITEOUT_DEV)
+
+static inline int inode_unhashed(struct inode *inode)
+{
+    return hlist_unhashed(&inode->i_hash);
+}
 
 #endif /* _LINUX_FS_H */

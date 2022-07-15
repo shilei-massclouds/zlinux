@@ -54,6 +54,26 @@ static int virtio_features_ok(struct virtio_device *dev)
     return 0;
 }
 
+static void __virtio_config_changed(struct virtio_device *dev)
+{
+    struct virtio_driver *drv = drv_to_virtio(dev->dev.driver);
+
+    if (!dev->config_enabled)
+        dev->config_change_pending = true;
+    else if (drv && drv->config_changed)
+        drv->config_changed(dev);
+}
+
+static void virtio_config_enable(struct virtio_device *dev)
+{
+    spin_lock_irq(&dev->config_lock);
+    dev->config_enabled = true;
+    if (dev->config_change_pending)
+        __virtio_config_changed(dev);
+    dev->config_change_pending = false;
+    spin_unlock_irq(&dev->config_lock);
+}
+
 static int virtio_dev_probe(struct device *_d)
 {
     int err, i;
@@ -126,7 +146,15 @@ static int virtio_dev_probe(struct device *_d)
     if (err)
         goto err;
 
-    panic("%s: END!\n", __func__);
+    /* If probe didn't do it, mark device DRIVER_OK ourselves. */
+    if (!(dev->config->get_status(dev) & VIRTIO_CONFIG_S_DRIVER_OK))
+        virtio_device_ready(dev);
+
+    if (drv->scan)
+        drv->scan(dev);
+
+    virtio_config_enable(dev);
+
     return 0;
 
  err:

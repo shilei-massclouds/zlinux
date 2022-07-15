@@ -188,4 +188,13 @@ arch_atomic64_fetch_add_release(s64 i, atomic64_t *v)
 #define arch_atomic64_fetch_add_release arch_atomic64_fetch_add_release
 #endif
 
+#ifndef arch_atomic64_inc_return
+static __always_inline s64
+arch_atomic64_inc_return(atomic64_t *v)
+{
+    return arch_atomic64_add_return(1, v);
+}
+#define arch_atomic64_inc_return arch_atomic64_inc_return
+#endif
+
 #endif /* _LINUX_ATOMIC_FALLBACK_H */

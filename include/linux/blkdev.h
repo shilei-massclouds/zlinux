@@ -39,7 +39,8 @@
 #define BLK_MQ_POLL_CLASSIC -1
 
 #define DISK_MAX_PARTS  256
-#define DISK_NAME_LEN   32
+#define DISK_NAME_LEN       32
+#define BLKDEV_MAJOR_MAX    512
 
 struct module;
 struct request_queue;
@@ -329,6 +330,28 @@ enum blk_unique_id {
     BLK_UID_NAA     = 3,
 };
 
+/**
+ * DOC: genhd capability flags
+ *
+ * ``GENHD_FL_REMOVABLE``: indicates that the block device gives access to
+ * removable media.  When set, the device remains present even when media is not
+ * inserted.  Shall not be set for devices which are removed entirely when the
+ * media is removed.
+ *
+ * ``GENHD_FL_HIDDEN``: the block device is hidden; it doesn't produce events,
+ * doesn't appear in sysfs, and can't be opened from userspace or using
+ * blkdev_get*. Used for the underlying components of multipath devices.
+ *
+ * ``GENHD_FL_NO_PART``: partition support is disabled.  The kernel will not
+ * scan for partitions from add_disk, and users can't add partitions manually.
+ *
+ */
+enum {
+    GENHD_FL_REMOVABLE  = 1 << 0,
+    GENHD_FL_HIDDEN     = 1 << 1,
+    GENHD_FL_NO_PART    = 1 << 2,
+};
+
 struct block_device_operations {
     void (*submit_bio)(struct bio *bio);
     int (*poll_bio)(struct bio *bio, struct io_comp_batch *iob,
@@ -493,5 +516,29 @@ struct block_device *bdev_alloc(struct gendisk *disk, u8 partno);
 
 int __must_check device_add_disk(struct device *parent, struct gendisk *disk,
                                  const struct attribute_group **groups);
+
+static inline bool disk_live(struct gendisk *disk)
+{
+    return !inode_unhashed(disk->part0->bd_inode);
+}
+
+/*
+ * The gendisk is refcounted by the part0 block_device, and the bd_device
+ * therein is also used for device model presentation in sysfs.
+ */
+#define dev_to_disk(device) \
+    (dev_to_bdev(device)->bd_disk)
+#define disk_to_dev(disk) \
+    (&((disk)->part0->bd_device))
+
+static inline bool queue_is_mq(struct request_queue *q)
+{
+    return q->mq_ops;
+}
+
+int __register_blkdev(unsigned int major, const char *name,
+                      void (*probe)(dev_t devt));
+#define register_blkdev(major, name) \
+    __register_blkdev(major, name, NULL)
 
 #endif /* _LINUX_BLKDEV_H */

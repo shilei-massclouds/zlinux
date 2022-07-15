@@ -48,6 +48,17 @@ struct bdev_inode {
     struct inode vfs_inode;
 };
 
+static inline struct bdev_inode *BDEV_I(struct inode *inode)
+{
+    return container_of(inode, struct bdev_inode, vfs_inode);
+}
+
+struct block_device *I_BDEV(struct inode *inode)
+{
+    return &BDEV_I(inode)->bdev;
+}
+EXPORT_SYMBOL(I_BDEV);
+
 static struct inode *bdev_alloc_inode(struct super_block *sb)
 {
     struct bdev_inode *ei = alloc_inode_sb(sb, bdev_cachep, GFP_KERNEL);
@@ -107,10 +118,7 @@ void __init bdev_cache_init(void)
     bd_mnt = kern_mount(&bd_type);
     if (IS_ERR(bd_mnt))
         panic("Cannot create bdev pseudo-fs");
-#if 0
     blockdev_superblock = bd_mnt->mnt_sb;   /* For writeback */
-#endif
-    panic("%s: END!\n", __func__);
 }
 
 struct block_device *bdev_alloc(struct gendisk *disk, u8 partno)
@@ -121,11 +129,10 @@ struct block_device *bdev_alloc(struct gendisk *disk, u8 partno)
     inode = new_inode(blockdev_superblock);
     if (!inode)
         return NULL;
-#if 0
     inode->i_mode = S_IFBLK;
     inode->i_rdev = 0;
-    inode->i_data.a_ops = &def_blk_aops;
-    mapping_set_gfp_mask(&inode->i_data, GFP_USER);
+    //inode->i_data.a_ops = &def_blk_aops;
+    //mapping_set_gfp_mask(&inode->i_data, GFP_USER);
 
     bdev = I_BDEV(inode);
     mutex_init(&bdev->bd_fsfreeze_mutex);
@@ -133,13 +140,13 @@ struct block_device *bdev_alloc(struct gendisk *disk, u8 partno)
     bdev->bd_partno = partno;
     bdev->bd_inode = inode;
     bdev->bd_queue = disk->queue;
-    bdev->bd_stats = alloc_percpu(struct disk_stats);
+    //bdev->bd_stats = alloc_percpu(struct disk_stats);
+#if 0
     if (!bdev->bd_stats) {
         iput(inode);
         return NULL;
     }
 #endif
     bdev->bd_disk = disk;
-    panic("%s: END!\n", __func__);
     return bdev;
 }

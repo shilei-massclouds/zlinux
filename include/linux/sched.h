@@ -248,6 +248,17 @@ struct task_struct {
 
     pid_t               pid;
 
+    /* Process credentials: */
+
+    /* Tracer's credentials at attach: */
+    const struct cred __rcu     *ptracer_cred;
+
+    /* Objective and real subjective task credentials (COW): */
+    const struct cred __rcu     *real_cred;
+
+    /* Effective (overridable) subjective task credentials (COW): */
+    const struct cred __rcu     *cred;
+
     /*
      * executable name, excluding path.
      *

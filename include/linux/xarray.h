@@ -308,6 +308,12 @@ static inline bool xa_is_value(const void *entry)
     return (unsigned long)entry & 1;
 }
 
+#define xa_lock_irq(xa)     spin_lock_irq(&(xa)->xa_lock)
+#define xa_unlock_irq(xa)   spin_unlock_irq(&(xa)->xa_lock)
+
+#define xa_lock_bh(xa)      spin_lock_bh(&(xa)->xa_lock)
+#define xa_unlock_bh(xa)    spin_unlock_bh(&(xa)->xa_lock)
+
 #define xa_lock_irqsave(xa, flags) \
     spin_lock_irqsave(&(xa)->xa_lock, flags)
 
@@ -319,6 +325,14 @@ static inline bool xa_is_value(const void *entry)
 
 #define xas_unlock_irqrestore(xas, flags) \
     xa_unlock_irqrestore((xas)->xa, flags)
+
+#define xas_lock_irq(xas)   xa_lock_irq((xas)->xa)
+#define xas_unlock_irq(xas) xa_unlock_irq((xas)->xa)
+
+#define xas_lock(xas)       xa_lock((xas)->xa)
+#define xas_unlock(xas)     xa_unlock((xas)->xa)
+#define xas_lock_bh(xas)    xa_lock_bh((xas)->xa)
+#define xas_unlock_bh(xas)  xa_unlock_bh((xas)->xa)
 
 void *xas_find_marked(struct xa_state *, unsigned long max, xa_mark_t);
 
@@ -575,5 +589,80 @@ static inline unsigned long xa_to_value(const void *entry)
 {
     return (unsigned long)entry >> 1;
 }
+
+#define xa_lock(xa)     spin_lock(&(xa)->xa_lock)
+#define xa_unlock(xa)   spin_unlock(&(xa)->xa_lock)
+
+/**
+ * xa_init() - Initialise an empty XArray.
+ * @xa: XArray.
+ *
+ * An empty XArray is full of NULL entries.
+ *
+ * Context: Any context.
+ */
+static inline void xa_init(struct xarray *xa)
+{
+    xa_init_flags(xa, 0);
+}
+
+int __must_check __xa_insert(struct xarray *, unsigned long index,
+                             void *entry, gfp_t);
+
+/**
+ * xa_insert() - Store this entry in the XArray unless another entry is
+ *          already present.
+ * @xa: XArray.
+ * @index: Index into array.
+ * @entry: New entry.
+ * @gfp: Memory allocation flags.
+ *
+ * Inserting a NULL entry will store a reserved entry (like xa_reserve())
+ * if no entry is present.  Inserting will fail if a reserved entry is
+ * present, even though loading from this index will return NULL.
+ *
+ * Context: Any context.  Takes and releases the xa_lock.  May sleep if
+ * the @gfp flags permit.
+ * Return: 0 if the store succeeded.  -EBUSY if another entry was present.
+ * -ENOMEM if memory could not be allocated.
+ */
+static inline int __must_check
+xa_insert(struct xarray *xa, unsigned long index, void *entry, gfp_t gfp)
+{
+    int err;
+
+    xa_lock(xa);
+    err = __xa_insert(xa, index, entry, gfp);
+    xa_unlock(xa);
+
+    return err;
+}
+
+/**
+ * xa_is_advanced() - Is the entry only permitted for the advanced API?
+ * @entry: Entry to be stored in the XArray.
+ *
+ * Return: %true if the entry cannot be stored by the normal API.
+ */
+static inline bool xa_is_advanced(const void *entry)
+{
+    return xa_is_internal(entry) && (entry <= XA_RETRY_ENTRY);
+}
+
+/**
+ * xas_set_err() - Note an error in the xa_state.
+ * @xas: XArray operation state.
+ * @err: Negative error number.
+ *
+ * Only call this function with a negative @err; zero or positive errors
+ * will probably not behave the way you think they should.  If you want
+ * to clear the error from an xa_state, use xas_reset().
+ */
+static inline void xas_set_err(struct xa_state *xas, long err)
+{
+    xas->xa_node = XA_ERROR(err);
+}
+
+bool xas_nomem(struct xa_state *, gfp_t);
 
 #endif /* _LINUX_XARRAY_H */

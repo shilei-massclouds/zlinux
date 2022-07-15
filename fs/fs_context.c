@@ -19,11 +19,11 @@
 #include <linux/security.h>
 #include <linux/mnt_namespace.h>
 #include <linux/pid_namespace.h>
-#include <linux/user_namespace.h>
 #include <net/net_namespace.h>
 #endif
+#include <linux/user_namespace.h>
 #include <asm/sections.h>
-//#include "mount.h"
+#include "mount.h"
 #include "internal.h"
 
 enum legacy_fs_param {
@@ -190,10 +190,9 @@ void put_fs_context(struct fs_context *fc)
 {
     struct super_block *sb;
 
-#if 0
     if (fc->root) {
         sb = fc->root->d_sb;
-        dput(fc->root);
+        //dput(fc->root);
         fc->root = NULL;
         deactivate_super(sb);
     }
@@ -201,16 +200,17 @@ void put_fs_context(struct fs_context *fc)
     if (fc->need_free && fc->ops && fc->ops->free)
         fc->ops->free(fc);
 
-    security_free_mnt_opts(&fc->security);
+#if 0
     put_net(fc->net_ns);
+#endif
     put_user_ns(fc->user_ns);
+#if 0
     put_cred(fc->cred);
     put_fc_log(fc);
+#endif
     put_filesystem(fc->fs_type);
     kfree(fc->source);
     kfree(fc);
-#endif
-    panic("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL(put_fs_context);
 
@@ -246,15 +246,14 @@ alloc_fs_context(struct file_system_type *fs_type,
     fc->sb_flags = sb_flags;
     fc->sb_flags_mask = sb_flags_mask;
     fc->fs_type = get_filesystem(fs_type);
-#if 0
     fc->cred    = get_current_cred();
+#if 0
     fc->net_ns  = get_net(current->nsproxy->net_ns);
-    fc->log.prefix  = fs_type->name;
 #endif
+    fc->log.prefix = fs_type->name;
 
     mutex_init(&fc->uapi_mutex);
 
-#if 0
     switch (purpose) {
     case FS_CONTEXT_FOR_MOUNT:
         fc->user_ns = get_user_ns(fc->cred->user_ns);
@@ -268,7 +267,6 @@ alloc_fs_context(struct file_system_type *fs_type,
         fc->root = dget(reference);
         break;
     }
-#endif
 
     /* TODO: Make all filesystems support this unconditionally */
     init_fs_context = fc->fs_type->init_fs_context;

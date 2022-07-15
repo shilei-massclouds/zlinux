@@ -154,4 +154,21 @@ static inline void idr_preload_end(void)
 
 void *idr_replace(struct idr *, void *, unsigned long id);
 
+/**
+ * ida_alloc() - Allocate an unused ID.
+ * @ida: IDA handle.
+ * @gfp: Memory allocation flags.
+ *
+ * Allocate an ID between 0 and %INT_MAX, inclusive.
+ *
+ * Context: Any context. It is safe to call this function without
+ * locking in your code.
+ * Return: The allocated ID, or %-ENOMEM if memory could not be allocated,
+ * or %-ENOSPC if there are no free IDs.
+ */
+static inline int ida_alloc(struct ida *ida, gfp_t gfp)
+{
+    return ida_alloc_range(ida, 0, ~0, gfp);
+}
+
 #endif /* __IDR_H__ */

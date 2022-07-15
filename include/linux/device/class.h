@@ -77,4 +77,19 @@ struct class {
     struct subsys_private *p;
 };
 
+extern int __must_check __class_register(struct class *class,
+                                         struct lock_class_key *key);
+extern void class_unregister(struct class *class);
+
+/* This is a #define to keep the compiler from merging different
+ * instances of the __key variable */
+#define class_register(class)           \
+({                      \
+    static struct lock_class_key __key; \
+    __class_register(class, &__key);    \
+})
+
+extern struct kobject *sysfs_dev_block_kobj;
+extern struct kobject *sysfs_dev_char_kobj;
+
 #endif  /* _DEVICE_CLASS_H_ */

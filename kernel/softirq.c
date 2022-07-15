@@ -40,3 +40,8 @@ unsigned int __weak arch_dynirq_lower_bound(unsigned int from)
 {
     return from;
 }
+
+void __local_bh_enable_ip(unsigned long ip, unsigned int cnt)
+{
+    panic("%s: END!\n", __func__);
+}

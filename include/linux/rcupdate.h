@@ -10,7 +10,7 @@
 #include <linux/atomic.h>
 #include <linux/irqflags.h>
 #include <linux/preempt.h>
-//#include <linux/bottom_half.h>
+#include <linux/bottom_half.h>
 #include <linux/lockdep.h>
 #include <asm/processor.h>
 #include <linux/cpumask.h>
@@ -273,6 +273,16 @@ do {                                        \
     do { \
         WRITE_ONCE(p, RCU_INITIALIZER(v)); \
     } while (0)
+
+/**
+ * RCU_POINTER_INITIALIZER() - statically initialize an RCU protected pointer
+ * @p: The pointer to be initialized.
+ * @v: The value to initialized the pointer to.
+ *
+ * GCC-style initialization for an RCU-protected pointer in a structure field.
+ */
+#define RCU_POINTER_INITIALIZER(p, v) \
+    .p = RCU_INITIALIZER(v)
 
 #include <linux/rcutree.h>
 

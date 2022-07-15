@@ -22,4 +22,9 @@ static inline void INIT_HLIST_BL_NODE(struct hlist_bl_node *h)
     h->pprev = NULL;
 }
 
+static inline bool  hlist_bl_unhashed(const struct hlist_bl_node *h)
+{
+    return !h->pprev;
+}
+
 #endif /* _LINUX_LIST_BL_H */

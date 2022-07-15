@@ -228,6 +228,7 @@ static void __init do_initcalls(void)
  */
 static void __init do_basic_setup(void)
 {
+    printk("%s: ...\n", __func__);
 #if 0
     cpuset_init_smp();
 #endif
@@ -280,6 +281,7 @@ static int __ref kernel_init(void *unused)
 {
     int ret;
 
+    printk("############## %s: ...\n", __func__);
 #if 0
     /*
      * Wait until kthreadd is all set-up.
@@ -307,6 +309,8 @@ static int __ref kernel_init(void *unused)
 noinline void __ref rest_init(void)
 {
     int pid;
+
+    printk("############## %s: ...\n", __func__);
 
     z_tests_early();
 
@@ -645,6 +649,8 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
         parse_args("Setting extra init args", extra_init_args,
                    NULL, 0, -1, -1, NULL, set_init_arg);
 
+    printk("############## %s: step1\n", __func__);
+
 #if 0
     /*
      * These use large bootmem allocations and must precede
@@ -669,6 +675,8 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
         local_irq_disable();
     radix_tree_init();
 
+    printk("############## %s: step2\n", __func__);
+
     init_IRQ();
 
     setup_per_cpu_pageset();
@@ -679,6 +687,8 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
     kmem_cache_init_late();
 
     pid_idr_init();
+
+    printk("############## %s: step3\n", __func__);
 
     fork_init();
 

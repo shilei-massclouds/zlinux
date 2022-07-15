@@ -59,16 +59,14 @@ struct block_device {
     sector_t        bd_start_sect;
     sector_t        bd_nr_sectors;
     //struct disk_stats __percpu *bd_stats;
-    unsigned long       bd_stamp;
+    unsigned long   bd_stamp;
     bool            bd_read_only;   /* read-only policy */
-    //dev_t           bd_dev;
-    int         bd_openers;
-#if 0
-    struct inode *      bd_inode;   /* will die */
-    struct super_block *    bd_super;
-#endif
+    dev_t           bd_dev;
+    int             bd_openers;
+    struct inode    *bd_inode;   /* will die */
+    struct super_block *bd_super;
     void *          bd_claiming;
-    struct device       bd_device;
+    struct device   bd_device;
     void *          bd_holder;
     int         bd_holders;
     bool            bd_write_holder;
@@ -167,5 +165,8 @@ enum req_opf {
 
     REQ_OP_LAST,
 };
+
+#define dev_to_bdev(device) \
+    container_of((device), struct block_device, bd_device)
 
 #endif /* __LINUX_BLK_TYPES_H */

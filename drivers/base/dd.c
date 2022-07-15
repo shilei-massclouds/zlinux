@@ -558,8 +558,6 @@ static int __device_attach_driver(struct device_driver *drv, void *_data)
     ret = driver_probe_device(drv, dev);
     if (ret < 0)
         return ret;
-
-    panic("%s: driver(%s) END!\n", __func__, drv->name);
     return ret == 0;
 }
 

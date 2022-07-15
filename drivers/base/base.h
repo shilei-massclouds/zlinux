@@ -95,6 +95,8 @@ struct device_private {
     container_of(obj, struct device_private, knode_parent)
 #define to_device_private_bus(obj)  \
     container_of(obj, struct device_private, knode_bus)
+#define to_device_private_class(obj)    \
+    container_of(obj, struct device_private, knode_class)
 
 struct driver_private {
     struct kobject kobj;
@@ -129,3 +131,5 @@ static inline int driver_match_device(struct device_driver *drv,
 }
 
 extern void bus_probe_device(struct device *dev);
+
+extern int classes_init(void);

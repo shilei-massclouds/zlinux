@@ -115,7 +115,8 @@ struct device {
     struct device_node      *of_node;   /* associated device tree node */
     struct fwnode_handle    *fwnode;    /* firmware device node */
 
-    u32 id;     /* device instance */
+    dev_t   devt;   /* dev_t, creates the sysfs "dev" */
+    u32     id;     /* device instance */
 
     spinlock_t          devres_lock;
     struct list_head    devres_head;
@@ -258,5 +259,9 @@ void device_initial_probe(struct device *dev);
 
 int dev_err_probe(const struct device *dev,
                   int err, const char *fmt, ...);
+
+void device_del(struct device *dev);
+
+#define sysfs_deprecated 0
 
 #endif /* _DEVICE_H_ */

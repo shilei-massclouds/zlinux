@@ -115,3 +115,15 @@ void __lockfunc _raw_write_lock_nested(rwlock_t *lock, int subclass)
 }
 EXPORT_SYMBOL(_raw_write_lock_nested);
 #endif
+
+void __lockfunc _raw_spin_lock_bh(raw_spinlock_t *lock)
+{
+    __raw_spin_lock_bh(lock);
+}
+EXPORT_SYMBOL(_raw_spin_lock_bh);
+
+void __lockfunc _raw_spin_unlock_bh(raw_spinlock_t *lock)
+{
+    __raw_spin_unlock_bh(lock);
+}
+EXPORT_SYMBOL(_raw_spin_unlock_bh);

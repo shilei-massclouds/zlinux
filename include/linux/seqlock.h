@@ -14,7 +14,7 @@
  */
 
 #include <linux/compiler.h>
-//#include <linux/lockdep.h>
+#include <linux/lockdep.h>
 #include <linux/mutex.h>
 #include <linux/ww_mutex.h>
 #include <linux/preempt.h>
@@ -149,15 +149,25 @@ SEQCOUNT_LOCKNAME(mutex, struct mutex, true, s->lock,
 SEQCOUNT_LOCKNAME(ww_mutex, struct ww_mutex, true, &s->lock->base,
                   ww_mutex, ww_mutex_lock(s->lock, NULL))
 
+#define SEQCOUNT_DEP_MAP_INIT(lockname)
+#define seqcount_init(s) __seqcount_init(s, NULL, NULL)
+#define seqcount_lockdep_reader_access(x)
+
+/**
+ * SEQCNT_ZERO() - static initializer for seqcount_t
+ * @name: Name of the seqcount_t instance
+ */
+#define SEQCNT_ZERO(name) { .sequence = 0, SEQCOUNT_DEP_MAP_INIT(name) }
+
 /*
  * SEQCNT_LOCKNAME_ZERO - static initializer for seqcount_LOCKNAME_t
  * @name:   Name of the seqcount_LOCKNAME_t instance
  * @lock:   Pointer to the associated LOCKNAME
  */
 
-#define SEQCOUNT_LOCKNAME_ZERO(seq_name, assoc_lock) {          \
-    .seqcount       = SEQCNT_ZERO(seq_name.seqcount),   \
-    __SEQ_LOCK(.lock    = (assoc_lock))             \
+#define SEQCOUNT_LOCKNAME_ZERO(seq_name, assoc_lock) {  \
+    .seqcount        = SEQCNT_ZERO(seq_name.seqcount),  \
+    __SEQ_LOCK(.lock = (assoc_lock))                    \
 }
 
 #define SEQCNT_RAW_SPINLOCK_ZERO(name, lock)    SEQCOUNT_LOCKNAME_ZERO(name, lock)
@@ -262,10 +272,6 @@ static inline void __seqcount_init(seqcount_t *s, const char *name,
     s->sequence = 0;
 }
 
-#define SEQCOUNT_DEP_MAP_INIT(lockname)
-#define seqcount_init(s) __seqcount_init(s, NULL, NULL)
-#define seqcount_lockdep_reader_access(x)
-
 /*
  * seqcount_LOCKNAME_init() - runtime initializer for seqcount_LOCKNAME_t
  * @s:      Pointer to the seqcount_LOCKNAME_t instance
@@ -289,5 +295,79 @@ static inline void __seqcount_init(seqcount_t *s, const char *name,
         seqcount_LOCKNAME_init(s, lock, mutex)
 #define seqcount_ww_mutex_init(s, lock) \
         seqcount_LOCKNAME_init(s, lock, ww_mutex)
+
+/*
+ * Sequential locks (seqlock_t)
+ *
+ * Sequence counters with an embedded spinlock for writer serialization
+ * and non-preemptibility.
+ *
+ * For more info, see:
+ *    - Comments on top of seqcount_t
+ *    - Documentation/locking/seqlock.rst
+ */
+typedef struct {
+    /*
+     * Make sure that readers don't starve writers on PREEMPT_RT: use
+     * seqcount_spinlock_t instead of seqcount_t. Check __SEQ_LOCK().
+     */
+    seqcount_spinlock_t seqcount;
+    spinlock_t lock;
+} seqlock_t;
+
+#define __SEQLOCK_UNLOCKED(lockname)    \
+{                                       \
+    .seqcount = SEQCNT_SPINLOCK_ZERO(lockname, &(lockname).lock), \
+    .lock = __SPIN_LOCK_UNLOCKED(lockname) \
+}
+
+/**
+ * seqlock_init() - dynamic initializer for seqlock_t
+ * @sl: Pointer to the seqlock_t instance
+ */
+#define seqlock_init(sl) \
+do { \
+    spin_lock_init(&(sl)->lock); \
+    seqcount_spinlock_init(&(sl)->seqcount, &(sl)->lock); \
+} while (0)
+
+/**
+ * DEFINE_SEQLOCK(sl) - Define a statically allocated seqlock_t
+ * @sl: Name of the seqlock_t instance
+ */
+#define DEFINE_SEQLOCK(sl) \
+    seqlock_t sl = __SEQLOCK_UNLOCKED(sl)
+
+/**
+ * write_seqlock() - start a seqlock_t write side critical section
+ * @sl: Pointer to seqlock_t
+ *
+ * write_seqlock opens a write side critical section for the given
+ * seqlock_t.  It also implicitly acquires the spinlock_t embedded inside
+ * that sequential lock. All seqlock_t write side sections are thus
+ * automatically serialized and non-preemptible.
+ *
+ * Context: if the seqlock_t read section, or other write side critical
+ * sections, can be invoked from hardirq or softirq contexts, use the
+ * _irqsave or _bh variants of this function instead.
+ */
+static inline void write_seqlock(seqlock_t *sl)
+{
+    spin_lock(&sl->lock);
+    do_write_seqcount_begin(&sl->seqcount.seqcount);
+}
+
+/**
+ * write_sequnlock() - end a seqlock_t write side critical section
+ * @sl: Pointer to seqlock_t
+ *
+ * write_sequnlock closes the (serialized and non-preemptible) write side
+ * critical section of given seqlock_t.
+ */
+static inline void write_sequnlock(seqlock_t *sl)
+{
+    do_write_seqcount_end(&sl->seqcount.seqcount);
+    spin_unlock(&sl->lock);
+}
 
 #endif /* __LINUX_SEQLOCK_H */
