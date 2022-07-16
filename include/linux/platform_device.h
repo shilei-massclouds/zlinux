@@ -22,10 +22,8 @@ struct platform_device {
     int id;
     bool id_auto;
     struct device dev;
-#if 0
-    u64     platform_dma_mask;
+    u64 platform_dma_mask;
     struct device_dma_parameters dma_parms;
-#endif
     u32 num_resources;
     struct resource *resource;
 

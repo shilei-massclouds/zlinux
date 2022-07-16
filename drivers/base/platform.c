@@ -16,9 +16,7 @@
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
-#if 0
 #include <linux/dma-mapping.h>
-#endif
 #include <linux/ioport.h>
 #include <linux/memblock.h>
 #include <linux/err.h>
@@ -192,8 +190,6 @@ static void platform_device_release(struct device *dev)
  */
 static void setup_pdev_dma_masks(struct platform_device *pdev)
 {
-    pr_warn("%s: NO implementation!\n", __func__);
-#if 0
     pdev->dev.dma_parms = &pdev->dma_parms;
 
     if (!pdev->dev.coherent_dma_mask)
@@ -202,7 +198,6 @@ static void setup_pdev_dma_masks(struct platform_device *pdev)
         pdev->platform_dma_mask = DMA_BIT_MASK(32);
         pdev->dev.dma_mask = &pdev->platform_dma_mask;
     }
-#endif
 };
 
 /**
