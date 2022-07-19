@@ -444,7 +444,7 @@ EXPORT_SYMBOL_GPL(set_capacity_and_notify);
  * Use register_blkdev instead for any new code.
  */
 int __register_blkdev(unsigned int major, const char *name,
-        void (*probe)(dev_t devt))
+                      void (*probe)(dev_t devt))
 {
     struct blk_major_name **n, *p;
     int index, ret = 0;

@@ -317,8 +317,8 @@ struct super_block {
 #if 0
     const struct dquot_operations   *dq_op;
     const struct quotactl_ops       *s_qcop;
-    const struct export_operations  *s_export_op;
 #endif
+    const struct export_operations  *s_export_op;
     unsigned long       s_flags;
     unsigned long       s_iflags;   /* internal SB_I_* flags */
     unsigned long       s_magic;
@@ -660,5 +660,9 @@ static inline int inode_unhashed(struct inode *inode)
 {
     return hlist_unhashed(&inode->i_hash);
 }
+
+void kill_block_super(struct super_block *sb);
+void kill_anon_super(struct super_block *sb);
+void kill_litter_super(struct super_block *sb);
 
 #endif /* _LINUX_FS_H */

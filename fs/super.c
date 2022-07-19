@@ -54,6 +54,7 @@ void kill_anon_super(struct super_block *sb)
     generic_shutdown_super(sb);
     free_anon_bdev(dev);
 #endif
+    panic("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL(kill_anon_super);
 
@@ -197,7 +198,7 @@ static int grab_super(struct super_block *s) __releases(sb_lock)
 static struct super_block *alloc_super(struct file_system_type *type, int flags,
                                        struct user_namespace *user_ns)
 {
-    struct super_block *s = kzalloc(sizeof(struct super_block),  GFP_USER);
+    struct super_block *s = kzalloc(sizeof(struct super_block), GFP_USER);
     static const struct super_operations default_op;
     int i;
 
@@ -558,3 +559,14 @@ void deactivate_super(struct super_block *s)
 }
 
 EXPORT_SYMBOL(deactivate_super);
+
+void kill_litter_super(struct super_block *sb)
+{
+#if 0
+    if (sb->s_root)
+        d_genocide(sb->s_root);
+    kill_anon_super(sb);
+#endif
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL(kill_litter_super);

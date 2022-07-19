@@ -17,5 +17,6 @@
 #define EINVAL      22  /* Invalid argument */
 #define EMFILE      24  /* Too many open files */
 #define ENOSPC      28  /* No space left on device */
+#define ERANGE      34  /* Math result not representable */
 
 #endif /* _ASM_GENERIC_ERRNO_BASE_H */

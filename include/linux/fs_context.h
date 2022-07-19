@@ -170,6 +170,21 @@ void logfc(struct fc_log *log, const char *prefix, char level,
 #define __logfc(fc, l, fmt, ...) \
     logfc((fc)->log.log, NULL, l, fmt, ## __VA_ARGS__)
 
+#define __plog(p, l, fmt, ...) logfc((p)->log, (p)->prefix, \
+                                     l, fmt, ## __VA_ARGS__)
+
+/**
+ * warnf - Store supplementary warning message
+ * @fc: The context in which to log the error message
+ * @fmt: The format string
+ *
+ * Store the supplementary warning message for the process if the process has
+ * enabled the facility.
+ */
+#define warnf(fc, fmt, ...) __logfc(fc, 'w', fmt, ## __VA_ARGS__)
+#define warn_plog(p, fmt, ...) __plog(p, 'w', fmt, ## __VA_ARGS__)
+#define warnfc(fc, fmt, ...) __plog((&(fc)->log), 'w', fmt, ## __VA_ARGS__)
+
 /**
  * errorf - Store supplementary error message
  * @fc: The context in which to log the error message
@@ -179,6 +194,7 @@ void logfc(struct fc_log *log, const char *prefix, char level,
  * enabled the facility.
  */
 #define errorf(fc, fmt, ...) __logfc(fc, 'e', fmt, ## __VA_ARGS__)
+#define error_plog(p, fmt, ...) __plog(p, 'e', fmt, ## __VA_ARGS__)
 
 /**
  * invalf - Store supplementary invalid argument error message
@@ -189,5 +205,6 @@ void logfc(struct fc_log *log, const char *prefix, char level,
  * enabled the facility and return -EINVAL.
  */
 #define invalf(fc, fmt, ...) (errorf(fc, fmt, ## __VA_ARGS__), -EINVAL)
+#define inval_plog(p, fmt, ...) (error_plog(p, fmt, ## __VA_ARGS__), -EINVAL)
 
 #endif /* _LINUX_FS_CONTEXT_H */

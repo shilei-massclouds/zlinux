@@ -19,5 +19,6 @@
 #define EILSEQ      84  /* Illegal byte sequence */
 #define ENOTCONN    107 /* Transport endpoint is not connected */
 #define EALREADY    114 /* Operation already in progress */
+#define ESTALE      116 /* Stale file handle */
 
 #endif /* _ASM_GENERIC_ERRNO_H */

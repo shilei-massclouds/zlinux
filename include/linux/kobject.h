@@ -144,8 +144,7 @@ static inline void kset_put(struct kset *k)
 }
 
 extern struct kobject * __must_check
-kobject_create_and_add(const char *name,
-                       struct kobject *parent);
+kobject_create_and_add(const char *name, struct kobject *parent);
 
 extern struct kset * __must_check
 kset_create_and_add(const char *name,

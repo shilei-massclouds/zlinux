@@ -483,4 +483,121 @@ static inline spinlock_t *pud_lock(struct mm_struct *mm, pud_t *pud)
 extern bool is_vmalloc_addr(const void *x);
 extern int is_vmalloc_or_module_addr(const void *x);
 
+/*
+ * vm_fault is filled by the pagefault handler and passed to the vma's
+ * ->fault function. The vma's ->fault is responsible for returning a bitmask
+ * of VM_FAULT_xxx flags that give details about how the fault was handled.
+ *
+ * MM layer fills up gfp_mask for page allocations but fault handler might
+ * alter it if its implementation requires a different allocation context.
+ *
+ * pgoff should be used in favour of virtual_address, if possible.
+ */
+struct vm_fault {
+    const struct {
+        struct vm_area_struct *vma; /* Target VMA */
+        gfp_t gfp_mask;             /* gfp mask to be used for allocations */
+        pgoff_t pgoff;              /* Logical page offset based on vma */
+        unsigned long address;      /* Faulting virtual address - masked */
+        unsigned long real_address; /* Faulting virtual address - unmasked */
+    };
+    enum fault_flag flags;      /* FAULT_FLAG_xxx flags
+                                 * XXX: should really be 'const' */
+    pmd_t *pmd;         /* Pointer to pmd entry matching
+                         * the 'address' */
+    pud_t *pud;         /* Pointer to pud entry matching
+                         * the 'address'
+                         */
+    union {
+        pte_t orig_pte;     /* Value of PTE at the time of fault */
+        pmd_t orig_pmd;     /* Value of PMD at the time of fault,
+                             * used by PMD fault only.
+                             */
+    };
+
+    struct page *cow_page;  /* Page handler may use for COW fault */
+    struct page *page;      /* ->fault handlers should return a
+                             * page here, unless VM_FAULT_NOPAGE
+                             * is set (which is also implied by
+                             * VM_FAULT_ERROR).
+                             */
+    /* These three entries are valid only while holding ptl lock */
+    pte_t *pte;         /* Pointer to pte entry matching
+                         * the 'address'. NULL if the page
+                         * table hasn't been allocated.
+                         */
+    spinlock_t *ptl;        /* Page table lock.
+                             * Protects pte page table if 'pte'
+                             * is not NULL, otherwise pmd.
+                             */
+    pgtable_t prealloc_pte; /* Pre-allocated pte page table.
+                             * vm_ops->map_pages() sets up a page
+                             * table from atomic context.
+                             * do_fault_around() pre-allocates
+                             * page table to avoid allocation from
+                             * atomic context.
+                             */
+};
+
+/*
+ * These are the virtual MM functions - opening of an area, closing and
+ * unmapping it (needed to keep files on disk up-to-date etc), pointer
+ * to the functions called when a no-page or a wp-page exception occurs.
+ */
+struct vm_operations_struct {
+    void (*open)(struct vm_area_struct * area);
+    /**
+     * @close: Called when the VMA is being removed from the MM.
+     * Context: User context.  May sleep.  Caller holds mmap_lock.
+     */
+    void (*close)(struct vm_area_struct * area);
+    /* Called any time before splitting to check if it's allowed */
+    int (*may_split)(struct vm_area_struct *area, unsigned long addr);
+    int (*mremap)(struct vm_area_struct *area);
+    /*
+     * Called by mprotect() to make driver-specific permission
+     * checks before mprotect() is finalised.   The VMA must not
+     * be modified.  Returns 0 if eprotect() can proceed.
+     */
+    int (*mprotect)(struct vm_area_struct *vma, unsigned long start,
+                    unsigned long end, unsigned long newflags);
+    vm_fault_t (*fault)(struct vm_fault *vmf);
+    vm_fault_t (*huge_fault)(struct vm_fault *vmf,
+            enum page_entry_size pe_size);
+    vm_fault_t (*map_pages)(struct vm_fault *vmf,
+                            pgoff_t start_pgoff, pgoff_t end_pgoff);
+
+    unsigned long (*pagesize)(struct vm_area_struct * area);
+
+    /* notification that a previously read-only page is about to become
+     * writable, if an error is returned it will cause a SIGBUS */
+    vm_fault_t (*page_mkwrite)(struct vm_fault *vmf);
+
+    /* same as page_mkwrite when using VM_PFNMAP|VM_MIXEDMAP */
+    vm_fault_t (*pfn_mkwrite)(struct vm_fault *vmf);
+
+    /* called by access_process_vm when get_user_pages() fails, typically
+     * for use by special VMAs. See also generic_access_phys() for a generic
+     * implementation useful for any iomem mapping.
+     */
+    int (*access)(struct vm_area_struct *vma, unsigned long addr,
+                  void *buf, int len, int write);
+
+    /* Called by the /proc/PID/maps code to ask the vma whether it
+     * has a special name.  Returning non-NULL will also cause this
+     * vma to be dumped unconditionally. */
+    const char *(*name)(struct vm_area_struct *vma);
+
+    /*
+     * Called by vm_normal_page() for special PTEs to find the
+     * page for @addr.  This is useful if the default behavior
+     * (using pte_page()) would not find the correct page.
+     */
+    struct page *(*find_special_page)(struct vm_area_struct *vma,
+                                      unsigned long addr);
+};
+
+extern vm_fault_t filemap_map_pages(struct vm_fault *vmf,
+                                    pgoff_t start_pgoff, pgoff_t end_pgoff);
+
 #endif /* _LINUX_MM_H */

@@ -188,4 +188,31 @@ bool is_power_of_2(unsigned long n)
     return (n != 0 && ((n & (n - 1)) == 0));
 }
 
+/**
+ * __roundup_pow_of_two() - round up to nearest power of two
+ * @n: value to round up
+ */
+static inline __attribute__((const))
+unsigned long __roundup_pow_of_two(unsigned long n)
+{
+    return 1UL << fls_long(n - 1);
+}
+
+/**
+ * roundup_pow_of_two - round the given value up to nearest power of two
+ * @n: parameter
+ *
+ * round the given value up to the nearest power of two
+ * - the result is undefined when n == 0
+ * - this can be used to initialise global variables from constant data
+ */
+#define roundup_pow_of_two(n)           \
+(                       \
+    __builtin_constant_p(n) ? (     \
+        ((n) == 1) ? 1 :        \
+        (1UL << (ilog2((n) - 1) + 1))   \
+                   ) :      \
+    __roundup_pow_of_two(n)         \
+)
+
 #endif /* _LINUX_LOG2_H */

@@ -113,4 +113,21 @@ static inline const struct cred *get_cred(const struct cred *cred)
     return get_new_cred(nonconst_cred);
 }
 
+#define current_cred_xxx(xxx)   \
+({                              \
+    current_cred()->xxx;        \
+})
+
+#define current_uid()       (current_cred_xxx(uid))
+#define current_gid()       (current_cred_xxx(gid))
+#define current_euid()      (current_cred_xxx(euid))
+#define current_egid()      (current_cred_xxx(egid))
+#define current_suid()      (current_cred_xxx(suid))
+#define current_sgid()      (current_cred_xxx(sgid))
+#define current_fsuid()     (current_cred_xxx(fsuid))
+#define current_fsgid()     (current_cred_xxx(fsgid))
+#define current_cap()       (current_cred_xxx(cap_effective))
+#define current_user()      (current_cred_xxx(user))
+#define current_ucounts()   (current_cred_xxx(ucounts))
+
 #endif /* _LINUX_CRED_H */

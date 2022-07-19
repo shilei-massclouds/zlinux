@@ -17,4 +17,7 @@ do {                                \
     __kunmap_local(__addr);                 \
 } while (0)
 
+static inline unsigned int nr_free_highpages(void) { return 0; }
+static inline unsigned long totalhigh_pages(void) { return 0UL; }
+
 #endif /* _LINUX_HIGHMEM_INTERNAL_H */

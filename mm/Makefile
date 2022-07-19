@@ -3,7 +3,7 @@ mmu-$(CONFIG_MMU) := memory.o vmalloc.o pgtable-generic.o
 obj-y := mmzone.o vmstat.o percpu.o page-writeback.o slab_common.o util.o \
 	$(mmu-y)
 obj-y += memblock.o list_lru.o
-obj-y += ioremap.o
+obj-y += ioremap.o shmem.o filemap.o
 obj-y += backing-dev.o
 obj-$(CONFIG_SLAB) += slab.o
 

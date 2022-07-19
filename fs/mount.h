@@ -7,6 +7,25 @@
 #include <linux/fs_pin.h>
 #endif
 
+struct mnt_namespace {
+    struct ns_common    ns;
+    struct mount *  root;
+    /*
+     * Traversal and modification of .list is protected by either
+     * - taking namespace_sem for write, OR
+     * - taking namespace_sem for read AND taking .ns_lock.
+     */
+    struct list_head    list;
+    spinlock_t      ns_lock;
+    struct user_namespace   *user_ns;
+    struct ucounts      *ucounts;
+    u64         seq;    /* Sequence number to prevent loops */
+    wait_queue_head_t poll;
+    u64 event;
+    unsigned int        mounts; /* # of mounts in the namespace */
+    unsigned int        pending_mounts;
+} __randomize_layout;
+
 struct mount {
     struct hlist_node mnt_hash;
     struct mount *mnt_parent;

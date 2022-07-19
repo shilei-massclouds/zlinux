@@ -24,6 +24,22 @@
 #define ARCH_LOW_ADDRESS_LIMIT  0xffffffffUL
 #endif
 
+extern void *
+alloc_large_system_hash(const char *tablename,
+                        unsigned long bucketsize,
+                        unsigned long numentries,
+                        int scale,
+                        int flags,
+                        unsigned int *_hash_shift,
+                        unsigned int *_hash_mask,
+                        unsigned long low_limit,
+                        unsigned long high_limit);
+
+#define HASH_EARLY  0x00000001  /* Allocating during early boot? */
+#define HASH_SMALL  0x00000002  /* sub-page allocation allowed, min
+                                 * shift passed via *_hash_shift */
+#define HASH_ZERO   0x00000004  /* Zero allocated hash table */
+
 extern unsigned long max_low_pfn;
 extern unsigned long min_low_pfn;
 
@@ -335,5 +351,12 @@ bool memblock_is_memory(phys_addr_t addr);
     __for_each_mem_range(i, &memblock.memory, NULL, NUMA_NO_NODE, \
                          MEMBLOCK_HOTPLUG | MEMBLOCK_DRIVER_MANAGED, \
                          p_start, p_end, NULL)
+
+static inline void *memblock_alloc_raw(phys_addr_t size,
+                           phys_addr_t align)
+{
+    return memblock_alloc_try_nid_raw(size, align, MEMBLOCK_LOW_LIMIT,
+                                      MEMBLOCK_ALLOC_ACCESSIBLE, NUMA_NO_NODE);
+}
 
 #endif /* _LINUX_MEMBLOCK_H */

@@ -42,6 +42,8 @@
 #include <linux/mnt_idmapping.h>
 #include <linux/fs.h>
 #include <linux/fs_context.h>
+#include <linux/kobject.h>
+#include <linux/path.h>
 
 #if 0
 #include "pnode.h"
@@ -49,7 +51,21 @@
 #include "mount.h"
 #include "internal.h"
 
+static struct hlist_head *mount_hashtable __read_mostly;
+static struct hlist_head *mountpoint_hashtable __read_mostly;
 static struct kmem_cache *mnt_cache __read_mostly;
+
+static __initdata unsigned long mhash_entries;
+static __initdata unsigned long mphash_entries;
+
+static unsigned int m_hash_mask __read_mostly;
+static unsigned int m_hash_shift __read_mostly;
+static unsigned int mp_hash_mask __read_mostly;
+static unsigned int mp_hash_shift __read_mostly;
+
+/* /sys/fs */
+struct kobject *fs_kobj;
+EXPORT_SYMBOL_GPL(fs_kobj);
 
 static DEFINE_IDA(mnt_id_ida);
 static DEFINE_IDA(mnt_group_ida);
@@ -233,6 +249,39 @@ struct vfsmount *kern_mount(struct file_system_type *type)
 }
 EXPORT_SYMBOL_GPL(kern_mount);
 
+static void __init init_mount_tree(void)
+{
+    struct vfsmount *mnt;
+    struct mount *m;
+    struct mnt_namespace *ns;
+    struct path root;
+
+    mnt = vfs_kern_mount(&rootfs_fs_type, 0, "rootfs", NULL);
+    if (IS_ERR(mnt))
+        panic("Can't create rootfs");
+
+#if 0
+    ns = alloc_mnt_ns(&init_user_ns, false);
+    if (IS_ERR(ns))
+        panic("Can't allocate initial namespace");
+    m = real_mount(mnt);
+    m->mnt_ns = ns;
+    ns->root = m;
+    ns->mounts = 1;
+    list_add(&m->mnt_list, &ns->list);
+    init_task.nsproxy->mnt_ns = ns;
+    get_mnt_ns(ns);
+
+    root.mnt = mnt;
+    root.dentry = mnt->mnt_root;
+    mnt->mnt_flags |= MNT_LOCKED;
+
+    set_fs_pwd(current->fs, &root);
+    set_fs_root(current->fs, &root);
+#endif
+    panic("%s: END!\n", __func__);
+}
+
 void __init mnt_init(void)
 {
     int err;
@@ -241,32 +290,34 @@ void __init mnt_init(void)
         kmem_cache_create("mnt_cache", sizeof(struct mount),
                           0, SLAB_HWCACHE_ALIGN|SLAB_PANIC|SLAB_ACCOUNT, NULL);
 
-#if 0
-    mount_hashtable = alloc_large_system_hash("Mount-cache",
-                sizeof(struct hlist_head),
-                mhash_entries, 19,
-                HASH_ZERO,
-                &m_hash_shift, &m_hash_mask, 0, 0);
-    mountpoint_hashtable = alloc_large_system_hash("Mountpoint-cache",
-                sizeof(struct hlist_head),
-                mphash_entries, 19,
-                HASH_ZERO,
-                &mp_hash_shift, &mp_hash_mask, 0, 0);
+    mount_hashtable =
+        alloc_large_system_hash("Mount-cache",
+                                sizeof(struct hlist_head),
+                                mhash_entries, 19, HASH_ZERO,
+                                &m_hash_shift, &m_hash_mask, 0, 0);
+    mountpoint_hashtable =
+        alloc_large_system_hash("Mountpoint-cache",
+                                sizeof(struct hlist_head),
+                                mphash_entries, 19, HASH_ZERO,
+                                &mp_hash_shift, &mp_hash_mask, 0, 0);
 
     if (!mount_hashtable || !mountpoint_hashtable)
         panic("Failed to allocate mount hash table\n");
 
+#if 0
     kernfs_init();
 
     err = sysfs_init();
     if (err)
         printk(KERN_WARNING "%s: sysfs_init error: %d\n",
             __func__, err);
+#endif
     fs_kobj = kobject_create_and_add("fs", NULL);
     if (!fs_kobj)
         printk(KERN_WARNING "%s: kobj create error\n", __func__);
+#if 0
     shmem_init();
+#endif
     init_rootfs();
     init_mount_tree();
-#endif
 }

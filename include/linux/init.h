@@ -159,6 +159,10 @@ static inline initcall_t initcall_from_entry(initcall_entry_t *entry)
     return *entry;
 }
 
+void __init init_rootfs(void);
+
+extern struct file_system_type rootfs_fs_type;
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* _LINUX_INIT_H */
