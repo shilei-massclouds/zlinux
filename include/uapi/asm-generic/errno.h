@@ -4,6 +4,10 @@
 
 #include <asm-generic/errno-base.h>
 
+#define EDEADLK         35  /* Resource deadlock would occur */
+#define ENAMETOOLONG    36  /* File name too long */
+#define ENOLCK          37  /* No record locks available */
+
 /*
  * This error code is special: arch syscall entry code will return
  * -ENOSYS if users try to call a syscall that doesn't exist.  To keep

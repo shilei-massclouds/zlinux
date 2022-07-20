@@ -901,4 +901,52 @@ simple_lookup(struct inode *, struct dentry *, unsigned int flags);
 
 extern void __init vfs_caches_init_early(void);
 
+/* fs/open.c */
+struct audit_names;
+struct filename {
+    const char          *name;  /* pointer to actual string */
+    const __user char   *uptr;  /* original userland pointer */
+    int                 refcnt;
+    struct audit_names  *aname;
+    const char          iname[];
+};
+static_assert(offsetof(struct filename, iname) % sizeof(long) == 0);
+
+/* When fs/namei.c:getname() is called, we store the pointer in name and bump
+ * the refcnt in the associated filename struct.
+ *
+ * Further, in fs/namei.c:path_lookup() we store the inode and device.
+ */
+struct audit_names {
+    struct list_head    list;       /* audit_context->names_list */
+
+#if 0
+    struct filename     *name;
+    int                 name_len;   /* number of chars to log */
+    bool                hidden;     /* don't log this record */
+
+    unsigned long       ino;
+    dev_t           dev;
+    umode_t         mode;
+    kuid_t          uid;
+    kgid_t          gid;
+    dev_t           rdev;
+    u32         osid;
+    struct audit_cap_data   fcap;
+    unsigned int        fcap_ver;
+    unsigned char       type;       /* record type */
+    /*
+     * This was an allocated audit_names and not from the array of
+     * names allocated in the task audit context.  Thus this name
+     * should be freed on syscall exit.
+     */
+    bool            should_free;
+#endif
+};
+
+extern struct kmem_cache *names_cachep;
+
+#define __getname()         kmem_cache_alloc(names_cachep, GFP_KERNEL)
+#define __putname(name)     kmem_cache_free(names_cachep, (void *)(name))
+
 #endif /* _LINUX_FS_H */

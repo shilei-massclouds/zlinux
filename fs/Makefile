@@ -7,7 +7,7 @@
 #
 
 obj-y := inode.o super.o filesystems.o libfs.o dcache.o namespace.o
-obj-y += fs_context.o fs_parser.o fs_struct.o namei.o
+obj-y += fs_context.o fs_parser.o fs_struct.o namei.o init.o
 
 obj-y += ramfs/
 

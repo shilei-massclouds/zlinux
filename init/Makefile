@@ -5,6 +5,7 @@
 
 obj-y	:= main.o version.o mounts.o
 obj-y	+= init_task.o
+obj-y	+= noinitramfs.o
 obj-y	+= z_tests.o
 
 mounts-y	:= do_mounts.o
