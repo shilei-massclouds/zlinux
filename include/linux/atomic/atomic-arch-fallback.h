@@ -122,6 +122,15 @@ arch_atomic64_inc(atomic64_t *v)
 #define arch_atomic64_inc arch_atomic64_inc
 #endif
 
+#ifndef arch_atomic64_dec
+static __always_inline void
+arch_atomic64_dec(atomic64_t *v)
+{
+    arch_atomic64_sub(1, v);
+}
+#define arch_atomic64_dec arch_atomic64_dec
+#endif
+
 #ifndef arch_atomic_inc_return
 static __always_inline int
 arch_atomic_inc_return(atomic_t *v)

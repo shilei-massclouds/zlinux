@@ -132,6 +132,12 @@ atomic_long_inc(atomic_long_t *v)
     arch_atomic_long_inc(v);
 }
 
+static __always_inline void
+atomic_long_dec(atomic_long_t *v)
+{
+    arch_atomic_long_dec(v);
+}
+
 static __always_inline long
 atomic_long_cmpxchg(atomic_long_t *v, long old, long new)
 {

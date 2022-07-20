@@ -4,11 +4,44 @@
  * This code is licenced under the GPL.
  */
 
+#include <linux/sched/mm.h>
+//#include <linux/proc_fs.h>
 #include <linux/smp.h>
+#include <linux/init.h>
+//#include <linux/notifier.h>
+#include <linux/sched/signal.h>
+#if 0
+#include <linux/sched/hotplug.h>
+#include <linux/sched/isolation.h>
+#include <linux/sched/task.h>
+#include <linux/sched/smt.h>
+#include <linux/unistd.h>
+#endif
 #include <linux/cpu.h>
+//#include <linux/oom.h>
+#include <linux/rcupdate.h>
 #include <linux/export.h>
 #include <linux/bug.h>
-#include <linux/percpu.h>
+#include <linux/kthread.h>
+//#include <linux/stop_machine.h>
+#include <linux/mutex.h>
+#include <linux/gfp.h>
+//#include <linux/suspend.h>
+#include <linux/lockdep.h>
+//#include <linux/tick.h>
+#include <linux/irq.h>
+//#include <linux/nmi.h>
+//#include <linux/smpboot.h>
+//#include <linux/relay.h>
+#include <linux/slab.h>
+//#include <linux/scs.h>
+#include <linux/percpu-rwsem.h>
+#if 0
+#include <linux/cpuset.h>
+#include <linux/random.h>
+
+#include "smpboot.h"
+#endif
 
 /**
  * struct cpuhp_cpu_state - Per cpu hotplug state storage
@@ -115,6 +148,36 @@ void set_cpu_online(unsigned int cpu, bool online)
         if (cpumask_test_and_clear_cpu(cpu, &__cpu_online_mask))
             atomic_dec(&__num_online_cpus);
     }
+}
+
+DEFINE_STATIC_PERCPU_RWSEM(cpu_hotplug_lock);
+
+void cpus_read_lock(void)
+{
+    percpu_down_read(&cpu_hotplug_lock);
+}
+EXPORT_SYMBOL_GPL(cpus_read_lock);
+
+int cpus_read_trylock(void)
+{
+    return percpu_down_read_trylock(&cpu_hotplug_lock);
+}
+EXPORT_SYMBOL_GPL(cpus_read_trylock);
+
+void cpus_read_unlock(void)
+{
+    percpu_up_read(&cpu_hotplug_lock);
+}
+EXPORT_SYMBOL_GPL(cpus_read_unlock);
+
+void cpus_write_lock(void)
+{
+    percpu_down_write(&cpu_hotplug_lock);
+}
+
+void cpus_write_unlock(void)
+{
+    percpu_up_write(&cpu_hotplug_lock);
 }
 
 /*

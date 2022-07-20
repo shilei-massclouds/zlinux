@@ -49,6 +49,14 @@ static int no_open(struct inode *inode, struct file *file)
     return -ENXIO;
 }
 
+/*
+ * Empty aops. Can be used for the cases where the user does not
+ * define any of the address_space operations.
+ */
+const struct address_space_operations empty_aops = {
+};
+EXPORT_SYMBOL(empty_aops);
+
 /**
  * inode_init_always - perform inode structure initialisation
  * @sb: superblock inode belongs to
@@ -100,20 +108,20 @@ int inode_init_always(struct super_block *sb, struct inode *inode)
 
     atomic_set(&inode->i_dio_count, 0);
 
-#if 0
     mapping->a_ops = &empty_aops;
     mapping->host = inode;
     mapping->flags = 0;
     mapping->wb_err = 0;
     atomic_set(&mapping->i_mmap_writable, 0);
 
+#if 0
     mapping_set_gfp_mask(mapping, GFP_HIGHUSER_MOVABLE);
     mapping->private_data = NULL;
     mapping->writeback_index = 0;
     init_rwsem(&mapping->invalidate_lock);
     inode->i_private = NULL;
-    inode->i_mapping = mapping;
 #endif
+    inode->i_mapping = mapping;
     INIT_HLIST_HEAD(&inode->i_dentry);  /* buggered by rcu freeing */
 #if 0
     inode->i_acl = inode->i_default_acl = ACL_NOT_CACHED;
@@ -261,6 +269,12 @@ retry:
 }
 EXPORT_SYMBOL(iput);
 
+int generic_delete_inode(struct inode *inode)
+{
+    return 1;
+}
+EXPORT_SYMBOL(generic_delete_inode);
+
 /*
  * These are initializations that only need to be done
  * once, because the fields are idempotent across use
@@ -278,11 +292,56 @@ void inode_init_once(struct inode *inode)
 }
 EXPORT_SYMBOL(inode_init_once);
 
+/**
+ * inc_nlink - directly increment an inode's link count
+ * @inode: inode
+ *
+ * This is a low-level filesystem helper to replace any
+ * direct filesystem manipulation of i_nlink.  Currently,
+ * it is only here for parity with dec_nlink().
+ */
+void inc_nlink(struct inode *inode)
+{
+    if (unlikely(inode->i_nlink == 0)) {
+        WARN_ON(!(inode->i_state & I_LINKABLE));
+        atomic_long_dec(&inode->i_sb->s_remove_count);
+    }
+
+    inode->__i_nlink++;
+}
+EXPORT_SYMBOL(inc_nlink);
+
 static void init_once(void *foo)
 {
     struct inode *inode = (struct inode *) foo;
 
     inode_init_once(inode);
+}
+
+static __initdata unsigned long ihash_entries;
+static unsigned int i_hash_mask __read_mostly;
+static unsigned int i_hash_shift __read_mostly;
+static struct hlist_head *inode_hashtable __read_mostly;
+
+/*
+ * Initialize the waitqueues and inode hash table.
+ */
+void __init inode_init_early(void)
+{
+    /* If hashes are distributed across NUMA nodes, defer
+     * hash allocation until vmalloc space is available.
+     */
+
+    inode_hashtable =
+        alloc_large_system_hash("Inode-cache",
+                                sizeof(struct hlist_head),
+                                ihash_entries,
+                                14,
+                                HASH_EARLY | HASH_ZERO,
+                                &i_hash_shift,
+                                &i_hash_mask,
+                                0,
+                                0);
 }
 
 void __init inode_init(void)
@@ -295,20 +354,5 @@ void __init inode_init(void)
                                       SLAB_MEM_SPREAD|SLAB_ACCOUNT),
                                      init_once);
 
-#if 0
     /* Hash may have been set up in inode_init_early */
-    if (!hashdist)
-        return;
-
-    inode_hashtable =
-        alloc_large_system_hash("Inode-cache",
-                                sizeof(struct hlist_head),
-                                ihash_entries,
-                                14,
-                                HASH_ZERO,
-                                &i_hash_shift,
-                                &i_hash_mask,
-                                0,
-                                0);
-#endif
 }

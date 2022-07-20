@@ -51,4 +51,7 @@ void kick_all_cpus_sync(void);
 extern void __init setup_nr_cpu_ids(void);
 extern void __init smp_init(void);
 
+#define get_cpu()       ({ preempt_disable(); __smp_processor_id(); })
+#define put_cpu()       preempt_enable()
+
 #endif /* __LINUX_SMP_H */

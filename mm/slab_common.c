@@ -658,3 +658,29 @@ kmem_cache_create(const char *name, unsigned int size, unsigned int align,
     return kmem_cache_create_usercopy(name, size, align, flags, 0, 0, ctor);
 }
 EXPORT_SYMBOL(kmem_cache_create);
+
+static int shutdown_cache(struct kmem_cache *s)
+{
+    panic("%s: END!\n", __func__);
+}
+
+void kmem_cache_destroy(struct kmem_cache *s)
+{
+    if (unlikely(!s))
+        return;
+
+    cpus_read_lock();
+    mutex_lock(&slab_mutex);
+
+    s->refcount--;
+    if (s->refcount)
+        goto out_unlock;
+
+    WARN(shutdown_cache(s),
+         "%s %s: Slab cache still has objects when called from %pS",
+         __func__, s->name, (void *)_RET_IP_);
+out_unlock:
+    mutex_unlock(&slab_mutex);
+    cpus_read_unlock();
+}
+EXPORT_SYMBOL(kmem_cache_destroy);

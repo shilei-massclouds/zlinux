@@ -115,3 +115,83 @@ init_pseudo(struct fs_context *fc, unsigned long magic)
     return ctx;
 }
 EXPORT_SYMBOL(init_pseudo);
+
+int dcache_dir_open(struct inode *inode, struct file *file)
+{
+#if 0
+    file->private_data = d_alloc_cursor(file->f_path.dentry);
+
+    return file->private_data ? 0 : -ENOMEM;
+#endif
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL(dcache_dir_open);
+
+int dcache_dir_close(struct inode *inode, struct file *file)
+{
+    dput(file->private_data);
+    return 0;
+}
+EXPORT_SYMBOL(dcache_dir_close);
+
+loff_t dcache_dir_lseek(struct file *file, loff_t offset, int whence)
+{
+    panic("%s: END!\n", __func__);
+}
+
+ssize_t generic_read_dir(struct file *filp, char __user *buf, size_t siz,
+                         loff_t *ppos)
+{
+    return -EISDIR;
+}
+EXPORT_SYMBOL(generic_read_dir);
+
+/*
+ * Directory is locked and all positive dentries in it are safe, since
+ * for ramfs-type trees they can't go away without unlink() or rmdir(),
+ * both impossible due to the lock on directory.
+ */
+
+int dcache_readdir(struct file *file, struct dir_context *ctx)
+{
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL(dcache_readdir);
+
+/*
+ * No-op implementation of ->fsync for in-memory filesystems.
+ */
+int noop_fsync(struct file *file, loff_t start, loff_t end, int datasync)
+{
+    return 0;
+}
+EXPORT_SYMBOL(noop_fsync);
+
+const struct file_operations simple_dir_operations = {
+    .open       = dcache_dir_open,
+    .release    = dcache_dir_close,
+    .llseek     = dcache_dir_lseek,
+    .read       = generic_read_dir,
+    .iterate_shared = dcache_readdir,
+    .fsync      = noop_fsync,
+};
+EXPORT_SYMBOL(simple_dir_operations);
+
+/*
+ * Lookup the data. This is trivial - if the dentry didn't already
+ * exist, we know it is negative.  Set d_op to delete negative dentries.
+ */
+struct dentry *simple_lookup(struct inode *dir, struct dentry *dentry,
+                             unsigned int flags)
+{
+#if 0
+    if (dentry->d_name.len > NAME_MAX)
+        return ERR_PTR(-ENAMETOOLONG);
+    if (!dentry->d_sb->s_d_op)
+        d_set_d_op(dentry, &simple_dentry_operations);
+    d_add(dentry, NULL);
+#endif
+    panic("%s: END!\n", __func__);
+    return NULL;
+}
+EXPORT_SYMBOL(simple_lookup);

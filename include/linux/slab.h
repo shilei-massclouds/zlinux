@@ -542,4 +542,6 @@ void *kvzalloc_node(size_t size, gfp_t flags, int node)
                                offsetof(struct __struct, __field),      \
                                sizeof_field(struct __struct, __field), NULL)
 
+void kmem_cache_destroy(struct kmem_cache *s);
+
 #endif  /* _LINUX_SLAB_H */

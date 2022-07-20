@@ -22,4 +22,34 @@ struct folio_batch;
 
 #define VM_READAHEAD_PAGES  (SZ_128K / PAGE_SIZE)
 
+/*
+ * Bits in mapping->flags.
+ */
+enum mapping_flags {
+    AS_EIO          = 0,    /* IO error on async write */
+    AS_ENOSPC       = 1,    /* ENOSPC on async write */
+    AS_MM_ALL_LOCKS = 2,    /* under mm_take_all_locks() */
+    AS_UNEVICTABLE  = 3,    /* e.g., ramdisk, SHM_LOCK */
+    AS_EXITING      = 4,    /* final truncate in progress */
+    /* writeback related tags are not used */
+    AS_NO_WRITEBACK_TAGS = 5,
+    AS_LARGE_FOLIO_SUPPORT = 6,
+};
+
+/**
+ * mapping_set_large_folios() - Indicate the file supports large folios.
+ * @mapping: The file.
+ *
+ * The filesystem should call this function in its inode constructor to
+ * indicate that the VFS can use large folios to cache the contents of
+ * the file.
+ *
+ * Context: This should not be called while the inode is active as it
+ * is non-atomic.
+ */
+static inline void mapping_set_large_folios(struct address_space *mapping)
+{
+    __set_bit(AS_LARGE_FOLIO_SUPPORT, &mapping->flags);
+}
+
 #endif /* _LINUX_PAGEMAP_H */

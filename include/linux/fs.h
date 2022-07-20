@@ -6,9 +6,9 @@
 #include <linux/dcache.h>
 #if 0
 #include <linux/wait_bit.h>
+#endif
 #include <linux/kdev_t.h>
 #include <linux/path.h>
-#endif
 #include <linux/stat.h>
 #include <linux/cache.h>
 #include <linux/list.h>
@@ -37,15 +37,15 @@
 #include <linux/uidgid.h>
 #include <linux/lockdep.h>
 #include <linux/uuid.h>
-#if 0
 #include <linux/percpu-rwsem.h>
+#if 0
 #include <linux/workqueue.h>
 #include <linux/delayed_call.h>
-#include <linux/errseq.h>
 #include <linux/ioprio.h>
 #include <linux/fs_types.h>
 #include <linux/build_bug.h>
 #endif
+#include <linux/errseq.h>
 #include <linux/stddef.h>
 #include <linux/mount.h>
 #include <linux/cred.h>
@@ -167,6 +167,50 @@ enum rw_hint {
     WRITE_LIFE_EXTREME  = RWH_WRITE_LIFE_EXTREME,
 };
 
+struct address_space_operations {
+    int (*writepage)(struct page *page, struct writeback_control *wbc);
+    int (*readpage)(struct file *, struct page *);
+
+    /* Write back some dirty pages from this mapping. */
+    int (*writepages)(struct address_space *, struct writeback_control *);
+
+    /* Mark a folio dirty.  Return true if this dirtied it */
+    bool (*dirty_folio)(struct address_space *, struct folio *);
+
+    void (*readahead)(struct readahead_control *);
+
+    int (*write_begin)(struct file *, struct address_space *mapping,
+                       loff_t pos, unsigned len, unsigned flags,
+                       struct page **pagep, void **fsdata);
+    int (*write_end)(struct file *, struct address_space *mapping,
+                     loff_t pos, unsigned len, unsigned copied,
+                     struct page *page, void *fsdata);
+
+    /* Unfortunately this kludge is needed for FIBMAP. Don't use it */
+    sector_t (*bmap)(struct address_space *, sector_t);
+    void (*invalidate_folio) (struct folio *, size_t offset, size_t len);
+    int (*releasepage) (struct page *, gfp_t);
+    void (*freepage)(struct page *);
+    ssize_t (*direct_IO)(struct kiocb *, struct iov_iter *iter);
+    /*
+     * migrate the contents of a page to the specified target. If
+     * migrate_mode is MIGRATE_ASYNC, it must not block.
+     */
+    int (*migratepage)(struct address_space *,
+                       struct page *, struct page *, enum migrate_mode);
+    bool (*isolate_page)(struct page *, isolate_mode_t);
+    void (*putback_page)(struct page *);
+    int (*launder_folio)(struct folio *);
+    bool (*is_partially_uptodate) (struct folio *, size_t from, size_t count);
+    void (*is_dirty_writeback) (struct page *, bool *, bool *);
+    int (*error_remove_page)(struct address_space *, struct page *);
+
+    /* swapfile support */
+    int (*swap_activate)(struct swap_info_struct *sis, struct file *file,
+                         sector_t *span);
+    void (*swap_deactivate)(struct file *file);
+};
+
 /**
  * struct address_space - Contents of a cacheable, mappable object.
  * @host: Owner, either the inode or the block_device.
@@ -201,11 +245,116 @@ struct address_space {
     pgoff_t         writeback_index;
     const struct address_space_operations *a_ops;
     unsigned long       flags;
-    //errseq_t        wb_err;
+    errseq_t        wb_err;
     spinlock_t      private_lock;
     struct list_head    private_list;
     void            *private_data;
 } __attribute__((aligned(sizeof(long)))) __randomize_layout;
+
+/*
+ * Inode state bits.  Protected by inode->i_lock
+ *
+ * Four bits determine the dirty state of the inode: I_DIRTY_SYNC,
+ * I_DIRTY_DATASYNC, I_DIRTY_PAGES, and I_DIRTY_TIME.
+ *
+ * Four bits define the lifetime of an inode.  Initially, inodes are I_NEW,
+ * until that flag is cleared.  I_WILL_FREE, I_FREEING and I_CLEAR are set at
+ * various stages of removing an inode.
+ *
+ * Two bits are used for locking and completion notification, I_NEW and I_SYNC.
+ *
+ * I_DIRTY_SYNC     Inode is dirty, but doesn't have to be written on
+ *          fdatasync() (unless I_DIRTY_DATASYNC is also set).
+ *          Timestamp updates are the usual cause.
+ * I_DIRTY_DATASYNC Data-related inode changes pending.  We keep track of
+ *          these changes separately from I_DIRTY_SYNC so that we
+ *          don't have to write inode on fdatasync() when only
+ *          e.g. the timestamps have changed.
+ * I_DIRTY_PAGES    Inode has dirty pages.  Inode itself may be clean.
+ * I_DIRTY_TIME     The inode itself only has dirty timestamps, and the
+ *          lazytime mount option is enabled.  We keep track of this
+ *          separately from I_DIRTY_SYNC in order to implement
+ *          lazytime.  This gets cleared if I_DIRTY_INODE
+ *          (I_DIRTY_SYNC and/or I_DIRTY_DATASYNC) gets set.  I.e.
+ *          either I_DIRTY_TIME *or* I_DIRTY_INODE can be set in
+ *          i_state, but not both.  I_DIRTY_PAGES may still be set.
+ * I_NEW        Serves as both a mutex and completion notification.
+ *          New inodes set I_NEW.  If two processes both create
+ *          the same inode, one of them will release its inode and
+ *          wait for I_NEW to be released before returning.
+ *          Inodes in I_WILL_FREE, I_FREEING or I_CLEAR state can
+ *          also cause waiting on I_NEW, without I_NEW actually
+ *          being set.  find_inode() uses this to prevent returning
+ *          nearly-dead inodes.
+ * I_WILL_FREE      Must be set when calling write_inode_now() if i_count
+ *          is zero.  I_FREEING must be set when I_WILL_FREE is
+ *          cleared.
+ * I_FREEING        Set when inode is about to be freed but still has dirty
+ *          pages or buffers attached or the inode itself is still
+ *          dirty.
+ * I_CLEAR      Added by clear_inode().  In this state the inode is
+ *          clean and can be destroyed.  Inode keeps I_FREEING.
+ *
+ *          Inodes that are I_WILL_FREE, I_FREEING or I_CLEAR are
+ *          prohibited for many purposes.  iget() must wait for
+ *          the inode to be completely released, then create it
+ *          anew.  Other functions will just ignore such inodes,
+ *          if appropriate.  I_NEW is used for waiting.
+ *
+ * I_SYNC       Writeback of inode is running. The bit is set during
+ *          data writeback, and cleared with a wakeup on the bit
+ *          address once it is done. The bit is also used to pin
+ *          the inode in memory for flusher thread.
+ *
+ * I_REFERENCED     Marks the inode as recently references on the LRU list.
+ *
+ * I_DIO_WAKEUP     Never set.  Only used as a key for wait_on_bit().
+ *
+ * I_WB_SWITCH      Cgroup bdi_writeback switching in progress.  Used to
+ *          synchronize competing switching instances and to tell
+ *          wb stat updates to grab the i_pages lock.  See
+ *          inode_switch_wbs_work_fn() for details.
+ *
+ * I_OVL_INUSE      Used by overlayfs to get exclusive ownership on upper
+ *          and work dirs among overlayfs mounts.
+ *
+ * I_CREATING       New object's inode in the middle of setting up.
+ *
+ * I_DONTCACHE      Evict inode as soon as it is not used anymore.
+ *
+ * I_SYNC_QUEUED    Inode is queued in b_io or b_more_io writeback lists.
+ *          Used to detect that mark_inode_dirty() should not move
+ *          inode between dirty lists.
+ *
+ * I_PINNING_FSCACHE_WB Inode is pinning an fscache object for writeback.
+ *
+ * Q: What is the difference between I_WILL_FREE and I_FREEING?
+ */
+#define I_DIRTY_SYNC            (1 << 0)
+#define I_DIRTY_DATASYNC        (1 << 1)
+#define I_DIRTY_PAGES           (1 << 2)
+#define __I_NEW                 3
+#define I_NEW                   (1 << __I_NEW)
+#define I_WILL_FREE             (1 << 4)
+#define I_FREEING               (1 << 5)
+#define I_CLEAR                 (1 << 6)
+#define __I_SYNC                7
+#define I_SYNC                  (1 << __I_SYNC)
+#define I_REFERENCED            (1 << 8)
+#define __I_DIO_WAKEUP          9
+#define I_DIO_WAKEUP            (1 << __I_DIO_WAKEUP)
+#define I_LINKABLE              (1 << 10)
+#define I_DIRTY_TIME            (1 << 11)
+#define I_WB_SWITCH             (1 << 13)
+#define I_OVL_INUSE             (1 << 14)
+#define I_CREATING              (1 << 15)
+#define I_DONTCACHE             (1 << 16)
+#define I_SYNC_QUEUED           (1 << 17)
+#define I_PINNING_FSCACHE_WB    (1 << 18)
+
+#define I_DIRTY_INODE (I_DIRTY_SYNC | I_DIRTY_DATASYNC)
+#define I_DIRTY (I_DIRTY_INODE | I_DIRTY_PAGES)
+#define I_DIRTY_ALL (I_DIRTY | I_DIRTY_TIME)
 
 /*
  * Keep mostly read-only and often accessed (especially for
@@ -376,9 +525,8 @@ struct super_block {
      */
     const char *s_subtype;
     const struct dentry_operations *s_d_op; /* default d_op for dentries */
-#if 0
 
-    struct shrinker s_shrink;   /* per-sb shrinker handle */
+    //struct shrinker s_shrink;   /* per-sb shrinker handle */
 
     /* Number of inodes with nlink == 0 but still referenced */
     atomic_long_t s_remove_count;
@@ -395,6 +543,7 @@ struct super_block {
     /* per-sb errseq_t for reporting writeback errors via syncfs */
     errseq_t s_wb_err;
 
+#if 0
     /* AIO completions deferred from interrupt context */
     struct workqueue_struct *s_dio_done_wq;
     struct hlist_head s_pins;
@@ -492,11 +641,70 @@ struct file_system_type {
     struct lock_class_key i_mutex_dir_key;
 };
 
+/**
+ * struct file_ra_state - Track a file's readahead state.
+ * @start: Where the most recent readahead started.
+ * @size: Number of pages read in the most recent readahead.
+ * @async_size: Numer of pages that were/are not needed immediately
+ *      and so were/are genuinely "ahead".  Start next readahead when
+ *      the first of these pages is accessed.
+ * @ra_pages: Maximum size of a readahead request, copied from the bdi.
+ * @mmap_miss: How many mmap accesses missed in the page cache.
+ * @prev_pos: The last byte in the most recent read request.
+ *
+ * When this structure is passed to ->readahead(), the "most recent"
+ * readahead means the current readahead.
+ */
+struct file_ra_state {
+    pgoff_t start;
+    unsigned int size;
+    unsigned int async_size;
+    unsigned int ra_pages;
+    unsigned int mmap_miss;
+    loff_t prev_pos;
+};
+
+struct fown_struct {
+    rwlock_t lock;          /* protects pid, uid, euid fields */
+    struct pid *pid;    /* pid or -pgrp where SIGIO should be sent */
+    enum pid_type pid_type; /* Kind of process group SIGIO should be sent to */
+    kuid_t uid, euid;   /* uid/euid of process setting the owner */
+    int signum;     /* posix.1b rt signal to be delivered on IO */
+};
+
 struct file {
     union {
         struct llist_node   fu_llist;
         struct rcu_head     fu_rcuhead;
     } f_u;
+    struct path f_path;
+    struct inode *f_inode;  /* cached value */
+    const struct file_operations *f_op;
+
+    /*
+     * Protects f_ep, f_flags.
+     * Must not be taken from IRQ context.
+     */
+    spinlock_t      f_lock;
+    atomic_long_t   f_count;
+    unsigned int    f_flags;
+    fmode_t         f_mode;
+    struct mutex    f_pos_lock;
+    loff_t          f_pos;
+    struct fown_struct  f_owner;
+    const struct cred   *f_cred;
+    struct file_ra_state f_ra;
+
+    u64 f_version;
+
+    /* needed for tty driver, and maybe others */
+    void *private_data;
+
+    /* Used by fs/eventpoll.c to link all the hooks to this file */
+    struct hlist_head   *f_ep;
+    struct address_space    *f_mapping;
+    errseq_t        f_wb_err;
+    errseq_t        f_sb_err; /* for syncfs */
 } __randomize_layout __attribute__((aligned(4))); /* lest something weird
                                                      decides that 2 is OK */
 
@@ -600,6 +808,7 @@ alloc_inode_sb(struct super_block *sb, struct kmem_cache *cache, gfp_t gfp)
 }
 
 extern int register_filesystem(struct file_system_type *);
+extern int unregister_filesystem(struct file_system_type *);
 
 extern void __init vfs_caches_init(void);
 
@@ -664,5 +873,32 @@ static inline int inode_unhashed(struct inode *inode)
 void kill_block_super(struct super_block *sb);
 void kill_anon_super(struct super_block *sb);
 void kill_litter_super(struct super_block *sb);
+
+extern int generic_delete_inode(struct inode *inode);
+
+/*
+ * Userspace may rely on the the inode number being non-zero. For example, glibc
+ * simply ignores files with zero i_ino in unlink() and other places.
+ *
+ * As an additional complication, if userspace was compiled with
+ * _FILE_OFFSET_BITS=32 on a 64-bit kernel we'll only end up reading out the
+ * lower 32 bits, so we need to check that those aren't zero explicitly. With
+ * _FILE_OFFSET_BITS=64, this may cause some harmless false-negatives, but
+ * better safe than sorry.
+ */
+static inline bool is_zero_ino(ino_t ino)
+{
+    return (u32)ino == 0;
+}
+
+extern void inc_nlink(struct inode *inode);
+
+extern const struct file_operations simple_dir_operations;
+extern const struct inode_operations simple_dir_inode_operations;
+
+extern struct dentry *
+simple_lookup(struct inode *, struct dentry *, unsigned int flags);
+
+extern void __init vfs_caches_init_early(void);
 
 #endif /* _LINUX_FS_H */

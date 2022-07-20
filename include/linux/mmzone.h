@@ -524,6 +524,9 @@ static inline bool zone_is_initialized(struct zone *zone)
     return zone->initialized;
 }
 
+/* LRU Isolation modes. */
+typedef unsigned __bitwise isolate_mode_t;
+
 extern struct zone *next_zone(struct zone *zone);
 
 #define for_each_populated_zone(zone)               \

@@ -64,6 +64,8 @@
 #define lm_alias(x) __va(__pa_symbol(x))
 #endif
 
+#define VM_NORESERVE    0x00200000  /* should the VM suppress accounting */
+
 typedef unsigned long vm_flags_t;
 
 extern unsigned long max_mapnr;

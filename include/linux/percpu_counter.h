@@ -22,4 +22,19 @@ struct percpu_counter {
     s32 __percpu *counters;
 };
 
+int __percpu_counter_init(struct percpu_counter *fbc, s64 amount, gfp_t gfp,
+              struct lock_class_key *key);
+
+#define percpu_counter_init(fbc, value, gfp)                \
+    ({                              \
+        static struct lock_class_key __key;         \
+                                    \
+        __percpu_counter_init(fbc, value, gfp, &__key);     \
+    })
+
+void percpu_counter_destroy(struct percpu_counter *fbc);
+void percpu_counter_set(struct percpu_counter *fbc, s64 amount);
+void percpu_counter_add_batch(struct percpu_counter *fbc,
+                              s64 amount, s32 batch);
+
 #endif /* _LINUX_PERCPU_COUNTER_H */

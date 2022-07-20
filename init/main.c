@@ -657,7 +657,9 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
      * kmem_cache_init()
      */
     setup_log_buf(0);
+#endif
     vfs_caches_init_early();
+#if 0
     sort_main_extable();
     trap_init();
 #endif

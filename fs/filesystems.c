@@ -73,3 +73,37 @@ int register_filesystem(struct file_system_type *fs)
     write_unlock(&file_systems_lock);
     return res;
 }
+EXPORT_SYMBOL(register_filesystem);
+
+/**
+ *  unregister_filesystem - unregister a file system
+ *  @fs: filesystem to unregister
+ *
+ *  Remove a file system that was previously successfully registered
+ *  with the kernel. An error is returned if the file system is not found.
+ *  Zero is returned on a success.
+ *
+ *  Once this function has returned the &struct file_system_type structure
+ *  may be freed or reused.
+ */
+int unregister_filesystem(struct file_system_type * fs)
+{
+    struct file_system_type ** tmp;
+
+    write_lock(&file_systems_lock);
+    tmp = &file_systems;
+    while (*tmp) {
+        if (fs == *tmp) {
+            *tmp = fs->next;
+            fs->next = NULL;
+            write_unlock(&file_systems_lock);
+            synchronize_rcu();
+            return 0;
+        }
+        tmp = &(*tmp)->next;
+    }
+    write_unlock(&file_systems_lock);
+
+    return -EINVAL;
+}
+EXPORT_SYMBOL(unregister_filesystem);

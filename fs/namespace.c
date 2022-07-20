@@ -37,8 +37,8 @@
 #include <linux/sched/task.h>
 #if 0
 #include <uapi/linux/mount.h>
-#include <linux/shmem_fs.h>
 #endif
+#include <linux/shmem_fs.h>
 #include <linux/mnt_idmapping.h>
 #include <linux/fs.h>
 #include <linux/fs_context.h>
@@ -315,9 +315,7 @@ void __init mnt_init(void)
     fs_kobj = kobject_create_and_add("fs", NULL);
     if (!fs_kobj)
         printk(KERN_WARNING "%s: kobj create error\n", __func__);
-#if 0
     shmem_init();
-#endif
     init_rootfs();
     init_mount_tree();
 }

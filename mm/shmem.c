@@ -78,9 +78,9 @@
 #include <linux/highmem.h>
 //#include <linux/seq_file.h>
 #include <linux/magic.h>
+#include <linux/fcntl.h>
 #if 0
 #include <linux/syscalls.h>
-#include <linux/fcntl.h>
 #include <uapi/linux/memfd.h>
 #include <linux/userfaultfd_k.h>
 #include <linux/rmap.h>
@@ -89,6 +89,9 @@
 #include <linux/uaccess.h>
 
 #include "internal.h"
+
+/* Pretend that each entry is of this size in directory's i_size */
+#define BOGO_DIRENT_SIZE 20
 
 /*
  * Definitions for "huge tmpfs": tmpfs mounted with the huge= option
@@ -182,13 +185,295 @@ static void shmem_put_super(struct super_block *sb)
 {
     struct shmem_sb_info *sbinfo = SHMEM_SB(sb);
 
-#if 0
     free_percpu(sbinfo->ino_batch);
     percpu_counter_destroy(&sbinfo->used_blocks);
-#endif
     kfree(sbinfo);
     sb->s_fs_info = NULL;
+}
+
+static struct kmem_cache *shmem_inode_cachep;
+
+static struct inode *shmem_alloc_inode(struct super_block *sb)
+{
+    struct shmem_inode_info *info;
+    info = alloc_inode_sb(sb, shmem_inode_cachep, GFP_KERNEL);
+    if (!info)
+        return NULL;
+    return &info->vfs_inode;
+}
+
+static void shmem_free_in_core_inode(struct inode *inode)
+{
+    if (S_ISLNK(inode->i_mode))
+        kfree(inode->i_link);
+    kmem_cache_free(shmem_inode_cachep, SHMEM_I(inode));
+}
+
+static void shmem_destroy_inode(struct inode *inode)
+{
+}
+
+static void shmem_evict_inode(struct inode *inode)
+{
     panic("%s: END!\n", __func__);
+}
+
+static const struct super_operations shmem_ops = {
+    .alloc_inode    = shmem_alloc_inode,
+    .free_inode     = shmem_free_in_core_inode,
+    .destroy_inode  = shmem_destroy_inode,
+#if 0
+    .statfs         = shmem_statfs,
+    .show_options   = shmem_show_options,
+#endif
+    .evict_inode    = shmem_evict_inode,
+    .drop_inode     = generic_delete_inode,
+    .put_super      = shmem_put_super,
+};
+
+static void shmem_init_inode(void *foo)
+{
+    struct shmem_inode_info *info = foo;
+    inode_init_once(&info->vfs_inode);
+}
+
+static void shmem_init_inodecache(void)
+{
+    shmem_inode_cachep =
+        kmem_cache_create("shmem_inode_cache",
+                          sizeof(struct shmem_inode_info),
+                          0, SLAB_PANIC|SLAB_ACCOUNT, shmem_init_inode);
+}
+
+static void shmem_destroy_inodecache(void)
+{
+    kmem_cache_destroy(shmem_inode_cachep);
+}
+
+/*
+ * shmem_reserve_inode() performs bookkeeping to reserve a shmem inode, and
+ * produces a novel ino for the newly allocated inode.
+ *
+ * It may also be called when making a hard link to permit the space needed by
+ * each dentry. However, in that case, no new inode number is needed since that
+ * internally draws from another pool of inode numbers (currently global
+ * get_next_ino()). This case is indicated by passing NULL as inop.
+ */
+#define SHMEM_INO_BATCH 1024
+static int shmem_reserve_inode(struct super_block *sb, ino_t *inop)
+{
+    struct shmem_sb_info *sbinfo = SHMEM_SB(sb);
+    ino_t ino;
+
+    if (!(sb->s_flags & SB_KERNMOUNT)) {
+        panic("%s: NO SB_KERNMOUNT!\n", __func__);
+    } else if (inop) {
+        /*
+         * __shmem_file_setup, one of our callers, is lock-free: it
+         * doesn't hold stat_lock in shmem_reserve_inode since
+         * max_inodes is always 0, and is called from potentially
+         * unknown contexts. As such, use a per-cpu batched allocator
+         * which doesn't require the per-sb stat_lock unless we are at
+         * the batch boundary.
+         *
+         * We don't need to worry about inode{32,64} since SB_KERNMOUNT
+         * shmem mounts are not exposed to userspace, so we don't need
+         * to worry about things like glibc compatibility.
+         */
+        ino_t *next_ino;
+
+        next_ino = per_cpu_ptr(sbinfo->ino_batch, get_cpu());
+        ino = *next_ino;
+        if (unlikely(ino % SHMEM_INO_BATCH == 0)) {
+            raw_spin_lock(&sbinfo->stat_lock);
+            ino = sbinfo->next_ino;
+            sbinfo->next_ino += SHMEM_INO_BATCH;
+            raw_spin_unlock(&sbinfo->stat_lock);
+            if (unlikely(is_zero_ino(ino)))
+                ino++;
+        }
+        *inop = ino;
+        *next_ino = ++ino;
+        put_cpu();
+    }
+
+    return 0;
+}
+
+static void shmem_free_inode(struct super_block *sb)
+{
+    struct shmem_sb_info *sbinfo = SHMEM_SB(sb);
+    if (sbinfo->max_inodes) {
+        raw_spin_lock(&sbinfo->stat_lock);
+        sbinfo->free_inodes++;
+        raw_spin_unlock(&sbinfo->stat_lock);
+    }
+}
+
+static int shmem_getattr(struct user_namespace *mnt_userns,
+                         const struct path *path, struct kstat *stat,
+                         u32 request_mask, unsigned int query_flags)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * File creation. Allocate an inode, and we're done..
+ */
+static int
+shmem_mknod(struct user_namespace *mnt_userns, struct inode *dir,
+        struct dentry *dentry, umode_t mode, dev_t dev)
+{
+    struct inode *inode;
+    int error = -ENOSPC;
+
+    panic("%s: END!\n", __func__);
+}
+
+static int shmem_create(struct user_namespace *mnt_userns, struct inode *dir,
+                        struct dentry *dentry, umode_t mode, bool excl)
+{
+    return shmem_mknod(&init_user_ns, dir, dentry, mode | S_IFREG, 0);
+}
+
+/*
+ * Link a file..
+ */
+static int shmem_link(struct dentry *old_dentry, struct inode *dir,
+                      struct dentry *dentry)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static int shmem_unlink(struct inode *dir, struct dentry *dentry)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static int shmem_rmdir(struct inode *dir, struct dentry *dentry)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static int shmem_mkdir(struct user_namespace *mnt_userns, struct inode *dir,
+                       struct dentry *dentry, umode_t mode)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * The VFS layer already does all the dentry stuff for rename,
+ * we just have to decrement the usage count for the target if
+ * it exists so that the VFS layer correctly free's it when it
+ * gets overwritten.
+ */
+static int shmem_rename2(struct user_namespace *mnt_userns,
+                         struct inode *old_dir, struct dentry *old_dentry,
+                         struct inode *new_dir, struct dentry *new_dentry,
+                         unsigned int flags)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static int
+shmem_tmpfile(struct user_namespace *mnt_userns, struct inode *dir,
+              struct dentry *dentry, umode_t mode)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static int shmem_symlink(struct user_namespace *mnt_userns, struct inode *dir,
+                         struct dentry *dentry, const char *symname)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static const struct inode_operations shmem_dir_inode_operations = {
+    .getattr    = shmem_getattr,
+    .create     = shmem_create,
+    .lookup     = simple_lookup,
+    .link       = shmem_link,
+    .unlink     = shmem_unlink,
+    .symlink    = shmem_symlink,
+    .mkdir      = shmem_mkdir,
+    .rmdir      = shmem_rmdir,
+    .mknod      = shmem_mknod,
+    .rename     = shmem_rename2,
+    .tmpfile    = shmem_tmpfile,
+#if 0
+    .listxattr  = shmem_listxattr,
+#endif
+#if 0
+    .setattr    = shmem_setattr,
+    .set_acl    = simple_set_acl,
+#endif
+};
+
+static struct inode *
+shmem_get_inode(struct super_block *sb, const struct inode *dir,
+                umode_t mode, dev_t dev, unsigned long flags)
+{
+    struct inode *inode;
+    struct shmem_inode_info *info;
+    struct shmem_sb_info *sbinfo = SHMEM_SB(sb);
+    ino_t ino;
+
+    if (shmem_reserve_inode(sb, &ino))
+        return NULL;
+
+    inode = new_inode(sb);
+    if (inode) {
+        inode->i_ino = ino;
+        //inode_init_owner(&init_user_ns, inode, dir, mode);
+        inode->i_blocks = 0;
+        //inode->i_atime = inode->i_mtime = inode->i_ctime = current_time(inode);
+        inode->i_generation = prandom_u32();
+        info = SHMEM_I(inode);
+        memset(info, 0, (char *)inode - (char *)info);
+        spin_lock_init(&info->lock);
+        atomic_set(&info->stop_eviction, 0);
+        info->seals = F_SEAL_SEAL;
+        info->flags = flags & VM_NORESERVE;
+        //info->i_crtime = inode->i_mtime;
+        INIT_LIST_HEAD(&info->shrinklist);
+        INIT_LIST_HEAD(&info->swaplist);
+        //simple_xattrs_init(&info->xattrs);
+        //cache_no_acl(inode);
+        mapping_set_large_folios(inode->i_mapping);
+
+        switch (mode & S_IFMT) {
+        default:
+#if 0
+            inode->i_op = &shmem_special_inode_operations;
+            init_special_inode(inode, mode, dev);
+#endif
+            panic("%s: default.\n", __func__);
+            break;
+        case S_IFREG:
+#if 0
+            inode->i_mapping->a_ops = &shmem_aops;
+            inode->i_op = &shmem_inode_operations;
+            inode->i_fop = &shmem_file_operations;
+#endif
+            panic("%s: S_IFREG.\n", __func__);
+            break;
+        case S_IFDIR:
+            inc_nlink(inode);
+            /* Some things misbehave if size == 0 on a directory */
+            inode->i_size = 2 * BOGO_DIRENT_SIZE;
+            inode->i_op = &shmem_dir_inode_operations;
+            inode->i_fop = &simple_dir_operations;
+            panic("%s: S_IFDIR.\n", __func__);
+            break;
+        case S_IFLNK:
+            break;
+        }
+    } else {
+        shmem_free_inode(sb);
+    }
+
+    panic("%s: ino(%d) END!\n", __func__, ino);
+    return inode;
 }
 
 static int shmem_fill_super(struct super_block *sb, struct fs_context *fc)
@@ -226,12 +511,9 @@ static int shmem_fill_super(struct super_block *sb, struct fs_context *fc)
     sbinfo->max_blocks = ctx->blocks;
     sbinfo->free_inodes = sbinfo->max_inodes = ctx->inodes;
     if (sb->s_flags & SB_KERNMOUNT) {
-#if 0
         sbinfo->ino_batch = alloc_percpu(ino_t);
         if (!sbinfo->ino_batch)
             goto failed;
-#endif
-        panic("%s: SB_KERNMOUNT!\n", __func__);
     }
     sbinfo->uid = ctx->uid;
     sbinfo->gid = ctx->gid;
@@ -245,6 +527,26 @@ static int shmem_fill_super(struct super_block *sb, struct fs_context *fc)
     spin_lock_init(&sbinfo->shrinklist_lock);
     INIT_LIST_HEAD(&sbinfo->shrinklist);
 
+    sb->s_maxbytes = MAX_LFS_FILESIZE;
+    sb->s_blocksize = PAGE_SIZE;
+    sb->s_blocksize_bits = PAGE_SHIFT;
+    sb->s_magic = TMPFS_MAGIC;
+    sb->s_op = &shmem_ops;
+    sb->s_time_gran = 1;
+#if 0
+    sb->s_xattr = shmem_xattr_handlers;
+#endif
+    sb->s_flags |= SB_POSIXACL;
+    //uuid_gen(&sb->s_uuid);
+
+    inode = shmem_get_inode(sb, NULL, S_IFDIR | sbinfo->mode, 0, VM_NORESERVE);
+    if (!inode)
+        goto failed;
+    inode->i_uid = sbinfo->uid;
+    inode->i_gid = sbinfo->gid;
+    sb->s_root = d_make_root(inode);
+    if (!sb->s_root)
+        goto failed;
     panic("%s: END!\n", __func__);
     return 0;
 
@@ -361,4 +663,42 @@ int shmem_init_fs_context(struct fs_context *fc)
     fc->fs_private = ctx;
     fc->ops = &shmem_fs_context_ops;
     return 0;
+}
+
+static struct file_system_type shmem_fs_type = {
+    .owner      = THIS_MODULE,
+    .name       = "tmpfs",
+    .init_fs_context = shmem_init_fs_context,
+    .parameters = shmem_fs_parameters,
+    .kill_sb    = kill_litter_super,
+    .fs_flags   = FS_USERNS_MOUNT,
+};
+
+int __init shmem_init(void)
+{
+    int error;
+
+    shmem_init_inodecache();
+
+    error = register_filesystem(&shmem_fs_type);
+    if (error) {
+        pr_err("Could not register tmpfs\n");
+        goto out2;
+    }
+
+    shm_mnt = kern_mount(&shmem_fs_type);
+    if (IS_ERR(shm_mnt)) {
+        error = PTR_ERR(shm_mnt);
+        pr_err("Could not kern_mount tmpfs\n");
+        goto out1;
+    }
+
+    return 0;
+
+out1:
+    unregister_filesystem(&shmem_fs_type);
+out2:
+    shmem_destroy_inodecache();
+    shm_mnt = ERR_PTR(error);
+    return error;
 }

@@ -549,6 +549,29 @@ void dput(struct dentry *dentry)
 }
 EXPORT_SYMBOL(dput);
 
+static __initdata unsigned long dhash_entries;
+static unsigned int d_hash_shift __read_mostly;
+static struct hlist_bl_head *dentry_hashtable __read_mostly;
+
+static void __init dcache_init_early(void)
+{
+    /* If hashes are distributed across NUMA nodes, defer
+     * hash allocation until vmalloc space is available.
+     */
+
+    dentry_hashtable =
+        alloc_large_system_hash("Dentry cache",
+                                sizeof(struct hlist_bl_head),
+                                dhash_entries,
+                                13,
+                                HASH_EARLY | HASH_ZERO,
+                                &d_hash_shift,
+                                NULL,
+                                0,
+                                0);
+    d_hash_shift = 32 - d_hash_shift;
+}
+
 static void __init dcache_init(void)
 {
     /*
@@ -561,30 +584,31 @@ static void __init dcache_init(void)
                             SLAB_RECLAIM_ACCOUNT|SLAB_PANIC|
                             SLAB_MEM_SPREAD|SLAB_ACCOUNT,
                             d_iname);
+}
 
-#if 0
-    /* Hash may have been set up in dcache_init_early */
-    if (!hashdist)
-        return;
+#define IN_LOOKUP_SHIFT 10
+static struct hlist_bl_head in_lookup_hashtable[1 << IN_LOOKUP_SHIFT];
 
-    dentry_hashtable =
-        alloc_large_system_hash("Dentry cache",
-                    sizeof(struct hlist_bl_head),
-                    dhash_entries,
-                    13,
-                    HASH_ZERO,
-                    &d_hash_shift,
-                    NULL,
-                    0,
-                    0);
-    d_hash_shift = 32 - d_hash_shift;
-#endif
+static inline struct hlist_bl_head *
+in_lookup_hash(const struct dentry *parent, unsigned int hash)
+{
+    hash += (unsigned long) parent / L1_CACHE_BYTES;
+    return in_lookup_hashtable + hash_32(hash, IN_LOOKUP_SHIFT);
+}
+
+void __init vfs_caches_init_early(void)
+{
+    int i;
+
+    for (i = 0; i < ARRAY_SIZE(in_lookup_hashtable); i++)
+        INIT_HLIST_BL_HEAD(&in_lookup_hashtable[i]);
+
+    dcache_init_early();
+    inode_init_early();
 }
 
 void __init vfs_caches_init(void)
 {
-    printk("############## %s: ...\n", __func__);
-
     names_cachep =
         kmem_cache_create_usercopy("names_cache", PATH_MAX, 0,
                                    SLAB_HWCACHE_ALIGN|SLAB_PANIC,

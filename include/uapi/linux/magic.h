@@ -6,4 +6,7 @@
 
 #define BDEVFS_MAGIC        0x62646576
 
+#define RAMFS_MAGIC         0x858458f6  /* some random number */
+#define TMPFS_MAGIC         0x01021994
+
 #endif /* __LINUX_MAGIC_H__ */
