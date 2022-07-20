@@ -21,8 +21,8 @@
 #include <linux/user_namespace.h>
 #include <linux/idr.h>
 #include <linux/init.h>         /* init_rootfs */
-#if 0
 #include <linux/fs_struct.h>    /* get_fs_root et.al. */
+#if 0
 #include <linux/fsnotify.h>     /* fsnotify_vfsmount_delete */
 #include <linux/file.h>
 #include <linux/uaccess.h>
@@ -249,6 +249,100 @@ struct vfsmount *kern_mount(struct file_system_type *type)
 }
 EXPORT_SYMBOL_GPL(kern_mount);
 
+static struct ucounts *inc_mnt_namespaces(struct user_namespace *ns)
+{
+#if 0
+    return inc_ucount(ns, current_euid(), UCOUNT_MNT_NAMESPACES);
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+static void dec_mnt_namespaces(struct ucounts *ucounts)
+{
+#if 0
+    dec_ucount(ucounts, UCOUNT_MNT_NAMESPACES);
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+
+static struct mnt_namespace *
+alloc_mnt_ns(struct user_namespace *user_ns, bool anon)
+{
+    struct mnt_namespace *new_ns;
+    struct ucounts *ucounts;
+    int ret;
+
+#if 0
+    ucounts = inc_mnt_namespaces(user_ns);
+    if (!ucounts)
+        return ERR_PTR(-ENOSPC);
+#endif
+
+    new_ns = kzalloc(sizeof(struct mnt_namespace), GFP_KERNEL_ACCOUNT);
+    if (!new_ns) {
+#if 0
+        dec_mnt_namespaces(ucounts);
+#endif
+        return ERR_PTR(-ENOMEM);
+    }
+    if (!anon) {
+        pr_warn("%s: NOT anon!\n", __func__);
+#if 0
+        ret = ns_alloc_inum(&new_ns->ns);
+        if (ret) {
+            kfree(new_ns);
+            dec_mnt_namespaces(ucounts);
+            return ERR_PTR(ret);
+        }
+#endif
+    }
+
+#if 0
+    new_ns->ns.ops = &mntns_operations;
+    if (!anon)
+        new_ns->seq = atomic64_add_return(1, &mnt_ns_seq);
+#endif
+    refcount_set(&new_ns->ns.count, 1);
+    INIT_LIST_HEAD(&new_ns->list);
+    //init_waitqueue_head(&new_ns->poll);
+    spin_lock_init(&new_ns->ns_lock);
+    new_ns->user_ns = get_user_ns(user_ns);
+    //new_ns->ucounts = ucounts;
+    return new_ns;
+}
+
+/*
+ * vfsmount lock must be held for read
+ */
+static inline void mnt_add_count(struct mount *mnt, int n)
+{
+    this_cpu_add(mnt->mnt_pcp->mnt_count, n);
+}
+
+struct vfsmount *mntget(struct vfsmount *mnt)
+{
+    if (mnt)
+        mnt_add_count(real_mount(mnt), 1);
+    return mnt;
+}
+EXPORT_SYMBOL(mntget);
+
+void mntput(struct vfsmount *mnt)
+{
+#if 0
+    if (mnt) {
+        struct mount *m = real_mount(mnt);
+        /* avoid cacheline pingpong, hope gcc doesn't get "smart" */
+        if (unlikely(m->mnt_expiry_mark))
+            m->mnt_expiry_mark = 0;
+        mntput_no_expire(m);
+    }
+#endif
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL(mntput);
+
 static void __init init_mount_tree(void)
 {
     struct vfsmount *mnt;
@@ -260,7 +354,6 @@ static void __init init_mount_tree(void)
     if (IS_ERR(mnt))
         panic("Can't create rootfs");
 
-#if 0
     ns = alloc_mnt_ns(&init_user_ns, false);
     if (IS_ERR(ns))
         panic("Can't allocate initial namespace");
@@ -278,8 +371,6 @@ static void __init init_mount_tree(void)
 
     set_fs_pwd(current->fs, &root);
     set_fs_root(current->fs, &root);
-#endif
-    panic("%s: END!\n", __func__);
 }
 
 void __init mnt_init(void)
@@ -318,4 +409,5 @@ void __init mnt_init(void)
     shmem_init();
     init_rootfs();
     init_mount_tree();
+    printk("%s: OK!\n", __func__);
 }

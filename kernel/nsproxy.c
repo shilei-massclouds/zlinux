@@ -30,11 +30,13 @@
 #endif
 
 struct nsproxy init_nsproxy = {
-#if 0
     .count          = ATOMIC_INIT(1),
+#if 0
     .uts_ns         = &init_uts_ns,
     .ipc_ns         = &init_ipc_ns,
+#endif
     .mnt_ns         = NULL,
+#if 0
     .net_ns         = &init_net,
     .cgroup_ns      = &init_cgroup_ns,
     .time_ns        = &init_time_ns,

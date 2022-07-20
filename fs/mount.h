@@ -75,3 +75,8 @@ static inline struct mount *real_mount(struct vfsmount *mnt)
 {
     return container_of(mnt, struct mount, mnt);
 }
+
+static inline void get_mnt_ns(struct mnt_namespace *ns)
+{
+    refcount_inc(&ns->ns.count);
+}

@@ -200,6 +200,12 @@ struct task_struct {
     /* A live task holds one reference: */
     refcount_t stack_refcount;
 
+    /* Filesystem information: */
+    struct fs_struct        *fs;
+
+    /* Open file information: */
+    struct files_struct     *files;
+
     /* Namespaces: */
     struct nsproxy *nsproxy;
 

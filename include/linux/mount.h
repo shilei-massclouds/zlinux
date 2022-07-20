@@ -23,7 +23,19 @@ struct dentry;
 struct mnt_namespace;
 struct fs_context;
 
-#define MNT_INTERNAL    0x4000
+#define MNT_INTERNAL        0x4000
+
+#define MNT_LOCK_ATIME      0x040000
+#define MNT_LOCK_NOEXEC     0x080000
+#define MNT_LOCK_NOSUID     0x100000
+#define MNT_LOCK_NODEV      0x200000
+#define MNT_LOCK_READONLY   0x400000
+#define MNT_LOCKED          0x800000
+#define MNT_DOOMED          0x1000000
+#define MNT_SYNC_UMOUNT     0x2000000
+#define MNT_MARKED          0x4000000
+#define MNT_UMOUNT          0x8000000
+#define MNT_CURSOR          0x10000000
 
 struct vfsmount {
     struct dentry *mnt_root;    /* root of the mounted tree */
@@ -33,5 +45,8 @@ struct vfsmount {
 } __randomize_layout;
 
 extern struct vfsmount *vfs_create_mount(struct fs_context *fc);
+
+extern struct vfsmount *mntget(struct vfsmount *mnt);
+extern void mntput(struct vfsmount *mnt);
 
 #endif /* _LINUX_MOUNT_H */

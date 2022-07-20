@@ -266,7 +266,32 @@ static int shmem_reserve_inode(struct super_block *sb, ino_t *inop)
     ino_t ino;
 
     if (!(sb->s_flags & SB_KERNMOUNT)) {
-        panic("%s: NO SB_KERNMOUNT!\n", __func__);
+        raw_spin_lock(&sbinfo->stat_lock);
+        if (sbinfo->max_inodes) {
+            if (!sbinfo->free_inodes) {
+                raw_spin_unlock(&sbinfo->stat_lock);
+                return -ENOSPC;
+            }
+            sbinfo->free_inodes--;
+        }
+        if (inop) {
+            ino = sbinfo->next_ino++;
+            if (unlikely(is_zero_ino(ino)))
+                ino = sbinfo->next_ino++;
+            if (unlikely(!sbinfo->full_inums && ino > UINT_MAX)) {
+                /*
+                 * Emulate get_next_ino uint wraparound for
+                 * compatibility
+                 */
+                pr_warn("%s: inode number overflow on device %d, "
+                        "consider using inode64 mount option\n",
+                        __func__, MINOR(sb->s_dev));
+                sbinfo->next_ino = 1;
+                ino = sbinfo->next_ino++;
+            }
+            *inop = ino;
+        }
+        raw_spin_unlock(&sbinfo->stat_lock);
     } else if (inop) {
         /*
          * __shmem_file_setup, one of our callers, is lock-free: it
@@ -463,7 +488,6 @@ shmem_get_inode(struct super_block *sb, const struct inode *dir,
             inode->i_size = 2 * BOGO_DIRENT_SIZE;
             inode->i_op = &shmem_dir_inode_operations;
             inode->i_fop = &simple_dir_operations;
-            panic("%s: S_IFDIR.\n", __func__);
             break;
         case S_IFLNK:
             break;
@@ -471,8 +495,6 @@ shmem_get_inode(struct super_block *sb, const struct inode *dir,
     } else {
         shmem_free_inode(sb);
     }
-
-    panic("%s: ino(%d) END!\n", __func__, ino);
     return inode;
 }
 
@@ -547,7 +569,6 @@ static int shmem_fill_super(struct super_block *sb, struct fs_context *fc)
     sb->s_root = d_make_root(inode);
     if (!sb->s_root)
         goto failed;
-    panic("%s: END!\n", __func__);
     return 0;
 
  failed:

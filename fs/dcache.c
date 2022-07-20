@@ -200,7 +200,6 @@ static struct dentry *__d_alloc(struct super_block *sb, const struct qstr *name)
     }
 
     this_cpu_inc(nr_dentry);
-
     return dentry;
 }
 

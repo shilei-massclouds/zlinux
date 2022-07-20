@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 #include <linux/export.h>
-#if 0
 #include <linux/nsproxy.h>
-#endif
 #include <linux/slab.h>
 #include <linux/sched/signal.h>
 #include <linux/user_namespace.h>

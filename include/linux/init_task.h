@@ -32,4 +32,6 @@ extern struct nsproxy init_nsproxy;
 
 extern struct cred init_cred;
 
+extern struct fs_struct init_fs;
+
 #endif /* _LINUX__INIT_TASK_H */

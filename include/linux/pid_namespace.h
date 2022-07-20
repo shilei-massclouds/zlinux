@@ -7,7 +7,7 @@
 #include <linux/mm.h>
 //#include <linux/workqueue.h>
 #include <linux/threads.h>
-//#include <linux/nsproxy.h>
+#include <linux/nsproxy.h>
 #include <linux/ns_common.h>
 #include <linux/idr.h>
 
