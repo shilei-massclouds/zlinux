@@ -343,6 +343,34 @@ void mntput(struct vfsmount *mnt)
 }
 EXPORT_SYMBOL(mntput);
 
+/*
+ * Return true if path is reachable from root
+ *
+ * namespace_sem or mount_lock is held
+ */
+bool is_path_reachable(struct mount *mnt, struct dentry *dentry,
+                       const struct path *root)
+{
+    while (&mnt->mnt != root->mnt && mnt_has_parent(mnt)) {
+        dentry = mnt->mnt_mountpoint;
+        mnt = mnt->mnt_parent;
+    }
+#if 0
+    return &mnt->mnt == root->mnt && is_subdir(dentry, root->dentry);
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+bool path_is_under(const struct path *path1, const struct path *path2)
+{
+    bool res;
+    //read_seqlock_excl(&mount_lock);
+    res = is_path_reachable(real_mount(path1->mnt), path1->dentry, path2);
+    //read_sequnlock_excl(&mount_lock);
+    return res;
+}
+EXPORT_SYMBOL(path_is_under);
+
 static void __init init_mount_tree(void)
 {
     struct vfsmount *mnt;
@@ -372,6 +400,24 @@ static void __init init_mount_tree(void)
     set_fs_pwd(current->fs, &root);
     set_fs_root(current->fs, &root);
 }
+
+/**
+ * mnt_drop_write - give up write access to a mount
+ * @mnt: the mount on which to give up write access
+ *
+ * Tells the low-level filesystem that we are done performing writes to it and
+ * also allows filesystem to be frozen again.  Must be matched with
+ * mnt_want_write() call above.
+ */
+void mnt_drop_write(struct vfsmount *mnt)
+{
+#if 0
+    __mnt_drop_write(mnt);
+    sb_end_write(mnt->mnt_sb);
+#endif
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL_GPL(mnt_drop_write);
 
 void __init mnt_init(void)
 {

@@ -25,4 +25,6 @@
 #define EALREADY    114 /* Operation already in progress */
 #define ESTALE      116 /* Stale file handle */
 
+#define ENOTRECOVERABLE 131 /* State not recoverable */
+
 #endif /* _ASM_GENERIC_ERRNO_H */

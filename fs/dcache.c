@@ -62,6 +62,15 @@ struct external_name {
     unsigned char name[];
 };
 
+static __initdata unsigned long dhash_entries;
+static unsigned int d_hash_shift __read_mostly;
+static struct hlist_bl_head *dentry_hashtable __read_mostly;
+
+static inline struct hlist_bl_head *d_hash(unsigned int hash)
+{
+    return dentry_hashtable + (hash >> d_hash_shift);
+}
+
 static inline struct external_name *external_name(struct dentry *dentry)
 {
     return container_of(dentry->d_name.name, struct external_name, name[0]);
@@ -548,10 +557,6 @@ void dput(struct dentry *dentry)
 }
 EXPORT_SYMBOL(dput);
 
-static __initdata unsigned long dhash_entries;
-static unsigned int d_hash_shift __read_mostly;
-static struct hlist_bl_head *dentry_hashtable __read_mostly;
-
 static void __init dcache_init_early(void)
 {
     /* If hashes are distributed across NUMA nodes, defer
@@ -594,6 +599,162 @@ in_lookup_hash(const struct dentry *parent, unsigned int hash)
     hash += (unsigned long) parent / L1_CACHE_BYTES;
     return in_lookup_hashtable + hash_32(hash, IN_LOOKUP_SHIFT);
 }
+
+/**
+ * __d_lookup - search for a dentry (racy)
+ * @parent: parent dentry
+ * @name: qstr of name we wish to find
+ * Returns: dentry, or NULL
+ *
+ * __d_lookup is like d_lookup, however it may (rarely) return a
+ * false-negative result due to unrelated rename activity.
+ *
+ * __d_lookup is slightly faster by avoiding rename_lock read seqlock,
+ * however it must be used carefully, eg. with a following d_lookup in
+ * the case of failure.
+ *
+ * __d_lookup callers must be commented.
+ */
+struct dentry *__d_lookup(const struct dentry *parent, const struct qstr *name)
+{
+    unsigned int hash = name->hash;
+    struct hlist_bl_head *b = d_hash(hash);
+    struct hlist_bl_node *node;
+    struct dentry *found = NULL;
+    struct dentry *dentry;
+
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * d_lookup - search for a dentry
+ * @parent: parent dentry
+ * @name: qstr of name we wish to find
+ * Returns: dentry, or NULL
+ *
+ * d_lookup searches the children of the parent dentry for the name in
+ * question. If the dentry is found its reference count is incremented and the
+ * dentry is returned. The caller must use dput to free the entry when it has
+ * finished using it. %NULL is returned if the dentry does not exist.
+ */
+struct dentry *d_lookup(const struct dentry *parent, const struct qstr *name)
+{
+    struct dentry *dentry;
+    unsigned seq;
+
+#if 0
+    do {
+        seq = read_seqbegin(&rename_lock);
+        dentry = __d_lookup(parent, name);
+        if (dentry)
+            break;
+    } while (read_seqretry(&rename_lock, seq));
+#else
+    dentry = __d_lookup(parent, name);
+#endif
+    return dentry;
+}
+EXPORT_SYMBOL(d_lookup);
+
+/* This must be called with d_lock held */
+static inline void __dget_dlock(struct dentry *dentry)
+{
+    dentry->d_lockref.count++;
+}
+
+/**
+ * d_alloc  -   allocate a dcache entry
+ * @parent: parent of entry to allocate
+ * @name: qstr of the name
+ *
+ * Allocates a dentry. It returns %NULL if there is insufficient memory
+ * available. On a success the dentry is returned. The name passed in is
+ * copied and the copy passed in may be reused after this call.
+ */
+struct dentry *d_alloc(struct dentry *parent, const struct qstr *name)
+{
+    struct dentry *dentry = __d_alloc(parent->d_sb, name);
+    if (!dentry)
+        return NULL;
+    spin_lock(&parent->d_lock);
+    /*
+     * don't need child lock because it is not subject
+     * to concurrency here
+     */
+    __dget_dlock(parent);
+    dentry->d_parent = parent;
+    list_add(&dentry->d_child, &parent->d_subdirs);
+    spin_unlock(&parent->d_lock);
+
+    return dentry;
+}
+EXPORT_SYMBOL(d_alloc);
+
+static void ___d_drop(struct dentry *dentry)
+{
+    struct hlist_bl_head *b;
+    /*
+     * Hashed dentries are normally on the dentry hashtable,
+     * with the exception of those newly allocated by
+     * d_obtain_root, which are always IS_ROOT:
+     */
+    if (unlikely(IS_ROOT(dentry)))
+        b = &dentry->d_sb->s_roots;
+    else
+        b = d_hash(dentry->d_name.hash);
+
+    hlist_bl_lock(b);
+    __hlist_bl_del(&dentry->d_hash);
+    hlist_bl_unlock(b);
+}
+
+void __d_drop(struct dentry *dentry)
+{
+    if (!d_unhashed(dentry)) {
+        ___d_drop(dentry);
+        dentry->d_hash.pprev = NULL;
+        write_seqcount_invalidate(&dentry->d_seq);
+    }
+}
+EXPORT_SYMBOL(__d_drop);
+
+/**
+ * d_invalidate - detach submounts, prune dcache, and drop
+ * @dentry: dentry to invalidate (aka detach, prune and drop)
+ */
+void d_invalidate(struct dentry *dentry)
+{
+    bool had_submounts = false;
+    spin_lock(&dentry->d_lock);
+    if (d_unhashed(dentry)) {
+        spin_unlock(&dentry->d_lock);
+        return;
+    }
+    __d_drop(dentry);
+    spin_unlock(&dentry->d_lock);
+
+    /* Negative dentries can be dropped without further checks */
+    if (!dentry->d_inode)
+        return;
+
+#if 0
+    shrink_dcache_parent(dentry);
+    for (;;) {
+        struct dentry *victim = NULL;
+        d_walk(dentry, &victim, find_submount);
+        if (!victim) {
+            if (had_submounts)
+                shrink_dcache_parent(dentry);
+            return;
+        }
+        had_submounts = true;
+        detach_mounts(victim);
+        dput(victim);
+    }
+#endif
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL(d_invalidate);
 
 void __init vfs_caches_init_early(void)
 {

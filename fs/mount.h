@@ -80,3 +80,8 @@ static inline void get_mnt_ns(struct mnt_namespace *ns)
 {
     refcount_inc(&ns->ns.count);
 }
+
+static inline int mnt_has_parent(struct mount *mnt)
+{
+    return mnt != mnt->mnt_parent;
+}

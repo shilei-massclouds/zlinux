@@ -38,9 +38,9 @@
 #include <linux/lockdep.h>
 #include <linux/uuid.h>
 #include <linux/percpu-rwsem.h>
+#include <linux/delayed_call.h>
 #if 0
 #include <linux/workqueue.h>
-#include <linux/delayed_call.h>
 #include <linux/ioprio.h>
 #include <linux/fs_types.h>
 #include <linux/build_bug.h>
@@ -153,6 +153,32 @@ enum {
 };
 
 #define SB_FREEZE_LEVELS (SB_FREEZE_COMPLETE - 1)
+
+/*
+ * inode->i_mutex nesting subclasses for the lock validator:
+ *
+ * 0: the object of the current VFS operation
+ * 1: parent
+ * 2: child/target
+ * 3: xattr
+ * 4: second non-directory
+ * 5: second parent (when locking independent directories in rename)
+ *
+ * I_MUTEX_NONDIR2 is for certain operations (such as rename) which lock two
+ * non-directories at once.
+ *
+ * The locking order between these classes is
+ * parent[2] -> child -> grandchild -> normal -> xattr -> second non-directory
+ */
+enum inode_i_mutex_lock_class
+{
+    I_MUTEX_NORMAL,
+    I_MUTEX_PARENT,
+    I_MUTEX_CHILD,
+    I_MUTEX_XATTR,
+    I_MUTEX_NONDIR2,
+    I_MUTEX_PARENT2,
+};
 
 /*
  * Write life time hint values.
@@ -948,5 +974,24 @@ extern struct kmem_cache *names_cachep;
 
 #define __getname()         kmem_cache_alloc(names_cachep, GFP_KERNEL)
 #define __putname(name)     kmem_cache_free(names_cachep, (void *)(name))
+
+/* fs/dcache.c -- generic fs support functions */
+extern bool is_subdir(struct dentry *, struct dentry *);
+extern bool path_is_under(const struct path *, const struct path *);
+
+static inline void inode_lock(struct inode *inode)
+{
+    down_write(&inode->i_rwsem);
+}
+
+static inline void inode_unlock(struct inode *inode)
+{
+    up_write(&inode->i_rwsem);
+}
+
+static inline void inode_lock_nested(struct inode *inode, unsigned subclass)
+{
+    down_write_nested(&inode->i_rwsem, subclass);
+}
 
 #endif /* _LINUX_FS_H */

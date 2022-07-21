@@ -7,6 +7,14 @@
 #include <linux/compiler.h>
 
 /*
+ * The "GOLDEN_RATIO_PRIME" is used in ifs/btrfs/brtfs_inode.h and
+ * fs/inode.c.  It's not actually prime any more (the previous primes
+ * were actively bad for hashing), but the name remains.
+ */
+#define hash_long(val, bits) hash_64(val, bits)
+#define GOLDEN_RATIO_PRIME GOLDEN_RATIO_64
+
+/*
  * This hash multiplies the input by a large odd number and takes the
  * high bits.  Since multiplication propagates changes to the most
  * significant end only, it is essential that the high bits of the
@@ -46,6 +54,13 @@ static inline u32 hash_32(u32 val, unsigned int bits)
 {
     /* High bits are more random, so use them. */
     return __hash_32(val) >> (32 - bits);
+}
+
+#define hash_64 hash_64_generic
+static __always_inline u32 hash_64_generic(u64 val, unsigned int bits)
+{
+    /* 64x64-bit multiply is efficient on all 64-bit processors */
+    return val * GOLDEN_RATIO_64 >> (64 - bits);
 }
 
 #endif /* _LINUX_HASH_H */

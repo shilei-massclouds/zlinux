@@ -274,6 +274,8 @@ struct task_struct {
      */
     char comm[TASK_COMM_LEN];
 
+    struct nameidata *nameidata;
+
     struct vm_struct *stack_vm_area;
 
     struct completion *vfork_done;

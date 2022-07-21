@@ -49,4 +49,6 @@ extern struct vfsmount *vfs_create_mount(struct fs_context *fc);
 extern struct vfsmount *mntget(struct vfsmount *mnt);
 extern void mntput(struct vfsmount *mnt);
 
+extern void mnt_drop_write(struct vfsmount *mnt);
+
 #endif /* _LINUX_MOUNT_H */

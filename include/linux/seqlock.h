@@ -370,4 +370,21 @@ static inline void write_sequnlock(seqlock_t *sl)
     spin_unlock(&sl->lock);
 }
 
+/**
+ * write_seqcount_invalidate() - invalidate in-progress seqcount_t read
+ *                               side operations
+ * @s: Pointer to seqcount_t or any of the seqcount_LOCKNAME_t variants
+ *
+ * After write_seqcount_invalidate, no seqcount_t read side operations
+ * will complete successfully and see data older than this.
+ */
+#define write_seqcount_invalidate(s)                    \
+    do_write_seqcount_invalidate(seqprop_ptr(s))
+
+static inline void do_write_seqcount_invalidate(seqcount_t *s)
+{
+    smp_wmb();
+    s->sequence+=2;
+}
+
 #endif /* __LINUX_SEQLOCK_H */

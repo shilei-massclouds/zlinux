@@ -12,10 +12,10 @@
 #include <linux/cache.h>
 #include <linux/rcupdate.h>
 #include <linux/lockref.h>
-#if 0
 #include <linux/stringhash.h>
-#endif
 #include <linux/wait.h>
+
+#define IS_ROOT(x) ((x) == (x)->d_parent)
 
 #define DNAME_INLINE_LEN    32  /* 192 bytes */
 
@@ -185,5 +185,19 @@ static inline int d_unhashed(const struct dentry *dentry)
 #define DCACHE_CANT_MOUNT       0x00000100
 #define DCACHE_GENOCIDE         0x00000200
 #define DCACHE_SHRINK_LIST      0x00000400
+
+#define DCACHE_OP_WEAK_REVALIDATE   0x00000800
+
+/* allocate/de-allocate */
+extern struct dentry *d_alloc(struct dentry *, const struct qstr *);
+
+/* appendix may either be NULL or be used for transname suffixes */
+extern struct dentry *d_lookup(const struct dentry *, const struct qstr *);
+extern struct dentry *d_hash_and_lookup(struct dentry *, struct qstr *);
+extern struct dentry *__d_lookup(const struct dentry *, const struct qstr *);
+extern struct dentry *__d_lookup_rcu(const struct dentry *parent,
+                                     const struct qstr *name, unsigned *seq);
+
+extern void d_invalidate(struct dentry *);
 
 #endif  /* __LINUX_DCACHE_H */

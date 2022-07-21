@@ -24,4 +24,12 @@ extern struct fs_struct *copy_fs_struct(struct fs_struct *);
 extern void free_fs_struct(struct fs_struct *);
 extern int unshare_fs_struct(void);
 
+static inline void get_fs_root(struct fs_struct *fs, struct path *root)
+{
+    spin_lock(&fs->lock);
+    *root = fs->root;
+    path_get(root);
+    spin_unlock(&fs->lock);
+}
+
 #endif /* _LINUX_FS_STRUCT_H */

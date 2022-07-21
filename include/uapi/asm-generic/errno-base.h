@@ -8,11 +8,13 @@
 #define EIO         5   /* I/O error */
 #define ENXIO       6   /* No such device or address */
 #define E2BIG       7   /* Argument list too long */
+#define ECHILD      10  /* No child processes */
 #define EAGAIN      11  /* Try again */
 #define ENOMEM      12  /* Out of memory */
 #define EFAULT      14  /* Bad address */
 #define EBUSY       16  /* Device or resource busy */
 #define EEXIST      17  /* File exists */
+#define EXDEV       18  /* Cross-device link */
 #define ENODEV      19  /* No such device */
 #define EISDIR      21  /* Is a directory */
 #define EINVAL      22  /* Invalid argument */
