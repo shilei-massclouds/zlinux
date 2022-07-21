@@ -178,20 +178,32 @@ const struct file_operations simple_dir_operations = {
 EXPORT_SYMBOL(simple_dir_operations);
 
 /*
+ * Retaining negative dentries for an in-memory filesystem just wastes
+ * memory and lookup time: arrange for them to be deleted immediately.
+ */
+int always_delete_dentry(const struct dentry *dentry)
+{
+    return 1;
+}
+EXPORT_SYMBOL(always_delete_dentry);
+
+const struct dentry_operations simple_dentry_operations = {
+    .d_delete = always_delete_dentry,
+};
+EXPORT_SYMBOL(simple_dentry_operations);
+
+/*
  * Lookup the data. This is trivial - if the dentry didn't already
  * exist, we know it is negative.  Set d_op to delete negative dentries.
  */
 struct dentry *simple_lookup(struct inode *dir, struct dentry *dentry,
                              unsigned int flags)
 {
-#if 0
     if (dentry->d_name.len > NAME_MAX)
         return ERR_PTR(-ENAMETOOLONG);
     if (!dentry->d_sb->s_d_op)
         d_set_d_op(dentry, &simple_dentry_operations);
     d_add(dentry, NULL);
-#endif
-    panic("%s: END!\n", __func__);
     return NULL;
 }
 EXPORT_SYMBOL(simple_lookup);

@@ -163,7 +163,7 @@ static inline int d_unhashed(const struct dentry *dentry)
 /* d_flags entries */
 #define DCACHE_OP_HASH          0x00000001
 #define DCACHE_OP_COMPARE       0x00000002
-#define DCACHE_OP_REVALIDATE        0x00000004
+#define DCACHE_OP_REVALIDATE    0x00000004
 #define DCACHE_OP_DELETE        0x00000008
 #define DCACHE_OP_PRUNE         0x00000010
 
@@ -199,5 +199,66 @@ extern struct dentry *__d_lookup_rcu(const struct dentry *parent,
                                      const struct qstr *name, unsigned *seq);
 
 extern void d_invalidate(struct dentry *);
+
+extern void d_set_d_op(struct dentry *dentry,
+                       const struct dentry_operations *op);
+
+extern void d_add(struct dentry *, struct inode *);
+
+/*
+ * Directory cache entry type accessor functions.
+ */
+static inline unsigned __d_entry_type(const struct dentry *dentry)
+{
+    return dentry->d_flags & DCACHE_ENTRY_TYPE;
+}
+
+static inline bool d_is_miss(const struct dentry *dentry)
+{
+    return __d_entry_type(dentry) == DCACHE_MISS_TYPE;
+}
+
+static inline bool d_is_symlink(const struct dentry *dentry)
+{
+    return __d_entry_type(dentry) == DCACHE_SYMLINK_TYPE;
+}
+
+static inline bool d_can_lookup(const struct dentry *dentry)
+{
+    return __d_entry_type(dentry) == DCACHE_DIRECTORY_TYPE;
+}
+
+static inline bool d_is_negative(const struct dentry *dentry)
+{
+    // TODO: check d_is_whiteout(dentry) also.
+    return d_is_miss(dentry);
+}
+
+static inline bool d_is_positive(const struct dentry *dentry)
+{
+    return !d_is_negative(dentry);
+}
+
+/*
+ * These are the low-level FS interfaces to the dcache..
+ */
+extern void d_instantiate(struct dentry *, struct inode *);
+
+/**
+ * d_backing_inode - Get upper or lower inode we should be using
+ * @upper: The upper layer
+ *
+ * This is the helper that should be used to get at the inode that will be used
+ * if this dentry were to be opened as a file.  The inode may be on the upper
+ * dentry or it may be on a lower dentry pinned by the upper.
+ *
+ * Normal filesystems should not use this to access their own inodes.
+ */
+static inline struct inode *d_backing_inode(const struct dentry *upper)
+{
+    struct inode *inode = upper->d_inode;
+
+    return inode;
+}
 
 #endif  /* __LINUX_DCACHE_H */

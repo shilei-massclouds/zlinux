@@ -26,6 +26,8 @@ static inline void INIT_HLIST_BL_NODE(struct hlist_bl_node *h)
     h->pprev = NULL;
 }
 
+#define hlist_bl_entry(ptr, type, member) container_of(ptr,type,member)
+
 static inline bool hlist_bl_unhashed(const struct hlist_bl_node *h)
 {
     return !h->pprev;
@@ -60,6 +62,21 @@ static inline void __hlist_bl_del(struct hlist_bl_node *n)
                 ((unsigned long)*pprev & LIST_BL_LOCKMASK)));
     if (next)
         next->pprev = pprev;
+}
+
+static inline struct hlist_bl_node *hlist_bl_first(struct hlist_bl_head *h)
+{
+    return (struct hlist_bl_node *)
+        ((unsigned long)h->first & ~LIST_BL_LOCKMASK);
+}
+
+static inline void hlist_bl_set_first(struct hlist_bl_head *h,
+                                      struct hlist_bl_node *n)
+{
+    LIST_BL_BUG_ON((unsigned long)n & LIST_BL_LOCKMASK);
+    LIST_BL_BUG_ON(((unsigned long)h->first & LIST_BL_LOCKMASK) !=
+                   LIST_BL_LOCKMASK);
+    h->first = (struct hlist_bl_node *)((unsigned long)n | LIST_BL_LOCKMASK);
 }
 
 #endif /* _LINUX_LIST_BL_H */

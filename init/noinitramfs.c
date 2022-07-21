@@ -27,7 +27,6 @@ static int __init default_rootfs(void)
     if (err < 0)
         goto out;
 
-#if 0
     err = init_mknod("/dev/console", S_IFCHR | S_IRUSR | S_IWUSR,
                      new_encode_dev(MKDEV(5, 1)));
     if (err < 0)
@@ -37,8 +36,6 @@ static int __init default_rootfs(void)
     if (err < 0)
         goto out;
 
-#endif
-    panic("%s: END!\n", __func__);
     return 0;
 
 out:

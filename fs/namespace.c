@@ -339,7 +339,7 @@ void mntput(struct vfsmount *mnt)
         mntput_no_expire(m);
     }
 #endif
-    panic("%s: END!\n", __func__);
+    pr_warn("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL(mntput);
 
@@ -401,6 +401,26 @@ static void __init init_mount_tree(void)
     set_fs_root(current->fs, &root);
 }
 
+static inline void mnt_dec_writers(struct mount *mnt)
+{
+    this_cpu_dec(mnt->mnt_pcp->mnt_writers);
+}
+
+/**
+ * __mnt_drop_write - give up write access to a mount
+ * @mnt: the mount on which to give up write access
+ *
+ * Tells the low-level filesystem that we are done
+ * performing writes to it.  Must be matched with
+ * __mnt_want_write() call above.
+ */
+void __mnt_drop_write(struct vfsmount *mnt)
+{
+    preempt_disable();
+    mnt_dec_writers(real_mount(mnt));
+    preempt_enable();
+}
+
 /**
  * mnt_drop_write - give up write access to a mount
  * @mnt: the mount on which to give up write access
@@ -415,7 +435,7 @@ void mnt_drop_write(struct vfsmount *mnt)
     __mnt_drop_write(mnt);
     sb_end_write(mnt->mnt_sb);
 #endif
-    panic("%s: END!\n", __func__);
+    pr_warn("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL_GPL(mnt_drop_write);
 

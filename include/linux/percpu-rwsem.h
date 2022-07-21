@@ -6,13 +6,13 @@
 #include <linux/percpu.h>
 #if 0
 #include <linux/rcuwait.h>
-#include <linux/rcu_sync.h>
 #endif
+#include <linux/rcu_sync.h>
 #include <linux/wait.h>
 #include <linux/lockdep.h>
 
 struct percpu_rw_semaphore {
-    //struct rcu_sync     rss;
+    struct rcu_sync     rss;
     unsigned int __percpu   *read_count;
     //struct rcuwait      writer;
     wait_queue_head_t   waiters;
@@ -51,6 +51,29 @@ static inline bool percpu_down_read_trylock(struct percpu_rw_semaphore *sem)
 
 static inline void percpu_up_read(struct percpu_rw_semaphore *sem)
 {
+#if 0
+    preempt_disable();
+    /*
+     * Same as in percpu_down_read().
+     */
+    if (likely(rcu_sync_is_idle(&sem->rss))) {
+        this_cpu_dec(*sem->read_count);
+    } else {
+        /*
+         * slowpath; reader will only ever wake a single blocked
+         * writer.
+         */
+        smp_mb(); /* B matches C */
+        /*
+         * In other words, if they see our decrement (presumably to
+         * aggregate zero, as that is the only time it matters) they
+         * will also see our critical section.
+         */
+        this_cpu_dec(*sem->read_count);
+        rcuwait_wake_up(&sem->writer);
+    }
+    preempt_enable();
+#endif
     panic("%s: END!\n", __func__);
 }
 

@@ -323,6 +323,67 @@ static unsigned int i_hash_mask __read_mostly;
 static unsigned int i_hash_shift __read_mostly;
 static struct hlist_head *inode_hashtable __read_mostly;
 
+/**
+ * inode_init_owner - Init uid,gid,mode for new inode according to posix standards
+ * @mnt_userns: User namespace of the mount the inode was created from
+ * @inode: New inode
+ * @dir: Directory inode
+ * @mode: mode of the new inode
+ *
+ * If the inode has been created through an idmapped mount the user namespace of
+ * the vfsmount must be passed through @mnt_userns. This function will then take
+ * care to map the inode according to @mnt_userns before checking permissions
+ * and initializing i_uid and i_gid. On non-idmapped mounts or if permission
+ * checking is to be performed on the raw inode simply passs init_user_ns.
+ */
+void inode_init_owner(struct user_namespace *mnt_userns, struct inode *inode,
+                      const struct inode *dir, umode_t mode)
+{
+    //inode_fsuid_set(inode, mnt_userns);
+    if (dir && dir->i_mode & S_ISGID) {
+        inode->i_gid = dir->i_gid;
+
+        /* Directories are special, and always inherit S_ISGID */
+        if (S_ISDIR(mode))
+            mode |= S_ISGID;
+#if 0
+        else if ((mode & (S_ISGID | S_IXGRP)) == (S_ISGID | S_IXGRP) &&
+             !in_group_p(i_gid_into_mnt(mnt_userns, dir)) &&
+             !capable_wrt_inode_uidgid(mnt_userns, dir, CAP_FSETID))
+            mode &= ~S_ISGID;
+#endif
+    } else {
+        //inode_fsgid_set(inode, mnt_userns);
+    }
+    inode->i_mode = mode;
+}
+EXPORT_SYMBOL(inode_init_owner);
+
+void init_special_inode(struct inode *inode, umode_t mode, dev_t rdev)
+{
+    inode->i_mode = mode;
+    if (S_ISCHR(mode)) {
+        inode->i_fop = &def_chr_fops;
+        inode->i_rdev = rdev;
+    } else if (S_ISBLK(mode)) {
+#if 0
+        inode->i_fop = &def_blk_fops;
+        inode->i_rdev = rdev;
+#endif
+        panic("%s: NO BLK!\n", __func__);
+    } else if (S_ISFIFO(mode))
+#if 0
+        inode->i_fop = &pipefifo_fops;
+#endif
+        panic("%s: NO FIFO!\n", __func__);
+    else if (S_ISSOCK(mode))
+        ;   /* leave it no_open_fops */
+    else
+        printk(KERN_DEBUG "init_special_inode: bogus i_mode (%o) for"
+               " inode %s:%lu\n", mode, inode->i_sb->s_id, inode->i_ino);
+}
+EXPORT_SYMBOL(init_special_inode);
+
 /*
  * Initialize the waitqueues and inode hash table.
  */

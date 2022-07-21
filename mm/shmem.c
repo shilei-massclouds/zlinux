@@ -90,6 +90,8 @@
 
 #include "internal.h"
 
+static const struct inode_operations shmem_dir_inode_operations;
+
 /* Pretend that each entry is of this size in directory's i_size */
 #define BOGO_DIRENT_SIZE 20
 
@@ -218,6 +220,25 @@ static void shmem_evict_inode(struct inode *inode)
     panic("%s: END!\n", __func__);
 }
 
+static int shmem_getattr(struct user_namespace *mnt_userns,
+                         const struct path *path, struct kstat *stat,
+                         u32 request_mask, unsigned int query_flags)
+{
+    struct inode *inode = path->dentry->d_inode;
+    struct shmem_inode_info *info = SHMEM_I(inode);
+
+    panic("%s: END!\n", __func__);
+}
+
+static const struct inode_operations shmem_special_inode_operations = {
+    .getattr    = shmem_getattr,
+#if 0
+    .listxattr  = shmem_listxattr,
+    .setattr    = shmem_setattr,
+    .set_acl    = simple_set_acl,
+#endif
+};
+
 static const struct super_operations shmem_ops = {
     .alloc_inode    = shmem_alloc_inode,
     .free_inode     = shmem_free_in_core_inode,
@@ -335,11 +356,65 @@ static void shmem_free_inode(struct super_block *sb)
     }
 }
 
-static int shmem_getattr(struct user_namespace *mnt_userns,
-                         const struct path *path, struct kstat *stat,
-                         u32 request_mask, unsigned int query_flags)
+static struct inode *
+shmem_get_inode(struct super_block *sb, const struct inode *dir,
+                umode_t mode, dev_t dev, unsigned long flags)
 {
-    panic("%s: END!\n", __func__);
+    struct inode *inode;
+    struct shmem_inode_info *info;
+    struct shmem_sb_info *sbinfo = SHMEM_SB(sb);
+    ino_t ino;
+
+    if (shmem_reserve_inode(sb, &ino))
+        return NULL;
+
+    inode = new_inode(sb);
+    if (inode) {
+        inode->i_ino = ino;
+        inode_init_owner(&init_user_ns, inode, dir, mode);
+        inode->i_blocks = 0;
+        //inode->i_atime = inode->i_mtime = inode->i_ctime = current_time(inode);
+        inode->i_generation = prandom_u32();
+        info = SHMEM_I(inode);
+        memset(info, 0, (char *)inode - (char *)info);
+        spin_lock_init(&info->lock);
+        atomic_set(&info->stop_eviction, 0);
+        info->seals = F_SEAL_SEAL;
+        info->flags = flags & VM_NORESERVE;
+        //info->i_crtime = inode->i_mtime;
+        INIT_LIST_HEAD(&info->shrinklist);
+        INIT_LIST_HEAD(&info->swaplist);
+        //simple_xattrs_init(&info->xattrs);
+        //cache_no_acl(inode);
+        mapping_set_large_folios(inode->i_mapping);
+
+        switch (mode & S_IFMT) {
+        default:
+            inode->i_op = &shmem_special_inode_operations;
+            init_special_inode(inode, mode, dev);
+            break;
+        case S_IFREG:
+#if 0
+            inode->i_mapping->a_ops = &shmem_aops;
+            inode->i_op = &shmem_inode_operations;
+            inode->i_fop = &shmem_file_operations;
+#endif
+            panic("%s: S_IFREG.\n", __func__);
+            break;
+        case S_IFDIR:
+            inc_nlink(inode);
+            /* Some things misbehave if size == 0 on a directory */
+            inode->i_size = 2 * BOGO_DIRENT_SIZE;
+            inode->i_op = &shmem_dir_inode_operations;
+            inode->i_fop = &simple_dir_operations;
+            break;
+        case S_IFLNK:
+            break;
+        }
+    } else {
+        shmem_free_inode(sb);
+    }
+    return inode;
 }
 
 /*
@@ -352,7 +427,23 @@ shmem_mknod(struct user_namespace *mnt_userns, struct inode *dir,
     struct inode *inode;
     int error = -ENOSPC;
 
-    panic("%s: END!\n", __func__);
+    inode = shmem_get_inode(dir->i_sb, dir, mode, dev, VM_NORESERVE);
+    if (inode) {
+#if 0
+        error = simple_acl_create(dir, inode);
+        if (error)
+            goto out_iput;
+#endif
+        error = 0;
+        dir->i_size += BOGO_DIRENT_SIZE;
+        //dir->i_ctime = dir->i_mtime = current_time(dir);
+        d_instantiate(dentry, inode);
+        dget(dentry); /* Extra count - pin the dentry in core */
+    }
+    return error;
+out_iput:
+    iput(inode);
+    return error;
 }
 
 static int shmem_create(struct user_namespace *mnt_userns, struct inode *dir,
@@ -383,7 +474,12 @@ static int shmem_rmdir(struct inode *dir, struct dentry *dentry)
 static int shmem_mkdir(struct user_namespace *mnt_userns, struct inode *dir,
                        struct dentry *dentry, umode_t mode)
 {
-    panic("%s: END!\n", __func__);
+    int error;
+
+    if ((error = shmem_mknod(&init_user_ns, dir, dentry, mode | S_IFDIR, 0)))
+        return error;
+    inc_nlink(dir);
+    return 0;
 }
 
 /*
@@ -433,70 +529,6 @@ static const struct inode_operations shmem_dir_inode_operations = {
     .set_acl    = simple_set_acl,
 #endif
 };
-
-static struct inode *
-shmem_get_inode(struct super_block *sb, const struct inode *dir,
-                umode_t mode, dev_t dev, unsigned long flags)
-{
-    struct inode *inode;
-    struct shmem_inode_info *info;
-    struct shmem_sb_info *sbinfo = SHMEM_SB(sb);
-    ino_t ino;
-
-    if (shmem_reserve_inode(sb, &ino))
-        return NULL;
-
-    inode = new_inode(sb);
-    if (inode) {
-        inode->i_ino = ino;
-        //inode_init_owner(&init_user_ns, inode, dir, mode);
-        inode->i_blocks = 0;
-        //inode->i_atime = inode->i_mtime = inode->i_ctime = current_time(inode);
-        inode->i_generation = prandom_u32();
-        info = SHMEM_I(inode);
-        memset(info, 0, (char *)inode - (char *)info);
-        spin_lock_init(&info->lock);
-        atomic_set(&info->stop_eviction, 0);
-        info->seals = F_SEAL_SEAL;
-        info->flags = flags & VM_NORESERVE;
-        //info->i_crtime = inode->i_mtime;
-        INIT_LIST_HEAD(&info->shrinklist);
-        INIT_LIST_HEAD(&info->swaplist);
-        //simple_xattrs_init(&info->xattrs);
-        //cache_no_acl(inode);
-        mapping_set_large_folios(inode->i_mapping);
-
-        switch (mode & S_IFMT) {
-        default:
-#if 0
-            inode->i_op = &shmem_special_inode_operations;
-            init_special_inode(inode, mode, dev);
-#endif
-            panic("%s: default.\n", __func__);
-            break;
-        case S_IFREG:
-#if 0
-            inode->i_mapping->a_ops = &shmem_aops;
-            inode->i_op = &shmem_inode_operations;
-            inode->i_fop = &shmem_file_operations;
-#endif
-            panic("%s: S_IFREG.\n", __func__);
-            break;
-        case S_IFDIR:
-            inc_nlink(inode);
-            /* Some things misbehave if size == 0 on a directory */
-            inode->i_size = 2 * BOGO_DIRENT_SIZE;
-            inode->i_op = &shmem_dir_inode_operations;
-            inode->i_fop = &simple_dir_operations;
-            break;
-        case S_IFLNK:
-            break;
-        }
-    } else {
-        shmem_free_inode(sb);
-    }
-    return inode;
-}
 
 static int shmem_fill_super(struct super_block *sb, struct fs_context *fc)
 {

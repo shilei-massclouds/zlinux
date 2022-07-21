@@ -68,6 +68,13 @@
 #define IOP_XATTR       0x0008
 #define IOP_DEFAULT_READLINK    0x0010
 
+/*
+ * Whiteout is represented by a char device.  The following constants define the
+ * mode and device number to use.
+ */
+#define WHITEOUT_MODE 0
+#define WHITEOUT_DEV 0
+
 struct backing_dev_info;
 struct bdi_writeback;
 struct bio;
@@ -481,6 +488,12 @@ struct inode {
     void *i_private; /* fs or device private pointer */
 } __randomize_layout;
 
+struct sb_writers {
+    int frozen;         /* Is sb frozen? */
+    wait_queue_head_t wait_unfrozen;  /* wait for thaw */
+    struct percpu_rw_semaphore rw_sem[SB_FREEZE_LEVELS];
+};
+
 struct super_block {
     struct list_head    s_list;     /* Keep this first */
     dev_t               s_dev;      /* search index; _not_ kdev_t */
@@ -513,9 +526,9 @@ struct super_block {
     unsigned int        s_quota_types;  /* Bitmask of supported quota types */
 #if 0
     struct quota_info   s_dquot;    /* Diskquota specific options */
+#endif
 
     struct sb_writers   s_writers;
-#endif
     /*
      * Keep s_fs_info, s_time_gran, s_fsnotify_mask, and
      * s_fsnotify_marks together for cache efficiency. They are frequently
@@ -876,6 +889,40 @@ void deactivate_super(struct super_block *sb);
 #define S_VERITY        (1 << 16) /* Verity file (using fs/verity/) */
 #define S_KERNEL_FILE   (1 << 17) /* File is in use by the kernel (eg. fs/cachefiles) */
 
+static inline bool sb_rdonly(const struct super_block *sb)
+{
+    return sb->s_flags & SB_RDONLY;
+}
+
+/*
+ * Note that nosuid etc flags are inode-specific: setting some file-system
+ * flags just means all the inodes inherit those flags by default. It might be
+ * possible to override it selectively if you really wanted to with some
+ * ioctl() that is not currently implemented.
+ *
+ * Exception: SB_RDONLY is always applied to the entire file system.
+ *
+ * Unfortunately, it is possible to change a filesystems flags with it mounted
+ * with files in use.  This means that all of the inodes will not have their
+ * i_flags updated.  Hence, i_flags no longer inherit the superblock mount
+ * flags, so these have to be checked separately. -- rmk@arm.uk.linux.org
+ */
+#define __IS_FLG(inode, flg)    ((inode)->i_sb->s_flags & (flg))
+
+#define IS_RDONLY(inode)    sb_rdonly((inode)->i_sb)
+#define IS_SYNC(inode)      (__IS_FLG(inode, SB_SYNCHRONOUS) || \
+                             ((inode)->i_flags & S_SYNC))
+#define IS_DIRSYNC(inode)   (__IS_FLG(inode, SB_SYNCHRONOUS|SB_DIRSYNC) || \
+                             ((inode)->i_flags & (S_SYNC|S_DIRSYNC)))
+#define IS_MANDLOCK(inode)  __IS_FLG(inode, SB_MANDLOCK)
+#define IS_NOATIME(inode)   __IS_FLG(inode, SB_RDONLY|SB_NOATIME)
+#define IS_I_VERSION(inode) __IS_FLG(inode, SB_I_VERSION)
+
+#define IS_NOQUOTA(inode)   ((inode)->i_flags & S_NOQUOTA)
+#define IS_APPEND(inode)    ((inode)->i_flags & S_APPEND)
+#define IS_IMMUTABLE(inode) ((inode)->i_flags & S_IMMUTABLE)
+#define IS_POSIXACL(inode)  __IS_FLG(inode, SB_POSIXACL)
+
 #define IS_DEADDIR(inode)   ((inode)->i_flags & S_DEAD)
 #define IS_NOCMTIME(inode)  ((inode)->i_flags & S_NOCMTIME)
 #define IS_SWAPFILE(inode)  ((inode)->i_flags & S_SWAPFILE)
@@ -993,5 +1040,59 @@ static inline void inode_lock_nested(struct inode *inode, unsigned subclass)
 {
     down_write_nested(&inode->i_rwsem, subclass);
 }
+
+extern int current_umask(void);
+
+/*
+ * VFS helper functions..
+ */
+int vfs_create(struct user_namespace *, struct inode *,
+               struct dentry *, umode_t, bool);
+int vfs_mkdir(struct user_namespace *, struct inode *,
+              struct dentry *, umode_t);
+int vfs_mknod(struct user_namespace *, struct inode *, struct dentry *,
+              umode_t, dev_t);
+int vfs_symlink(struct user_namespace *, struct inode *,
+                struct dentry *, const char *);
+int vfs_link(struct dentry *, struct user_namespace *, struct inode *,
+             struct dentry *, struct inode **);
+int vfs_rmdir(struct user_namespace *, struct inode *, struct dentry *);
+int vfs_unlink(struct user_namespace *, struct inode *, struct dentry *,
+               struct inode **);
+
+/*
+ * These are internal functions, please use sb_start_{write,pagefault,intwrite}
+ * instead.
+ */
+static inline void __sb_end_write(struct super_block *sb, int level)
+{
+    percpu_up_read(sb->s_writers.rw_sem + level-1);
+}
+
+/**
+ * sb_end_write - drop write access to a superblock
+ * @sb: the super we wrote to
+ *
+ * Decrement number of writers to the filesystem. Wake up possible waiters
+ * wanting to freeze the filesystem.
+ */
+static inline void sb_end_write(struct super_block *sb)
+{
+    __sb_end_write(sb, SB_FREEZE_WRITE);
+}
+
+/*
+ * VFS file helper functions.
+ */
+void inode_init_owner(struct user_namespace *mnt_userns, struct inode *inode,
+                      const struct inode *dir, umode_t mode);
+
+extern const struct file_operations def_blk_fops;
+extern const struct file_operations def_chr_fops;
+
+extern loff_t noop_llseek(struct file *file, loff_t offset, int whence);
+extern loff_t no_llseek(struct file *file, loff_t offset, int whence);
+
+extern void init_special_inode(struct inode *, umode_t, dev_t);
 
 #endif /* _LINUX_FS_H */

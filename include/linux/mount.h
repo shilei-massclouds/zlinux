@@ -51,4 +51,10 @@ extern void mntput(struct vfsmount *mnt);
 
 extern void mnt_drop_write(struct vfsmount *mnt);
 
+static inline struct user_namespace *mnt_user_ns(const struct vfsmount *mnt)
+{
+    /* Pairs with smp_store_release() in do_idmap_mount(). */
+    return smp_load_acquire(&mnt->mnt_userns);
+}
+
 #endif /* _LINUX_MOUNT_H */

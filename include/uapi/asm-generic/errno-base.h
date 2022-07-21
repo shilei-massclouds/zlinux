@@ -16,10 +16,12 @@
 #define EEXIST      17  /* File exists */
 #define EXDEV       18  /* Cross-device link */
 #define ENODEV      19  /* No such device */
+#define ENOTDIR     20  /* Not a directory */
 #define EISDIR      21  /* Is a directory */
 #define EINVAL      22  /* Invalid argument */
 #define EMFILE      24  /* Too many open files */
 #define ENOSPC      28  /* No space left on device */
+#define EMLINK      31  /* Too many links */
 #define ERANGE      34  /* Math result not representable */
 
 #endif /* _ASM_GENERIC_ERRNO_BASE_H */

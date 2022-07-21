@@ -60,6 +60,10 @@
 #define smp_acquire__after_ctrl_dep()   smp_rmb()
 #endif
 
+#ifndef smp_load_acquire
+#define smp_load_acquire(p) __smp_load_acquire(p)
+#endif
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* __ASM_GENERIC_BARRIER_H */

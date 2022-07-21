@@ -71,6 +71,31 @@ static inline struct hlist_bl_head *d_hash(unsigned int hash)
     return dentry_hashtable + (hash >> d_hash_shift);
 }
 
+static void __d_rehash(struct dentry *entry)
+{
+    struct hlist_bl_head *b = d_hash(entry->d_name.hash);
+
+    hlist_bl_lock(b);
+    hlist_bl_add_head_rcu(&entry->d_hash, b);
+    hlist_bl_unlock(b);
+}
+
+static inline unsigned start_dir_add(struct inode *dir)
+{
+
+    for (;;) {
+        unsigned n = dir->i_dir_seq;
+        if (!(n & 1) && cmpxchg(&dir->i_dir_seq, n, n + 1) == n)
+            return n;
+        cpu_relax();
+    }
+}
+
+static inline void end_dir_add(struct inode *dir, unsigned n)
+{
+    smp_store_release(&dir->i_dir_seq, n + 2);
+}
+
 static inline struct external_name *external_name(struct dentry *dentry)
 {
     return container_of(dentry->d_name.name, struct external_name, name[0]);
@@ -161,9 +186,8 @@ static struct dentry *__d_alloc(struct super_block *sb, const struct qstr *name)
         dname = dentry->d_iname;
     } else if (name->len > DNAME_INLINE_LEN-1) {
         size_t size = offsetof(struct external_name, name[1]);
-        struct external_name *p = kmalloc(size + name->len,
-                                          GFP_KERNEL_ACCOUNT |
-                                          __GFP_RECLAIMABLE);
+        struct external_name *p =
+            kmalloc(size + name->len, GFP_KERNEL_ACCOUNT | __GFP_RECLAIMABLE);
         if (!p) {
             kmem_cache_free(dentry_cache, dentry);
             return NULL;
@@ -196,7 +220,7 @@ static struct dentry *__d_alloc(struct super_block *sb, const struct qstr *name)
     INIT_LIST_HEAD(&dentry->d_subdirs);
     INIT_HLIST_NODE(&dentry->d_u.d_alias);
     INIT_LIST_HEAD(&dentry->d_child);
-    //d_set_d_op(dentry, dentry->d_sb->s_d_op);
+    d_set_d_op(dentry, dentry->d_sb->s_d_op);
 
     if (dentry->d_op && dentry->d_op->d_init) {
         err = dentry->d_op->d_init(dentry);
@@ -300,7 +324,7 @@ static void __d_instantiate(struct dentry *dentry, struct inode *inode)
  * in use by the dcache.
  */
 
-void d_instantiate(struct dentry *entry, struct inode * inode)
+void d_instantiate(struct dentry *entry, struct inode *inode)
 {
     BUG_ON(!hlist_unhashed(&entry->d_u.d_alias));
     if (inode) {
@@ -553,7 +577,7 @@ void dput(struct dentry *dentry)
         dentry = dentry_kill(dentry);
     }
 #endif
-    panic("%s: END!\n", __func__);
+    pr_warn("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL(dput);
 
@@ -600,6 +624,56 @@ in_lookup_hash(const struct dentry *parent, unsigned int hash)
     return in_lookup_hashtable + hash_32(hash, IN_LOOKUP_SHIFT);
 }
 
+static inline int dentry_string_cmp(const unsigned char *cs,
+                                    const unsigned char *ct, unsigned tcount)
+{
+    do {
+        if (*cs != *ct)
+            return 1;
+        cs++;
+        ct++;
+        tcount--;
+    } while (tcount);
+    return 0;
+}
+
+static inline int dentry_cmp(const struct dentry *dentry,
+                             const unsigned char *ct, unsigned tcount)
+{
+    /*
+     * Be careful about RCU walk racing with rename:
+     * use 'READ_ONCE' to fetch the name pointer.
+     *
+     * NOTE! Even if a rename will mean that the length
+     * was not loaded atomically, we don't care. The
+     * RCU walk will check the sequence count eventually,
+     * and catch it. And we won't overrun the buffer,
+     * because we're reading the name pointer atomically,
+     * and a dentry name is guaranteed to be properly
+     * terminated with a NUL byte.
+     *
+     * End result: even if 'len' is wrong, we'll exit
+     * early because the data cannot match (there can
+     * be no NUL in the ct/tcount data)
+     */
+    const unsigned char *cs = READ_ONCE(dentry->d_name.name);
+
+    return dentry_string_cmp(cs, ct, tcount);
+}
+
+static inline bool d_same_name(const struct dentry *dentry,
+                               const struct dentry *parent,
+                               const struct qstr *name)
+{
+    if (likely(!(parent->d_flags & DCACHE_OP_COMPARE))) {
+        if (dentry->d_name.len != name->len)
+            return false;
+        return dentry_cmp(dentry, name->name, name->len) == 0;
+    }
+    return parent->d_op->d_compare(dentry, dentry->d_name.len,
+                                   dentry->d_name.name, name) == 0;
+}
+
 /**
  * __d_lookup - search for a dentry (racy)
  * @parent: parent dentry
@@ -623,7 +697,53 @@ struct dentry *__d_lookup(const struct dentry *parent, const struct qstr *name)
     struct dentry *found = NULL;
     struct dentry *dentry;
 
-    panic("%s: END!\n", __func__);
+    /*
+     * Note: There is significant duplication with __d_lookup_rcu which is
+     * required to prevent single threaded performance regressions
+     * especially on architectures where smp_rmb (in seqcounts) are costly.
+     * Keep the two functions in sync.
+     */
+
+    /*
+     * The hash list is protected using RCU.
+     *
+     * Take d_lock when comparing a candidate dentry, to avoid races
+     * with d_move().
+     *
+     * It is possible that concurrent renames can mess up our list
+     * walk here and result in missing our dentry, resulting in the
+     * false-negative result. d_lookup() protects against concurrent
+     * renames using rename_lock seqlock.
+     *
+     * See Documentation/filesystems/path-lookup.txt for more details.
+     */
+    rcu_read_lock();
+
+    hlist_bl_for_each_entry_rcu(dentry, node, b, d_hash) {
+
+        if (dentry->d_name.hash != hash)
+            continue;
+
+        spin_lock(&dentry->d_lock);
+        if (dentry->d_parent != parent)
+            goto next;
+        if (d_unhashed(dentry))
+            goto next;
+
+        if (!d_same_name(dentry, parent, name))
+            goto next;
+
+        dentry->d_lockref.count++;
+        found = dentry;
+        spin_unlock(&dentry->d_lock);
+        break;
+next:
+        spin_unlock(&dentry->d_lock);
+    }
+
+    rcu_read_unlock();
+
+    return found;
 }
 
 /**
@@ -755,6 +875,200 @@ void d_invalidate(struct dentry *dentry)
     panic("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL(d_invalidate);
+
+void d_set_d_op(struct dentry *dentry, const struct dentry_operations *op)
+{
+    WARN_ON_ONCE(dentry->d_op);
+    WARN_ON_ONCE(dentry->d_flags & (DCACHE_OP_HASH  |
+                                    DCACHE_OP_COMPARE   |
+                                    DCACHE_OP_REVALIDATE    |
+                                    DCACHE_OP_WEAK_REVALIDATE   |
+                                    DCACHE_OP_DELETE    |
+                                    DCACHE_OP_REAL));
+    dentry->d_op = op;
+    if (!op)
+        return;
+    if (op->d_hash)
+        dentry->d_flags |= DCACHE_OP_HASH;
+    if (op->d_compare)
+        dentry->d_flags |= DCACHE_OP_COMPARE;
+    if (op->d_revalidate)
+        dentry->d_flags |= DCACHE_OP_REVALIDATE;
+    if (op->d_weak_revalidate)
+        dentry->d_flags |= DCACHE_OP_WEAK_REVALIDATE;
+    if (op->d_delete)
+        dentry->d_flags |= DCACHE_OP_DELETE;
+    if (op->d_prune)
+        dentry->d_flags |= DCACHE_OP_PRUNE;
+    if (op->d_real)
+        dentry->d_flags |= DCACHE_OP_REAL;
+
+}
+EXPORT_SYMBOL(d_set_d_op);
+
+static inline void __d_add(struct dentry *dentry, struct inode *inode)
+{
+    struct inode *dir = NULL;
+    unsigned n;
+    spin_lock(&dentry->d_lock);
+    if (unlikely(d_in_lookup(dentry))) {
+#if 0
+        dir = dentry->d_parent->d_inode;
+        n = start_dir_add(dir);
+        __d_lookup_done(dentry);
+#endif
+        panic("%s: d_in_lookup!\n", __func__);
+    }
+    if (inode) {
+#if 0
+        unsigned add_flags = d_flags_for_inode(inode);
+        hlist_add_head(&dentry->d_u.d_alias, &inode->i_dentry);
+        raw_write_seqcount_begin(&dentry->d_seq);
+        __d_set_inode_and_type(dentry, inode, add_flags);
+        raw_write_seqcount_end(&dentry->d_seq);
+        fsnotify_update_flags(dentry);
+#endif
+        panic("%s: has inode!\n", __func__);
+    }
+    __d_rehash(dentry);
+    if (dir)
+        end_dir_add(dir, n);
+    spin_unlock(&dentry->d_lock);
+    if (inode)
+        spin_unlock(&inode->i_lock);
+}
+
+/**
+ * d_add - add dentry to hash queues
+ * @entry: dentry to add
+ * @inode: The inode to attach to this dentry
+ *
+ * This adds the entry to the hash queues and initializes @inode.
+ * The entry was actually filled in earlier during d_alloc().
+ */
+void d_add(struct dentry *entry, struct inode *inode)
+{
+    if (inode) {
+        spin_lock(&inode->i_lock);
+    }
+    __d_add(entry, inode);
+}
+EXPORT_SYMBOL(d_add);
+
+/**
+ * __d_lookup_rcu - search for a dentry (racy, store-free)
+ * @parent: parent dentry
+ * @name: qstr of name we wish to find
+ * @seqp: returns d_seq value at the point where the dentry was found
+ * Returns: dentry, or NULL
+ *
+ * __d_lookup_rcu is the dcache lookup function for rcu-walk name
+ * resolution (store-free path walking) design described in
+ * Documentation/filesystems/path-lookup.txt.
+ *
+ * This is not to be used outside core vfs.
+ *
+ * __d_lookup_rcu must only be used in rcu-walk mode, ie. with vfsmount lock
+ * held, and rcu_read_lock held. The returned dentry must not be stored into
+ * without taking d_lock and checking d_seq sequence count against @seq
+ * returned here.
+ *
+ * A refcount may be taken on the found dentry with the d_rcu_to_refcount
+ * function.
+ *
+ * Alternatively, __d_lookup_rcu may be called again to look up the child of
+ * the returned dentry, so long as its parent's seqlock is checked after the
+ * child is looked up. Thus, an interlocking stepping of sequence lock checks
+ * is formed, giving integrity down the path walk.
+ *
+ * NOTE! The caller *has* to check the resulting dentry against the sequence
+ * number we've returned before using any of the resulting dentry state!
+ */
+struct dentry *__d_lookup_rcu(const struct dentry *parent,
+                              const struct qstr *name,
+                              unsigned *seqp)
+{
+    u64 hashlen = name->hash_len;
+    const unsigned char *str = name->name;
+    struct hlist_bl_head *b = d_hash(hashlen_hash(hashlen));
+    struct hlist_bl_node *node;
+    struct dentry *dentry;
+
+    /*
+     * Note: There is significant duplication with __d_lookup_rcu which is
+     * required to prevent single threaded performance regressions
+     * especially on architectures where smp_rmb (in seqcounts) are costly.
+     * Keep the two functions in sync.
+     */
+
+    /*
+     * The hash list is protected using RCU.
+     *
+     * Carefully use d_seq when comparing a candidate dentry, to avoid
+     * races with d_move().
+     *
+     * It is possible that concurrent renames can mess up our list
+     * walk here and result in missing our dentry, resulting in the
+     * false-negative result. d_lookup() protects against concurrent
+     * renames using rename_lock seqlock.
+     *
+     * See Documentation/filesystems/path-lookup.txt for more details.
+     */
+    hlist_bl_for_each_entry_rcu(dentry, node, b, d_hash) {
+        unsigned seq;
+
+seqretry:
+        /*
+         * The dentry sequence count protects us from concurrent
+         * renames, and thus protects parent and name fields.
+         *
+         * The caller must perform a seqcount check in order
+         * to do anything useful with the returned dentry.
+         *
+         * NOTE! We do a "raw" seqcount_begin here. That means that
+         * we don't wait for the sequence count to stabilize if it
+         * is in the middle of a sequence change. If we do the slow
+         * dentry compare, we will do seqretries until it is stable,
+         * and if we end up with a successful lookup, we actually
+         * want to exit RCU lookup anyway.
+         *
+         * Note that raw_seqcount_begin still *does* smp_rmb(), so
+         * we are still guaranteed NUL-termination of ->d_name.name.
+         */
+        //seq = raw_seqcount_begin(&dentry->d_seq);
+        if (dentry->d_parent != parent)
+            continue;
+        if (d_unhashed(dentry))
+            continue;
+
+        if (unlikely(parent->d_flags & DCACHE_OP_COMPARE)) {
+            int tlen;
+            const char *tname;
+            if (dentry->d_name.hash != hashlen_hash(hashlen))
+                continue;
+            tlen = dentry->d_name.len;
+            tname = dentry->d_name.name;
+#if 0
+            /* we want a consistent (name,len) pair */
+            if (read_seqcount_retry(&dentry->d_seq, seq)) {
+                cpu_relax();
+                goto seqretry;
+            }
+#endif
+            if (parent->d_op->d_compare(dentry, tlen, tname, name) != 0)
+                continue;
+        } else {
+            if (dentry->d_name.hash_len != hashlen)
+                continue;
+            if (dentry_cmp(dentry, str, hashlen_len(hashlen)) != 0)
+                continue;
+        }
+
+        *seqp = seq;
+        return dentry;
+    }
+    return NULL;
+}
 
 void __init vfs_caches_init_early(void)
 {

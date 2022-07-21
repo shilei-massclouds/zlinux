@@ -46,4 +46,6 @@ enum {LAST_NORM, LAST_ROOT, LAST_DOT, LAST_DOTDOT};
 extern struct dentry *
 kern_path_create(int, const char *, struct path *, unsigned int);
 
+extern void done_path_create(struct path *, struct dentry *);
+
 #endif /* _LINUX_NAMEI_H */
