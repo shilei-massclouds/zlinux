@@ -6,5 +6,9 @@
 const char *
 _parse_integer_fixup_radix(const char *s, unsigned int *base);
 unsigned int
+_parse_integer_limit(const char *s, unsigned int base, unsigned long long *res,
+                     size_t max_chars);
+unsigned int
 _parse_integer(const char *s, unsigned int base, unsigned long long *res);
-#endif
+
+#endif /* _LIB_KSTRTOX_H */

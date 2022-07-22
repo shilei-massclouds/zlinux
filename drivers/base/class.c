@@ -71,6 +71,71 @@ static void class_put(struct class *cls)
         kset_put(&cls->p->subsys);
 }
 
+/**
+ * class_dev_iter_init - initialize class device iterator
+ * @iter: class iterator to initialize
+ * @class: the class we wanna iterate over
+ * @start: the device to start iterating from, if any
+ * @type: device_type of the devices to iterate over, NULL for all
+ *
+ * Initialize class iterator @iter such that it iterates over devices
+ * of @class.  If @start is set, the list iteration will start there,
+ * otherwise if it is NULL, the iteration starts at the beginning of
+ * the list.
+ */
+void class_dev_iter_init(struct class_dev_iter *iter, struct class *class,
+             struct device *start, const struct device_type *type)
+{
+    struct klist_node *start_knode = NULL;
+
+    if (start)
+        start_knode = &start->p->knode_class;
+    klist_iter_init_node(&class->p->klist_devices, &iter->ki, start_knode);
+    iter->type = type;
+}
+EXPORT_SYMBOL_GPL(class_dev_iter_init);
+
+/**
+ * class_dev_iter_next - iterate to the next device
+ * @iter: class iterator to proceed
+ *
+ * Proceed @iter to the next device and return it.  Returns NULL if
+ * iteration is complete.
+ *
+ * The returned device is referenced and won't be released till
+ * iterator is proceed to the next device or exited.  The caller is
+ * free to do whatever it wants to do with the device including
+ * calling back into class code.
+ */
+struct device *class_dev_iter_next(struct class_dev_iter *iter)
+{
+    struct klist_node *knode;
+    struct device *dev;
+
+    while (1) {
+        knode = klist_next(&iter->ki);
+        if (!knode)
+            return NULL;
+        dev = klist_class_to_dev(knode);
+        if (!iter->type || iter->type == dev->type)
+            return dev;
+    }
+}
+EXPORT_SYMBOL_GPL(class_dev_iter_next);
+
+/**
+ * class_dev_iter_exit - finish iteration
+ * @iter: class iterator to finish
+ *
+ * Finish an iteration.  Always call this function after iteration is
+ * complete whether the iteration ran till the end or not.
+ */
+void class_dev_iter_exit(struct class_dev_iter *iter)
+{
+    klist_iter_exit(&iter->ki);
+}
+EXPORT_SYMBOL_GPL(class_dev_iter_exit);
+
 int __class_register(struct class *cls, struct lock_class_key *key)
 {
     struct subsys_private *cp;

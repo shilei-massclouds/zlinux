@@ -165,6 +165,47 @@ simple_strtoul(const char *cp, char **endp, unsigned int base)
 }
 EXPORT_SYMBOL(simple_strtoul);
 
+static noinline unsigned long long
+simple_strntoull(const char *startp, size_t max_chars, char **endp,
+                 unsigned int base)
+{
+    const char *cp;
+    unsigned long long result = 0ULL;
+    size_t prefix_chars;
+    unsigned int rv;
+
+    cp = _parse_integer_fixup_radix(startp, &base);
+    prefix_chars = cp - startp;
+    if (prefix_chars < max_chars) {
+        rv = _parse_integer_limit(cp, base, &result, max_chars - prefix_chars);
+        /* FIXME */
+        cp += (rv & ~KSTRTOX_OVERFLOW);
+    } else {
+        /* Field too short for prefix + digit, skip over without converting */
+        cp = startp + max_chars;
+    }
+
+    if (endp)
+        *endp = (char *)cp;
+
+    return result;
+}
+
+static long long
+simple_strntoll(const char *cp, size_t max_chars, char **endp, unsigned int base)
+{
+    /*
+     * simple_strntoull() safely handles receiving max_chars==0 in the
+     * case cp[0] == '-' && max_chars == 1.
+     * If max_chars == 0 we can drop through and pass it to simple_strntoull()
+     * and the content of *cp is irrelevant.
+     */
+    if (*cp == '-' && max_chars > 0)
+        return -simple_strntoull(cp + 1, max_chars - 1, endp, base);
+
+    return simple_strntoull(cp, max_chars, endp, base);
+}
+
 /*
  * Helper function to decode printf style format.
  * Each call decode a token from the format and return the
@@ -1432,3 +1473,261 @@ int sprintf(char *buf, const char *fmt, ...)
     return i;
 }
 EXPORT_SYMBOL(sprintf);
+
+/**
+ * vsscanf - Unformat a buffer into a list of arguments
+ * @buf:    input buffer
+ * @fmt:    format of buffer
+ * @args:   arguments
+ */
+int vsscanf(const char *buf, const char *fmt, va_list args)
+{
+    const char *str = buf;
+    char *next;
+    char digit;
+    int num = 0;
+    u8 qualifier;
+    unsigned int base;
+    union {
+        long long s;
+        unsigned long long u;
+    } val;
+    s16 field_width;
+    bool is_sign;
+
+    while (*fmt) {
+        /* skip any white space in format */
+        /* white space in format matches any amount of
+         * white space, including none, in the input.
+         */
+        if (isspace(*fmt)) {
+            fmt = skip_spaces(++fmt);
+            str = skip_spaces(str);
+        }
+
+        /* anything that is not a conversion must match exactly */
+        if (*fmt != '%' && *fmt) {
+            if (*fmt++ != *str++)
+                break;
+            continue;
+        }
+
+        if (!*fmt)
+            break;
+        ++fmt;
+
+        /* skip this conversion.
+         * advance both strings to next white space
+         */
+        if (*fmt == '*') {
+            if (!*str)
+                break;
+            while (!isspace(*fmt) && *fmt != '%' && *fmt) {
+                /* '%*[' not yet supported, invalid format */
+                if (*fmt == '[')
+                    return num;
+                fmt++;
+            }
+            while (!isspace(*str) && *str)
+                str++;
+            continue;
+        }
+
+        /* get field width */
+        field_width = -1;
+        if (isdigit(*fmt)) {
+            field_width = skip_atoi(&fmt);
+            if (field_width <= 0)
+                break;
+        }
+
+        /* get conversion qualifier */
+        qualifier = -1;
+        if (*fmt == 'h' || _tolower(*fmt) == 'l' ||
+            *fmt == 'z') {
+            qualifier = *fmt++;
+            if (unlikely(qualifier == *fmt)) {
+                if (qualifier == 'h') {
+                    qualifier = 'H';
+                    fmt++;
+                } else if (qualifier == 'l') {
+                    qualifier = 'L';
+                    fmt++;
+                }
+            }
+        }
+
+        if (!*fmt)
+            break;
+
+        if (*fmt == 'n') {
+            /* return number of characters read so far */
+            *va_arg(args, int *) = str - buf;
+            ++fmt;
+            continue;
+        }
+
+        if (!*str)
+            break;
+
+        base = 10;
+        is_sign = false;
+
+        switch (*fmt++) {
+        case 'c':
+        {
+            char *s = (char *)va_arg(args, char*);
+            if (field_width == -1)
+                field_width = 1;
+            do {
+                *s++ = *str++;
+            } while (--field_width > 0 && *str);
+            num++;
+        }
+        continue;
+        case 's':
+        {
+            char *s = (char *)va_arg(args, char *);
+            if (field_width == -1)
+                field_width = SHRT_MAX;
+            /* first, skip leading white space in buffer */
+            str = skip_spaces(str);
+
+            /* now copy until next white space */
+            while (*str && !isspace(*str) && field_width--)
+                *s++ = *str++;
+            *s = '\0';
+            num++;
+        }
+        continue;
+        /*
+         * Warning: This implementation of the '[' conversion specifier
+         * deviates from its glibc counterpart in the following ways:
+         * (1) It does NOT support ranges i.e. '-' is NOT a special
+         *     character
+         * (2) It cannot match the closing bracket ']' itself
+         * (3) A field width is required
+         * (4) '%*[' (discard matching input) is currently not supported
+         *
+         * Example usage:
+         * ret = sscanf("00:0a:95","%2[^:]:%2[^:]:%2[^:]",
+         *      buf1, buf2, buf3);
+         * if (ret < 3)
+         *    // etc..
+         */
+        case '[':
+        {
+            char *s = (char *)va_arg(args, char *);
+            DECLARE_BITMAP(set, 256) = {0};
+            unsigned int len = 0;
+            bool negate = (*fmt == '^');
+
+            /* field width is required */
+            if (field_width == -1)
+                return num;
+
+            if (negate)
+                ++fmt;
+
+            for ( ; *fmt && *fmt != ']'; ++fmt, ++len)
+                __set_bit((u8)*fmt, set);
+
+            /* no ']' or no character set found */
+            if (!*fmt || !len)
+                return num;
+            ++fmt;
+
+            if (negate) {
+                bitmap_complement(set, set, 256);
+                /* exclude null '\0' byte */
+                __clear_bit(0, set);
+            }
+
+            /* match must be non-empty */
+            if (!test_bit((u8)*str, set))
+                return num;
+            while (test_bit((u8)*str, set) && field_width--)
+                *s++ = *str++;
+            *s = '\0';
+            ++num;
+        }
+        continue;
+        case 'o':
+            base = 8;
+            break;
+        case 'x':
+        case 'X':
+            base = 16;
+            break;
+        case 'i':
+            base = 0;
+            fallthrough;
+        case 'd':
+            is_sign = true;
+            fallthrough;
+        case 'u':
+            break;
+        case '%':
+            /* looking for '%' in str */
+            if (*str++ != '%')
+                return num;
+            continue;
+        default:
+            /* invalid format; stop here */
+            return num;
+        }
+
+        /* have some sort of integer conversion.
+         * first, skip white space in buffer.
+         */
+        str = skip_spaces(str);
+
+        digit = *str;
+        if (is_sign && digit == '-') {
+            if (field_width == 1)
+                break;
+
+            digit = *(str + 1);
+        }
+
+        if (!digit
+            || (base == 16 && !isxdigit(digit))
+            || (base == 10 && !isdigit(digit))
+            || (base == 8 && (!isdigit(digit) || digit > '7'))
+            || (base == 0 && !isdigit(digit)))
+            break;
+
+        if (is_sign)
+            val.s = simple_strntoll(str,
+                                    field_width >= 0 ? field_width : INT_MAX,
+                                    &next, base);
+        else
+            val.u = simple_strntoull(str,
+                                     field_width >= 0 ? field_width : INT_MAX,
+                                     &next, base);
+
+
+        panic("%s: 1!\n", __func__);
+    }
+
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * sscanf - Unformat a buffer into a list of arguments
+ * @buf:    input buffer
+ * @fmt:    formatting of buffer
+ * @...:    resulting arguments
+ */
+int sscanf(const char *buf, const char *fmt, ...)
+{
+    va_list args;
+    int i;
+
+    va_start(args, fmt);
+    i = vsscanf(buf, fmt, args);
+    va_end(args);
+
+    return i;
+}
+EXPORT_SYMBOL(sscanf);

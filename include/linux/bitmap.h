@@ -187,6 +187,19 @@ static inline int bitmap_intersects(const unsigned long *src1,
         return __bitmap_intersects(src1, src2, nbits);
 }
 
+void __bitmap_complement(unsigned long *dst, const unsigned long *src,
+                         unsigned int nbits);
+
+static inline void
+bitmap_complement(unsigned long *dst, const unsigned long *src,
+                  unsigned int nbits)
+{
+    if (small_const_nbits(nbits))
+        *dst = ~(*src);
+    else
+        __bitmap_complement(dst, src, nbits);
+}
+
 #endif /* __ASSEMBLY__ */
 
 #endif /* __LINUX_BITMAP_H */

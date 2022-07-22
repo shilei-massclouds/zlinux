@@ -15,7 +15,7 @@
 #include <linux/ctype.h>
 #include <linux/errno.h>
 #include <linux/kernel.h>
-//#include <linux/math64.h>
+#include <linux/math64.h>
 #include <linux/export.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
@@ -220,3 +220,51 @@ int kstrtoll(const char *s, unsigned int base, long long *res)
     return 0;
 }
 EXPORT_SYMBOL(kstrtoll);
+
+/*
+ * Convert non-negative integer string representation in explicitly given radix
+ * to an integer. A maximum of max_chars characters will be converted.
+ *
+ * Return number of characters consumed maybe or-ed with overflow bit.
+ * If overflow occurs, result integer (incorrect) is still returned.
+ *
+ * Don't you dare use this function.
+ */
+noinline
+unsigned int _parse_integer_limit(const char *s, unsigned int base,
+                                  unsigned long long *p, size_t max_chars)
+{
+    unsigned long long res;
+    unsigned int rv;
+
+    res = 0;
+    rv = 0;
+    while (max_chars--) {
+        unsigned int c = *s;
+        unsigned int lc = c | 0x20; /* don't tolower() this line */
+        unsigned int val;
+
+        if ('0' <= c && c <= '9')
+            val = c - '0';
+        else if ('a' <= lc && lc <= 'f')
+            val = lc - 'a' + 10;
+        else
+            break;
+
+        if (val >= base)
+            break;
+        /*
+         * Check for overflow only if we are within range of
+         * it in the max base we support (16)
+         */
+        if (unlikely(res & (~0ull << 60))) {
+            if (res > div_u64(ULLONG_MAX - val, base))
+                rv |= KSTRTOX_OVERFLOW;
+        }
+        res = res * base + val;
+        rv++;
+        s++;
+    }
+    *p = res;
+    return rv;
+}

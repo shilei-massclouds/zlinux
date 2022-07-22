@@ -541,4 +541,6 @@ int __register_blkdev(unsigned int major, const char *name,
 #define register_blkdev(major, name) \
     __register_blkdev(major, name, NULL)
 
+dev_t blk_lookup_devt(const char *name, int partno);
+
 #endif /* _LINUX_BLKDEV_H */

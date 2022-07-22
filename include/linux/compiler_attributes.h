@@ -25,6 +25,7 @@
 #define noinline    __attribute__((__noinline__))
 
 #define __printf(a, b)  __attribute__((__format__(printf, a, b)))
+#define __scanf(a, b)   __attribute__((__format__(scanf, a, b)))
 
 #if __has_attribute(__designated_init__)
 # define __designated_init  __attribute__((__designated_init__))

@@ -417,6 +417,37 @@ bool set_capacity_and_notify(struct gendisk *disk, sector_t size)
 }
 EXPORT_SYMBOL_GPL(set_capacity_and_notify);
 
+dev_t blk_lookup_devt(const char *name, int partno)
+{
+    dev_t devt = MKDEV(0, 0);
+    struct class_dev_iter iter;
+    struct device *dev;
+
+    class_dev_iter_init(&iter, &block_class, NULL, &disk_type);
+    while ((dev = class_dev_iter_next(&iter))) {
+        struct gendisk *disk = dev_to_disk(dev);
+
+        if (strcmp(dev_name(dev), name))
+            continue;
+
+        if (partno < disk->minors) {
+            /* We need to return the right devno, even
+             * if the partition doesn't exist yet.
+             */
+            devt = MKDEV(MAJOR(dev->devt), MINOR(dev->devt) + partno);
+        } else {
+#if 0
+            devt = part_devt(disk, partno);
+            if (devt)
+                break;
+#endif
+            panic("%s: big partno(%d)!\n", __func__, partno);
+        }
+    }
+    class_dev_iter_exit(&iter);
+    return devt;
+}
+
 /**
  * __register_blkdev - register a new block device
  *
