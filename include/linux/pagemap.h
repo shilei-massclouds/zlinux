@@ -52,4 +52,20 @@ static inline void mapping_set_large_folios(struct address_space *mapping)
     __set_bit(AS_LARGE_FOLIO_SUPPORT, &mapping->flags);
 }
 
+bool noop_dirty_folio(struct address_space *mapping, struct folio *folio);
+
+/*
+ * This is non-atomic.  Only to be used before the mapping is activated.
+ * Probably needs a barrier...
+ */
+static inline void mapping_set_gfp_mask(struct address_space *m, gfp_t mask)
+{
+    m->gfp_mask = mask;
+}
+
+static inline void mapping_set_unevictable(struct address_space *mapping)
+{
+    set_bit(AS_UNEVICTABLE, &mapping->flags);
+}
+
 #endif /* _LINUX_PAGEMAP_H */

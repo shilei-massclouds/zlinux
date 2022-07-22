@@ -150,6 +150,11 @@ static __always_inline void spin_unlock_bh(spinlock_t *lock)
     _raw_spin_lock(((void)(subclass), (lock)))
 #define raw_spin_lock_nest_lock(lock, nest_lock) _raw_spin_lock(lock)
 
+#define spin_lock_nested(lock, subclass)    \
+do {                                        \
+    raw_spin_lock_nested(spinlock_check(lock), subclass);   \
+} while (0)
+
 #include <linux/spinlock_api_smp.h>
 
 #endif /* __LINUX_SPINLOCK_H */

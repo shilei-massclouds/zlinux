@@ -16,6 +16,7 @@
  * implementations should refrain from returning -ENOSYS.
  */
 #define ENOSYS      38  /* Invalid system call number */
+#define ENOTEMPTY   39  /* Directory not empty */
 
 #define ENODATA     61  /* No data available */
 #define ETIME       62  /* Timer expired */

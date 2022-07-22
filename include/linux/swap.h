@@ -9,10 +9,8 @@
 #include <linux/memcontrol.h>
 #include <linux/sched.h>
 #include <linux/fs.h>
-/*
-#include <linux/node.h>
+//#include <linux/node.h>
 #include <linux/pagemap.h>
-*/
 #include <linux/atomic.h>
 #include <linux/page-flags.h>
 //#include <uapi/linux/mempolicy.h>

@@ -640,8 +640,8 @@ struct super_operations {
     int (*remount_fs) (struct super_block *, int *, char *);
     void (*umount_begin) (struct super_block *);
 
-#if 0
     int (*show_options)(struct seq_file *, struct dentry *);
+#if 0
     int (*show_devname)(struct seq_file *, struct dentry *);
     int (*show_path)(struct seq_file *, struct dentry *);
     int (*show_stats)(struct seq_file *, struct dentry *);
@@ -1094,5 +1094,26 @@ extern loff_t noop_llseek(struct file *file, loff_t offset, int whence);
 extern loff_t no_llseek(struct file *file, loff_t offset, int whence);
 
 extern void init_special_inode(struct inode *, umode_t, dev_t);
+
+extern unsigned int get_next_ino(void);
+
+extern const struct address_space_operations ram_aops;
+
+extern void inode_nohighmem(struct inode *inode);
+
+extern void ihold(struct inode * inode);
+
+extern int simple_statfs(struct dentry *, struct kstatfs *);
+extern int simple_open(struct inode *inode, struct file *file);
+extern int simple_link(struct dentry *, struct inode *, struct dentry *);
+extern int simple_unlink(struct inode *, struct dentry *);
+extern int simple_rmdir(struct inode *, struct dentry *);
+extern int simple_rename_exchange(struct inode *old_dir,
+                                  struct dentry *old_dentry,
+                                  struct inode *new_dir,
+                                  struct dentry *new_dentry);
+extern int simple_rename(struct user_namespace *, struct inode *,
+                         struct dentry *, struct inode *, struct dentry *,
+                         unsigned int);
 
 #endif /* _LINUX_FS_H */

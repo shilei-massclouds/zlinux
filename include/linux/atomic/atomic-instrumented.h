@@ -216,4 +216,10 @@ atomic64_inc_return(atomic64_t *v)
     return arch_atomic64_inc_return(v);
 }
 
+static __always_inline int
+atomic_add_return(int i, atomic_t *v)
+{
+    return arch_atomic_add_return(i, v);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */

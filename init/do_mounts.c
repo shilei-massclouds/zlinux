@@ -42,6 +42,13 @@ dev_t ROOT_DEV;
 
 static char * __initdata root_fs_names;
 
+static int __init root_dev_setup(char *line)
+{
+    strlcpy(saved_root_name, line, sizeof(saved_root_name));
+    return 1;
+}
+__setup("root=", root_dev_setup);
+
 static bool is_tmpfs;
 static int rootfs_init_fs_context(struct fs_context *fc)
 {

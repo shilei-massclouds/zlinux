@@ -15,6 +15,13 @@ static inline void local_flush_icache_all(void)
 
 #define PG_dcache_clean PG_arch_1
 
+static inline void flush_dcache_page(struct page *page)
+{
+    if (test_bit(PG_dcache_clean, &page->flags))
+        clear_bit(PG_dcache_clean, &page->flags);
+}
+#define ARCH_IMPLEMENTS_FLUSH_DCACHE_PAGE 1
+
 #include <asm-generic/cacheflush.h>
 
 #endif /* _ASM_RISCV_CACHEFLUSH_H */

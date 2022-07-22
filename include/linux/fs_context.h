@@ -162,6 +162,8 @@ extern int vfs_parse_fs_param(struct fs_context *fc,
 
 extern int vfs_get_tree(struct fs_context *fc);
 extern void put_fs_context(struct fs_context *fc);
+extern int vfs_parse_fs_param_source(struct fs_context *fc,
+                                     struct fs_parameter *param);
 
 extern __attribute__((format(printf, 4, 5)))
 void logfc(struct fc_log *log, const char *prefix, char level,

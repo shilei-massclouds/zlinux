@@ -207,3 +207,134 @@ struct dentry *simple_lookup(struct inode *dir, struct dentry *dentry,
     return NULL;
 }
 EXPORT_SYMBOL(simple_lookup);
+
+static int simple_readpage(struct file *file, struct page *page)
+{
+#if 0
+    clear_highpage(page);
+    flush_dcache_page(page);
+    SetPageUptodate(page);
+    unlock_page(page);
+#endif
+    panic("%s: END!\n", __func__);
+    return 0;
+}
+
+int simple_write_begin(struct file *file, struct address_space *mapping,
+                       loff_t pos, unsigned len, unsigned flags,
+                       struct page **pagep, void **fsdata)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * simple_write_end - .write_end helper for non-block-device FSes
+ * @file: See .write_end of address_space_operations
+ * @mapping:        "
+ * @pos:        "
+ * @len:        "
+ * @copied:         "
+ * @page:       "
+ * @fsdata:         "
+ *
+ * simple_write_end does the minimum needed for updating a page after writing is
+ * done. It has the same API signature as the .write_end of
+ * address_space_operations vector. So it can just be set onto .write_end for
+ * FSes that don't need any other processing. i_mutex is assumed to be held.
+ * Block based filesystems should use generic_write_end().
+ * NOTE: Even though i_size might get updated by this function, mark_inode_dirty
+ * is not called, so a filesystem that actually does store data in .write_inode
+ * should extend on what's done here with a call to mark_inode_dirty() in the
+ * case that i_size has changed.
+ *
+ * Use *ONLY* with simple_readpage()
+ */
+static int simple_write_end(struct file *file, struct address_space *mapping,
+                            loff_t pos, unsigned len, unsigned copied,
+                            struct page *page, void *fsdata)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * Provides ramfs-style behavior: data in the pagecache, but no writeback.
+ */
+const struct address_space_operations ram_aops = {
+    .readpage       = simple_readpage,
+    .write_begin    = simple_write_begin,
+    .write_end      = simple_write_end,
+    .dirty_folio    = noop_dirty_folio,
+};
+EXPORT_SYMBOL(ram_aops);
+
+int simple_link(struct dentry *old_dentry,
+                struct inode *dir, struct dentry *dentry)
+{
+    struct inode *inode = d_inode(old_dentry);
+
+    //inode->i_ctime = dir->i_ctime = dir->i_mtime = current_time(inode);
+    inc_nlink(inode);
+    ihold(inode);
+    dget(dentry);
+    d_instantiate(dentry, inode);
+    return 0;
+}
+EXPORT_SYMBOL(simple_link);
+
+int simple_unlink(struct inode *dir, struct dentry *dentry)
+{
+    struct inode *inode = d_inode(dentry);
+
+#if 0
+    inode->i_ctime = dir->i_ctime = dir->i_mtime = current_time(inode);
+    drop_nlink(inode);
+    dput(dentry);
+#endif
+    panic("%s: END!\n", __func__);
+    return 0;
+}
+EXPORT_SYMBOL(simple_unlink);
+
+int simple_empty(struct dentry *dentry)
+{
+    struct dentry *child;
+    int ret = 0;
+
+    spin_lock(&dentry->d_lock);
+    list_for_each_entry(child, &dentry->d_subdirs, d_child) {
+        spin_lock_nested(&child->d_lock, DENTRY_D_LOCK_NESTED);
+        if (simple_positive(child)) {
+            spin_unlock(&child->d_lock);
+            goto out;
+        }
+        spin_unlock(&child->d_lock);
+    }
+    ret = 1;
+out:
+    spin_unlock(&dentry->d_lock);
+    return ret;
+}
+EXPORT_SYMBOL(simple_empty);
+
+int simple_rmdir(struct inode *dir, struct dentry *dentry)
+{
+    if (!simple_empty(dentry))
+        return -ENOTEMPTY;
+
+#if 0
+    drop_nlink(d_inode(dentry));
+    simple_unlink(dir, dentry);
+    drop_nlink(dir);
+#endif
+    panic("%s: END!\n", __func__);
+    return 0;
+}
+EXPORT_SYMBOL(simple_rmdir);
+
+int simple_rename(struct user_namespace *mnt_userns, struct inode *old_dir,
+                  struct dentry *old_dentry, struct inode *new_dir,
+                  struct dentry *new_dentry, unsigned int flags)
+{
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL(simple_rename);

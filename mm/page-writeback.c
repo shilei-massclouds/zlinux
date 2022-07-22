@@ -166,3 +166,17 @@ bool node_dirty_ok(struct pglist_data *pgdat)
 
     return nr_pages <= limit;
 }
+
+/*
+ * For address_spaces which do not use buffers nor write back.
+ */
+bool noop_dirty_folio(struct address_space *mapping, struct folio *folio)
+{
+#if 0
+    if (!folio_test_dirty(folio))
+        return !folio_test_set_dirty(folio);
+#endif
+    panic("%s: END!\n", __func__);
+    return false;
+}
+EXPORT_SYMBOL(noop_dirty_folio);

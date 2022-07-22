@@ -16,17 +16,17 @@
 #include <linux/memblock.h>
 #if 0
 #include <linux/fsnotify.h>
-#include <linux/mount.h>
-#include <linux/posix_acl.h>
 #endif
+#include <linux/mount.h>
+//#include <linux/posix_acl.h>
 #include <linux/prefetch.h>
 #include <linux/list_lru.h>
 #if 0
 #include <linux/buffer_head.h> /* for inode_has_buffers */
 #include <linux/ratelimit.h>
 #include <linux/iversion.h>
-#include "internal.h"
 #endif
+#include "internal.h"
 
 static struct kmem_cache *inode_cachep __read_mostly;
 
@@ -359,6 +359,46 @@ void inode_init_owner(struct user_namespace *mnt_userns, struct inode *inode,
 }
 EXPORT_SYMBOL(inode_init_owner);
 
+/*
+ * Each cpu owns a range of LAST_INO_BATCH numbers.
+ * 'shared_last_ino' is dirtied only once out of LAST_INO_BATCH allocations,
+ * to renew the exhausted range.
+ *
+ * This does not significantly increase overflow rate because every CPU can
+ * consume at most LAST_INO_BATCH-1 unused inode numbers. So there is
+ * NR_CPUS*(LAST_INO_BATCH-1) wastage. At 4096 and 1024, this is ~0.1% of the
+ * 2^32 range, and is a worst-case. Even a 50% wastage would only increase
+ * overflow rate by 2x, which does not seem too significant.
+ *
+ * On a 32bit, non LFS stat() call, glibc will generate an EOVERFLOW
+ * error if st_ino won't fit in target struct field. Use 32bit counter
+ * here to attempt to avoid that.
+ */
+#define LAST_INO_BATCH 1024
+static DEFINE_PER_CPU(unsigned int, last_ino);
+
+unsigned int get_next_ino(void)
+{
+    unsigned int *p = &get_cpu_var(last_ino);
+    unsigned int res = *p;
+
+    if (unlikely((res & (LAST_INO_BATCH-1)) == 0)) {
+        static atomic_t shared_last_ino;
+        int next = atomic_add_return(LAST_INO_BATCH, &shared_last_ino);
+
+        res = next - LAST_INO_BATCH;
+    }
+
+    res++;
+    /* get_next_ino should not provide a 0 inode number */
+    if (unlikely(!res))
+        res++;
+    *p = res;
+    put_cpu_var(last_ino);
+    return res;
+}
+EXPORT_SYMBOL(get_next_ino);
+
 void init_special_inode(struct inode *inode, umode_t mode, dev_t rdev)
 {
     inode->i_mode = mode;
@@ -383,6 +423,21 @@ void init_special_inode(struct inode *inode, umode_t mode, dev_t rdev)
                " inode %s:%lu\n", mode, inode->i_sb->s_id, inode->i_ino);
 }
 EXPORT_SYMBOL(init_special_inode);
+
+void inode_nohighmem(struct inode *inode)
+{
+    mapping_set_gfp_mask(inode->i_mapping, GFP_USER);
+}
+EXPORT_SYMBOL(inode_nohighmem);
+
+/*
+ * get additional reference to inode; caller must already hold one.
+ */
+void ihold(struct inode *inode)
+{
+    WARN_ON(atomic_inc_return(&inode->i_count) < 2);
+}
+EXPORT_SYMBOL(ihold);
 
 /*
  * Initialize the waitqueues and inode hash table.

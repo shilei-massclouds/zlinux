@@ -236,6 +236,26 @@ do {                                    \
     DECLARE_PER_CPU_SECTION(type, name, PER_CPU_ALIGNED_SECTION)    \
     ____cacheline_aligned
 
+/*
+ * Must be an lvalue. Since @var must be a simple identifier,
+ * we force a syntax error here if it isn't.
+ */
+#define get_cpu_var(var)    \
+(*({                        \
+    preempt_disable();      \
+    this_cpu_ptr(&var);     \
+}))
+
+/*
+ * The weird & is necessary because sparse considers (void)(var) to be
+ * a direct dereference of percpu variable (var).
+ */
+#define put_cpu_var(var)    \
+do {                        \
+    (void)&(var);           \
+    preempt_enable();       \
+} while (0)
+
 #define get_cpu_ptr(var)    \
 ({                          \
     preempt_disable();      \
