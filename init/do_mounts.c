@@ -36,6 +36,7 @@
 int root_mountflags = MS_RDONLY | MS_SILENT;
 static char * __initdata root_device_name;
 static char __initdata saved_root_name[64];
+static unsigned int __initdata root_delay;
 //static int root_wait;
 
 dev_t ROOT_DEV;
@@ -69,4 +70,18 @@ void __init init_rootfs(void)
     if (!saved_root_name[0] &&
         (!root_fs_names || strstr(root_fs_names, "tmpfs")))
         is_tmpfs = true;
+}
+
+/*
+ * Prepare the namespace - decide what/where to mount, load ramdisks, etc.
+ */
+void __init prepare_namespace(void)
+{
+    if (root_delay) {
+        printk(KERN_INFO "Waiting %d sec before mounting root device...\n",
+               root_delay);
+        //ssleep(root_delay);
+    }
+
+    panic("%s: END!\n", __func__);
 }

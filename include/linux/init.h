@@ -163,6 +163,8 @@ void __init init_rootfs(void);
 
 extern struct file_system_type rootfs_fs_type;
 
+void prepare_namespace(void);
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* _LINUX_INIT_H */

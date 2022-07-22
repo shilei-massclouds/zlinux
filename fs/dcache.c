@@ -82,7 +82,6 @@ static void __d_rehash(struct dentry *entry)
 
 static inline unsigned start_dir_add(struct inode *dir)
 {
-
     for (;;) {
         unsigned n = dir->i_dir_seq;
         if (!(n & 1) && cmpxchg(&dir->i_dir_seq, n, n + 1) == n)
@@ -912,12 +911,9 @@ static inline void __d_add(struct dentry *dentry, struct inode *inode)
     unsigned n;
     spin_lock(&dentry->d_lock);
     if (unlikely(d_in_lookup(dentry))) {
-#if 0
         dir = dentry->d_parent->d_inode;
         n = start_dir_add(dir);
         __d_lookup_done(dentry);
-#endif
-        panic("%s: d_in_lookup!\n", __func__);
     }
     if (inode) {
 #if 0
@@ -1088,6 +1084,153 @@ void d_tmpfile(struct dentry *dentry, struct inode *inode)
     panic("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL(d_tmpfile);
+
+static void d_wait_lookup(struct dentry *dentry)
+{
+    if (d_in_lookup(dentry)) {
+#if 0
+        DECLARE_WAITQUEUE(wait, current);
+        add_wait_queue(dentry->d_wait, &wait);
+        do {
+            set_current_state(TASK_UNINTERRUPTIBLE);
+            spin_unlock(&dentry->d_lock);
+            schedule();
+            spin_lock(&dentry->d_lock);
+        } while (d_in_lookup(dentry));
+#endif
+        panic("%s: d_in_lookup\n", __func__);
+    }
+}
+
+struct dentry *d_alloc_parallel(struct dentry *parent,
+                                const struct qstr *name,
+                                wait_queue_head_t *wq)
+{
+    unsigned int hash = name->hash;
+    struct hlist_bl_head *b = in_lookup_hash(parent, hash);
+    struct hlist_bl_node *node;
+    struct dentry *new = d_alloc(parent, name);
+    struct dentry *dentry;
+    unsigned seq, r_seq, d_seq;
+
+    if (unlikely(!new))
+        return ERR_PTR(-ENOMEM);
+
+ retry:
+    rcu_read_lock();
+    seq = smp_load_acquire(&parent->d_inode->i_dir_seq);
+    //r_seq = read_seqbegin(&rename_lock);
+    dentry = __d_lookup_rcu(parent, name, &d_seq);
+    if (unlikely(dentry)) {
+        if (!lockref_get_not_dead(&dentry->d_lockref)) {
+            rcu_read_unlock();
+            goto retry;
+        }
+#if 0
+        if (read_seqcount_retry(&dentry->d_seq, d_seq)) {
+            rcu_read_unlock();
+            dput(dentry);
+            goto retry;
+        }
+#endif
+        rcu_read_unlock();
+        dput(new);
+        return dentry;
+    }
+#if 0
+    if (unlikely(read_seqretry(&rename_lock, r_seq))) {
+        rcu_read_unlock();
+        goto retry;
+    }
+#endif
+    if (unlikely(seq & 1)) {
+        rcu_read_unlock();
+        goto retry;
+    }
+
+    hlist_bl_lock(b);
+    if (unlikely(READ_ONCE(parent->d_inode->i_dir_seq) != seq)) {
+        hlist_bl_unlock(b);
+        rcu_read_unlock();
+        goto retry;
+    }
+
+    /*
+     * No changes for the parent since the beginning of d_lookup().
+     * Since all removals from the chain happen with hlist_bl_lock(),
+     * any potential in-lookup matches are going to stay here until
+     * we unlock the chain.  All fields are stable in everything
+     * we encounter.
+     */
+    hlist_bl_for_each_entry(dentry, node, b, d_u.d_in_lookup_hash) {
+        if (dentry->d_name.hash != hash)
+            continue;
+        if (dentry->d_parent != parent)
+            continue;
+        if (!d_same_name(dentry, parent, name))
+            continue;
+        hlist_bl_unlock(b);
+        /* now we can try to grab a reference */
+        if (!lockref_get_not_dead(&dentry->d_lockref)) {
+            rcu_read_unlock();
+            goto retry;
+        }
+
+        rcu_read_unlock();
+        /*
+         * somebody is likely to be still doing lookup for it;
+         * wait for them to finish
+         */
+        spin_lock(&dentry->d_lock);
+        d_wait_lookup(dentry);
+        /*
+         * it's not in-lookup anymore; in principle we should repeat
+         * everything from dcache lookup, but it's likely to be what
+         * d_lookup() would've found anyway.  If it is, just return it;
+         * otherwise we really have to repeat the whole thing.
+         */
+        if (unlikely(dentry->d_name.hash != hash))
+            goto mismatch;
+        if (unlikely(dentry->d_parent != parent))
+            goto mismatch;
+        if (unlikely(d_unhashed(dentry)))
+            goto mismatch;
+        if (unlikely(!d_same_name(dentry, parent, name)))
+            goto mismatch;
+        /* OK, it *is* a hashed match; return it */
+        spin_unlock(&dentry->d_lock);
+        dput(new);
+        return dentry;
+    }
+
+    rcu_read_unlock();
+    /* we can't take ->d_lock here; it's OK, though. */
+    new->d_flags |= DCACHE_PAR_LOOKUP;
+    new->d_wait = wq;
+    hlist_bl_add_head_rcu(&new->d_u.d_in_lookup_hash, b);
+    hlist_bl_unlock(b);
+    return new;
+
+ mismatch:
+    spin_unlock(&dentry->d_lock);
+    dput(dentry);
+    goto retry;
+}
+
+void __d_lookup_done(struct dentry *dentry)
+{
+    struct hlist_bl_head *b = in_lookup_hash(dentry->d_parent,
+                                             dentry->d_name.hash);
+    hlist_bl_lock(b);
+    dentry->d_flags &= ~DCACHE_PAR_LOOKUP;
+    __hlist_bl_del(&dentry->d_u.d_in_lookup_hash);
+    //wake_up_all(dentry->d_wait);
+    dentry->d_wait = NULL;
+    hlist_bl_unlock(b);
+    INIT_HLIST_NODE(&dentry->d_u.d_alias);
+    INIT_LIST_HEAD(&dentry->d_lru);
+}
+EXPORT_SYMBOL(__d_lookup_done);
 
 void __init vfs_caches_init_early(void)
 {

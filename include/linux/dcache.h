@@ -335,4 +335,24 @@ static inline int d_unlinked(const struct dentry *dentry)
     return d_unhashed(dentry) && !IS_ROOT(dentry);
 }
 
+extern struct dentry *d_alloc_anon(struct super_block *);
+extern struct dentry *d_alloc_parallel(struct dentry *, const struct qstr *,
+                                       wait_queue_head_t *);
+
+extern void __d_lookup_done(struct dentry *);
+
+static inline void d_lookup_done(struct dentry *dentry)
+{
+    if (unlikely(d_in_lookup(dentry))) {
+        spin_lock(&dentry->d_lock);
+        __d_lookup_done(dentry);
+        spin_unlock(&dentry->d_lock);
+    }
+}
+
+static inline bool d_flags_negative(unsigned flags)
+{
+    return (flags & DCACHE_ENTRY_TYPE) == DCACHE_MISS_TYPE;
+}
+
 #endif  /* __LINUX_DCACHE_H */

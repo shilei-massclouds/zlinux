@@ -29,6 +29,38 @@
 #include <linux/atomic.h>
 
 /*
+ * The least significant 2 bits of the owner value has the following
+ * meanings when set.
+ *  - Bit 0: RWSEM_READER_OWNED - The rwsem is owned by readers
+ *  - Bit 1: RWSEM_NONSPINNABLE - Cannot spin on a reader-owned lock
+ *
+ * When the rwsem is reader-owned and a spinning writer has timed out,
+ * the nonspinnable bit will be set to disable optimistic spinning.
+
+ * When a writer acquires a rwsem, it puts its task_struct pointer
+ * into the owner field. It is cleared after an unlock.
+ *
+ * When a reader acquires a rwsem, it will also puts its task_struct
+ * pointer into the owner field with the RWSEM_READER_OWNED bit set.
+ * On unlock, the owner field will largely be left untouched. So
+ * for a free or reader-owned rwsem, the owner value may contain
+ * information about the last reader that acquires the rwsem.
+ *
+ * That information may be helpful in debugging cases where the system
+ * seems to hang on a reader owned rwsem especially if only one reader
+ * is involved. Ideally we would like to track all the readers that own
+ * a rwsem, but the overhead is simply too big.
+ *
+ * A fast path reader optimistic lock stealing is supported when the rwsem
+ * is previously owned by a writer and the following conditions are met:
+ *  - rwsem is not currently writer owned
+ *  - the handoff isn't set.
+ */
+#define RWSEM_READER_OWNED  (1UL << 0)
+#define RWSEM_NONSPINNABLE  (1UL << 1)
+#define RWSEM_OWNER_FLAGS_MASK  (RWSEM_READER_OWNED | RWSEM_NONSPINNABLE)
+
+/*
  * On 64-bit architectures, the bit definitions of the count are:
  *
  * Bit  0    - writer locked bit
@@ -69,6 +101,13 @@
 #define RWSEM_FLAG_HANDOFF  (1UL << 2)
 #define RWSEM_FLAG_READFAIL (1UL << (BITS_PER_LONG - 1))
 
+#define RWSEM_READER_SHIFT  8
+#define RWSEM_READER_BIAS   (1UL << RWSEM_READER_SHIFT)
+#define RWSEM_READER_MASK   (~(RWSEM_READER_BIAS - 1))
+#define RWSEM_WRITER_MASK   RWSEM_WRITER_LOCKED
+#define RWSEM_LOCK_MASK     (RWSEM_WRITER_MASK|RWSEM_READER_MASK)
+#define RWSEM_READ_FAILED_MASK  (RWSEM_WRITER_MASK|RWSEM_FLAG_WAITERS|\
+                                 RWSEM_FLAG_HANDOFF|RWSEM_FLAG_READFAIL)
 
 /*
  * All writes to owner are protected by WRITE_ONCE() to make sure that
@@ -197,3 +236,135 @@ void up_write(struct rw_semaphore *sem)
     __up_write(sem);
 }
 EXPORT_SYMBOL(up_write);
+
+/*
+ * Wait for the read lock to be granted
+ */
+static struct rw_semaphore __sched *
+rwsem_down_read_slowpath(struct rw_semaphore *sem,
+                         long count, unsigned int state)
+{
+    panic("%s: END\n", __func__);
+}
+
+/*
+ * The task_struct pointer of the last owning reader will be left in
+ * the owner field.
+ *
+ * Note that the owner value just indicates the task has owned the rwsem
+ * previously, it may not be the real owner or one of the real owners
+ * anymore when that field is examined, so take it with a grain of salt.
+ *
+ * The reader non-spinnable bit is preserved.
+ */
+static inline void __rwsem_set_reader_owned(struct rw_semaphore *sem,
+                                            struct task_struct *owner)
+{
+    unsigned long val = (unsigned long)owner | RWSEM_READER_OWNED |
+        (atomic_long_read(&sem->owner) & RWSEM_NONSPINNABLE);
+
+    atomic_long_set(&sem->owner, val);
+}
+
+static inline void rwsem_set_reader_owned(struct rw_semaphore *sem)
+{
+    __rwsem_set_reader_owned(sem, current);
+}
+
+/*
+ * Set the RWSEM_NONSPINNABLE bits if the RWSEM_READER_OWNED flag
+ * remains set. Otherwise, the operation will be aborted.
+ */
+static inline void rwsem_set_nonspinnable(struct rw_semaphore *sem)
+{
+    unsigned long owner = atomic_long_read(&sem->owner);
+
+    do {
+        if (!(owner & RWSEM_READER_OWNED))
+            break;
+        if (owner & RWSEM_NONSPINNABLE)
+            break;
+    } while (!atomic_long_try_cmpxchg(&sem->owner, &owner,
+                                      owner | RWSEM_NONSPINNABLE));
+}
+
+static inline bool rwsem_read_trylock(struct rw_semaphore *sem, long *cntp)
+{
+    *cntp = atomic_long_add_return_acquire(RWSEM_READER_BIAS, &sem->count);
+
+    if (WARN_ON_ONCE(*cntp < 0))
+        rwsem_set_nonspinnable(sem);
+
+    if (!(*cntp & RWSEM_READ_FAILED_MASK)) {
+        rwsem_set_reader_owned(sem);
+        return true;
+    }
+
+    return false;
+}
+
+static inline int __down_read_common(struct rw_semaphore *sem, int state)
+{
+    long count;
+
+    if (!rwsem_read_trylock(sem, &count)) {
+        if (IS_ERR(rwsem_down_read_slowpath(sem, count, state)))
+            return -EINTR;
+    }
+    return 0;
+}
+
+static inline void __down_read(struct rw_semaphore *sem)
+{
+    __down_read_common(sem, TASK_UNINTERRUPTIBLE);
+}
+
+void __sched down_read(struct rw_semaphore *sem)
+{
+    might_sleep();
+
+    __down_read(sem);
+}
+EXPORT_SYMBOL(down_read);
+
+/*
+ * Test the flags in the owner field.
+ */
+static inline bool rwsem_test_oflags(struct rw_semaphore *sem, long flags)
+{
+    return atomic_long_read(&sem->owner) & flags;
+}
+
+/*
+ * Clear the owner's RWSEM_NONSPINNABLE bit if it is set. This should
+ * only be called when the reader count reaches 0.
+ */
+static inline void clear_nonspinnable(struct rw_semaphore *sem)
+{
+    if (rwsem_test_oflags(sem, RWSEM_NONSPINNABLE))
+        atomic_long_andnot(RWSEM_NONSPINNABLE, &sem->owner);
+}
+
+/*
+ * unlock after reading
+ */
+static inline void __up_read(struct rw_semaphore *sem)
+{
+    long tmp;
+
+    tmp = atomic_long_add_return_release(-RWSEM_READER_BIAS, &sem->count);
+    if (unlikely((tmp & (RWSEM_LOCK_MASK|RWSEM_FLAG_WAITERS)) ==
+                 RWSEM_FLAG_WAITERS)) {
+        clear_nonspinnable(sem);
+        rwsem_wake(sem);
+    }
+}
+
+/*
+ * release a read lock
+ */
+void up_read(struct rw_semaphore *sem)
+{
+    __up_read(sem);
+}
+EXPORT_SYMBOL(up_read);

@@ -27,4 +27,6 @@ struct lockref {
 
 extern void lockref_get(struct lockref *);
 
+extern int lockref_get_not_dead(struct lockref *);
+
 #endif /* __LINUX_LOCKREF_H */

@@ -51,3 +51,16 @@ int __init init_mknod(const char *filename, umode_t mode, unsigned int dev)
     done_path_create(&path, dentry);
     return error;
 }
+
+int __init init_eaccess(const char *filename)
+{
+    struct path path;
+    int error;
+
+    error = kern_path(filename, LOOKUP_FOLLOW, &path);
+    if (error)
+        return error;
+    error = path_permission(&path, MAY_ACCESS);
+    path_put(&path);
+    return error;
+}

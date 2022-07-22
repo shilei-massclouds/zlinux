@@ -76,6 +76,8 @@ extern void up_read(struct rw_semaphore *sem);
  */
 extern void up_write(struct rw_semaphore *sem);
 
+extern void down_read(struct rw_semaphore *sem);
+
 # define down_read_nested(sem, subclass)        down_read(sem)
 # define down_read_killable_nested(sem, subclass)   down_read_killable(sem)
 # define down_write_nest_lock(sem, nest_lock)   down_write(sem)

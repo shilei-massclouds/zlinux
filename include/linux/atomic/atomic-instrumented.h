@@ -222,4 +222,16 @@ atomic_add_return(int i, atomic_t *v)
     return arch_atomic_add_return(i, v);
 }
 
+static __always_inline long
+atomic_long_add_return_acquire(long i, atomic_long_t *v)
+{
+    return arch_atomic_long_add_return_acquire(i, v);
+}
+
+static __always_inline long
+atomic_long_add_return_release(long i, atomic_long_t *v)
+{
+    return arch_atomic_long_add_return_release(i, v);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */

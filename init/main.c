@@ -28,6 +28,7 @@
 #include <linux/device/driver.h>
 #include <linux/irq.h>
 #include <linux/fs.h>
+#include <linux/init_syscalls.h>
 
 #include <asm/setup.h>
 #include "z_tests.h"
@@ -72,6 +73,8 @@ static char *extra_init_args;
 static const char *argv_init[MAX_INIT_ARGS+2] = { "init", NULL, };
 const char *envp_init[MAX_INIT_ENVS+2] = { "HOME=/", "TERM=linux", NULL, };
 static const char *panic_later, *panic_param;
+
+static char *ramdisk_execute_command = "/init";
 
 extern void radix_tree_init(void);
 
@@ -273,6 +276,28 @@ static noinline void __init kernel_init_freeable(void)
 #endif
 
     do_basic_setup();
+
+#if 0
+    console_on_rootfs();
+#endif
+
+    /*
+     * check if there is an early userspace init.  If yes, let it do all
+     * the work
+     */
+    if (init_eaccess(ramdisk_execute_command) != 0) {
+        ramdisk_execute_command = NULL;
+        prepare_namespace();
+    }
+
+    /*
+     * Ok, we have completed the initial bootup, and
+     * we're essentially up and running. Get rid of the
+     * initmem segments and start the user-mode stuff..
+     *
+     * rootfs is available now, try loading the public keys
+     * and default modules
+     */
 
     panic("%s: END!\n", __func__);
 }

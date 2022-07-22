@@ -38,4 +38,6 @@ struct task_struct;
 #define DECLARE_WAIT_QUEUE_HEAD(name) \
     struct wait_queue_head name = __WAIT_QUEUE_HEAD_INITIALIZER(name)
 
+#define DECLARE_WAIT_QUEUE_HEAD_ONSTACK(name) DECLARE_WAIT_QUEUE_HEAD(name)
+
 #endif /* _LINUX_WAIT_H */

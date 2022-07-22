@@ -206,4 +206,25 @@ arch_atomic64_inc_return(atomic64_t *v)
 #define arch_atomic64_inc_return arch_atomic64_inc_return
 #endif
 
+#ifndef arch_atomic64_add_return_acquire
+static __always_inline s64
+arch_atomic64_add_return_acquire(s64 i, atomic64_t *v)
+{
+    s64 ret = arch_atomic64_add_return_relaxed(i, v);
+    __atomic_acquire_fence();
+    return ret;
+}
+#define arch_atomic64_add_return_acquire arch_atomic64_add_return_acquire
+#endif
+
+#ifndef arch_atomic64_add_return_release
+static __always_inline s64
+arch_atomic64_add_return_release(s64 i, atomic64_t *v)
+{
+    __atomic_release_fence();
+    return arch_atomic64_add_return_relaxed(i, v);
+}
+#define arch_atomic64_add_return_release arch_atomic64_add_return_release
+#endif
+
 #endif /* _LINUX_ATOMIC_FALLBACK_H */

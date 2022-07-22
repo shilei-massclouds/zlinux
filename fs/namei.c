@@ -371,6 +371,45 @@ static inline int d_revalidate(struct dentry *dentry, unsigned int flags)
         return 1;
 }
 
+/**
+ * try_to_unlazy - try to switch to ref-walk mode.
+ * @nd: nameidata pathwalk data
+ * Returns: true on success, false on failure
+ *
+ * try_to_unlazy attempts to legitimize the current nd->path and nd->root
+ * for ref-walk mode.
+ * Must be called from rcu-walk context.
+ * Nothing should touch nameidata between try_to_unlazy() failure and
+ * terminate_walk().
+ */
+static bool try_to_unlazy(struct nameidata *nd)
+{
+    struct dentry *parent = nd->path.dentry;
+
+    BUG_ON(!(nd->flags & LOOKUP_RCU));
+
+    nd->flags &= ~LOOKUP_RCU;
+#if 0
+    if (unlikely(!legitimize_links(nd)))
+        goto out1;
+    if (unlikely(!legitimize_path(nd, &nd->path, nd->seq)))
+        goto out;
+    if (unlikely(!legitimize_root(nd)))
+        goto out;
+#endif
+    rcu_read_unlock();
+    BUG_ON(nd->inode != parent->d_inode);
+    return true;
+
+ out1:
+    nd->path.mnt = NULL;
+    nd->path.dentry = NULL;
+
+ out:
+    rcu_read_unlock();
+    return false;
+}
+
 static struct dentry *lookup_fast(struct nameidata *nd,
                                   struct inode **inode,
                                   unsigned *seqp)
@@ -387,10 +426,8 @@ static struct dentry *lookup_fast(struct nameidata *nd,
         unsigned seq;
         dentry = __d_lookup_rcu(parent, &nd->last, &seq);
         if (unlikely(!dentry)) {
-#if 0
             if (!try_to_unlazy(nd))
                 return ERR_PTR(-ECHILD);
-#endif
             return NULL;
         }
 
@@ -450,6 +487,37 @@ static bool __follow_mount_rcu(struct nameidata *nd, struct path *path,
     panic("%s: [%s] END!\n", __func__, nd->name->name);
 }
 
+/*
+ * mount traversal - out-of-line part.  One note on ->d_flags accesses -
+ * dentries are pinned but not locked here, so negative dentry can go
+ * positive right under us.  Use of smp_load_acquire() provides a barrier
+ * sufficient for ->d_inode and ->d_flags consistency.
+ */
+static int __traverse_mounts(struct path *path, unsigned flags, bool *jumped,
+                             int *count, unsigned lookup_flags)
+{
+    struct vfsmount *mnt = path->mnt;
+    bool need_mntput = false;
+    int ret = 0;
+
+    panic("%s: END!\n", __func__);
+}
+
+static inline int traverse_mounts(struct path *path, bool *jumped,
+                                  int *count, unsigned lookup_flags)
+{
+    unsigned flags = smp_load_acquire(&path->dentry->d_flags);
+
+    /* fastpath */
+    if (likely(!(flags & DCACHE_MANAGED_DENTRY))) {
+        *jumped = false;
+        if (unlikely(d_flags_negative(flags)))
+            return -ENOENT;
+        return 0;
+    }
+    return __traverse_mounts(path, flags, jumped, count, lookup_flags);
+}
+
 static inline int handle_mounts(struct nameidata *nd, struct dentry *dentry,
                                 struct path *path, struct inode **inode,
                                 unsigned int *seqp)
@@ -474,7 +542,23 @@ static inline int handle_mounts(struct nameidata *nd, struct dentry *dentry,
         path->dentry = dentry;
     }
 
-    panic("%s: [%s] END!\n", __func__, nd->name->name);
+    ret = traverse_mounts(path, &jumped, &nd->total_link_count, nd->flags);
+    if (jumped) {
+        if (unlikely(nd->flags & LOOKUP_NO_XDEV))
+            ret = -EXDEV;
+        else
+            nd->state |= ND_JUMPED;
+    }
+
+    if (unlikely(ret)) {
+        dput(path->dentry);
+        if (path->mnt != nd->path.mnt)
+            mntput(path->mnt);
+    } else {
+        *inode = d_backing_inode(path->dentry);
+        *seqp = 0; /* out of RCU mode, so the value doesn't matter */
+    }
+    return ret;
 }
 
 /*
@@ -489,7 +573,6 @@ step_into(struct nameidata *nd, int flags, struct dentry *dentry,
 {
     struct path path;
     int err = handle_mounts(nd, dentry, &path, &inode, &seq);
-
     if (err < 0)
         return ERR_PTR(err);
     if (likely(!d_is_symlink(path.dentry)) ||
@@ -508,6 +591,57 @@ step_into(struct nameidata *nd, int flags, struct dentry *dentry,
     }
 
     panic("%s: [%s] END!\n", __func__, nd->name->name);
+}
+
+/* Fast lookup failed, do it the slow way */
+static struct dentry *__lookup_slow(const struct qstr *name,
+                                    struct dentry *dir,
+                                    unsigned int flags)
+{
+    struct dentry *dentry, *old;
+    struct inode *inode = dir->d_inode;
+    DECLARE_WAIT_QUEUE_HEAD_ONSTACK(wq);
+
+    /* Don't go there if it's already dead */
+    if (unlikely(IS_DEADDIR(inode)))
+        return ERR_PTR(-ENOENT);
+
+again:
+    dentry = d_alloc_parallel(dir, name, &wq);
+    if (IS_ERR(dentry))
+        return dentry;
+    if (unlikely(!d_in_lookup(dentry))) {
+        int error = d_revalidate(dentry, flags);
+        if (unlikely(error <= 0)) {
+            if (!error) {
+                d_invalidate(dentry);
+                dput(dentry);
+                goto again;
+            }
+            dput(dentry);
+            dentry = ERR_PTR(error);
+        }
+    } else {
+        old = inode->i_op->lookup(inode, dentry, flags);
+        d_lookup_done(dentry);
+        if (unlikely(old)) {
+            dput(dentry);
+            dentry = old;
+        }
+    }
+    return dentry;
+}
+
+static struct dentry *lookup_slow(const struct qstr *name,
+                                  struct dentry *dir,
+                                  unsigned int flags)
+{
+    struct inode *inode = dir->d_inode;
+    struct dentry *res;
+    inode_lock_shared(inode);
+    res = __lookup_slow(name, dir, flags);
+    inode_unlock_shared(inode);
+    return res;
 }
 
 static const char *walk_component(struct nameidata *nd, int flags)
@@ -531,12 +665,9 @@ static const char *walk_component(struct nameidata *nd, int flags)
     if (IS_ERR(dentry))
         return ERR_CAST(dentry);
     if (unlikely(!dentry)) {
-#if 0
         dentry = lookup_slow(&nd->last, nd->path.dentry, nd->flags);
         if (IS_ERR(dentry))
             return ERR_CAST(dentry);
-#endif
-        panic("%s: lookup_slow\n", __func__);
     }
     if (!(flags & WALK_MORE) && nd->depth)
         put_link(nd);
@@ -1054,3 +1185,102 @@ int vfs_mknod(struct user_namespace *mnt_userns, struct inode *dir,
     return error;
 }
 EXPORT_SYMBOL(vfs_mknod);
+
+static inline const char *lookup_last(struct nameidata *nd)
+{
+    if (nd->last_type == LAST_NORM && nd->last.name[nd->last.len])
+        nd->flags |= LOOKUP_FOLLOW | LOOKUP_DIRECTORY;
+
+    return walk_component(nd, WALK_TRAILING);
+}
+
+static int handle_lookup_down(struct nameidata *nd)
+{
+    if (!(nd->flags & LOOKUP_RCU))
+        dget(nd->path.dentry);
+    return PTR_ERR(step_into(nd, WALK_NOFOLLOW,
+                             nd->path.dentry, nd->inode, nd->seq));
+}
+
+/* Returns 0 and nd will be valid on success; Retuns error, otherwise. */
+static int path_lookupat(struct nameidata *nd, unsigned flags,
+                         struct path *path)
+{
+    const char *s = path_init(nd, flags);
+    int err;
+
+    if (unlikely(flags & LOOKUP_DOWN) && !IS_ERR(s)) {
+        err = handle_lookup_down(nd);
+        if (unlikely(err < 0))
+            s = ERR_PTR(err);
+    }
+
+    while (!(err = link_path_walk(s, nd)) &&
+           (s = lookup_last(nd)) != NULL)
+        ;
+    if (!err && unlikely(nd->flags & LOOKUP_MOUNTPOINT)) {
+        err = handle_lookup_down(nd);
+        nd->state &= ~ND_JUMPED; // no d_weak_revalidate(), please...
+    }
+    if (!err)
+        err = complete_walk(nd);
+
+    if (!err && nd->flags & LOOKUP_DIRECTORY)
+        if (!d_can_lookup(nd->path.dentry))
+            err = -ENOTDIR;
+    if (!err) {
+        *path = nd->path;
+        nd->path.mnt = NULL;
+        nd->path.dentry = NULL;
+    }
+    terminate_walk(nd);
+    return err;
+}
+
+int filename_lookup(int dfd, struct filename *name, unsigned flags,
+                    struct path *path, struct path *root)
+{
+    int retval;
+    struct nameidata nd;
+    if (IS_ERR(name))
+        return PTR_ERR(name);
+    set_nameidata(&nd, dfd, name, root);
+    retval = path_lookupat(&nd, flags | LOOKUP_RCU, path);
+    if (unlikely(retval == -ECHILD))
+        retval = path_lookupat(&nd, flags, path);
+    if (unlikely(retval == -ESTALE))
+        retval = path_lookupat(&nd, flags | LOOKUP_REVAL, path);
+
+    restore_nameidata();
+    return retval;
+}
+
+int kern_path(const char *name, unsigned int flags, struct path *path)
+{
+    struct filename *filename = getname_kernel(name);
+    int ret = filename_lookup(AT_FDCWD, filename, flags, path, NULL);
+
+    putname(filename);
+    return ret;
+
+}
+EXPORT_SYMBOL(kern_path);
+
+/**
+ * inode_permission - Check for access rights to a given inode
+ * @mnt_userns: User namespace of the mount the inode was found from
+ * @inode:  Inode to check permission on
+ * @mask:   Right to check for (%MAY_READ, %MAY_WRITE, %MAY_EXEC)
+ *
+ * Check for read/write/execute permissions on an inode.  We use fs[ug]id for
+ * this, letting us set arbitrary permissions for filesystem access without
+ * changing the "normal" UIDs which are used for other things.
+ *
+ * When checking for MAY_APPEND, MAY_WRITE must also be set in @mask.
+ */
+int inode_permission(struct user_namespace *mnt_userns,
+                     struct inode *inode, int mask)
+{
+    panic("%s: inode(%lx) END!\n", __func__, inode);
+}
+EXPORT_SYMBOL(inode_permission);

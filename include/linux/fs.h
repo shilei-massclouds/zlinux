@@ -938,6 +938,16 @@ static inline bool sb_rdonly(const struct super_block *sb)
 #define IS_WHITEOUT(inode)  (S_ISCHR(inode->i_mode) && \
                  (inode)->i_rdev == WHITEOUT_DEV)
 
+#define MAY_EXEC        0x00000001
+#define MAY_WRITE       0x00000002
+#define MAY_READ        0x00000004
+#define MAY_APPEND      0x00000008
+#define MAY_ACCESS      0x00000010
+#define MAY_OPEN        0x00000020
+#define MAY_CHDIR       0x00000040
+/* called from RCU mode, don't block */
+#define MAY_NOT_BLOCK   0x00000080
+
 static inline int inode_unhashed(struct inode *inode)
 {
     return hlist_unhashed(&inode->i_hash);
@@ -1115,5 +1125,23 @@ extern int simple_rename_exchange(struct inode *old_dir,
 extern int simple_rename(struct user_namespace *, struct inode *,
                          struct dentry *, struct inode *, struct dentry *,
                          unsigned int);
+
+int inode_permission(struct user_namespace *, struct inode *, int);
+
+static inline int path_permission(const struct path *path, int mask)
+{
+    return inode_permission(mnt_user_ns(path->mnt),
+                            d_inode(path->dentry), mask);
+}
+
+static inline void inode_lock_shared(struct inode *inode)
+{
+    down_read(&inode->i_rwsem);
+}
+
+static inline void inode_unlock_shared(struct inode *inode)
+{
+    up_read(&inode->i_rwsem);
+}
 
 #endif /* _LINUX_FS_H */

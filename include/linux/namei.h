@@ -48,4 +48,6 @@ kern_path_create(int, const char *, struct path *, unsigned int);
 
 extern void done_path_create(struct path *, struct dentry *);
 
+extern int kern_path(const char *, unsigned, struct path *);
+
 #endif /* _LINUX_NAMEI_H */

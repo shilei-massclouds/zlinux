@@ -79,4 +79,18 @@ static inline void hlist_bl_set_first(struct hlist_bl_head *h,
     h->first = (struct hlist_bl_node *)((unsigned long)n | LIST_BL_LOCKMASK);
 }
 
+/**
+ * hlist_bl_for_each_entry  - iterate over list of given type
+ * @tpos:   the type * to use as a loop cursor.
+ * @pos:    the &struct hlist_node to use as a loop cursor.
+ * @head:   the head for your list.
+ * @member: the name of the hlist_node within the struct.
+ *
+ */
+#define hlist_bl_for_each_entry(tpos, pos, head, member)    \
+    for (pos = hlist_bl_first(head);                        \
+         pos &&                                             \
+         ({ tpos = hlist_bl_entry(pos, typeof(*tpos), member); 1;}); \
+         pos = pos->next)
+
 #endif /* _LINUX_LIST_BL_H */

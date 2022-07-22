@@ -16,3 +16,23 @@ void lockref_get(struct lockref *lockref)
     spin_unlock(&lockref->lock);
 }
 EXPORT_SYMBOL(lockref_get);
+
+/**
+ * lockref_get_not_dead - Increments count unless the ref is dead
+ * @lockref: pointer to lockref structure
+ * Return: 1 if count updated successfully or 0 if lockref was dead
+ */
+int lockref_get_not_dead(struct lockref *lockref)
+{
+    int retval;
+
+    spin_lock(&lockref->lock);
+    retval = 0;
+    if (lockref->count >= 0) {
+        lockref->count++;
+        retval = 1;
+    }
+    spin_unlock(&lockref->lock);
+    return retval;
+}
+EXPORT_SYMBOL(lockref_get_not_dead);
