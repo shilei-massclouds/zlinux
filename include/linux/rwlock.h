@@ -5,6 +5,9 @@
 # error "please don't include this file directly"
 #endif
 
+# define rwlock_init(lock) \
+    do { *(lock) = __RW_LOCK_UNLOCKED(lock); } while (0)
+
 /*
  * Define the various rw_lock methods.  Note we define these
  * regardless of whether CONFIG_SMP or CONFIG_PREEMPT are set. The various

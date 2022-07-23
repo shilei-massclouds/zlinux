@@ -570,3 +570,19 @@ void kill_litter_super(struct super_block *sb)
     panic("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL(kill_litter_super);
+
+void kill_block_super(struct super_block *sb)
+{
+#if 0
+    struct block_device *bdev = sb->s_bdev;
+    fmode_t mode = sb->s_mode;
+
+    bdev->bd_super = NULL;
+    generic_shutdown_super(sb);
+    sync_blockdev(bdev);
+    WARN_ON_ONCE(!(mode & FMODE_EXCL));
+    blkdev_put(bdev, mode | FMODE_EXCL);
+#endif
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL(kill_block_super);

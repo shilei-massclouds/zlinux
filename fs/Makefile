@@ -11,4 +11,4 @@ obj-y += fs_context.o fs_parser.o fs_struct.o namei.o init.o
 obj-y += char_dev.o splice.o
 
 obj-y += ramfs/
-
+obj-y += ext2/
