@@ -406,11 +406,8 @@ void init_special_inode(struct inode *inode, umode_t mode, dev_t rdev)
         inode->i_fop = &def_chr_fops;
         inode->i_rdev = rdev;
     } else if (S_ISBLK(mode)) {
-#if 0
         inode->i_fop = &def_blk_fops;
         inode->i_rdev = rdev;
-#endif
-        panic("%s: NO BLK!\n", __func__);
     } else if (S_ISFIFO(mode))
 #if 0
         inode->i_fop = &pipefifo_fops;
@@ -419,8 +416,8 @@ void init_special_inode(struct inode *inode, umode_t mode, dev_t rdev)
     else if (S_ISSOCK(mode))
         ;   /* leave it no_open_fops */
     else
-        printk(KERN_DEBUG "init_special_inode: bogus i_mode (%o) for"
-               " inode %s:%lu\n", mode, inode->i_sb->s_id, inode->i_ino);
+        printk(KERN_DEBUG "init_special_inode: bogus i_mode (%o) for "
+               "inode %s:%lu\n", mode, inode->i_sb->s_id, inode->i_ino);
 }
 EXPORT_SYMBOL(init_special_inode);
 

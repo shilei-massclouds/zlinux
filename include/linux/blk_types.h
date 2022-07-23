@@ -80,11 +80,9 @@ struct block_device {
     int         bd_fsfreeze_count;
     /* Mutex for freeze */
     struct mutex        bd_fsfreeze_mutex;
-#if 0
     struct super_block  *bd_fsfreeze_sb;
 
     struct partition_meta_info *bd_meta_info;
-#endif
 } __randomize_layout;
 
 /*

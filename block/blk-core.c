@@ -212,6 +212,18 @@ bool blk_get_queue(struct request_queue *q)
 }
 EXPORT_SYMBOL(blk_get_queue);
 
+/*
+ * Helper to implement file_operations.iopoll.  Requires the bio to be stored
+ * in iocb->private, and cleared before freeing the bio.
+ */
+int iocb_bio_iopoll(struct kiocb *kiocb, struct io_comp_batch *iob,
+                    unsigned int flags)
+{
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL_GPL(iocb_bio_iopoll);
+
+
 int __init blk_dev_init(void)
 {
     BUILD_BUG_ON(REQ_OP_LAST >= (1 << REQ_OP_BITS));

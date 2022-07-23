@@ -66,3 +66,20 @@ vm_fault_t filemap_map_pages(struct vm_fault *vmf,
 {
     panic("%s: END!\n", __func__);
 }
+
+/* This is used for a general mmap of a disk file */
+
+int generic_file_mmap(struct file *file, struct vm_area_struct *vma)
+{
+#if 0
+    struct address_space *mapping = file->f_mapping;
+
+    if (!mapping->a_ops->readpage)
+        return -ENOEXEC;
+    file_accessed(file);
+    vma->vm_ops = &generic_file_vm_ops;
+#endif
+    panic("%s: END!\n", __func__);
+    return 0;
+}
+EXPORT_SYMBOL(generic_file_mmap);

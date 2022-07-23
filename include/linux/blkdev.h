@@ -39,7 +39,10 @@
 #define BLK_MQ_POLL_CLASSIC -1
 
 #define DISK_MAX_PARTS  256
-#define DISK_NAME_LEN       32
+#define DISK_NAME_LEN   32
+#define BDEVT_SIZE      10      /* Largest string for MAJ:MIN for blkdev */
+#define BDEVNAME_SIZE   32      /* Largest string for a blockdev identifier */
+
 #define BLKDEV_MAJOR_MAX    512
 
 struct module;
@@ -60,6 +63,18 @@ struct blk_crypto_profile;
 extern const struct device_type disk_type;
 extern struct device_type part_type;
 extern struct class block_class;
+
+#define PARTITION_META_INFO_VOLNAMELTH  64
+/*
+ * Enough for the string representation of any kind of UUID plus NULL.
+ * EFI UUID is 36 characters. MSDOS UUID is 11 characters.
+ */
+#define PARTITION_META_INFO_UUIDLTH (UUID_STRING_LEN + 1)
+
+struct partition_meta_info {
+    char uuid[PARTITION_META_INFO_UUIDLTH];
+    u8 volname[PARTITION_META_INFO_VOLNAMELTH];
+};
 
 struct gendisk {
     /*
@@ -542,5 +557,19 @@ int __register_blkdev(unsigned int major, const char *name,
     __register_blkdev(major, name, NULL)
 
 dev_t blk_lookup_devt(const char *name, int partno);
+
+int iocb_bio_iopoll(struct kiocb *kiocb, struct io_comp_batch *iob,
+                    unsigned int flags);
+
+void invalidate_bdev(struct block_device *bdev);
+int sync_blockdev(struct block_device *bdev);
+int sync_blockdev_nowait(struct block_device *bdev);
+void sync_bdevs(bool wait);
+void printk_all_partitions(void);
+
+static inline bool bdev_is_partition(struct block_device *bdev)
+{
+    return bdev->bd_partno;
+}
 
 #endif /* _LINUX_BLKDEV_H */

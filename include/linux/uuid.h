@@ -19,4 +19,10 @@ typedef struct {
     __u8 b[UUID_SIZE];
 } uuid_t;
 
+/*
+ * The length of a UUID string ("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+ * not including trailing NUL.
+ */
+#define UUID_STRING_LEN     36
+
 #endif /* _LINUX_UUID_H_ */

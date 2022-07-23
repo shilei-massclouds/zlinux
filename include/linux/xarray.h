@@ -665,4 +665,150 @@ static inline void xas_set_err(struct xa_state *xas, long err)
 
 bool xas_nomem(struct xa_state *, gfp_t);
 
+void *xa_find(struct xarray *xa, unsigned long *index,
+              unsigned long max, xa_mark_t) __attribute__((nonnull(2)));
+void *xa_find_after(struct xarray *xa, unsigned long *index,
+                    unsigned long max, xa_mark_t) __attribute__((nonnull(2)));
+
+/**
+ * xa_for_each_range() - Iterate over a portion of an XArray.
+ * @xa: XArray.
+ * @index: Index of @entry.
+ * @entry: Entry retrieved from array.
+ * @start: First index to retrieve from array.
+ * @last: Last index to retrieve from array.
+ *
+ * During the iteration, @entry will have the value of the entry stored
+ * in @xa at @index.  You may modify @index during the iteration if you
+ * want to skip or reprocess indices.  It is safe to modify the array
+ * during the iteration.  At the end of the iteration, @entry will be set
+ * to NULL and @index will have a value less than or equal to max.
+ *
+ * xa_for_each_range() is O(n.log(n)) while xas_for_each() is O(n).  You have
+ * to handle your own locking with xas_for_each(), and if you have to unlock
+ * after each iteration, it will also end up being O(n.log(n)).
+ * xa_for_each_range() will spin if it hits a retry entry; if you intend to
+ * see retry entries, you should use the xas_for_each() iterator instead.
+ * The xas_for_each() iterator will expand into more inline code than
+ * xa_for_each_range().
+ *
+ * Context: Any context.  Takes and releases the RCU lock.
+ */
+#define xa_for_each_range(xa, index, entry, start, last)    \
+    for (index = start,                                     \
+         entry = xa_find(xa, &index, last, XA_PRESENT);     \
+         entry;                                             \
+         entry = xa_find_after(xa, &index, last, XA_PRESENT))
+
+/**
+ * xa_for_each_start() - Iterate over a portion of an XArray.
+ * @xa: XArray.
+ * @index: Index of @entry.
+ * @entry: Entry retrieved from array.
+ * @start: First index to retrieve from array.
+ *
+ * During the iteration, @entry will have the value of the entry stored
+ * in @xa at @index.  You may modify @index during the iteration if you
+ * want to skip or reprocess indices.  It is safe to modify the array
+ * during the iteration.  At the end of the iteration, @entry will be set
+ * to NULL and @index will have a value less than or equal to max.
+ *
+ * xa_for_each_start() is O(n.log(n)) while xas_for_each() is O(n).  You have
+ * to handle your own locking with xas_for_each(), and if you have to unlock
+ * after each iteration, it will also end up being O(n.log(n)).
+ * xa_for_each_start() will spin if it hits a retry entry; if you intend to
+ * see retry entries, you should use the xas_for_each() iterator instead.
+ * The xas_for_each() iterator will expand into more inline code than
+ * xa_for_each_start().
+ *
+ * Context: Any context.  Takes and releases the RCU lock.
+ */
+#define xa_for_each_start(xa, index, entry, start) \
+    xa_for_each_range(xa, index, entry, start, ULONG_MAX)
+
+/**
+ * xa_for_each() - Iterate over present entries in an XArray.
+ * @xa: XArray.
+ * @index: Index of @entry.
+ * @entry: Entry retrieved from array.
+ *
+ * During the iteration, @entry will have the value of the entry stored
+ * in @xa at @index.  You may modify @index during the iteration if you want
+ * to skip or reprocess indices.  It is safe to modify the array during the
+ * iteration.  At the end of the iteration, @entry will be set to NULL and
+ * @index will have a value less than or equal to max.
+ *
+ * xa_for_each() is O(n.log(n)) while xas_for_each() is O(n).  You have
+ * to handle your own locking with xas_for_each(), and if you have to unlock
+ * after each iteration, it will also end up being O(n.log(n)).  xa_for_each()
+ * will spin if it hits a retry entry; if you intend to see retry entries,
+ * you should use the xas_for_each() iterator instead.  The xas_for_each()
+ * iterator will expand into more inline code than xa_for_each().
+ *
+ * Context: Any context.  Takes and releases the RCU lock.
+ */
+#define xa_for_each(xa, index, entry) \
+    xa_for_each_start(xa, index, entry, 0)
+
+/**
+ * xas_reset() - Reset an XArray operation state.
+ * @xas: XArray operation state.
+ *
+ * Resets the error or walk state of the @xas so future walks of the
+ * array will start from the root.  Use this if you have dropped the
+ * xarray lock and want to reuse the xa_state.
+ *
+ * Context: Any context.
+ */
+static inline void xas_reset(struct xa_state *xas)
+{
+    xas->xa_node = XAS_RESTART;
+}
+
+/**
+ * xa_is_retry() - Is the entry a retry entry?
+ * @entry: Entry retrieved from the XArray
+ *
+ * Return: %true if the entry is a retry entry.
+ */
+static inline bool xa_is_retry(const void *entry)
+{
+    return unlikely(entry == XA_RETRY_ENTRY);
+}
+
+/**
+ * xas_retry() - Retry the operation if appropriate.
+ * @xas: XArray operation state.
+ * @entry: Entry from xarray.
+ *
+ * The advanced functions may sometimes return an internal entry, such as
+ * a retry entry or a zero entry.  This function sets up the @xas to restart
+ * the walk from the head of the array if needed.
+ *
+ * Context: Any context.
+ * Return: true if the operation needs to be retried.
+ */
+static inline bool xas_retry(struct xa_state *xas, const void *entry)
+{
+    if (xa_is_zero(entry))
+        return true;
+    if (!xa_is_retry(entry))
+        return false;
+    xas_reset(xas);
+    return true;
+}
+
+/* True if the pointer is something other than a node */
+static inline bool xas_not_node(struct xa_node *node)
+{
+    return ((unsigned long)node & 3) || !node;
+}
+
+/* Private */
+static inline struct xa_node *
+xa_parent(const struct xarray *xa, const struct xa_node *node)
+{
+    return rcu_dereference_check(node->parent);
+}
+
 #endif /* _LINUX_XARRAY_H */

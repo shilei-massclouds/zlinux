@@ -602,4 +602,48 @@ struct vm_operations_struct {
 extern vm_fault_t filemap_map_pages(struct vm_fault *vmf,
                                     pgoff_t start_pgoff, pgoff_t end_pgoff);
 
+static inline bool put_devmap_managed_page(struct page *page)
+{
+    return false;
+}
+
+static inline int folio_put_testzero(struct folio *folio)
+{
+    return put_page_testzero(&folio->page);
+}
+
+void __put_page(struct page *page);
+
+/**
+ * folio_put - Decrement the reference count on a folio.
+ * @folio: The folio.
+ *
+ * If the folio's reference count reaches zero, the memory will be
+ * released back to the page allocator and may be used by another
+ * allocation immediately.  Do not access the memory or the struct folio
+ * after calling folio_put() unless you can be sure that it wasn't the
+ * last reference.
+ *
+ * Context: May be called in process or interrupt context, but not in NMI
+ * context.  May be called while holding a spinlock.
+ */
+static inline void folio_put(struct folio *folio)
+{
+    if (folio_put_testzero(folio))
+        __put_page(&folio->page);
+}
+
+static inline void put_page(struct page *page)
+{
+    struct folio *folio = page_folio(page);
+
+    /*
+     * For some devmap managed pages we need to catch refcount transition
+     * from 2 to 1:
+     */
+    if (put_devmap_managed_page(&folio->page))
+        return;
+    folio_put(folio);
+}
+
 #endif /* _LINUX_MM_H */

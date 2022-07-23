@@ -28,10 +28,9 @@
 #include <linux/nfs_mount.h>
 #include <linux/raid/detect.h>
 
-#include "do_mounts.h"
 #endif
-#include <linux/blkdev.h>
 #include <uapi/linux/mount.h>
+#include "do_mounts.h"
 
 int root_mountflags = MS_RDONLY | MS_SILENT;
 static char * __initdata root_device_name;
@@ -41,6 +40,7 @@ static int root_wait;
 
 dev_t ROOT_DEV;
 
+static char * __initdata root_mount_data;
 static char * __initdata root_fs_names;
 
 static int __init root_dev_setup(char *line)
@@ -185,6 +185,88 @@ dev_t name_to_dev_t(const char *name)
 }
 EXPORT_SYMBOL_GPL(name_to_dev_t);
 
+/* This can return zero length strings. Caller should check */
+static int __init split_fs_names(char *page, size_t size, char *names)
+{
+    int count = 1;
+    char *p = page;
+
+    strlcpy(p, root_fs_names, size);
+    while (*p++) {
+        if (p[-1] == ',') {
+            p[-1] = '\0';
+            count++;
+        }
+    }
+
+    return count;
+}
+
+static int __init do_mount_root(const char *name, const char *fs,
+                                const int flags, const void *data)
+{
+    panic("%s: END!\n", __func__);
+}
+
+void __init mount_block_root(char *name, int flags)
+{
+    struct page *page = alloc_page(GFP_KERNEL);
+    char *fs_names = page_address(page);
+    char *p;
+    char b[BDEVNAME_SIZE];
+    int num_fs, i;
+
+    scnprintf(b, BDEVNAME_SIZE, "unknown-block(%u,%u)",
+              MAJOR(ROOT_DEV), MINOR(ROOT_DEV));
+    if (root_fs_names)
+        num_fs = split_fs_names(fs_names, PAGE_SIZE, root_fs_names);
+    else
+        num_fs = list_bdev_fs_names(fs_names, PAGE_SIZE);
+
+ retry:
+    for (i = 0, p = fs_names; i < num_fs; i++, p += strlen(p)+1) {
+        int err;
+
+        if (!*p)
+            continue;
+        err = do_mount_root(name, p, flags, root_mount_data);
+        switch (err) {
+            case 0:
+                goto out;
+            case -EACCES:
+            case -EINVAL:
+                continue;
+        }
+        /*
+         * Allow the user to distinguish between failed sys_open
+         * and bad superblock on root device.
+         * and give them a list of the available devices
+         */
+        printk("VFS: Cannot open root device \"%s\" or %s: error %d\n",
+               root_device_name, b, err);
+        printk("Please append a correct \"root=\" boot option; "
+               "here are the available partitions:\n");
+
+        printk_all_partitions();
+        panic("VFS: Unable to mount root fs on %s", b);
+    }
+    if (!(flags & SB_RDONLY)) {
+        flags |= SB_RDONLY;
+        goto retry;
+    }
+
+    printk("List of all partitions:\n");
+    printk_all_partitions();
+    printk("No filesystem could mount root, tried: ");
+    for (i = 0, p = fs_names; i < num_fs; i++, p += strlen(p)+1)
+        printk(" %s", p);
+    printk("\n");
+    panic("VFS: Unable to mount root fs on %s", b);
+
+ out:
+    put_page(page);
+}
+
 void __init mount_root(void)
 {
 #if 0
@@ -199,14 +281,11 @@ void __init mount_root(void)
     }
 #endif
     {
-#if 0
         int err = create_dev("/dev/root", ROOT_DEV);
-
         if (err < 0)
             pr_emerg("Failed to create /dev/root: %d\n", err);
 
         mount_block_root("/dev/root", root_mountflags);
-#endif
         panic("%s: END!\n", __func__);
     }
 }

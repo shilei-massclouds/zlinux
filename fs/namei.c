@@ -1284,3 +1284,14 @@ int inode_permission(struct user_namespace *mnt_userns,
     panic("%s: inode(%lx) END!\n", __func__, inode);
 }
 EXPORT_SYMBOL(inode_permission);
+
+/*
+ * Make sure that the actual truncation of the file will occur outside its
+ * directory's i_mutex.  Truncate can take a long time if there is a lot of
+ * writeout happening, and we don't want to prevent access to the directory
+ * while waiting on the I/O.
+ */
+int do_unlinkat(int dfd, struct filename *name)
+{
+    pr_warn("%s: NO do_unlinkat!\n", __func__);
+}

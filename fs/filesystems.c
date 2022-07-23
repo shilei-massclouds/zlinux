@@ -107,3 +107,27 @@ int unregister_filesystem(struct file_system_type * fs)
     return -EINVAL;
 }
 EXPORT_SYMBOL(unregister_filesystem);
+
+int __init list_bdev_fs_names(char *buf, size_t size)
+{
+    struct file_system_type *p;
+    size_t len;
+    int count = 0;
+
+    read_lock(&file_systems_lock);
+    for (p = file_systems; p; p = p->next) {
+        if (!(p->fs_flags & FS_REQUIRES_DEV))
+            continue;
+        len = strlen(p->name) + 1;
+        if (len > size) {
+            pr_warn("%s: truncating file system list\n", __func__);
+            break;
+        }
+        memcpy(buf, p->name, len);
+        buf += len;
+        size -= len;
+        count++;
+    }
+    read_unlock(&file_systems_lock);
+    return count;
+}

@@ -64,3 +64,8 @@ int __init init_eaccess(const char *filename)
     path_put(&path);
     return error;
 }
+
+int __init init_unlink(const char *pathname)
+{
+    return do_unlinkat(AT_FDCWD, getname_kernel(pathname));
+}
