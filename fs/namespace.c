@@ -439,6 +439,26 @@ void mnt_drop_write(struct vfsmount *mnt)
 }
 EXPORT_SYMBOL_GPL(mnt_drop_write);
 
+/*
+ * Flags is a 32-bit value that allows up to 31 non-fs dependent flags to
+ * be given to the mount() call (ie: read-only, no-dev, no-suid etc).
+ *
+ * data is a (void *) that can point to any structure up to
+ * PAGE_SIZE-1 bytes, which can contain arbitrary fs-dependent
+ * information (or be NULL).
+ *
+ * Pre-0.97 versions of mount() didn't have a flags word.
+ * When the flags word was introduced its top half was required
+ * to have the magic value 0xC0ED, and this remained so until 2.4.0-test9.
+ * Therefore, if this magic number is present, it carries no information
+ * and must be discarded.
+ */
+int path_mount(const char *dev_name, struct path *path,
+               const char *type_page, unsigned long flags, void *data_page)
+{
+    panic("%s: END!\n", __func__);
+}
+
 void __init mnt_init(void)
 {
     int err;

@@ -42,3 +42,7 @@ int do_mkdirat(int dfd, struct filename *name, umode_t mode);
 int do_symlinkat(struct filename *from, int newdfd, struct filename *to);
 int do_linkat(int olddfd, struct filename *old, int newdfd,
               struct filename *new, int flags);
+
+int path_mount(const char *dev_name, struct path *path,
+               const char *type_page, unsigned long flags, void *data_page);
+int path_umount(struct path *path, int flags);

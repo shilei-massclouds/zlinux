@@ -69,3 +69,18 @@ int __init init_unlink(const char *pathname)
 {
     return do_unlinkat(AT_FDCWD, getname_kernel(pathname));
 }
+
+int __init init_mount(const char *dev_name, const char *dir_name,
+                      const char *type_page, unsigned long flags,
+                      void *data_page)
+{
+    struct path path;
+    int ret;
+
+    ret = kern_path(dir_name, LOOKUP_FOLLOW, &path);
+    if (ret)
+        return ret;
+    ret = path_mount(dev_name, &path, type_page, flags, data_page);
+    path_put(&path);
+    return ret;
+}

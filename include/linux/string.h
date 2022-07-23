@@ -97,6 +97,10 @@ extern char * strsep(char **,const char *);
 extern size_t strlcat(char *, const char *, __kernel_size_t);
 #endif
 
+#ifndef __HAVE_ARCH_STRNCPY
+extern char * strncpy(char *,const char *, __kernel_size_t);
+#endif
+
 extern char * __must_check skip_spaces(const char *);
 
 /**
