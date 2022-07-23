@@ -145,4 +145,6 @@
 # define __nocfi
 #endif
 
+#define __cond_lock(x,c) (c)
+
 #endif /* __LINUX_COMPILER_TYPES_H */

@@ -104,4 +104,29 @@ extern void class_dev_iter_init(struct class_dev_iter *iter,
 extern struct device *class_dev_iter_next(struct class_dev_iter *iter);
 extern void class_dev_iter_exit(struct class_dev_iter *iter);
 
+extern struct class * __must_check
+__class_create(struct module *owner, const char *name,
+               struct lock_class_key *key);
+
+extern void class_destroy(struct class *cls);
+
+/**
+ * class_create - create a struct class structure
+ * @owner: pointer to the module that is to "own" this struct class
+ * @name: pointer to a string for the name of this class.
+ *
+ * This is used to create a struct class pointer that can then be used
+ * in calls to device_create().
+ *
+ * Returns &struct class pointer on success, or ERR_PTR() on error.
+ *
+ * Note, the pointer created here is to be destroyed when finished by
+ * making a call to class_destroy().
+ */
+#define class_create(owner, name)       \
+({                      \
+    static struct lock_class_key __key; \
+    __class_create(owner, name, &__key);    \
+})
+
 #endif  /* _DEVICE_CLASS_H_ */

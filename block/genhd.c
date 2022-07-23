@@ -14,10 +14,10 @@
 #include <linux/backing-dev.h>
 #include <linux/init.h>
 #include <linux/spinlock.h>
+#include <linux/kmod.h>
 #if 0
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
-#include <linux/kmod.h>
 #include <linux/pm_runtime.h>
 #include <linux/badblocks.h>
 #include <linux/part_stat.h>
@@ -200,6 +200,23 @@ int blk_alloc_ext_minor(void)
     return idx;
 }
 
+int disk_scan_partitions(struct gendisk *disk, fmode_t mode)
+{
+    struct block_device *bdev;
+
+    if (disk->flags & (GENHD_FL_NO_PART | GENHD_FL_HIDDEN))
+        return -EINVAL;
+    if (disk->open_partitions)
+        return -EBUSY;
+
+    set_bit(GD_NEED_PART_SCAN, &disk->state);
+    bdev = blkdev_get_by_dev(disk_devt(disk), mode, NULL);
+    if (IS_ERR(bdev))
+        return PTR_ERR(bdev);
+    blkdev_put(bdev, mode);
+    return 0;
+}
+
 /**
  * device_add_disk - add disk information to kernel list
  * @parent: parent device for the disk
@@ -319,19 +336,21 @@ int __must_check device_add_disk(struct device *parent, struct gendisk *disk,
 #endif
 
     if (!(disk->flags & GENHD_FL_HIDDEN)) {
-#if 0
         ret = bdi_register(disk->bdi, "%u:%u", disk->major, disk->first_minor);
         if (ret)
             goto out_unregister_queue;
         bdi_set_owner(disk->bdi, ddev);
+#if 0
         ret = sysfs_create_link(&ddev->kobj, &disk->bdi->dev->kobj, "bdi");
         if (ret)
             goto out_unregister_bdi;
+#endif
 
         bdev_add(disk->part0, ddev->devt);
         if (get_capacity(disk))
             disk_scan_partitions(disk, FMODE_READ);
 
+#if 0
         /*
          * Announce the disk and partitions after all partitions are
          * created. (for hidden disks uevents remain suppressed forever)
@@ -339,6 +358,7 @@ int __must_check device_add_disk(struct device *parent, struct gendisk *disk,
         dev_set_uevent_suppress(ddev, 0);
         disk_uevent(disk, KOBJ_ADD);
 #endif
+        panic("%s: GENHD_FL_HIDDEN\n", __func__);
     }
 
 #if 0
@@ -602,6 +622,28 @@ int __register_blkdev(unsigned int major, const char *name,
  out:
     mutex_unlock(&major_names_lock);
     return ret;
+}
+
+void blk_request_module(dev_t devt)
+{
+    unsigned int major = MAJOR(devt);
+    struct blk_major_name **n;
+
+    mutex_lock(&major_names_lock);
+    for (n = &major_names[major_to_index(major)]; *n; n = &(*n)->next) {
+        if ((*n)->major == major && (*n)->probe) {
+            (*n)->probe(devt);
+            mutex_unlock(&major_names_lock);
+            return;
+        }
+    }
+    mutex_unlock(&major_names_lock);
+
+#if 0
+    if (request_module("block-major-%d-%d", MAJOR(devt), MINOR(devt)) > 0)
+        /* Make old-style 2.4 aliases work */
+        request_module("block-major-%d", MAJOR(devt));
+#endif
 }
 
 static int __init genhd_device_init(void)

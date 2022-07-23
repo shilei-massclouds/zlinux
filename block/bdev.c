@@ -28,9 +28,9 @@
 #include <linux/mount.h>
 #if 0
 #include <linux/uio.h>
-#include <linux/namei.h>
 #include <linux/part_stat.h>
 #endif
+#include <linux/namei.h>
 #include <linux/uaccess.h>
 #include <linux/fs_context.h>
 #if 0
@@ -150,3 +150,244 @@ struct block_device *bdev_alloc(struct gendisk *disk, u8 partno)
     bdev->bd_disk = disk;
     return bdev;
 }
+
+/**
+ * lookup_bdev() - Look up a struct block_device by name.
+ * @pathname: Name of the block device in the filesystem.
+ * @dev: Pointer to the block device's dev_t, if found.
+ *
+ * Lookup the block device's dev_t at @pathname in the current
+ * namespace if possible and return it in @dev.
+ *
+ * Context: May sleep.
+ * Return: 0 if succeeded, negative errno otherwise.
+ */
+int lookup_bdev(const char *pathname, dev_t *dev)
+{
+    struct inode *inode;
+    struct path path;
+    int error;
+
+    if (!pathname || !*pathname)
+        return -EINVAL;
+
+    error = kern_path(pathname, LOOKUP_FOLLOW, &path);
+    if (error)
+        return error;
+
+    inode = d_backing_inode(path.dentry);
+    error = -ENOTBLK;
+    if (!S_ISBLK(inode->i_mode))
+        goto out_path_put;
+    error = -EACCES;
+    if (!may_open_dev(&path))
+        goto out_path_put;
+
+    *dev = inode->i_rdev;
+    error = 0;
+
+ out_path_put:
+    path_put(&path);
+    return error;
+}
+
+struct block_device *blkdev_get_no_open(dev_t dev)
+{
+    struct block_device *bdev;
+    struct inode *inode;
+
+    inode = ilookup(blockdev_superblock, dev);
+    if (!inode) {
+        blk_request_module(dev);
+        inode = ilookup(blockdev_superblock, dev);
+        if (inode)
+            pr_warn_ratelimited("block device autoloading is deprecated and "
+                                "will be removed.\n");
+    }
+    if (!inode)
+        return NULL;
+
+    /* switch from the inode reference to a device mode one: */
+    bdev = &BDEV_I(inode)->bdev;
+    if (!kobject_get_unless_zero(&bdev->bd_device.kobj))
+        bdev = NULL;
+    iput(inode);
+    return bdev;
+}
+
+void blkdev_put_no_open(struct block_device *bdev)
+{
+    put_device(&bdev->bd_device);
+}
+
+static void set_init_blocksize(struct block_device *bdev)
+{
+    unsigned int bsize = bdev_logical_block_size(bdev);
+    loff_t size = i_size_read(bdev->bd_inode);
+
+    while (bsize < PAGE_SIZE) {
+        if (size & bsize)
+            break;
+        bsize <<= 1;
+    }
+    bdev->bd_inode->i_blkbits = blksize_bits(bsize);
+}
+
+static int blkdev_get_whole(struct block_device *bdev, fmode_t mode)
+{
+    struct gendisk *disk = bdev->bd_disk;
+    int ret;
+
+    if (disk->fops->open) {
+#if 0
+        ret = disk->fops->open(bdev, mode);
+        if (ret) {
+            /* avoid ghost partitions on a removed medium */
+            if (ret == -ENOMEDIUM &&
+                 test_bit(GD_NEED_PART_SCAN, &disk->state))
+                bdev_disk_changed(disk, true);
+            return ret;
+        }
+#endif
+        panic("%s: open!\n", __func__);
+    }
+
+    if (!bdev->bd_openers)
+        set_init_blocksize(bdev);
+    if (test_bit(GD_NEED_PART_SCAN, &disk->state))
+        bdev_disk_changed(disk, false);
+    bdev->bd_openers++;
+    panic("%s: END!\n", __func__);
+    return 0;
+}
+
+static int blkdev_get_part(struct block_device *part, fmode_t mode)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * blkdev_get_by_dev - open a block device by device number
+ * @dev: device number of block device to open
+ * @mode: FMODE_* mask
+ * @holder: exclusive holder identifier
+ *
+ * Open the block device described by device number @dev. If @mode includes
+ * %FMODE_EXCL, the block device is opened with exclusive access.  Specifying
+ * %FMODE_EXCL with a %NULL @holder is invalid.  Exclusive opens may nest for
+ * the same @holder.
+ *
+ * Use this interface ONLY if you really do not have anything better - i.e. when
+ * you are behind a truly sucky interface and all you are given is a device
+ * number.  Everything else should use blkdev_get_by_path().
+ *
+ * CONTEXT:
+ * Might sleep.
+ *
+ * RETURNS:
+ * Reference to the block_device on success, ERR_PTR(-errno) on failure.
+ */
+struct block_device *blkdev_get_by_dev(dev_t dev, fmode_t mode, void *holder)
+{
+    bool unblock_events = true;
+    struct block_device *bdev;
+    struct gendisk *disk;
+    int ret;
+
+    bdev = blkdev_get_no_open(dev);
+    if (!bdev)
+        return ERR_PTR(-ENXIO);
+    disk = bdev->bd_disk;
+
+    if (mode & FMODE_EXCL) {
+#if 0
+        ret = bd_prepare_to_claim(bdev, holder);
+        if (ret)
+            goto put_blkdev;
+#endif
+        panic("%s: FMODE_EXCL!\n", __func__);
+    }
+
+    //disk_block_events(disk);
+
+    mutex_lock(&disk->open_mutex);
+    ret = -ENXIO;
+    if (!disk_live(disk))
+        goto abort_claiming;
+    if (!try_module_get(disk->fops->owner))
+        goto abort_claiming;
+    if (bdev_is_partition(bdev))
+        ret = blkdev_get_part(bdev, mode);
+    else
+        ret = blkdev_get_whole(bdev, mode);
+    if (ret)
+        goto put_module;
+
+    panic("%s: dev_t(%x) END!\n", __func__, dev);
+    return bdev;
+
+ put_module:
+    module_put(disk->fops->owner);
+ abort_claiming:
+    if (mode & FMODE_EXCL) {
+        //bd_abort_claiming(bdev, holder);
+        panic("%s: FMODE_EXCL!\n", __func__);
+    }
+    mutex_unlock(&disk->open_mutex);
+    //disk_unblock_events(disk);
+ put_blkdev:
+    blkdev_put_no_open(bdev);
+    return ERR_PTR(ret);
+}
+
+/**
+ * blkdev_get_by_path - open a block device by name
+ * @path: path to the block device to open
+ * @mode: FMODE_* mask
+ * @holder: exclusive holder identifier
+ *
+ * Open the block device described by the device file at @path.  If @mode
+ * includes %FMODE_EXCL, the block device is opened with exclusive access.
+ * Specifying %FMODE_EXCL with a %NULL @holder is invalid.  Exclusive opens may
+ * nest for the same @holder.
+ *
+ * CONTEXT:
+ * Might sleep.
+ *
+ * RETURNS:
+ * Reference to the block_device on success, ERR_PTR(-errno) on failure.
+ */
+struct block_device *
+blkdev_get_by_path(const char *path, fmode_t mode, void *holder)
+{
+    struct block_device *bdev;
+    dev_t dev;
+    int error;
+
+    error = lookup_bdev(path, &dev);
+    if (error)
+        return ERR_PTR(error);
+
+    bdev = blkdev_get_by_dev(dev, mode, holder);
+    if (!IS_ERR(bdev) && (mode & FMODE_WRITE) && bdev_read_only(bdev)) {
+        blkdev_put(bdev, mode);
+        return ERR_PTR(-EACCES);
+    }
+
+    return bdev;
+}
+EXPORT_SYMBOL(blkdev_get_by_path);
+
+void bdev_add(struct block_device *bdev, dev_t dev)
+{
+    bdev->bd_dev = dev;
+    bdev->bd_inode->i_rdev = dev;
+    bdev->bd_inode->i_ino = dev;
+    insert_inode_hash(bdev->bd_inode);
+}
+
+void blkdev_put(struct block_device *bdev, fmode_t mode)
+{
+    pr_warn("%s: NO Implementation!\n", __func__);
+}
+EXPORT_SYMBOL(blkdev_put);

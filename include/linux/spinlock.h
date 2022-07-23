@@ -155,6 +155,18 @@ do {                                        \
     raw_spin_lock_nested(spinlock_check(lock), subclass);   \
 } while (0)
 
+/**
+ * atomic_dec_and_lock - lock on reaching reference count zero
+ * @atomic: the atomic counter
+ * @lock: the spinlock in question
+ *
+ * Decrements @atomic by 1.  If the result is 0, returns true and locks
+ * @lock.  Returns false for all other cases.
+ */
+extern int _atomic_dec_and_lock(atomic_t *atomic, spinlock_t *lock);
+#define atomic_dec_and_lock(atomic, lock) \
+    __cond_lock(lock, _atomic_dec_and_lock(atomic, lock))
+
 #include <linux/spinlock_api_smp.h>
 
 #endif /* __LINUX_SPINLOCK_H */

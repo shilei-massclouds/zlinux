@@ -19,4 +19,14 @@
  */
 bool node_dirty_ok(struct pglist_data *pgdat);
 
+/* writeback.h requires fs.h; it, too, is not included from here. */
+static inline void wait_on_inode(struct inode *inode)
+{
+    might_sleep();
+#if 0
+    wait_on_bit(&inode->i_state, __I_NEW, TASK_UNINTERRUPTIBLE);
+#endif
+    panic("%s: NO implementation!\n", __func__);
+}
+
 #endif  /* WRITEBACK_H */

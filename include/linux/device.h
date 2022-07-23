@@ -371,4 +371,11 @@ void device_del(struct device *dev);
 
 #define sysfs_deprecated 0
 
+/*
+ * Easy functions for dynamically creating devices on the fly
+ */
+__printf(5, 6) struct device *
+device_create(struct class *cls, struct device *parent, dev_t devt,
+              void *drvdata, const char *fmt, ...);
+
 #endif /* _DEVICE_H_ */

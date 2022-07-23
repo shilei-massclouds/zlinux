@@ -30,7 +30,23 @@
 
 static struct kmem_cache *inode_cachep __read_mostly;
 
+static __initdata unsigned long ihash_entries;
+static unsigned int i_hash_mask __read_mostly;
+static unsigned int i_hash_shift __read_mostly;
+static __cacheline_aligned_in_smp DEFINE_SPINLOCK(inode_hash_lock);
+static struct hlist_head *inode_hashtable __read_mostly;
+
 static DEFINE_PER_CPU(unsigned long, nr_inodes);
+
+static unsigned long hash(struct super_block *sb, unsigned long hashval)
+{
+    unsigned long tmp;
+
+    tmp = (hashval * (unsigned long)sb) ^ (GOLDEN_RATIO_PRIME + hashval) /
+        L1_CACHE_BYTES;
+    tmp = tmp ^ ((tmp ^ GOLDEN_RATIO_PRIME) >> i_hash_shift);
+    return tmp & i_hash_mask;
+}
 
 static void i_callback(struct rcu_head *head)
 {
@@ -251,11 +267,11 @@ void iput(struct inode *inode)
     if (!inode)
         return;
 
-    panic("%s: END!\n", __func__);
-#if 0
     BUG_ON(inode->i_state & I_CLEAR);
-retry:
+
+ retry:
     if (atomic_dec_and_lock(&inode->i_count, &inode->i_lock)) {
+#if 0
         if (inode->i_nlink && (inode->i_state & I_DIRTY_TIME)) {
             atomic_inc(&inode->i_count);
             spin_unlock(&inode->i_lock);
@@ -264,8 +280,9 @@ retry:
             goto retry;
         }
         iput_final(inode);
-    }
 #endif
+        panic("%s: END!\n", __func__);
+    }
 }
 EXPORT_SYMBOL(iput);
 
@@ -317,11 +334,6 @@ static void init_once(void *foo)
 
     inode_init_once(inode);
 }
-
-static __initdata unsigned long ihash_entries;
-static unsigned int i_hash_mask __read_mostly;
-static unsigned int i_hash_shift __read_mostly;
-static struct hlist_head *inode_hashtable __read_mostly;
 
 /**
  * inode_init_owner - Init uid,gid,mode for new inode according to posix standards
@@ -435,6 +447,112 @@ void ihold(struct inode *inode)
     WARN_ON(atomic_inc_return(&inode->i_count) < 2);
 }
 EXPORT_SYMBOL(ihold);
+
+/*
+ * If we try to find an inode in the inode hash while it is being
+ * deleted, we have to wait until the filesystem completes its
+ * deletion before reporting that it isn't found.  This function waits
+ * until the deletion _might_ have completed.  Callers are responsible
+ * to recheck inode state.
+ *
+ * It doesn't matter if I_NEW is not set initially, a call to
+ * wake_up_bit(&inode->i_state, __I_NEW) after removing from the hash list
+ * will DTRT.
+ */
+static void __wait_on_freeing_inode(struct inode *inode)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * inode->i_lock must be held
+ */
+void __iget(struct inode *inode)
+{
+    atomic_inc(&inode->i_count);
+}
+
+/*
+ * find_inode_fast is the fast path version of find_inode, see the comment at
+ * iget_locked for details.
+ */
+static struct inode *find_inode_fast(struct super_block *sb,
+                                     struct hlist_head *head, unsigned long ino)
+{
+    struct inode *inode = NULL;
+
+ repeat:
+    hlist_for_each_entry(inode, head, i_hash) {
+        if (inode->i_ino != ino)
+            continue;
+        if (inode->i_sb != sb)
+            continue;
+        spin_lock(&inode->i_lock);
+        if (inode->i_state & (I_FREEING|I_WILL_FREE)) {
+            __wait_on_freeing_inode(inode);
+            goto repeat;
+        }
+        if (unlikely(inode->i_state & I_CREATING)) {
+            spin_unlock(&inode->i_lock);
+            return ERR_PTR(-ESTALE);
+        }
+        __iget(inode);
+        spin_unlock(&inode->i_lock);
+        return inode;
+    }
+    return NULL;
+}
+
+/**
+ * ilookup - search for an inode in the inode cache
+ * @sb:     super block of file system to search
+ * @ino:    inode number to search for
+ *
+ * Search for the inode @ino in the inode cache, and if the inode is in the
+ * cache, the inode is returned with an incremented reference count.
+ */
+struct inode *ilookup(struct super_block *sb, unsigned long ino)
+{
+    struct hlist_head *head = inode_hashtable + hash(sb, ino);
+    struct inode *inode;
+
+ again:
+    spin_lock(&inode_hash_lock);
+    inode = find_inode_fast(sb, head, ino);
+    spin_unlock(&inode_hash_lock);
+
+    if (inode) {
+        if (IS_ERR(inode))
+            return NULL;
+        //wait_on_inode(inode);
+        if (unlikely(inode_unhashed(inode))) {
+            iput(inode);
+            goto again;
+        }
+    }
+    return inode;
+}
+EXPORT_SYMBOL(ilookup);
+
+/**
+ *  __insert_inode_hash - hash an inode
+ *  @inode: unhashed inode
+ *  @hashval: unsigned long value used to locate this object in the
+ *      inode_hashtable.
+ *
+ *  Add an inode to the inode hash for this superblock.
+ */
+void __insert_inode_hash(struct inode *inode, unsigned long hashval)
+{
+    struct hlist_head *b = inode_hashtable + hash(inode->i_sb, hashval);
+
+    spin_lock(&inode_hash_lock);
+    spin_lock(&inode->i_lock);
+    hlist_add_head_rcu(&inode->i_hash, b);
+    spin_unlock(&inode->i_lock);
+    spin_unlock(&inode_hash_lock);
+}
+EXPORT_SYMBOL(__insert_inode_hash);
 
 /*
  * Initialize the waitqueues and inode hash table.

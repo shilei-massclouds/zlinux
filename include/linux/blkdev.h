@@ -101,9 +101,9 @@ struct gendisk {
     unsigned long state;
 #define GD_NEED_PART_SCAN       0
 #define GD_READ_ONLY            1
-#define GD_DEAD             2
+#define GD_DEAD                 2
 #define GD_NATIVE_CAPACITY      3
-#define GD_ADDED            4
+#define GD_ADDED                4
 
     struct mutex open_mutex;    /* open/close mutex */
     unsigned open_partitions;   /* number of open partitions */
@@ -556,8 +556,6 @@ int __register_blkdev(unsigned int major, const char *name,
 #define register_blkdev(major, name) \
     __register_blkdev(major, name, NULL)
 
-dev_t blk_lookup_devt(const char *name, int partno);
-
 int iocb_bio_iopoll(struct kiocb *kiocb, struct io_comp_batch *iob,
                     unsigned int flags);
 
@@ -571,5 +569,60 @@ static inline bool bdev_is_partition(struct block_device *bdev)
 {
     return bdev->bd_partno;
 }
+
+struct block_device *
+blkdev_get_by_path(const char *path, fmode_t mode, void *holder);
+struct block_device *blkdev_get_by_dev(dev_t dev, fmode_t mode, void *holder);
+int bd_prepare_to_claim(struct block_device *bdev, void *holder);
+void bd_abort_claiming(struct block_device *bdev, void *holder);
+void blkdev_put(struct block_device *bdev, fmode_t mode);
+
+dev_t part_devt(struct gendisk *disk, u8 partno);
+void inc_diskseq(struct gendisk *disk);
+dev_t blk_lookup_devt(const char *name, int partno);
+void blk_request_module(dev_t devt);
+
+static inline int get_disk_ro(struct gendisk *disk)
+{
+    return disk->part0->bd_read_only || test_bit(GD_READ_ONLY, &disk->state);
+}
+
+static inline int bdev_read_only(struct block_device *bdev)
+{
+    return bdev->bd_read_only || get_disk_ro(bdev->bd_disk);
+}
+
+void bdev_add(struct block_device *bdev, dev_t dev);
+struct block_device *I_BDEV(struct inode *inode);
+int truncate_bdev_range(struct block_device *bdev, fmode_t mode, loff_t lstart,
+                        loff_t lend);
+
+static inline dev_t disk_devt(struct gendisk *disk)
+{
+    return MKDEV(disk->major, disk->first_minor);
+}
+
+static inline struct request_queue *bdev_get_queue(struct block_device *bdev)
+{
+    return bdev->bd_queue;  /* this is never NULL */
+}
+
+static inline unsigned int bdev_logical_block_size(struct block_device *bdev)
+{
+    return queue_logical_block_size(bdev_get_queue(bdev));
+}
+
+/* assumes size > 256 */
+static inline unsigned int blksize_bits(unsigned int size)
+{
+    unsigned int bits = 8;
+    do {
+        bits++;
+        size >>= 1;
+    } while (size > 256);
+    return bits;
+}
+
+int bdev_disk_changed(struct gendisk *disk, bool invalidate);
 
 #endif /* _LINUX_BLKDEV_H */

@@ -157,4 +157,7 @@ extern void kset_unregister(struct kset *kset);
 
 extern struct kobject *kset_find_obj(struct kset *, const char *);
 
+extern struct kobject * __must_check
+kobject_get_unless_zero(struct kobject *kobj);
+
 #endif /* _KOBJECT_H_ */

@@ -35,4 +35,15 @@ struct backing_dev_info *bdi_alloc(int node_id);
 
 extern struct backing_dev_info noop_backing_dev_info;
 
+__printf(2, 3)
+int bdi_register(struct backing_dev_info *bdi, const char *fmt, ...);
+
+__printf(2, 0)
+int bdi_register_va(struct backing_dev_info *bdi, const char *fmt,
+                    va_list args);
+
+void bdi_set_owner(struct backing_dev_info *bdi, struct device *owner);
+void bdi_unregister(struct backing_dev_info *bdi);
+
+
 #endif  /* _LINUX_BACKING_DEV_H */

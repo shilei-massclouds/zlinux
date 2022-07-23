@@ -43,7 +43,7 @@
 #include "acl.h"
 #endif
 
-static struct kmem_cache * ext2_inode_cachep;
+static struct kmem_cache *ext2_inode_cachep;
 
 static void init_once(void *foo)
 {
@@ -79,11 +79,15 @@ static void destroy_inodecache(void)
     kmem_cache_destroy(ext2_inode_cachep);
 }
 
+static int ext2_fill_super(struct super_block *sb, void *data, int silent)
+{
+    panic("%s: END!\n", __func__);
+}
+
 static struct dentry *ext2_mount(struct file_system_type *fs_type,
                                  int flags, const char *dev_name, void *data)
 {
-    //return mount_bdev(fs_type, flags, dev_name, data, ext2_fill_super);
-    panic("%s: END!\n", __func__);
+    return mount_bdev(fs_type, flags, dev_name, data, ext2_fill_super);
 }
 
 static struct file_system_type ext2_fs_type = {

@@ -35,9 +35,7 @@
 #include <linux/task_work.h>
 #endif
 #include <linux/sched/task.h>
-#if 0
 #include <uapi/linux/mount.h>
-#endif
 #include <linux/shmem_fs.h>
 #include <linux/mnt_idmapping.h>
 #include <linux/fs.h>
@@ -439,6 +437,122 @@ void mnt_drop_write(struct vfsmount *mnt)
 }
 EXPORT_SYMBOL_GPL(mnt_drop_write);
 
+static void warn_mandlock(void)
+{
+    pr_warn_once("=======================================================\n"
+                 "WARNING: The mand mount option has been deprecated and\n"
+                 "         and is ignored by this kernel. Remove the mand\n"
+                 "         option from the mount to silence this warning.\n"
+                 "=======================================================\n");
+}
+
+/*
+ * Handle reconfiguration of the mountpoint only without alteration of the
+ * superblock it refers to.  This is triggered by specifying MS_REMOUNT|MS_BIND
+ * to mount(2).
+ */
+static int do_reconfigure_mnt(struct path *path, unsigned int mnt_flags)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * change filesystem flags. dir should be a physical root of filesystem.
+ * If you've mounted a non-root directory somewhere and want to do remount
+ * on it - tough luck.
+ */
+static int do_remount(struct path *path, int ms_flags, int sb_flags,
+                      int mnt_flags, void *data)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * do loopback mount.
+ */
+static int do_loopback(struct path *path, const char *old_name, int recurse)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * recursively change the type of the mountpoint.
+ */
+static int do_change_type(struct path *path, int ms_flags)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static int do_move_mount_old(struct path *path, const char *old_name)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * Create a new mount using a superblock configuration and request it
+ * be added to the namespace tree.
+ */
+static int do_new_mount_fc(struct fs_context *fc, struct path *mountpoint,
+                           unsigned int mnt_flags)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * create a new mount for userspace and request it to be added into the
+ * namespace's tree
+ */
+static int do_new_mount(struct path *path, const char *fstype, int sb_flags,
+                        int mnt_flags, const char *name, void *data)
+{
+    struct file_system_type *type;
+    struct fs_context *fc;
+    const char *subtype = NULL;
+    int err = 0;
+
+    if (!fstype)
+        return -EINVAL;
+
+    type = get_fs_type(fstype);
+    if (!type)
+        return -ENODEV;
+
+    if (type->fs_flags & FS_HAS_SUBTYPE) {
+        subtype = strchr(fstype, '.');
+        if (subtype) {
+            subtype++;
+            if (!*subtype) {
+                put_filesystem(type);
+                return -EINVAL;
+            }
+        }
+    }
+
+    fc = fs_context_for_mount(type, sb_flags);
+    put_filesystem(type);
+    if (IS_ERR(fc))
+        return PTR_ERR(fc);
+
+    if (subtype)
+        err = vfs_parse_fs_string(fc, "subtype", subtype, strlen(subtype));
+    if (!err && name)
+        err = vfs_parse_fs_string(fc, "source", name, strlen(name));
+    if (!err)
+        err = parse_monolithic_mount_data(fc, data);
+#if 0
+    if (!err && !mount_capable(fc))
+        err = -EPERM;
+#endif
+    if (!err)
+        err = vfs_get_tree(fc);
+    if (!err)
+        err = do_new_mount_fc(fc, path, mnt_flags);
+
+    put_fs_context(fc);
+    panic("%s: name(%s) END!\n", __func__, name);
+    return err;
+}
+
 /*
  * Flags is a 32-bit value that allows up to 31 non-fs dependent flags to
  * be given to the mount() call (ie: read-only, no-dev, no-suid etc).
@@ -456,7 +570,73 @@ EXPORT_SYMBOL_GPL(mnt_drop_write);
 int path_mount(const char *dev_name, struct path *path,
                const char *type_page, unsigned long flags, void *data_page)
 {
-    panic("%s: END!\n", __func__);
+    unsigned int mnt_flags = 0, sb_flags;
+    int ret;
+
+    /* Discard magic */
+    if ((flags & MS_MGC_MSK) == MS_MGC_VAL)
+        flags &= ~MS_MGC_MSK;
+
+    /* Basic sanity checks */
+    if (data_page)
+        ((char *)data_page)[PAGE_SIZE - 1] = 0;
+
+    if (flags & MS_NOUSER)
+        return -EINVAL;
+
+#if 0
+    if (!may_mount())
+        return -EPERM;
+#endif
+    if (flags & SB_MANDLOCK)
+        warn_mandlock();
+
+    /* Default to relatime unless overriden */
+    if (!(flags & MS_NOATIME))
+        mnt_flags |= MNT_RELATIME;
+
+    /* Separate the per-mountpoint flags */
+    if (flags & MS_NOSUID)
+        mnt_flags |= MNT_NOSUID;
+    if (flags & MS_NODEV)
+        mnt_flags |= MNT_NODEV;
+    if (flags & MS_NOEXEC)
+        mnt_flags |= MNT_NOEXEC;
+    if (flags & MS_NOATIME)
+        mnt_flags |= MNT_NOATIME;
+    if (flags & MS_NODIRATIME)
+        mnt_flags |= MNT_NODIRATIME;
+    if (flags & MS_STRICTATIME)
+        mnt_flags &= ~(MNT_RELATIME | MNT_NOATIME);
+    if (flags & MS_RDONLY)
+        mnt_flags |= MNT_READONLY;
+    if (flags & MS_NOSYMFOLLOW)
+        mnt_flags |= MNT_NOSYMFOLLOW;
+
+    /* The default atime for remount is preservation */
+    if ((flags & MS_REMOUNT) &&
+        ((flags & (MS_NOATIME | MS_NODIRATIME |
+                   MS_RELATIME | MS_STRICTATIME)) == 0)) {
+        mnt_flags &= ~MNT_ATIME_MASK;
+        mnt_flags |= path->mnt->mnt_flags & MNT_ATIME_MASK;
+    }
+
+    sb_flags = flags & (SB_RDONLY | SB_SYNCHRONOUS | SB_MANDLOCK | SB_DIRSYNC |
+                        SB_SILENT | SB_POSIXACL | SB_LAZYTIME | SB_I_VERSION);
+
+    if ((flags & (MS_REMOUNT | MS_BIND)) == (MS_REMOUNT | MS_BIND))
+        return do_reconfigure_mnt(path, mnt_flags);
+    if (flags & MS_REMOUNT)
+        return do_remount(path, flags, sb_flags, mnt_flags, data_page);
+    if (flags & MS_BIND)
+        return do_loopback(path, dev_name, flags & MS_REC);
+    if (flags & (MS_SHARED | MS_PRIVATE | MS_SLAVE | MS_UNBINDABLE))
+        return do_change_type(path, flags);
+    if (flags & MS_MOVE)
+        return do_move_mount_old(path, dev_name);
+
+    return do_new_mount(path, type_page, sb_flags, mnt_flags,
+                        dev_name, data_page);
 }
 
 void __init mnt_init(void)

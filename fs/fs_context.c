@@ -89,6 +89,19 @@ static int legacy_fs_context_dup(struct fs_context *fc, struct fs_context *src_f
  */
 static int legacy_parse_param(struct fs_context *fc, struct fs_parameter *param)
 {
+    struct legacy_fs_context *ctx = fc->fs_private;
+    unsigned int size = ctx->data_size;
+    size_t len = 0;
+    int ret;
+
+    ret = vfs_parse_fs_param_source(fc, param);
+    if (ret != -ENOPARAM)
+        return ret;
+
+    if (ctx->param_type == LEGACY_FS_MONOLITHIC_PARAMS)
+        return invalf(fc, "VFS: Legacy: Can't mix monolithic and "
+                      "individual options");
+
     panic("%s: END!\n", __func__);
 }
 
@@ -97,7 +110,6 @@ static int legacy_parse_param(struct fs_context *fc, struct fs_parameter *param)
  */
 static int legacy_parse_monolithic(struct fs_context *fc, void *data)
 {
-#if 0
     struct legacy_fs_context *ctx = fc->fs_private;
 
     if (ctx->param_type != LEGACY_FS_UNSET_PARAMS) {
@@ -109,6 +121,7 @@ static int legacy_parse_monolithic(struct fs_context *fc, void *data)
     ctx->param_type = LEGACY_FS_MONOLITHIC_PARAMS;
     if (!ctx->legacy_data)
         return 0;
+#if 0
 
     if (fc->fs_type->fs_flags & FS_BINARY_MOUNTDATA)
         return 0;
@@ -122,7 +135,6 @@ static int legacy_parse_monolithic(struct fs_context *fc, void *data)
  */
 static int legacy_get_tree(struct fs_context *fc)
 {
-#if 0
     struct legacy_fs_context *ctx = fc->fs_private;
     struct super_block *sb;
     struct dentry *root;
@@ -136,8 +148,6 @@ static int legacy_get_tree(struct fs_context *fc)
     BUG_ON(!sb);
 
     fc->root = root;
-#endif
-    panic("%s: END!\n", __func__);
     return 0;
 }
 

@@ -179,6 +179,54 @@ int __class_register(struct class *cls, struct lock_class_key *key)
     return error;
 }
 
+static void class_create_release(struct class *cls)
+{
+    pr_debug("%s called for %s\n", __func__, cls->name);
+    kfree(cls);
+}
+
+/**
+ * __class_create - create a struct class structure
+ * @owner: pointer to the module that is to "own" this struct class
+ * @name: pointer to a string for the name of this class.
+ * @key: the lock_class_key for this class; used by mutex lock debugging
+ *
+ * This is used to create a struct class pointer that can then be used
+ * in calls to device_create().
+ *
+ * Returns &struct class pointer on success, or ERR_PTR() on error.
+ *
+ * Note, the pointer created here is to be destroyed when finished by
+ * making a call to class_destroy().
+ */
+struct class *__class_create(struct module *owner, const char *name,
+                             struct lock_class_key *key)
+{
+    struct class *cls;
+    int retval;
+
+    cls = kzalloc(sizeof(*cls), GFP_KERNEL);
+    if (!cls) {
+        retval = -ENOMEM;
+        goto error;
+    }
+
+    cls->name = name;
+    cls->owner = owner;
+    cls->class_release = class_create_release;
+
+    retval = __class_register(cls, key);
+    if (retval)
+        goto error;
+
+    return cls;
+
+error:
+    kfree(cls);
+    return ERR_PTR(retval);
+}
+EXPORT_SYMBOL_GPL(__class_create);
+
 int __init classes_init(void)
 {
     class_kset = kset_create_and_add("class", NULL, NULL);

@@ -8,6 +8,7 @@ obj-y = fork.o panic.o params.o cpu.o kthread.o \
 	resource.o module.o user.o cred.o
 
 obj-y += user_namespace.o
+obj-y += kmod.o
 
 obj-y += sched/
 obj-y += locking/

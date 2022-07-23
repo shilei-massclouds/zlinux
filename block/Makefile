@@ -8,3 +8,4 @@ obj-y   += fops.o #bio.o elevator.o blk-sysfs.o
 obj-y 	+= blk-mq.o blk-mq-tag.o blk-mq-cpumap.o
 obj-y 	+= blk-mq-virtio.o ioctl.o
 obj-y 	+= genhd.o
+obj-y 	+= partitions/

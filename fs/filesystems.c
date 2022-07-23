@@ -12,8 +12,8 @@
 #include <linux/syscalls.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
-#include <linux/kmod.h>
 #endif
+#include <linux/kmod.h>
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/slab.h>
@@ -131,3 +131,37 @@ int __init list_bdev_fs_names(char *buf, size_t size)
     read_unlock(&file_systems_lock);
     return count;
 }
+
+static struct file_system_type *__get_fs_type(const char *name, int len)
+{
+    struct file_system_type *fs;
+
+    read_lock(&file_systems_lock);
+    fs = *(find_filesystem(name, len));
+    if (fs && !try_module_get(fs->owner))
+        fs = NULL;
+    read_unlock(&file_systems_lock);
+    return fs;
+}
+
+struct file_system_type *get_fs_type(const char *name)
+{
+    struct file_system_type *fs;
+    const char *dot = strchr(name, '.');
+    int len = dot ? dot - name : strlen(name);
+
+    fs = __get_fs_type(name, len);
+    if (!fs && (request_module("fs-%.*s", len, name) == 0)) {
+        fs = __get_fs_type(name, len);
+        if (!fs)
+            pr_warn_once("request_module fs-%.*s succeeded, but still no fs?\n",
+                         len, name);
+    }
+
+    if (dot && fs && !(fs->fs_flags & FS_HAS_SUBTYPE)) {
+        put_filesystem(fs);
+        fs = NULL;
+    }
+    return fs;
+}
+EXPORT_SYMBOL(get_fs_type);

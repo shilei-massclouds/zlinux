@@ -586,3 +586,23 @@ void kill_block_super(struct super_block *sb)
     panic("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL(kill_block_super);
+
+struct dentry *mount_bdev(struct file_system_type *fs_type,
+                          int flags, const char *dev_name, void *data,
+                          int (*fill_super)(struct super_block *, void *, int))
+{
+    struct block_device *bdev;
+    struct super_block *s;
+    fmode_t mode = FMODE_READ | FMODE_EXCL;
+    int error = 0;
+
+    if (!(flags & SB_RDONLY))
+        mode |= FMODE_WRITE;
+
+    bdev = blkdev_get_by_path(dev_name, mode, fs_type);
+    if (IS_ERR(bdev))
+        return ERR_CAST(bdev);
+
+    panic("%s: dev(%s) END!\n", __func__, dev_name);
+}
+EXPORT_SYMBOL(mount_bdev);

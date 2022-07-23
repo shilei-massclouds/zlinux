@@ -159,6 +159,24 @@ static inline int printk_get_level(const char *buffer)
 #define pr_warn_once(fmt, ...) \
     printk_once(KERN_WARNING pr_fmt(fmt), ##__VA_ARGS__)
 
+#if 0
+#define printk_ratelimited(fmt, ...)                    \
+({                                  \
+    static DEFINE_RATELIMIT_STATE(_rs,              \
+                      DEFAULT_RATELIMIT_INTERVAL,   \
+                      DEFAULT_RATELIMIT_BURST);     \
+                                    \
+    if (__ratelimit(&_rs))                      \
+        printk(fmt, ##__VA_ARGS__);             \
+})
+#else
+#define printk_ratelimited(fmt, ...) \
+    printk(fmt, ##__VA_ARGS__);
+#endif
+
+#define pr_warn_ratelimited(fmt, ...) \
+    printk_ratelimited(KERN_WARNING pr_fmt(fmt), ##__VA_ARGS__)
+
 asmlinkage __printf(1, 2) __cold
 int printk(const char *fmt, ...);
 

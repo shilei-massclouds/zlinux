@@ -69,6 +69,82 @@
 #define IOP_DEFAULT_READLINK    0x0010
 
 /*
+ * flags in file.f_mode.  Note that FMODE_READ and FMODE_WRITE must correspond
+ * to O_WRONLY and O_RDWR via the strange trick in do_dentry_open()
+ */
+
+/* file is open for reading */
+#define FMODE_READ      ((__force fmode_t)0x1)
+/* file is open for writing */
+#define FMODE_WRITE     ((__force fmode_t)0x2)
+/* file is seekable */
+#define FMODE_LSEEK     ((__force fmode_t)0x4)
+/* file can be accessed using pread */
+#define FMODE_PREAD     ((__force fmode_t)0x8)
+/* file can be accessed using pwrite */
+#define FMODE_PWRITE        ((__force fmode_t)0x10)
+/* File is opened for execution with sys_execve / sys_uselib */
+#define FMODE_EXEC      ((__force fmode_t)0x20)
+/* File is opened with O_NDELAY (only set for block devices) */
+#define FMODE_NDELAY        ((__force fmode_t)0x40)
+/* File is opened with O_EXCL (only set for block devices) */
+#define FMODE_EXCL      ((__force fmode_t)0x80)
+/* File is opened using open(.., 3, ..) and is writeable only for ioctls
+   (specialy hack for floppy.c) */
+#define FMODE_WRITE_IOCTL   ((__force fmode_t)0x100)
+/* 32bit hashes as llseek() offset (for directories) */
+#define FMODE_32BITHASH         ((__force fmode_t)0x200)
+/* 64bit hashes as llseek() offset (for directories) */
+#define FMODE_64BITHASH         ((__force fmode_t)0x400)
+
+/*
+ * Don't update ctime and mtime.
+ *
+ * Currently a special hack for the XFS open_by_handle ioctl, but we'll
+ * hopefully graduate it to a proper O_CMTIME flag supported by open(2) soon.
+ */
+#define FMODE_NOCMTIME      ((__force fmode_t)0x800)
+
+/* Expect random access pattern */
+#define FMODE_RANDOM        ((__force fmode_t)0x1000)
+
+/* File is huge (eg. /dev/mem): treat loff_t as unsigned */
+#define FMODE_UNSIGNED_OFFSET   ((__force fmode_t)0x2000)
+
+/* File is opened with O_PATH; almost nothing can be done with it */
+#define FMODE_PATH      ((__force fmode_t)0x4000)
+
+/* File needs atomic accesses to f_pos */
+#define FMODE_ATOMIC_POS    ((__force fmode_t)0x8000)
+/* Write access to underlying fs */
+#define FMODE_WRITER        ((__force fmode_t)0x10000)
+/* Has read method(s) */
+#define FMODE_CAN_READ          ((__force fmode_t)0x20000)
+/* Has write method(s) */
+#define FMODE_CAN_WRITE         ((__force fmode_t)0x40000)
+
+#define FMODE_OPENED        ((__force fmode_t)0x80000)
+#define FMODE_CREATED       ((__force fmode_t)0x100000)
+
+/* File is stream-like */
+#define FMODE_STREAM        ((__force fmode_t)0x200000)
+
+/* File was opened by fanotify and shouldn't generate fanotify events */
+#define FMODE_NONOTIFY      ((__force fmode_t)0x4000000)
+
+/* File is capable of returning -EAGAIN if I/O will block */
+#define FMODE_NOWAIT        ((__force fmode_t)0x8000000)
+
+/* File represents mount that needs unmounting */
+#define FMODE_NEED_UNMOUNT  ((__force fmode_t)0x10000000)
+
+/* File does not contribute to nr_files count */
+#define FMODE_NOACCOUNT     ((__force fmode_t)0x20000000)
+
+/* File supports async buffered reads */
+#define FMODE_BUF_RASYNC    ((__force fmode_t)0x40000000)
+
+/*
  * Whiteout is represented by a char device.  The following constants define the
  * mode and device number to use.
  */
@@ -102,6 +178,7 @@ struct fsverity_operations;
 struct fs_context;
 struct fs_parameter_spec;
 struct fileattr;
+struct file_lock;
 
 /* legacy typedef, should eventually be removed */
 typedef void *fl_owner_t;
@@ -1096,6 +1173,7 @@ static inline void sb_end_write(struct super_block *sb)
  */
 void inode_init_owner(struct user_namespace *mnt_userns, struct inode *inode,
                       const struct inode *dir, umode_t mode);
+extern bool may_open_dev(const struct path *path);
 
 extern const struct file_operations def_blk_fops;
 extern const struct file_operations def_chr_fops;
@@ -1163,5 +1241,50 @@ do_splice_direct(struct file *in, loff_t *ppos, struct file *out,
                  loff_t *opos, size_t len, unsigned int flags);
 
 int __init list_bdev_fs_names(char *buf, size_t size);
+
+extern struct file_system_type *get_fs_type(const char *name);
+extern struct super_block *get_super(struct block_device *);
+extern struct super_block *get_active_super(struct block_device *bdev);
+extern void drop_super(struct super_block *sb);
+extern void drop_super_exclusive(struct super_block *sb);
+extern void iterate_supers(void (*)(struct super_block *, void *), void *);
+extern void iterate_supers_type(struct file_system_type *,
+                                void (*)(struct super_block *, void *), void *);
+
+extern struct dentry *
+mount_bdev(struct file_system_type *fs_type,
+           int flags, const char *dev_name, void *data,
+           int (*fill_super)(struct super_block *, void *, int));
+
+extern struct inode *
+ilookup5_nowait(struct super_block *sb, unsigned long hashval,
+                int (*test)(struct inode *, void *), void *data);
+
+extern struct inode *
+ilookup5(struct super_block *sb, unsigned long hashval,
+         int (*test)(struct inode *, void *), void *data);
+
+extern struct inode *ilookup(struct super_block *sb, unsigned long ino);
+
+extern void __insert_inode_hash(struct inode *, unsigned long hashval);
+static inline void insert_inode_hash(struct inode *inode)
+{
+    __insert_inode_hash(inode, inode->i_ino);
+}
+
+/*
+ * NOTE: in a 32bit arch with a preemptable kernel and
+ * an UP compile the i_size_read/write must be atomic
+ * with respect to the local cpu (unlike with preempt disabled),
+ * but they don't need to be atomic with respect to other cpus like in
+ * true SMP (so they need either to either locally disable irq around
+ * the read or for example on x86 they can be still implemented as a
+ * cmpxchg8b without the need of the lock prefix). For SMP compiles
+ * and 64bit archs it makes no difference if preempt is enabled or not.
+ */
+static inline loff_t i_size_read(const struct inode *inode)
+{
+    return inode->i_size;
+}
 
 #endif /* _LINUX_FS_H */
