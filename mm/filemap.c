@@ -117,3 +117,26 @@ int filemap_write_and_wait_range(struct address_space *mapping,
     return err;
 }
 EXPORT_SYMBOL(filemap_write_and_wait_range);
+
+static struct page *
+do_read_cache_page(struct address_space *mapping,
+                   pgoff_t index, filler_t *filler, void *data, gfp_t gfp)
+{
+    struct folio *folio;
+
+#if 0
+    folio = do_read_cache_folio(mapping, index, filler, data, gfp);
+    if (IS_ERR(folio))
+        return &folio->page;
+    return folio_file_page(folio, index);
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+struct page *read_cache_page(struct address_space *mapping,
+                             pgoff_t index, filler_t *filler, void *data)
+{
+    return do_read_cache_page(mapping, index, filler, data,
+                              mapping_gfp_mask(mapping));
+}
+EXPORT_SYMBOL(read_cache_page);

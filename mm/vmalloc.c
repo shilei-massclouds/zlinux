@@ -1546,7 +1546,6 @@ __vmalloc_node_range(unsigned long size, unsigned long align,
      */
     clear_vm_uninitialized_flag(area);
 
-    printk("%s: 3\n", __func__);
     return area->addr;
 
  fail:

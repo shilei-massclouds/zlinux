@@ -23,5 +23,15 @@ struct parsed_partitions {
     char *pp_buf;
 };
 
+typedef struct {
+    struct page *v;
+} Sector;
+
 int efi_partition(struct parsed_partitions *state);
 int msdos_partition(struct parsed_partitions *state);
+
+void *read_part_sector(struct parsed_partitions *state, sector_t n, Sector *p);
+static inline void put_dev_sector(Sector p)
+{
+    put_page(p.v);
+}

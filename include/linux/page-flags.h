@@ -197,6 +197,8 @@ static __always_inline void __ClearPage##uname(struct page *page)   \
 static __always_inline int TestClearPage##uname(struct page *page) \
 { return test_and_clear_bit(PG_##lname, &policy(page, 1)->flags); }
 
+PAGEFLAG(Error, error, PF_NO_TAIL) TESTCLEARFLAG(Error, error, PF_NO_TAIL)
+
 PAGEFLAG(LRU, lru, PF_HEAD)
     __CLEARPAGEFLAG(LRU, lru, PF_HEAD)
     TESTCLEARFLAG(LRU, lru, PF_HEAD)

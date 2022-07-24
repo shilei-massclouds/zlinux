@@ -36,6 +36,8 @@ enum mapping_flags {
     AS_LARGE_FOLIO_SUPPORT = 6,
 };
 
+typedef int filler_t(void *, struct page *);
+
 /**
  * mapping_set_large_folios() - Indicate the file supports large folios.
  * @mapping: The file.
@@ -74,6 +76,21 @@ int filemap_write_and_wait_range(struct address_space *mapping,
 static inline int filemap_write_and_wait(struct address_space *mapping)
 {
     return filemap_write_and_wait_range(mapping, 0, LLONG_MAX);
+}
+
+struct page *read_cache_page(struct address_space *, pgoff_t index,
+                             filler_t *filler, void *data);
+
+static inline struct page *
+read_mapping_page(struct address_space *mapping,
+                  pgoff_t index, struct file *file)
+{
+    return read_cache_page(mapping, index, NULL, file);
+}
+
+static inline gfp_t mapping_gfp_mask(struct address_space * mapping)
+{
+    return mapping->gfp_mask;
 }
 
 #endif /* _LINUX_PAGEMAP_H */

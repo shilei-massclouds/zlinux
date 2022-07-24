@@ -627,4 +627,9 @@ int bdev_disk_changed(struct gendisk *disk, bool invalidate);
 
 void set_capacity(struct gendisk *disk, sector_t size);
 
+static inline loff_t bdev_nr_bytes(struct block_device *bdev)
+{
+    return (loff_t)bdev_nr_sectors(bdev) << SECTOR_SHIFT;
+}
+
 #endif /* _LINUX_BLKDEV_H */

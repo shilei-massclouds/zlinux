@@ -59,17 +59,16 @@ void __local_bh_enable_ip(unsigned long ip, unsigned int cnt)
      */
     __preempt_count_sub(cnt - 1);
 
-#if 0
     if (unlikely(!in_interrupt() && local_softirq_pending())) {
+#if 0
         /*
          * Run softirq if any pending. And do it in its own stack
          * as we may be calling this deep in a task call stack already.
          */
         do_softirq();
-    }
 #endif
+        panic("%s: END!\n", __func__);
+    }
 
     preempt_count_dec();
-
-    pr_warn("%s: in_interrupt(%d) END!\n", __func__, in_interrupt());
 }
