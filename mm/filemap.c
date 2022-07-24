@@ -83,3 +83,37 @@ int generic_file_mmap(struct file *file, struct vm_area_struct *vma)
     return 0;
 }
 EXPORT_SYMBOL(generic_file_mmap);
+
+/* Returns true if writeback might be needed or already in progress. */
+static bool mapping_needs_writeback(struct address_space *mapping)
+{
+    return mapping->nrpages;
+}
+
+int filemap_check_errors(struct address_space *mapping)
+{
+    int ret = 0;
+    /* Check for outstanding write errors */
+    if (test_bit(AS_ENOSPC, &mapping->flags) &&
+        test_and_clear_bit(AS_ENOSPC, &mapping->flags))
+        ret = -ENOSPC;
+    if (test_bit(AS_EIO, &mapping->flags) &&
+        test_and_clear_bit(AS_EIO, &mapping->flags))
+        ret = -EIO;
+    return ret;
+}
+EXPORT_SYMBOL(filemap_check_errors);
+
+int filemap_write_and_wait_range(struct address_space *mapping,
+                                 loff_t lstart, loff_t lend)
+{
+    int err = 0;
+
+    if (mapping_needs_writeback(mapping)) {
+        panic("%s: mapping_needs_writeback!\n", __func__);
+    } else {
+        err = filemap_check_errors(mapping);
+    }
+    return err;
+}
+EXPORT_SYMBOL(filemap_write_and_wait_range);

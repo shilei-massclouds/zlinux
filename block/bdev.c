@@ -391,3 +391,31 @@ void blkdev_put(struct block_device *bdev, fmode_t mode)
     pr_warn("%s: NO Implementation!\n", __func__);
 }
 EXPORT_SYMBOL(blkdev_put);
+
+/*
+ * Write out and wait upon all the dirty data associated with a block
+ * device via its mapping.  Does not take the superblock lock.
+ */
+int sync_blockdev(struct block_device *bdev)
+{
+    if (!bdev)
+        return 0;
+    return filemap_write_and_wait(bdev->bd_inode->i_mapping);
+}
+EXPORT_SYMBOL(sync_blockdev);
+
+/* Invalidate clean unused buffers and pagecache. */
+void invalidate_bdev(struct block_device *bdev)
+{
+    struct address_space *mapping = bdev->bd_inode->i_mapping;
+
+    if (mapping->nrpages) {
+#if 0
+        invalidate_bh_lrus();
+        lru_add_drain_all();    /* make sure all lru add caches are flushed */
+        invalidate_mapping_pages(mapping, 0, -1);
+#endif
+        panic("%s: nrpages > 0 \n", __func__);
+    }
+}
+EXPORT_SYMBOL(invalidate_bdev);

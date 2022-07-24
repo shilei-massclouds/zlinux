@@ -203,4 +203,10 @@ request_irq(unsigned int irq, irq_handler_t handler,
     return request_threaded_irq(irq, handler, NULL, flags, name, dev);
 }
 
+#ifndef local_softirq_pending_ref
+#define local_softirq_pending_ref irq_stat.__softirq_pending
+#endif
+
+#define local_softirq_pending() (__this_cpu_read(local_softirq_pending_ref))
+
 #endif /* _LINUX_INTERRUPT_H */

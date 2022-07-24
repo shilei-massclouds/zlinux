@@ -137,6 +137,7 @@ do { \
     barrier(); \
 } while (0)
 
+#define preemptible()   (preempt_count() == 0 && !irqs_disabled())
 
 #define NMI_MASK    (__IRQ_MASK(NMI_BITS) << NMI_SHIFT)
 
@@ -155,7 +156,8 @@ do { \
  * in_serving_softirq() - We're in softirq context
  * in_task()        - We're in task context
  */
-#define in_nmi()    (nmi_count())
+#define in_nmi()        (nmi_count())
+#define in_hardirq()    (hardirq_count())
 
 /*
  * The following macros are deprecated and should not be used in new code:

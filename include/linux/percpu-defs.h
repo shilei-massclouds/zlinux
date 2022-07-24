@@ -236,6 +236,10 @@ do {                                    \
     DECLARE_PER_CPU_SECTION(type, name, PER_CPU_ALIGNED_SECTION)    \
     ____cacheline_aligned
 
+#define DEFINE_PER_CPU_ALIGNED(type, name)              \
+    DEFINE_PER_CPU_SECTION(type, name, PER_CPU_ALIGNED_SECTION) \
+    ____cacheline_aligned
+
 /*
  * Must be an lvalue. Since @var must be a simple identifier,
  * we force a syntax error here if it isn't.

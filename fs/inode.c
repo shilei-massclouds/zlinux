@@ -554,6 +554,22 @@ void __insert_inode_hash(struct inode *inode, unsigned long hashval)
 }
 EXPORT_SYMBOL(__insert_inode_hash);
 
+/**
+ *  __remove_inode_hash - remove an inode from the hash
+ *  @inode: inode to unhash
+ *
+ *  Remove an inode from the superblock.
+ */
+void __remove_inode_hash(struct inode *inode)
+{
+    spin_lock(&inode_hash_lock);
+    spin_lock(&inode->i_lock);
+    hlist_del_init_rcu(&inode->i_hash);
+    spin_unlock(&inode->i_lock);
+    spin_unlock(&inode_hash_lock);
+}
+EXPORT_SYMBOL(__remove_inode_hash);
+
 /*
  * Initialize the waitqueues and inode hash table.
  */

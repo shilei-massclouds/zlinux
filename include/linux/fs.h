@@ -179,6 +179,9 @@ struct fs_context;
 struct fs_parameter_spec;
 struct fileattr;
 struct file_lock;
+struct iattr;
+struct timespec64;
+struct dir_context;
 
 /* legacy typedef, should eventually be removed */
 typedef void *fl_owner_t;
@@ -1285,6 +1288,13 @@ static inline void insert_inode_hash(struct inode *inode)
 static inline loff_t i_size_read(const struct inode *inode)
 {
     return inode->i_size;
+}
+
+extern void __remove_inode_hash(struct inode *);
+static inline void remove_inode_hash(struct inode *inode)
+{
+    if (!inode_unhashed(inode) && !hlist_fake(&inode->i_hash))
+        __remove_inode_hash(inode);
 }
 
 #endif /* _LINUX_FS_H */

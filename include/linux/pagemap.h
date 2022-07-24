@@ -68,4 +68,12 @@ static inline void mapping_set_unevictable(struct address_space *mapping)
     set_bit(AS_UNEVICTABLE, &mapping->flags);
 }
 
+int filemap_write_and_wait_range(struct address_space *mapping,
+                                 loff_t lstart, loff_t lend);
+
+static inline int filemap_write_and_wait(struct address_space *mapping)
+{
+    return filemap_write_and_wait_range(mapping, 0, LLONG_MAX);
+}
+
 #endif /* _LINUX_PAGEMAP_H */

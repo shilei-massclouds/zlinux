@@ -905,3 +905,55 @@ void *xa_find_after(struct xarray *xa, unsigned long *indexp,
     return entry;
 }
 EXPORT_SYMBOL(xa_find_after);
+
+static void *xas_result(struct xa_state *xas, void *curr)
+{
+    if (xa_is_zero(curr))
+        return NULL;
+    if (xas_error(xas))
+        curr = xas->xa_node;
+    return curr;
+}
+
+/**
+ * __xa_erase() - Erase this entry from the XArray while locked.
+ * @xa: XArray.
+ * @index: Index into array.
+ *
+ * After this function returns, loading from @index will return %NULL.
+ * If the index is part of a multi-index entry, all indices will be erased
+ * and none of the entries will be part of a multi-index entry.
+ *
+ * Context: Any context.  Expects xa_lock to be held on entry.
+ * Return: The entry which used to be at this index.
+ */
+void *__xa_erase(struct xarray *xa, unsigned long index)
+{
+    XA_STATE(xas, xa, index);
+    return xas_result(&xas, xas_store(&xas, NULL));
+}
+EXPORT_SYMBOL(__xa_erase);
+
+/**
+ * xa_erase() - Erase this entry from the XArray.
+ * @xa: XArray.
+ * @index: Index of entry.
+ *
+ * After this function returns, loading from @index will return %NULL.
+ * If the index is part of a multi-index entry, all indices will be erased
+ * and none of the entries will be part of a multi-index entry.
+ *
+ * Context: Any context.  Takes and releases the xa_lock.
+ * Return: The entry which used to be at this index.
+ */
+void *xa_erase(struct xarray *xa, unsigned long index)
+{
+    void *entry;
+
+    xa_lock(xa);
+    entry = __xa_erase(xa, index);
+    xa_unlock(xa);
+
+    return entry;
+}
+EXPORT_SYMBOL(xa_erase);

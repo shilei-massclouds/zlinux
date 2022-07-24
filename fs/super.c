@@ -596,6 +596,7 @@ struct dentry *mount_bdev(struct file_system_type *fs_type,
     fmode_t mode = FMODE_READ | FMODE_EXCL;
     int error = 0;
 
+    printk("###### %s: in_interrupt(%d)\n", __func__, in_interrupt());
     if (!(flags & SB_RDONLY))
         mode |= FMODE_WRITE;
 

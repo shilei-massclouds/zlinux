@@ -36,12 +36,40 @@
 #include <asm/softirq_stack.h>
 #endif
 
+DEFINE_PER_CPU_ALIGNED(irq_cpustat_t, irq_stat);
+EXPORT_PER_CPU_SYMBOL(irq_stat);
+
 unsigned int __weak arch_dynirq_lower_bound(unsigned int from)
 {
     return from;
 }
 
+static void __local_bh_enable(unsigned int cnt)
+{
+    __preempt_count_sub(cnt);
+}
+
 void __local_bh_enable_ip(unsigned long ip, unsigned int cnt)
 {
-    pr_warn("%s: END!\n", __func__);
+    WARN_ON_ONCE(in_hardirq());
+
+    /*
+     * Keep preemption disabled until we are done with
+     * softirq processing:
+     */
+    __preempt_count_sub(cnt - 1);
+
+#if 0
+    if (unlikely(!in_interrupt() && local_softirq_pending())) {
+        /*
+         * Run softirq if any pending. And do it in its own stack
+         * as we may be calling this deep in a task call stack already.
+         */
+        do_softirq();
+    }
+#endif
+
+    preempt_count_dec();
+
+    pr_warn("%s: in_interrupt(%d) END!\n", __func__, in_interrupt());
 }

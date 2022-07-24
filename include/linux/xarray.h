@@ -811,4 +811,7 @@ xa_parent(const struct xarray *xa, const struct xa_node *node)
     return rcu_dereference_check(node->parent);
 }
 
+void *xa_erase(struct xarray *, unsigned long index);
+
+
 #endif /* _LINUX_XARRAY_H */

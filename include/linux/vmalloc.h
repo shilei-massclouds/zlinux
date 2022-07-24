@@ -127,4 +127,7 @@ arch_vmap_pte_range_map_size(unsigned long addr, unsigned long end,
 }
 #endif
 
+extern void *vmalloc(unsigned long size) __alloc_size(1);
+extern void *vzalloc(unsigned long size) __alloc_size(1);
+
 #endif /* _LINUX_VMALLOC_H */

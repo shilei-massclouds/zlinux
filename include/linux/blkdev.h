@@ -625,4 +625,6 @@ static inline unsigned int blksize_bits(unsigned int size)
 
 int bdev_disk_changed(struct gendisk *disk, bool invalidate);
 
+void set_capacity(struct gendisk *disk, sector_t size);
+
 #endif /* _LINUX_BLKDEV_H */

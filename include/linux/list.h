@@ -357,4 +357,23 @@ static inline int hlist_unhashed(const struct hlist_node *h)
     return !h->pprev;
 }
 
+/**
+ * hlist_fake: Is this node a fake hlist?
+ * @h: Node to check for being a self-referential fake hlist.
+ */
+static inline bool hlist_fake(struct hlist_node *h)
+{
+    return h->pprev == &h->next;
+}
+
+static inline void __hlist_del(struct hlist_node *n)
+{
+    struct hlist_node *next = n->next;
+    struct hlist_node **pprev = n->pprev;
+
+    WRITE_ONCE(*pprev, next);
+    if (next)
+        WRITE_ONCE(next->pprev, pprev);
+}
+
 #endif /* _LINUX_LIST_H */

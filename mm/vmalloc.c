@@ -1546,6 +1546,7 @@ __vmalloc_node_range(unsigned long size, unsigned long align,
      */
     clear_vm_uninitialized_flag(area);
 
+    printk("%s: 3\n", __func__);
     return area->addr;
 
  fail:
@@ -1865,3 +1866,23 @@ bool is_vmalloc_addr(const void *x)
     return addr >= VMALLOC_START && addr < VMALLOC_END;
 }
 EXPORT_SYMBOL(is_vmalloc_addr);
+
+/**
+ * vzalloc - allocate virtually contiguous memory with zero fill
+ * @size:    allocation size
+ *
+ * Allocate enough pages to cover @size from the page level
+ * allocator and map them into contiguous kernel virtual space.
+ * The memory allocated is set to zero.
+ *
+ * For tight control over page level allocator and protection flags
+ * use __vmalloc() instead.
+ *
+ * Return: pointer to the allocated memory or %NULL on error
+ */
+void *vzalloc(unsigned long size)
+{
+    return __vmalloc_node(size, 1, GFP_KERNEL | __GFP_ZERO, NUMA_NO_NODE,
+                          __builtin_return_address(0));
+}
+EXPORT_SYMBOL(vzalloc);

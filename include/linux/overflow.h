@@ -73,4 +73,37 @@ static inline __must_check size_t __ab_c_size(size_t a, size_t b, size_t c)
                 sizeof(*(p)->member) + __must_be_array((p)->member), \
                 sizeof(*(p)))
 
+/**
+ * size_mul() - Calculate size_t multiplication with saturation at SIZE_MAX
+ *
+ * @factor1: first factor
+ * @factor2: second factor
+ *
+ * Returns: calculate @factor1 * @factor2, both promoted to size_t,
+ * with any overflow causing the return value to be SIZE_MAX. The
+ * lvalue must be size_t to avoid implicit type conversion.
+ */
+static inline size_t __must_check size_mul(size_t factor1, size_t factor2)
+{
+    size_t bytes;
+
+    if (check_mul_overflow(factor1, factor2, &bytes))
+        return SIZE_MAX;
+
+    return bytes;
+}
+
+/**
+ * array_size() - Calculate size of 2-dimensional array.
+ *
+ * @a: dimension one
+ * @b: dimension two
+ *
+ * Calculates size of 2-dimensional array: @a * @b.
+ *
+ * Returns: number of bytes needed to represent the array or SIZE_MAX on
+ * overflow.
+ */
+#define array_size(a, b)    size_mul(a, b)
+
 #endif /* __LINUX_OVERFLOW_H */
