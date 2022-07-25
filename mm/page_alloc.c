@@ -3392,3 +3392,14 @@ alloc_large_system_hash(const char *tablename,
 
     return table;
 }
+
+struct folio *
+__folio_alloc(gfp_t gfp, unsigned int order, int preferred_nid,
+              nodemask_t *nodemask)
+{
+    struct page *page = __alloc_pages(gfp | __GFP_COMP, order,
+                                      preferred_nid, nodemask);
+
+    return (struct folio *)page;
+}
+EXPORT_SYMBOL(__folio_alloc);

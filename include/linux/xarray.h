@@ -813,5 +813,22 @@ xa_parent(const struct xarray *xa, const struct xa_node *node)
 
 void *xa_erase(struct xarray *, unsigned long index);
 
+/**
+ * xas_set_update() - Set up XArray operation state for a callback.
+ * @xas: XArray operation state.
+ * @update: Function to call when updating a node.
+ *
+ * The XArray can notify a caller after it has updated an xa_node.
+ * This is advanced functionality and is only needed by the page cache.
+ */
+static inline void xas_set_update(struct xa_state *xas, xa_update_node_t update)
+{
+    xas->xa_update = update;
+}
+
+static inline void xas_set_lru(struct xa_state *xas, struct list_lru *lru)
+{
+    xas->xa_lru = lru;
+}
 
 #endif /* _LINUX_XARRAY_H */

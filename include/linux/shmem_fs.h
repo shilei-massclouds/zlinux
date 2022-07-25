@@ -55,4 +55,10 @@ static inline struct shmem_inode_info *SHMEM_I(struct inode *inode)
     return container_of(inode, struct shmem_inode_info, vfs_inode);
 }
 
+extern const struct address_space_operations shmem_aops;
+static inline bool shmem_mapping(struct address_space *mapping)
+{
+    return mapping->a_ops == &shmem_aops;
+}
+
 #endif /* __SHMEM_FS_H */

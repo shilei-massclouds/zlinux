@@ -29,5 +29,31 @@ struct reclaim_state {
 
 #ifdef __KERNEL__
 
+void workingset_refault(struct folio *folio, void *shadow);
+
+extern void folio_add_lru(struct folio *);
+
+extern atomic_t lru_disable_count;
+
+static inline bool lru_cache_disabled(void)
+{
+    return atomic_read(&lru_disable_count);
+}
+
+static inline void lru_cache_enable(void)
+{
+    atomic_dec(&lru_disable_count);
+}
+
+/* Only track the nodes of mappings with shadow entries */
+void workingset_update_node(struct xa_node *node);
+extern struct list_lru shadow_nodes;
+#define mapping_set_update(xas, mapping) do {               \
+    if (!shmem_mapping(mapping)) {     \
+        xas_set_update(xas, workingset_update_node);        \
+        xas_set_lru(xas, &shadow_nodes);            \
+    }                               \
+} while (0)
+
 #endif /* __KERNEL__*/
 #endif /* _LINUX_SWAP_H */

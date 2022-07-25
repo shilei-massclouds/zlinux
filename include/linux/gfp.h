@@ -342,5 +342,23 @@ void *alloc_pages_exact(size_t size, gfp_t gfp_mask) __alloc_size(1);
 void free_pages_exact(void *virt, size_t size);
 __meminit void *alloc_pages_exact_nid(int nid, size_t size, gfp_t gfp_mask)
     __alloc_size(2);
+    
+struct folio *
+__folio_alloc(gfp_t gfp, unsigned int order, int preferred_nid,
+              nodemask_t *nodemask);
+
+static inline
+struct folio *__folio_alloc_node(gfp_t gfp, unsigned int order, int nid)
+{
+    VM_BUG_ON(nid < 0 || nid >= MAX_NUMNODES);
+    VM_WARN_ON((gfp & __GFP_THISNODE) && !node_online(nid));
+
+    return __folio_alloc(gfp, order, nid, NULL);
+}
+
+static inline struct folio *folio_alloc(gfp_t gfp, unsigned int order)
+{
+    return __folio_alloc_node(gfp, order, numa_node_id());
+}
 
 #endif /* __LINUX_GFP_H */

@@ -234,6 +234,7 @@ static __always_inline void *lowmem_page_address(const struct page *page)
 enum compound_dtor_id {
     NULL_COMPOUND_DTOR,
     COMPOUND_PAGE_DTOR,
+    HUGETLB_PAGE_DTOR,
     NR_COMPOUND_DTORS,
 };
 
@@ -614,6 +615,24 @@ static inline int folio_put_testzero(struct folio *folio)
 
 void __put_page(struct page *page);
 
+/* 127: arbitrary random number, small enough to assemble well */
+#define folio_ref_zero_or_close_to_overflow(folio) \
+    ((unsigned int) folio_ref_count(folio) + 127u <= 127u)
+
+/**
+ * folio_get - Increment the reference count on a folio.
+ * @folio: The folio.
+ *
+ * Context: May be called in any context, as long as you know that
+ * you have a refcount on the folio.  If you do not already have one,
+ * folio_try_get() may be the right interface for you to use.
+ */
+static inline void folio_get(struct folio *folio)
+{
+    VM_BUG_ON_FOLIO(folio_ref_zero_or_close_to_overflow(folio), folio);
+    folio_ref_inc(folio);
+}
+
 /**
  * folio_put - Decrement the reference count on a folio.
  * @folio: The folio.
@@ -645,5 +664,20 @@ static inline void put_page(struct page *page)
         return;
     folio_put(folio);
 }
+
+static inline pg_data_t *folio_pgdat(const struct folio *folio)
+{
+    return page_pgdat(&folio->page);
+}
+
+/*
+ * Compound pages have a destructor function.  Provide a
+ * prototype for that function and accessor functions.
+ * These are _only_ valid on the head of a compound page.
+ */
+typedef void compound_page_dtor(struct page *);
+
+/* Keep the enum in sync with compound_page_dtors array in mm/page_alloc.c */
+extern compound_page_dtor * const compound_page_dtors[NR_COMPOUND_DTORS];
 
 #endif /* _LINUX_MM_H */

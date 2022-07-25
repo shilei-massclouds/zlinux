@@ -19,7 +19,7 @@
 #include <linux/swap.h>
 //#include <linux/mman.h>
 #include <linux/pagemap.h>
-//#include <linux/pagevec.h>
+#include <linux/pagevec.h>
 #include <linux/init.h>
 #include <linux/export.h>
 //#include <linux/mm_inline.h>
@@ -29,7 +29,7 @@
 #include <linux/cpu.h>
 //#include <linux/notifier.h>
 #include <linux/backing-dev.h>
-//#include <linux/memcontrol.h>
+#include <linux/memcontrol.h>
 #include <linux/gfp.h>
 #if 0
 #include <linux/uio.h>
@@ -40,6 +40,24 @@
 #include <linux/local_lock.h>
 
 #include "internal.h"
+
+/*
+ * The following struct pagevec are grouped together because they are protected
+ * by disabling preemption (and interrupts remain enabled).
+ */
+struct lru_pvecs {
+    local_lock_t lock;
+    struct pagevec lru_add;
+    struct pagevec lru_deactivate_file;
+    struct pagevec lru_deactivate;
+    struct pagevec lru_lazyfree;
+    struct pagevec activate_page;
+};
+static DEFINE_PER_CPU(struct lru_pvecs, lru_pvecs) = {
+    .lock = INIT_LOCAL_LOCK(lock),
+};
+
+atomic_t lru_disable_count = ATOMIC_INIT(0);
 
 static void __put_single_page(struct page *page)
 {
@@ -74,3 +92,80 @@ void __put_page(struct page *page)
         __put_single_page(page);
 }
 EXPORT_SYMBOL(__put_page);
+
+static void __pagevec_lru_add_fn(struct folio *folio, struct lruvec *lruvec)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * release_pages - batched put_page()
+ * @pages: array of pages to release
+ * @nr: number of pages
+ *
+ * Decrement the reference count on all the pages in @pages.  If it
+ * fell to zero, remove the page from the LRU and free it.
+ */
+void release_pages(struct page **pages, int nr)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * Add the passed pages to the LRU, then drop the caller's refcount
+ * on them.  Reinitialises the caller's pagevec.
+ */
+void __pagevec_lru_add(struct pagevec *pvec)
+{
+    int i;
+    struct lruvec *lruvec = NULL;
+    unsigned long flags = 0;
+
+    for (i = 0; i < pagevec_count(pvec); i++) {
+        struct folio *folio = page_folio(pvec->pages[i]);
+
+        lruvec = folio_lruvec_relock_irqsave(folio, lruvec, &flags);
+        __pagevec_lru_add_fn(folio, lruvec);
+    }
+    if (lruvec)
+        unlock_page_lruvec_irqrestore(lruvec, flags);
+    release_pages(pvec->pages, pvec->nr);
+    pagevec_reinit(pvec);
+}
+
+/* return true if pagevec needs to drain */
+static bool pagevec_add_and_need_flush(struct pagevec *pvec, struct page *page)
+{
+    bool ret = false;
+
+    if (!pagevec_add(pvec, page) || PageCompound(page) || lru_cache_disabled())
+        ret = true;
+
+    return ret;
+}
+
+/**
+ * folio_add_lru - Add a folio to an LRU list.
+ * @folio: The folio to be added to the LRU.
+ *
+ * Queue the folio for addition to the LRU. The decision on whether
+ * to add the page to the [in]active [file|anon] list is deferred until the
+ * pagevec is drained. This gives a chance for the caller of folio_add_lru()
+ * have the folio added to the active list using folio_mark_accessed().
+ */
+void folio_add_lru(struct folio *folio)
+{
+    struct pagevec *pvec;
+
+    VM_BUG_ON_FOLIO(folio_test_active(folio) &&
+                    folio_test_unevictable(folio), folio);
+    VM_BUG_ON_FOLIO(folio_test_lru(folio), folio);
+
+    folio_get(folio);
+    local_lock(&lru_pvecs.lock);
+    pvec = this_cpu_ptr(&lru_pvecs.lru_add);
+    if (pagevec_add_and_need_flush(pvec, &folio->page))
+        __pagevec_lru_add(pvec);
+    local_unlock(&lru_pvecs.lock);
+}
+EXPORT_SYMBOL(folio_add_lru);

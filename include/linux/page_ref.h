@@ -57,4 +57,47 @@ static inline int page_ref_dec_and_test(struct page *page)
     return atomic_dec_and_test(&page->_refcount);
 }
 
+static inline bool folio_ref_try_add_rcu(struct folio *folio, int count)
+{
+    return true;
+}
+
+/**
+ * folio_try_get_rcu - Attempt to increase the refcount on a folio.
+ * @folio: The folio.
+ *
+ * This is a version of folio_try_get() optimised for non-SMP kernels.
+ * If you are still holding the rcu_read_lock() after looking up the
+ * page and know that the page cannot have its refcount decreased to
+ * zero in interrupt context, you can use this instead of folio_try_get().
+ *
+ * Example users include get_user_pages_fast() (as pages are not unmapped
+ * from interrupt context) and the page cache lookups (as pages are not
+ * truncated from interrupt context).  We also know that pages are not
+ * frozen in interrupt context for the purposes of splitting or migration.
+ *
+ * You can also use this function if you're holding a lock that prevents
+ * pages being frozen & removed; eg the i_pages lock for the page cache
+ * or the mmap_sem or page table lock for page tables.  In this case,
+ * it will always succeed, and you could have used a plain folio_get(),
+ * but it's sometimes more convenient to have a common function called
+ * from both locked and RCU-protected contexts.
+ *
+ * Return: True if the reference count was successfully incremented.
+ */
+static inline bool folio_try_get_rcu(struct folio *folio)
+{
+    return folio_ref_try_add_rcu(folio, 1);
+}
+
+static inline void page_ref_inc(struct page *page)
+{
+    atomic_inc(&page->_refcount);
+}
+
+static inline void folio_ref_inc(struct folio *folio)
+{
+    page_ref_inc(&folio->page);
+}
+
 #endif /* _LINUX_PAGE_REF_H */

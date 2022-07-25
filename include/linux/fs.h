@@ -182,6 +182,8 @@ struct file_lock;
 struct iattr;
 struct timespec64;
 struct dir_context;
+struct writeback_control;
+struct readahead_control;
 
 /* legacy typedef, should eventually be removed */
 typedef void *fl_owner_t;

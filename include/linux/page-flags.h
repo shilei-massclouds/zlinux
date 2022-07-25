@@ -146,26 +146,57 @@ static __always_inline int PageCompound(struct page *page)
     VM_BUG_ON_PGFLAGS(enforce && PageCompound(page), page); \
     PF_POISONED_CHECK(page); })
 
+/* Which page is the flag stored in */
+#define FOLIO_PF_ANY        0
+#define FOLIO_PF_HEAD       0
+#define FOLIO_PF_ONLY_HEAD  0
+#define FOLIO_PF_NO_TAIL    0
+#define FOLIO_PF_NO_COMPOUND    0
+#define FOLIO_PF_SECOND     1
+
+static unsigned long *folio_flags(struct folio *folio, unsigned n)
+{
+    struct page *page = &folio->page;
+
+    VM_BUG_ON_PGFLAGS(PageTail(page), page);
+    VM_BUG_ON_PGFLAGS(n > 0 && !test_bit(PG_head, &page->flags), page);
+    return &page[n].flags;
+}
+
 /*
  * Macros to create function definitions for page flags
  */
-#define TESTPAGEFLAG(uname, lname, policy)                  \
-static __always_inline int Page##uname(struct page *page)   \
+#define TESTPAGEFLAG(uname, lname, policy)                              \
+static __always_inline bool folio_test_##lname(struct folio *folio)     \
+{ return test_bit(PG_##lname, folio_flags(folio, FOLIO_##policy)); }    \
+static __always_inline int Page##uname(struct page *page)               \
 { return test_bit(PG_##lname, &policy(page, 0)->flags); }
 
 #define SETPAGEFLAG(uname, lname, policy)                       \
+static __always_inline                                          \
+void folio_set_##lname(struct folio *folio)                     \
+{ set_bit(PG_##lname, folio_flags(folio, FOLIO_##policy)); }    \
 static __always_inline void SetPage##uname(struct page *page)   \
 { set_bit(PG_##lname, &policy(page, 1)->flags); }
 
 #define CLEARPAGEFLAG(uname, lname, policy)                     \
+static __always_inline                          \
+void folio_clear_##lname(struct folio *folio)               \
+{ clear_bit(PG_##lname, folio_flags(folio, FOLIO_##policy)); }      \
 static __always_inline void ClearPage##uname(struct page *page) \
 { clear_bit(PG_##lname, &policy(page, 1)->flags); }
 
 #define __SETPAGEFLAG(uname, lname, policy)                     \
+static __always_inline                                          \
+void __folio_set_##lname(struct folio *folio)                   \
+{ __set_bit(PG_##lname, folio_flags(folio, FOLIO_##policy)); }  \
 static __always_inline void __SetPage##uname(struct page *page) \
 { __set_bit(PG_##lname, &policy(page, 1)->flags); }
 
-#define __CLEARPAGEFLAG(uname, lname, policy)               \
+#define __CLEARPAGEFLAG(uname, lname, policy)                       \
+static __always_inline                                              \
+void __folio_clear_##lname(struct folio *folio)                     \
+{ __clear_bit(PG_##lname, folio_flags(folio, FOLIO_##policy)); }    \
 static __always_inline void __ClearPage##uname(struct page *page)   \
 { __clear_bit(PG_##lname, &policy(page, 1)->flags); }
 
@@ -197,6 +228,8 @@ static __always_inline void __ClearPage##uname(struct page *page)   \
 static __always_inline int TestClearPage##uname(struct page *page) \
 { return test_and_clear_bit(PG_##lname, &policy(page, 1)->flags); }
 
+__PAGEFLAG(Locked, locked, PF_NO_TAIL)
+
 PAGEFLAG(Error, error, PF_NO_TAIL) TESTCLEARFLAG(Error, error, PF_NO_TAIL)
 
 PAGEFLAG(LRU, lru, PF_HEAD)
@@ -211,6 +244,10 @@ PAGEFLAG(Reserved, reserved, PF_NO_COMPOUND)
     __CLEARPAGEFLAG(Reserved, reserved, PF_NO_COMPOUND)
     __SETPAGEFLAG(Reserved, reserved, PF_NO_COMPOUND)
 
+PAGEFLAG(SwapBacked, swapbacked, PF_NO_TAIL)
+    __CLEARPAGEFLAG(SwapBacked, swapbacked, PF_NO_TAIL)
+    __SETPAGEFLAG(SwapBacked, swapbacked, PF_NO_TAIL)
+
 PAGEFLAG_FALSE(HWPoison, hwpoison)
 #define __PG_HWPOISON 0
 
@@ -220,6 +257,10 @@ static inline void page_init_poison(struct page *page, size_t size)
 
 __PAGEFLAG(Slab, slab, PF_NO_TAIL)
 __PAGEFLAG(Head, head, PF_ANY) CLEARPAGEFLAG(Head, head, PF_ANY)
+
+PAGEFLAG(Unevictable, unevictable, PF_HEAD)
+    __CLEARPAGEFLAG(Unevictable, unevictable, PF_HEAD)
+    TESTCLEARFLAG(Unevictable, unevictable, PF_HEAD)
 
 #define PAGE_TYPE_BASE  0xf0000000
 /* Reserve      0x0000007f to catch underflows of page_mapcount */
@@ -346,6 +387,15 @@ static inline void ClearPageSlabPfmemalloc(struct page *page)
 {
     VM_BUG_ON_PAGE(!PageSlab(page), page);
     ClearPageActive(page);
+}
+
+#define PG_head_mask ((1UL << PG_head))
+
+int PageHuge(struct page *page);
+int PageHeadHuge(struct page *page);
+static inline bool folio_test_hugetlb(struct folio *folio)
+{
+    return PageHeadHuge(&folio->page);
 }
 
 #endif /* !__GENERATING_BOUNDS_H */

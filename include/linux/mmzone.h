@@ -7,14 +7,21 @@
 
 #include <linux/spinlock.h>
 #include <linux/list.h>
+#include <linux/wait.h>
 #include <linux/bitops.h>
 #include <linux/cache.h>
+#include <linux/threads.h>
 #include <linux/numa.h>
+#include <linux/init.h>
+#include <linux/seqlock.h>
+#include <linux/nodemask.h>
+#include <linux/pageblock-flags.h>
+#include <linux/page-flags-layout.h>
+#include <linux/atomic.h>
+#include <linux/mm_types.h>
 #include <linux/page-flags.h>
 #include <linux/local_lock.h>
-#include <linux/pageblock-flags.h>
-#include <linux/nodemask.h>
-#include <linux/atomic.h>
+#include <asm/page.h>
 
 /*
  * PAGE_ALLOC_COSTLY_ORDER is the order at which allocations are deemed
@@ -177,7 +184,56 @@ enum zone_type {
     __MAX_NR_ZONES
 };
 
+/*
+ * We do arithmetic on the LRU lists in various places in the code,
+ * so it is important to keep the active lists LRU_ACTIVE higher in
+ * the array than the corresponding inactive lists, and to keep
+ * the *_FILE lists LRU_FILE higher than the corresponding _ANON lists.
+ *
+ * This has to be kept in sync with the statistics in zone_stat_item
+ * above and the descriptions in vmstat_text in mm/vmstat.c
+ */
+#define LRU_BASE    0
+#define LRU_ACTIVE  1
+#define LRU_FILE    2
+
+enum lru_list {
+    LRU_INACTIVE_ANON   = LRU_BASE,
+    LRU_ACTIVE_ANON     = LRU_BASE + LRU_ACTIVE,
+    LRU_INACTIVE_FILE   = LRU_BASE + LRU_FILE,
+    LRU_ACTIVE_FILE     = LRU_BASE + LRU_FILE + LRU_ACTIVE,
+    LRU_UNEVICTABLE,
+    NR_LRU_LISTS
+};
+
 #ifndef __GENERATING_BOUNDS_H
+
+#define ANON_AND_FILE 2
+
+enum lruvec_flags {
+    LRUVEC_CONGESTED,       /* lruvec has many dirty pages
+                             * backed by a congested BDI
+                             * */
+};
+
+struct lruvec {
+    struct list_head        lists[NR_LRU_LISTS];
+    /* per lruvec lru_lock for memcg */
+    spinlock_t              lru_lock;
+    /*
+     * These track the cost of reclaiming one LRU - file or anon -
+     * over the other. As the observed cost of reclaiming one LRU
+     * increases, the reclaim scan balance tips toward the other.
+     */
+    unsigned long           anon_cost;
+    unsigned long           file_cost;
+    /* Non-resident age, driven by LRU movement */
+    atomic_long_t           nonresident_age;
+    /* Refaults at the time of last reclaim cycle */
+    unsigned long           refaults[ANON_AND_FILE];
+    /* Various lruvec state flags (enum lruvec_flags) */
+    unsigned long           flags;
+};
 
 /*
  * The array of struct pages for flatmem.
@@ -336,6 +392,22 @@ typedef struct pglist_data {
      * to userspace allocations.
      */
     unsigned long totalreserve_pages;
+
+    /* Write-intensive fields used by page reclaim */
+    ZONE_PADDING(_pad1_)
+
+    /* Fields commonly accessed by the page reclaim scanner */
+
+    /*
+     * NOTE: THIS IS UNUSED IF MEMCG IS ENABLED.
+     *
+     * Use mem_cgroup_lruvec() to look up lruvecs.
+     */
+    struct lruvec       __lruvec;
+
+    unsigned long       flags;
+
+    ZONE_PADDING(_pad2_)
 
     /* Per-node vmstats */
     struct per_cpu_nodestat __percpu *per_cpu_nodestats;
@@ -569,6 +641,11 @@ extern struct zone *next_zone(struct zone *zone);
  */
 #define for_each_zone_zonelist(zone, z, zlist, highidx) \
     for_each_zone_zonelist_nodemask(zone, z, zlist, highidx, NULL)
+
+static inline struct pglist_data *lruvec_pgdat(struct lruvec *lruvec)
+{
+    return container_of(lruvec, struct pglist_data, __lruvec);
+}
 
 #endif /* !__GENERATING_BOUNDS_H */
 #endif /* !__ASSEMBLY__ */

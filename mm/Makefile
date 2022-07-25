@@ -4,8 +4,8 @@ obj-y := mmzone.o vmstat.o percpu.o page-writeback.o slab_common.o util.o \
 	$(mmu-y)
 obj-y += memblock.o list_lru.o
 obj-y += ioremap.o shmem.o filemap.o
-obj-y += backing-dev.o swap.o
-obj-$(CONFIG_SLAB) += slab.o
+obj-y += backing-dev.o swap.o hugetlb.o
+obj-$(CONFIG_SLAB) += slab.o workingset.o
 
 # Give 'page_alloc' its own module-parameter namespace
 page-alloc-y := page_alloc.o
