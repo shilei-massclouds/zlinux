@@ -680,4 +680,64 @@ typedef void compound_page_dtor(struct page *);
 /* Keep the enum in sync with compound_page_dtors array in mm/page_alloc.c */
 extern compound_page_dtor * const compound_page_dtors[NR_COMPOUND_DTORS];
 
+/* Returns the number of pages in this potentially compound page. */
+static inline unsigned long compound_nr(struct page *page)
+{
+    if (!PageHead(page))
+        return 1;
+    return page[1].compound_nr;
+}
+
+/**
+ * folio_nr_pages - The number of pages in the folio.
+ * @folio: The folio.
+ *
+ * Return: A positive power of two.
+ */
+static inline long folio_nr_pages(struct folio *folio)
+{
+    return compound_nr(&folio->page);
+}
+
+/**
+ * folio_order - The allocation order of a folio.
+ * @folio: The folio.
+ *
+ * A folio is composed of 2^order pages.  See get_order() for the definition
+ * of order.
+ *
+ * Return: The order of the folio.
+ */
+static inline unsigned int folio_order(struct folio *folio)
+{
+    return compound_order(&folio->page);
+}
+
+/**
+ * folio_put_refs - Reduce the reference count on a folio.
+ * @folio: The folio.
+ * @refs: The amount to subtract from the folio's reference count.
+ *
+ * If the folio's reference count reaches zero, the memory will be
+ * released back to the page allocator and may be used by another
+ * allocation immediately.  Do not access the memory or the struct folio
+ * after calling folio_put_refs() unless you can be sure that these weren't
+ * the last references.
+ *
+ * Context: May be called in process or interrupt context, but not in NMI
+ * context.  May be called while holding a spinlock.
+ */
+static inline void folio_put_refs(struct folio *folio, int refs)
+{
+    if (folio_ref_sub_and_test(folio, refs))
+        __put_page(&folio->page);
+}
+
+unsigned long nr_free_buffer_pages(void);
+
+static inline void totalram_pages_inc(void)
+{
+    atomic_long_inc(&_totalram_pages);
+}
+
 #endif /* _LINUX_MM_H */

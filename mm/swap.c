@@ -35,8 +35,8 @@
 #include <linux/uio.h>
 #include <linux/hugetlb.h>
 #include <linux/page_idle.h>
-#include <linux/buffer_head.h>
 #endif
+#include <linux/buffer_head.h>
 #include <linux/local_lock.h>
 
 #include "internal.h"

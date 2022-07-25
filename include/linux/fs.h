@@ -184,6 +184,7 @@ struct timespec64;
 struct dir_context;
 struct writeback_control;
 struct readahead_control;
+struct buffer_head;
 
 /* legacy typedef, should eventually be removed */
 typedef void *fl_owner_t;
@@ -1298,5 +1299,15 @@ static inline void remove_inode_hash(struct inode *inode)
     if (!inode_unhashed(inode) && !hlist_fake(&inode->i_hash))
         __remove_inode_hash(inode);
 }
+
+typedef int (get_block_t)(struct inode *inode, sector_t iblock,
+            struct buffer_head *bh_result, int create);
+
+extern int buffer_migrate_page(struct address_space *,
+                               struct page *, struct page *,
+                               enum migrate_mode);
+extern int buffer_migrate_page_norefs(struct address_space *,
+                                      struct page *, struct page *,
+                                      enum migrate_mode);
 
 #endif /* _LINUX_FS_H */

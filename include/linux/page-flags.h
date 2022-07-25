@@ -200,6 +200,20 @@ void __folio_clear_##lname(struct folio *folio)                     \
 static __always_inline void __ClearPage##uname(struct page *page)   \
 { __clear_bit(PG_##lname, &policy(page, 1)->flags); }
 
+#define TESTSETFLAG(uname, lname, policy)               \
+static __always_inline                          \
+bool folio_test_set_##lname(struct folio *folio)            \
+{ return test_and_set_bit(PG_##lname, folio_flags(folio, FOLIO_##policy)); } \
+static __always_inline int TestSetPage##uname(struct page *page)    \
+{ return test_and_set_bit(PG_##lname, &policy(page, 1)->flags); }
+
+#define TESTCLEARFLAG(uname, lname, policy)             \
+static __always_inline                          \
+bool folio_test_clear_##lname(struct folio *folio)          \
+{ return test_and_clear_bit(PG_##lname, folio_flags(folio, FOLIO_##policy)); } \
+static __always_inline int TestClearPage##uname(struct page *page)  \
+{ return test_and_clear_bit(PG_##lname, &policy(page, 1)->flags); }
+
 #define PAGEFLAG(uname, lname, policy)  \
     TESTPAGEFLAG(uname, lname, policy)  \
     SETPAGEFLAG(uname, lname, policy)   \
@@ -209,6 +223,10 @@ static __always_inline void __ClearPage##uname(struct page *page)   \
     TESTPAGEFLAG(uname, lname, policy)      \
     __SETPAGEFLAG(uname, lname, policy)     \
     __CLEARPAGEFLAG(uname, lname, policy)
+
+#define TESTSCFLAG(uname, lname, policy)    \
+    TESTSETFLAG(uname, lname, policy)       \
+    TESTCLEARFLAG(uname, lname, policy)
 
 #define TESTPAGEFLAG_FALSE(uname, lname) \
     static inline int Page##uname(const struct page *page) { return 0; }
@@ -232,6 +250,10 @@ __PAGEFLAG(Locked, locked, PF_NO_TAIL)
 
 PAGEFLAG(Error, error, PF_NO_TAIL) TESTCLEARFLAG(Error, error, PF_NO_TAIL)
 
+PAGEFLAG(Dirty, dirty, PF_HEAD)
+    TESTSCFLAG(Dirty, dirty, PF_HEAD)
+    __CLEARPAGEFLAG(Dirty, dirty, PF_HEAD)
+
 PAGEFLAG(LRU, lru, PF_HEAD)
     __CLEARPAGEFLAG(LRU, lru, PF_HEAD)
     TESTCLEARFLAG(LRU, lru, PF_HEAD)
@@ -247,6 +269,15 @@ PAGEFLAG(Reserved, reserved, PF_NO_COMPOUND)
 PAGEFLAG(SwapBacked, swapbacked, PF_NO_TAIL)
     __CLEARPAGEFLAG(SwapBacked, swapbacked, PF_NO_TAIL)
     __SETPAGEFLAG(SwapBacked, swapbacked, PF_NO_TAIL)
+
+/*
+ * Private page markings that may be used by the filesystem that owns the page
+ * for its own purposes.
+ * - PG_private and PG_private_2 cause releasepage() and co to be invoked
+ */
+PAGEFLAG(Private, private, PF_ANY)
+
+PAGEFLAG_FALSE(HighMem, highmem)
 
 PAGEFLAG_FALSE(HWPoison, hwpoison)
 #define __PG_HWPOISON 0
@@ -396,6 +427,38 @@ int PageHeadHuge(struct page *page);
 static inline bool folio_test_hugetlb(struct folio *folio)
 {
     return PageHeadHuge(&folio->page);
+}
+
+/**
+ * folio_test_uptodate - Is this folio up to date?
+ * @folio: The folio.
+ *
+ * The uptodate flag is set on a folio when every byte in the folio is
+ * at least as new as the corresponding bytes on storage.  Anonymous
+ * and CoW folios are always uptodate.  If the folio is not uptodate,
+ * some of the bytes in it may be; see the is_partially_uptodate()
+ * address_space operation.
+ */
+static inline bool folio_test_uptodate(struct folio *folio)
+{
+    bool ret = test_bit(PG_uptodate, folio_flags(folio, 0));
+    /*
+     * Must ensure that the data we read out of the folio is loaded
+     * _after_ we've loaded folio->flags to check the uptodate bit.
+     * We can skip the barrier if the folio is not uptodate, because
+     * we wouldn't be reading anything from it.
+     *
+     * See folio_mark_uptodate() for the other side of the story.
+     */
+    if (ret)
+        smp_rmb();
+
+    return ret;
+}
+
+static inline int PageUptodate(struct page *page)
+{
+    return folio_test_uptodate(page_folio(page));
 }
 
 #endif /* !__GENERATING_BOUNDS_H */

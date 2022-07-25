@@ -32,4 +32,6 @@ static inline void __blk_get_queue(struct request_queue *q)
 
 long blkdev_ioctl(struct file *file, unsigned cmd, unsigned long arg);
 
+extern const struct address_space_operations def_blk_aops;
+
 #endif /* BLK_INTERNAL_H */

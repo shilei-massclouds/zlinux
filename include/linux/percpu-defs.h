@@ -195,6 +195,9 @@ do {                                    \
 
 #define raw_cpu_read(pcp)       __pcpu_size_call_return(raw_cpu_read_, pcp)
 #define raw_cpu_write(pcp, val) __pcpu_size_call(raw_cpu_write_, pcp, val)
+#define raw_cpu_add(pcp, val)   __pcpu_size_call(raw_cpu_add_, pcp, val)
+#define raw_cpu_add_return(pcp, val) \
+    __pcpu_size_call_return2(raw_cpu_add_return_, pcp, val)
 #define raw_cpu_xchg(pcp, nval) \
     __pcpu_size_call_return2(raw_cpu_xchg_, pcp, nval)
 #define raw_cpu_cmpxchg(pcp, oval, nval) \
@@ -271,6 +274,24 @@ do {                        \
     (void)(var);            \
     preempt_enable();       \
 } while (0)
+
+#define __this_cpu_add(pcp, val)    \
+({                                  \
+    raw_cpu_add(pcp, val);          \
+})
+
+#define __this_cpu_add_return(pcp, val) \
+({                                      \
+    raw_cpu_add_return(pcp, val);       \
+})
+
+#define __this_cpu_sub(pcp, val)    __this_cpu_add(pcp, -(typeof(pcp))(val))
+#define __this_cpu_inc(pcp)         __this_cpu_add(pcp, 1)
+#define __this_cpu_dec(pcp)         __this_cpu_sub(pcp, 1)
+#define __this_cpu_sub_return(pcp, val) \
+    __this_cpu_add_return(pcp, -(typeof(pcp))(val))
+#define __this_cpu_inc_return(pcp)  __this_cpu_add_return(pcp, 1)
+#define __this_cpu_dec_return(pcp)  __this_cpu_add_return(pcp, -1)
 
 #endif /* __ASSEMBLY__ */
 

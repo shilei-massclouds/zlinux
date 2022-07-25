@@ -355,4 +355,9 @@ enum fault_flag {
     FAULT_FLAG_INTERRUPTIBLE =  1 << 9,
 };
 
+static inline void *folio_get_private(struct folio *folio)
+{
+    return folio->private;
+}
+
 #endif /* _LINUX_MM_TYPES_H */

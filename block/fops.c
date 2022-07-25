@@ -7,8 +7,8 @@
 #include <linux/init.h>
 #include <linux/mm.h>
 #include <linux/blkdev.h>
-#if 0
 #include <linux/buffer_head.h>
+#if 0
 #include <linux/mpage.h>
 #include <linux/uio.h>
 #endif
@@ -83,4 +83,82 @@ const struct file_operations def_blk_fops = {
     .splice_read    = generic_file_splice_read,
     .splice_write   = iter_file_splice_write,
     .fallocate  = blkdev_fallocate,
+};
+
+static int blkdev_writepage(struct page *page, struct writeback_control *wbc)
+{
+    //return block_write_full_page(page, blkdev_get_block, wbc);
+    panic("%s: END!\n", __func__);
+}
+
+static int blkdev_get_block(struct inode *inode, sector_t iblock,
+                            struct buffer_head *bh, int create)
+{
+    bh->b_bdev = I_BDEV(inode);
+    bh->b_blocknr = iblock;
+    set_buffer_mapped(bh);
+    return 0;
+}
+
+static int blkdev_readpage(struct file *file, struct page *page)
+{
+    return block_read_full_page(page, blkdev_get_block);
+}
+
+static void blkdev_readahead(struct readahead_control *rac)
+{
+    //mpage_readahead(rac, blkdev_get_block);
+    panic("%s: END!\n", __func__);
+}
+
+static int
+blkdev_write_begin(struct file *file, struct address_space *mapping,
+                   loff_t pos, unsigned len, unsigned flags,
+                   struct page **pagep, void **fsdata)
+{
+    //return block_write_begin(mapping, pos, len, flags, pagep, blkdev_get_block);
+    panic("%s: END!\n", __func__);
+}
+
+static int
+blkdev_write_end(struct file *file, struct address_space *mapping,
+                 loff_t pos, unsigned len, unsigned copied, struct page *page,
+                 void *fsdata)
+{
+#if 0
+    int ret;
+    ret = block_write_end(file, mapping, pos, len, copied, page, fsdata);
+
+    unlock_page(page);
+    put_page(page);
+
+    return ret;
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+static int blkdev_writepages(struct address_space *mapping,
+                             struct writeback_control *wbc)
+{
+    //return generic_writepages(mapping, wbc);
+    panic("%s: END!\n", __func__);
+}
+
+static ssize_t blkdev_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
+{
+    panic("%s: END!\n", __func__);
+}
+
+const struct address_space_operations def_blk_aops = {
+    .dirty_folio    = block_dirty_folio,
+    .invalidate_folio = block_invalidate_folio,
+    .readpage   = blkdev_readpage,
+    .readahead  = blkdev_readahead,
+    .writepage  = blkdev_writepage,
+    .write_begin    = blkdev_write_begin,
+    .write_end  = blkdev_write_end,
+    .writepages = blkdev_writepages,
+    .direct_IO  = blkdev_direct_IO,
+    .migratepage    = buffer_migrate_page_norefs,
+    .is_dirty_writeback = buffer_check_dirty_writeback,
 };

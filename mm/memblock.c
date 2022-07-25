@@ -7,7 +7,7 @@
  */
 
 #include <linux/kernel.h>
-//#include <linux/slab.h>
+#include <linux/slab.h>
 #include <linux/init.h>
 #include <linux/bitops.h>
 #include <linux/poison.h>
@@ -69,6 +69,17 @@ int memblock_debug __initdata_memblock;
 static int memblock_can_resize __initdata_memblock;
 
 static bool system_has_some_mirror __initdata_memblock = false;
+
+static int memblock_memory_in_slab __initdata_memblock = 0;
+static int memblock_reserved_in_slab __initdata_memblock = 0;
+
+/*
+ * keep a pointer to &memblock.memory in the text section to use it in
+ * __next_mem_range() and its helpers.
+ *  For architectures that do not keep memblock data after init, this
+ * pointer will be reset to NULL at memblock_discard()
+ */
+static __refdata struct memblock_type *memblock_memory = &memblock.memory;
 
 static enum memblock_flags __init_memblock choose_memblock_flags(void)
 {
@@ -242,13 +253,11 @@ memblock_double_array(struct memblock_type *type,
     old_alloc_size = PAGE_ALIGN(old_size);
     new_alloc_size = PAGE_ALIGN(new_size);
 
-#if 0
     /* Retrieve the slab flag */
     if (type == &memblock.memory)
         in_slab = &memblock_memory_in_slab;
     else
         in_slab = &memblock_reserved_in_slab;
-#endif
 
 #if 0
     /* Try to find some space for it */
@@ -1288,4 +1297,59 @@ memblock_search(struct memblock_type *type, phys_addr_t addr)
 bool __init_memblock memblock_is_memory(phys_addr_t addr)
 {
     return memblock_search(&memblock.memory, addr) != -1;
+}
+
+/**
+ * memblock_free_late - free pages directly to buddy allocator
+ * @base: phys starting address of the  boot memory block
+ * @size: size of the boot memory block in bytes
+ *
+ * This is only useful when the memblock allocator has already been torn
+ * down, but we are still initializing the system.  Pages are released directly
+ * to the buddy allocator.
+ */
+void __init memblock_free_late(phys_addr_t base, phys_addr_t size)
+{
+    phys_addr_t cursor, end;
+
+    end = base + size - 1;
+    memblock_dbg("%s: [%pa-%pa] %pS\n",
+                 __func__, &base, &end, (void *)_RET_IP_);
+    cursor = PFN_UP(base);
+    end = PFN_DOWN(base + size);
+
+    for (; cursor < end; cursor++) {
+        memblock_free_pages(pfn_to_page(cursor), cursor, 0);
+        totalram_pages_inc();
+    }
+}
+
+/**
+ * memblock_discard - discard memory and reserved arrays if they were allocated
+ */
+void __init memblock_discard(void)
+{
+    phys_addr_t addr, size;
+
+    if (memblock.reserved.regions != memblock_reserved_init_regions) {
+        addr = __pa(memblock.reserved.regions);
+        size = PAGE_ALIGN(sizeof(struct memblock_region) *
+                          memblock.reserved.max);
+        if (memblock_reserved_in_slab)
+            kfree(memblock.reserved.regions);
+        else
+            memblock_free_late(addr, size);
+    }
+
+    if (memblock.memory.regions != memblock_memory_init_regions) {
+        addr = __pa(memblock.memory.regions);
+        size = PAGE_ALIGN(sizeof(struct memblock_region) *
+                          memblock.memory.max);
+        if (memblock_memory_in_slab)
+            kfree(memblock.memory.regions);
+        else
+            memblock_free_late(addr, size);
+    }
+
+    memblock_memory = NULL;
 }

@@ -100,4 +100,24 @@ static inline void folio_ref_inc(struct folio *folio)
     page_ref_inc(&folio->page);
 }
 
+static inline void page_ref_add(struct page *page, int nr)
+{
+    atomic_add(nr, &page->_refcount);
+}
+
+static inline void folio_ref_add(struct folio *folio, int nr)
+{
+    page_ref_add(&folio->page, nr);
+}
+
+static inline int page_ref_sub_and_test(struct page *page, int nr)
+{
+    return atomic_sub_and_test(nr, &page->_refcount);
+}
+
+static inline int folio_ref_sub_and_test(struct folio *folio, int nr)
+{
+    return page_ref_sub_and_test(&folio->page, nr);
+}
+
 #endif /* _LINUX_PAGE_REF_H */

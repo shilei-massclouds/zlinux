@@ -831,4 +831,48 @@ static inline void xas_set_lru(struct xa_state *xas, struct list_lru *lru)
     xas->xa_lru = lru;
 }
 
+/**
+ * xas_set_order() - Set up XArray operation state for a multislot entry.
+ * @xas: XArray operation state.
+ * @index: Target of the operation.
+ * @order: Entry occupies 2^@order indices.
+ */
+static inline void xas_set_order(struct xa_state *xas, unsigned long index,
+                                 unsigned int order)
+{
+    BUG_ON(order > 0);
+    xas_set(xas, index);
+}
+
+static inline int xa_get_order(struct xarray *xa, unsigned long index)
+{
+    return 0;
+}
+
+static inline void xas_split(struct xa_state *xas, void *entry,
+                             unsigned int order)
+{
+    xas_store(xas, entry);
+}
+
+static inline void xas_split_alloc(struct xa_state *xas, void *entry,
+                                   unsigned int order, gfp_t gfp)
+{
+}
+
+/**
+ * xas_for_each_conflict() - Iterate over a range of an XArray.
+ * @xas: XArray operation state.
+ * @entry: Entry retrieved from the array.
+ *
+ * The loop body will be executed for each entry in the XArray that
+ * lies within the range specified by @xas.  If the loop terminates
+ * normally, @entry will be %NULL.  The user may break out of the loop,
+ * which will leave @entry set to the conflicting entry.  The caller
+ * may also call xa_set_err() to exit the loop while setting an error
+ * to record the reason.
+ */
+#define xas_for_each_conflict(xas, entry) \
+    while ((entry = xas_find_conflict(xas)))
+
 #endif /* _LINUX_XARRAY_H */

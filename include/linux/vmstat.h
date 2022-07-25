@@ -119,4 +119,22 @@ dec_lruvec_page_state(struct page *page, enum node_stat_item idx)
     mod_lruvec_page_state(page, idx, -1);
 }
 
+void __mod_node_page_state(struct pglist_data *,
+                           enum node_stat_item item, long);
+
+void __inc_node_page_state(struct page *, enum node_stat_item);
+void __dec_node_page_state(struct page *, enum node_stat_item);
+
+static inline void
+__mod_lruvec_page_state(struct page *page, enum node_stat_item idx, int val)
+{
+    __mod_node_page_state(page_pgdat(page), idx, val);
+}
+
+static inline void __lruvec_stat_mod_folio(struct folio *folio,
+                       enum node_stat_item idx, int val)
+{
+    __mod_lruvec_page_state(&folio->page, idx, val);
+}
+
 #endif /* _LINUX_VMSTAT_H */

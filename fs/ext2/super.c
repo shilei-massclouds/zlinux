@@ -25,7 +25,7 @@
 #include <linux/blkdev.h>
 //#include <linux/parser.h>
 #include <linux/random.h>
-//#include <linux/buffer_head.h>
+#include <linux/buffer_head.h>
 #include <linux/exportfs.h>
 #if 0
 #include <linux/vfs.h>

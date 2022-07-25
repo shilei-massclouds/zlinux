@@ -21,8 +21,8 @@
 //#include <linux/posix_acl.h>
 #include <linux/prefetch.h>
 #include <linux/list_lru.h>
-#if 0
 #include <linux/buffer_head.h> /* for inode_has_buffers */
+#if 0
 #include <linux/ratelimit.h>
 #include <linux/iversion.h>
 #endif

@@ -227,4 +227,22 @@ arch_atomic64_add_return_release(s64 i, atomic64_t *v)
 #define arch_atomic64_add_return_release arch_atomic64_add_return_release
 #endif
 
+#ifndef arch_atomic_sub_and_test
+/**
+ * arch_atomic_sub_and_test - subtract value from variable and test result
+ * @i: integer value to subtract
+ * @v: pointer of type atomic_t
+ *
+ * Atomically subtracts @i from @v and returns
+ * true if the result is zero, or false for all
+ * other cases.
+ */
+static __always_inline bool
+arch_atomic_sub_and_test(int i, atomic_t *v)
+{
+    return arch_atomic_sub_return(i, v) == 0;
+}
+#define arch_atomic_sub_and_test arch_atomic_sub_and_test
+#endif
+
 #endif /* _LINUX_ATOMIC_FALLBACK_H */

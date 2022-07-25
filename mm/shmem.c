@@ -74,7 +74,7 @@
 #include <linux/namei.h>
 #endif
 #include <linux/ctype.h>
-//#include <linux/migrate.h>
+#include <linux/migrate.h>
 #include <linux/highmem.h>
 //#include <linux/seq_file.h>
 #include <linux/magic.h>
@@ -131,6 +131,47 @@ struct shmem_options {
 #define SHMEM_SEEN_HUGE 4
 #define SHMEM_SEEN_INUMS 8
 };
+
+/*
+ * Move the page from the page cache to the swap cache.
+ */
+static int shmem_writepage(struct page *page, struct writeback_control *wbc)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static int
+shmem_write_begin(struct file *file, struct address_space *mapping,
+                  loff_t pos, unsigned len, unsigned flags,
+                  struct page **pagep, void **fsdata)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static int
+shmem_write_end(struct file *file, struct address_space *mapping,
+                loff_t pos, unsigned len, unsigned copied,
+                struct page *page, void *fsdata)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/* Keep the page in page cache instead of truncating it */
+static int shmem_error_remove_page(struct address_space *mapping,
+                                   struct page *page)
+{
+    return 0;
+}
+
+const struct address_space_operations shmem_aops = {
+    .writepage      = shmem_writepage,
+    .dirty_folio    = noop_dirty_folio,
+    .write_begin    = shmem_write_begin,
+    .write_end      = shmem_write_end,
+    .migratepage    = migrate_page,
+    .error_remove_page = shmem_error_remove_page,
+};
+EXPORT_SYMBOL(shmem_aops);
 
 static vm_fault_t shmem_fault(struct vm_fault *vmf)
 {

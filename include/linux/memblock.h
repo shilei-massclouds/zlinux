@@ -24,6 +24,10 @@
 #define ARCH_LOW_ADDRESS_LIMIT  0xffffffffUL
 #endif
 
+#define __init_memblock __meminit
+#define __initdata_memblock __meminitdata
+void memblock_discard(void);
+
 extern void *
 alloc_large_system_hash(const char *tablename,
                         unsigned long bucketsize,

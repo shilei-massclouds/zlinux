@@ -167,6 +167,7 @@
 #define GFP_KERNEL_ACCOUNT (GFP_KERNEL | __GFP_ACCOUNT)
 #define GFP_NOWAIT  (__GFP_KSWAPD_RECLAIM)
 #define GFP_NOIO    (__GFP_RECLAIM)
+#define GFP_NOFS    (__GFP_RECLAIM | __GFP_IO)
 
 #define GFP_USER    (__GFP_RECLAIM | __GFP_IO | __GFP_FS | __GFP_HARDWALL)
 #define GFP_DMA     __GFP_DMA
@@ -360,5 +361,7 @@ static inline struct folio *folio_alloc(gfp_t gfp, unsigned int order)
 {
     return __folio_alloc_node(gfp, order, numa_node_id());
 }
+
+void page_alloc_init_late(void);
 
 #endif /* __LINUX_GFP_H */

@@ -18,8 +18,8 @@
 #if 0
 #include <linux/namei.h>
 #include <linux/exportfs.h>
-#include <linux/buffer_head.h> /* sync_mapping_buffers */
 #endif
+#include <linux/buffer_head.h> /* sync_mapping_buffers */
 #include <linux/writeback.h>
 #include <linux/fs_context.h>
 #include <linux/pseudo_fs.h>

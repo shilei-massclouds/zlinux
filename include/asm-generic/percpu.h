@@ -281,4 +281,38 @@ do {                                            \
     raw_cpu_generic_cmpxchg(pcp, oval, nval)
 #endif
 
+#define raw_cpu_generic_add_return(pcp, val)    \
+({                                              \
+    typeof(pcp) *__p = raw_cpu_ptr(&(pcp));     \
+                                                \
+    *__p += val;                                \
+    *__p;                                       \
+})
+
+#ifndef raw_cpu_add_1
+#define raw_cpu_add_1(pcp, val)     raw_cpu_generic_to_op(pcp, val, +=)
+#endif
+#ifndef raw_cpu_add_2
+#define raw_cpu_add_2(pcp, val)     raw_cpu_generic_to_op(pcp, val, +=)
+#endif
+#ifndef raw_cpu_add_4
+#define raw_cpu_add_4(pcp, val)     raw_cpu_generic_to_op(pcp, val, +=)
+#endif
+#ifndef raw_cpu_add_8
+#define raw_cpu_add_8(pcp, val)     raw_cpu_generic_to_op(pcp, val, +=)
+#endif
+
+#ifndef raw_cpu_add_return_1
+#define raw_cpu_add_return_1(pcp, val)  raw_cpu_generic_add_return(pcp, val)
+#endif
+#ifndef raw_cpu_add_return_2
+#define raw_cpu_add_return_2(pcp, val)  raw_cpu_generic_add_return(pcp, val)
+#endif
+#ifndef raw_cpu_add_return_4
+#define raw_cpu_add_return_4(pcp, val)  raw_cpu_generic_add_return(pcp, val)
+#endif
+#ifndef raw_cpu_add_return_8
+#define raw_cpu_add_return_8(pcp, val)  raw_cpu_generic_add_return(pcp, val)
+#endif
+
 #endif /* _ASM_GENERIC_PERCPU_H_ */

@@ -85,6 +85,7 @@
 #include <linux/percpu.h>
 #include <linux/compat.h>
 #include <linux/writeback.h>
+#include <linux/buffer_head.h>
 
 #include <asm/sections.h>
 #include <asm/tlbflush.h>
@@ -3403,3 +3404,34 @@ __folio_alloc(gfp_t gfp, unsigned int order, int preferred_nid,
     return (struct folio *)page;
 }
 EXPORT_SYMBOL(__folio_alloc);
+
+/**
+ * nr_free_buffer_pages - count number of pages beyond high watermark
+ *
+ * nr_free_buffer_pages() counts the number of pages which are beyond the high
+ * watermark within ZONE_DMA and ZONE_NORMAL.
+ *
+ * Return: number of pages beyond high watermark within ZONE_DMA and
+ * ZONE_NORMAL.
+ */
+unsigned long nr_free_buffer_pages(void)
+{
+    return nr_free_zone_pages(gfp_zone(GFP_USER));
+}
+EXPORT_SYMBOL_GPL(nr_free_buffer_pages);
+
+void __init page_alloc_init_late(void)
+{
+    struct zone *zone;
+    int nid;
+
+    buffer_init();
+
+    /* Discard memblock private memory */
+    memblock_discard();
+
+#if 0
+    for_each_populated_zone(zone)
+        set_zone_contiguous(zone);
+#endif
+}

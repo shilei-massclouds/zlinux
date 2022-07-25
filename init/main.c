@@ -270,7 +270,9 @@ static noinline void __init kernel_init_freeable(void)
     sched_init_smp();
 
     padata_init();
+#endif
     page_alloc_init_late();
+#if 0
     /* Initialize page ext after all struct pages are initialized. */
     page_ext_init();
 #endif

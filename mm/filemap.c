@@ -55,9 +55,9 @@
 /*
  * FIXME: remove all knowledge of the buffer layer from the core VM
  */
-#if 0
 #include <linux/buffer_head.h> /* for try_to_free_buffers */
 
+#if 0
 #include <asm/mman.h>
 #endif
 
@@ -125,14 +125,63 @@ __filemap_add_folio(struct address_space *mapping,
 {
     XA_STATE(xas, &mapping->i_pages, index);
     int huge = folio_test_hugetlb(folio);
-    bool charged = false;
     long nr = 1;
 
     VM_BUG_ON_FOLIO(!folio_test_locked(folio), folio);
     VM_BUG_ON_FOLIO(folio_test_swapbacked(folio), folio);
     mapping_set_update(&xas, mapping);
 
-    panic("%s: END!\n", __func__);
+    if (!huge) {
+        VM_BUG_ON_FOLIO(index & (folio_nr_pages(folio) - 1), folio);
+        xas_set_order(&xas, index, folio_order(folio));
+        nr = folio_nr_pages(folio);
+    }
+
+    gfp &= GFP_RECLAIM_MASK;
+    folio_ref_add(folio, nr);
+    folio->mapping = mapping;
+    folio->index = xas.xa_index;
+
+    do {
+        void *entry, *old = NULL;
+
+        xas_lock_irq(&xas);
+        xas_for_each_conflict(&xas, entry) {
+            old = entry;
+            if (!xa_is_value(entry)) {
+                xas_set_err(&xas, -EEXIST);
+                goto unlock;
+            }
+        }
+
+        if (old) {
+            panic("%s: old!\n", __func__);
+        }
+
+        xas_store(&xas, folio);
+        if (xas_error(&xas))
+            goto unlock;
+
+        mapping->nrpages += nr;
+
+        /* hugetlb pages do not participate in page cache accounting */
+        if (!huge) {
+            __lruvec_stat_mod_folio(folio, NR_FILE_PAGES, nr);
+        }
+     unlock:
+        xas_unlock_irq(&xas);
+    } while (xas_nomem(&xas, gfp));
+
+    if (xas_error(&xas))
+        goto error;
+
+    return 0;
+
+ error:
+    folio->mapping = NULL;
+    /* Leave page->index set: truncation relies upon it */
+    folio_put_refs(folio, nr);
+    return xas_error(&xas);
 }
 
 int filemap_add_folio(struct address_space *mapping, struct folio *folio,
@@ -185,7 +234,14 @@ do_read_cache_folio(struct address_space *mapping,
             return ERR_PTR(err);
         }
 
-        panic("%s: folio NULL!\n", __func__);
+     filler:
+        if (filler)
+            err = filler(data, &folio->page);
+        else
+            err = mapping->a_ops->readpage(data, &folio->page);
+
+        panic("%s: folio a_ops(%lx) NULL!\n", __func__, mapping->a_ops);
+        panic("%s: folio filler(%lx) NULL!\n", __func__, filler);
     }
 
     panic("%s: END!\n", __func__);
