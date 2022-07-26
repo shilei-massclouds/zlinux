@@ -62,4 +62,6 @@ blk_mq_plug(struct request_queue *q, struct bio *bio)
     return NULL;
 }
 
+void blk_mq_submit_bio(struct bio *bio);
+
 #endif /* INT_BLK_MQ_H */

@@ -246,4 +246,10 @@ atomic_sub_and_test(int i, atomic_t *v)
     return arch_atomic_sub_and_test(i, v);
 }
 
+static __always_inline bool
+atomic_long_sub_and_test(long i, atomic_long_t *v)
+{
+    return arch_atomic_long_sub_and_test(i, v);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */

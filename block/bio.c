@@ -439,6 +439,24 @@ static void bio_free(struct bio *bio)
 }
 
 /**
+ * bio_endio - end I/O on a bio
+ * @bio:    bio
+ *
+ * Description:
+ *   bio_endio() will end I/O on the whole bio. bio_endio() is the preferred
+ *   way to end I/O on a bio. No one should call bi_end_io() directly on a
+ *   bio unless they own it and thus know that it has an end_io function.
+ *
+ *   bio_endio() can be called several times on a bio that has been chained
+ *   using bio_chain().  The ->bi_end_io() function will only be called the
+ *   last time.
+ **/
+void bio_endio(struct bio *bio)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/**
  * bio_truncate - truncate the bio to small size of @new_size
  * @bio:    the bio to be truncated
  * @new_size:   new size for truncating the bio

@@ -22,8 +22,8 @@
 #include <linux/gfp.h>
 #include <linux/kdev_t.h>
 #include <linux/rcupdate.h>
-#if 0
 #include <linux/percpu-refcount.h>
+#if 0
 #include <linux/blkzoned.h>
 #endif
 #include <linux/sched.h>
@@ -188,9 +188,11 @@ struct request_queue {
     struct request      *last_merge;
 #if 0
     struct elevator_queue   *elevator;
+#endif
 
     struct percpu_ref   q_usage_counter;
 
+#if 0
     struct blk_queue_stats  *stats;
     struct rq_qos       *rq_qos;
 
@@ -478,6 +480,12 @@ struct gendisk *__blk_alloc_disk(int node, struct lock_class_key *lkclass);
 
 #define blk_queue_dying(q)      test_bit(QUEUE_FLAG_DYING, &(q)->queue_flags)
 #define blk_queue_has_srcu(q)   test_bit(QUEUE_FLAG_HAS_SRCU, &(q)->queue_flags)
+#define blk_queue_nowait(q)     test_bit(QUEUE_FLAG_NOWAIT, &(q)->queue_flags)
+#define blk_queue_discard(q)    test_bit(QUEUE_FLAG_DISCARD, &(q)->queue_flags)
+#define blk_queue_secure_erase(q) \
+    (test_bit(QUEUE_FLAG_SECERASE, &(q)->queue_flags))
+#define blk_queue_zone_resetall(q)  \
+    test_bit(QUEUE_FLAG_ZONE_RESETALL, &(q)->queue_flags)
 
 bool __must_check blk_get_queue(struct request_queue *);
 extern void blk_put_queue(struct request_queue *);

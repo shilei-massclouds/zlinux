@@ -161,4 +161,38 @@ static inline bool bio_has_data(struct bio *bio)
     return false;
 }
 
+#define bvec_iter_sectors(iter)     ((iter).bi_size >> 9)
+#define bvec_iter_end_sector(iter) \
+    ((iter).bi_sector + bvec_iter_sectors((iter)))
+
+#define bio_sectors(bio)    bvec_iter_sectors((bio)->bi_iter)
+#define bio_end_sector(bio) bvec_iter_end_sector((bio)->bi_iter)
+
+static inline void bio_list_add(struct bio_list *bl, struct bio *bio)
+{
+    bio->bi_next = NULL;
+
+    if (bl->tail)
+        bl->tail->bi_next = bio;
+    else
+        bl->head = bio;
+
+    bl->tail = bio;
+}
+
+static inline struct bio *bio_list_pop(struct bio_list *bl)
+{
+    struct bio *bio = bl->head;
+
+    if (bio) {
+        bl->head = bl->head->bi_next;
+        if (!bl->head)
+            bl->tail = NULL;
+
+        bio->bi_next = NULL;
+    }
+
+    return bio;
+}
+
 #endif /* __LINUX_BIO_H */

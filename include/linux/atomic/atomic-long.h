@@ -122,4 +122,10 @@ arch_atomic_long_add_return_release(long i, atomic_long_t *v)
     return arch_atomic64_add_return_release(i, v);
 }
 
+static __always_inline bool
+arch_atomic_long_sub_and_test(long i, atomic_long_t *v)
+{
+    return arch_atomic64_sub_and_test(i, v);
+}
+
 #endif /* _LINUX_ATOMIC_LONG_H */

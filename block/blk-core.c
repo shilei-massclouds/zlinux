@@ -23,8 +23,8 @@
 #endif
 #include <linux/highmem.h>
 #include <linux/mm.h>
-#if 0
 #include <linux/pagemap.h>
+#if 0
 #include <linux/kernel_stat.h>
 #endif
 #include <linux/string.h>
@@ -50,6 +50,7 @@
 #endif
 #include <linux/blk-mq.h>
 #include <linux/idr.h>
+#include <linux/percpu-refcount.h>
 
 #include "blk.h"
 #include "blk-mq.h"
@@ -224,6 +225,142 @@ int iocb_bio_iopoll(struct kiocb *kiocb, struct io_comp_batch *iob,
 }
 EXPORT_SYMBOL_GPL(iocb_bio_iopoll);
 
+static inline bool bio_check_ro(struct bio *bio)
+{
+    if (op_is_write(bio_op(bio)) && bdev_read_only(bio->bi_bdev)) {
+        if (op_is_flush(bio->bi_opf) && !bio_sectors(bio))
+            return false;
+        pr_warn("Trying to write to read-only block-device %pg\n",
+                bio->bi_bdev);
+        /* Older lvm-tools actually trigger this */
+        return false;
+    }
+
+    return false;
+}
+
+static noinline int should_fail_bio(struct bio *bio)
+{
+    return 0;
+}
+
+/*
+ * Check whether this bio extends beyond the end of the device or partition.
+ * This may well happen - the kernel calls bread() without checking the size of
+ * the device, e.g., when mounting a file system.
+ */
+static inline int bio_check_eod(struct bio *bio)
+{
+    sector_t maxsector = bdev_nr_sectors(bio->bi_bdev);
+    unsigned int nr_sectors = bio_sectors(bio);
+
+    if (nr_sectors && maxsector &&
+        (nr_sectors > maxsector ||
+         bio->bi_iter.bi_sector > maxsector - nr_sectors)) {
+        pr_info_ratelimited("%s: attempt to access beyond end of device\n"
+                            "%pg: rw=%d, want=%llu, limit=%llu\n",
+                            current->comm,
+                            bio->bi_bdev, bio->bi_opf,
+                            bio_end_sector(bio), maxsector);
+        return -EIO;
+    }
+    return 0;
+}
+
+/*
+ * Remap block n of partition p to block n+start(p) of the disk.
+ */
+static int blk_partition_remap(struct bio *bio)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * Check write append to a zoned block device.
+ */
+static inline blk_status_t
+blk_check_zone_append(struct request_queue *q, struct bio *bio)
+{
+    panic("%s: END!\n", __func__);
+}
+
+void blk_queue_exit(struct request_queue *q)
+{
+    percpu_ref_put(&q->q_usage_counter);
+}
+
+static void __submit_bio(struct bio *bio)
+{
+    struct gendisk *disk = bio->bi_bdev->bd_disk;
+
+    if (!disk->fops->submit_bio) {
+        blk_mq_submit_bio(bio);
+    } else if (likely(bio_queue_enter(bio) == 0)) {
+        disk->fops->submit_bio(bio);
+        blk_queue_exit(disk->queue);
+    }
+
+    panic("%s: END!\n", __func__);
+}
+
+static void __submit_bio_noacct_mq(struct bio *bio)
+{
+    struct bio_list bio_list[2] = { };
+
+    current->bio_list = bio_list;
+
+    do {
+        __submit_bio(bio);
+    } while ((bio = bio_list_pop(&bio_list[0])));
+
+    current->bio_list = NULL;
+}
+
+/*
+ * The loop in this function may be a bit non-obvious, and so deserves some
+ * explanation:
+ *
+ *  - Before entering the loop, bio->bi_next is NULL (as all callers ensure
+ *    that), so we have a list with a single bio.
+ *  - We pretend that we have just taken it off a longer list, so we assign
+ *    bio_list to a pointer to the bio_list_on_stack, thus initialising the
+ *    bio_list of new bios to be added.  ->submit_bio() may indeed add some more
+ *    bios through a recursive call to submit_bio_noacct.  If it did, we find a
+ *    non-NULL value in bio_list and re-enter the loop from the top.
+ *  - In this case we really did just take the bio of the top of the list (no
+ *    pretending) and so remove it from bio_list, and call into ->submit_bio()
+ *    again.
+ *
+ * bio_list_on_stack[0] contains bios submitted by the current ->submit_bio.
+ * bio_list_on_stack[1] contains bios that were submitted before the current
+ *  ->submit_bio, but that haven't been processed yet.
+ */
+static void __submit_bio_noacct(struct bio *bio)
+{
+    panic("%s: END!\n", __func__);
+}
+
+void submit_bio_noacct_nocheck(struct bio *bio)
+{
+    /*
+     * We only want one ->submit_bio to be active at a time, else stack
+     * usage with stacked devices could be a problem.  Use current->bio_list
+     * to collect a list of requests submited by a ->submit_bio method while
+     * it is active, and then process them after it returned.
+     */
+    if (current->bio_list)
+        bio_list_add(&current->bio_list[0], bio);
+    else if (!bio->bi_bdev->bd_disk->fops->submit_bio)
+        __submit_bio_noacct_mq(bio);
+    else
+        __submit_bio_noacct(bio);
+}
+
+int __bio_queue_enter(struct request_queue *q, struct bio *bio)
+{
+    panic("%s: END!\n", __func__);
+}
+
 /**
  * submit_bio_noacct - re-submit a bio to the block device layer for I/O
  * @bio:  The bio describing the location in memory and on the device.
@@ -246,7 +383,87 @@ void submit_bio_noacct(struct bio *bio)
     if (plug && plug->nowait)
         bio->bi_opf |= REQ_NOWAIT;
 
-    panic("%s: END!\n", __func__);
+    /*
+     * For a REQ_NOWAIT based request, return -EOPNOTSUPP
+     * if queue does not support NOWAIT.
+     */
+    if ((bio->bi_opf & REQ_NOWAIT) && !blk_queue_nowait(q))
+        goto not_supported;
+
+    if (should_fail_bio(bio))
+        goto end_io;
+    if (unlikely(bio_check_ro(bio)))
+        goto end_io;
+    if (!bio_flagged(bio, BIO_REMAPPED)) {
+        if (unlikely(bio_check_eod(bio)))
+            goto end_io;
+        if (bdev->bd_partno && unlikely(blk_partition_remap(bio)))
+            goto end_io;
+    }
+
+    /*
+     * Filter flush bio's early so that bio based drivers without flush
+     * support don't have to worry about them.
+     */
+    if (op_is_flush(bio->bi_opf) && !test_bit(QUEUE_FLAG_WC, &q->queue_flags)) {
+        bio->bi_opf &= ~(REQ_PREFLUSH | REQ_FUA);
+        if (!bio_sectors(bio)) {
+            status = BLK_STS_OK;
+            goto end_io;
+        }
+    }
+
+    if (!test_bit(QUEUE_FLAG_POLL, &q->queue_flags))
+        bio_clear_polled(bio);
+
+    switch (bio_op(bio)) {
+    case REQ_OP_DISCARD:
+        if (!blk_queue_discard(q))
+            goto not_supported;
+        break;
+    case REQ_OP_SECURE_ERASE:
+        if (!blk_queue_secure_erase(q))
+            goto not_supported;
+        break;
+    case REQ_OP_ZONE_APPEND:
+        status = blk_check_zone_append(q, bio);
+        if (status != BLK_STS_OK)
+            goto end_io;
+        break;
+    case REQ_OP_ZONE_RESET:
+    case REQ_OP_ZONE_OPEN:
+    case REQ_OP_ZONE_CLOSE:
+    case REQ_OP_ZONE_FINISH:
+        if (!blk_queue_is_zoned(q))
+            goto not_supported;
+        break;
+    case REQ_OP_ZONE_RESET_ALL:
+        if (!blk_queue_is_zoned(q) || !blk_queue_zone_resetall(q))
+            goto not_supported;
+        break;
+    case REQ_OP_WRITE_ZEROES:
+        if (!q->limits.max_write_zeroes_sectors)
+            goto not_supported;
+        break;
+    default:
+        break;
+    }
+
+    if (!bio_flagged(bio, BIO_TRACE_COMPLETION)) {
+        /* Now that enqueuing has been traced, we need to trace
+         * completion as well.
+         */
+        bio_set_flag(bio, BIO_TRACE_COMPLETION);
+    }
+
+    submit_bio_noacct_nocheck(bio);
+    return;
+
+ not_supported:
+    status = BLK_STS_NOTSUPP;
+ end_io:
+    bio->bi_status = status;
+    bio_endio(bio);
 }
 
 /**

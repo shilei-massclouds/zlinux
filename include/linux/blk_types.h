@@ -152,6 +152,15 @@ struct block_device {
     struct partition_meta_info *bd_meta_info;
 } __randomize_layout;
 
+#define bdev_whole(_bdev) \
+    ((_bdev)->bd_disk->part0)
+
+#define dev_to_bdev(device) \
+    container_of((device), struct block_device, bd_device)
+
+#define bdev_kobj(_bdev) \
+    (&((_bdev)->bd_device.kobj))
+
 /*
  * main unit of I/O for the block layer and lower layers (ie drivers and
  * stacking drivers)
@@ -231,9 +240,6 @@ enum req_opf {
     REQ_OP_LAST,
 };
 
-#define dev_to_bdev(device) \
-    container_of((device), struct block_device, bd_device)
-
 #define BLK_STS_OK 0
 #define BLK_STS_NOTSUPP     ((__force blk_status_t)1)
 #define BLK_STS_TIMEOUT     ((__force blk_status_t)2)
@@ -249,6 +255,26 @@ enum req_opf {
 static inline bool op_is_write(unsigned int op)
 {
     return (op & 1);
+}
+
+/*
+ * Check if the bio or request is one that needs special treatment in the
+ * flush state machine.
+ */
+static inline bool op_is_flush(unsigned int op)
+{
+    return op & (REQ_FUA | REQ_PREFLUSH);
+}
+
+/*
+ * Reads are always treated as synchronous, as are requests with the FUA or
+ * PREFLUSH flag.  Other operations may be marked as synchronous using the
+ * REQ_SYNC flag.
+ */
+static inline bool op_is_sync(unsigned int op)
+{
+    return (op & REQ_OP_MASK) == REQ_OP_READ ||
+        (op & (REQ_SYNC | REQ_FUA | REQ_PREFLUSH));
 }
 
 #endif /* __LINUX_BLK_TYPES_H */

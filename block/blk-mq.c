@@ -608,3 +608,58 @@ __blk_mq_alloc_disk(struct blk_mq_tag_set *set, void *queuedata,
     return disk;
 }
 EXPORT_SYMBOL(__blk_mq_alloc_disk);
+
+static inline struct request *
+blk_mq_get_cached_request(struct request_queue *q,
+                          struct blk_plug *plug, struct bio **bio,
+                          unsigned int nsegs)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static struct request *
+blk_mq_get_new_requests(struct request_queue *q,
+                        struct blk_plug *plug,
+                        struct bio *bio,
+                        unsigned int nsegs)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * blk_mq_submit_bio - Create and send a request to block device.
+ * @bio: Bio pointer.
+ *
+ * Builds up a request structure from @q and @bio and send to the device. The
+ * request may not be queued directly to hardware if:
+ * * This request can be merged with another one
+ * * We want to place request at plug queue for possible future merging
+ * * There is an IO scheduler active at this queue
+ *
+ * It will not queue the request if there is an error with the bio, or at the
+ * request creation.
+ */
+void blk_mq_submit_bio(struct bio *bio)
+{
+    struct request_queue *q = bdev_get_queue(bio->bi_bdev);
+    struct blk_plug *plug = blk_mq_plug(q, bio);
+    const int is_sync = op_is_sync(bio->bi_opf);
+    struct request *rq;
+    unsigned int nr_segs = 1;
+    blk_status_t ret;
+
+    blk_queue_bounce(q, &bio);
+    if (blk_may_split(q, bio))
+        __blk_queue_split(q, &bio, &nr_segs);
+
+    rq = blk_mq_get_cached_request(q, plug, &bio, nr_segs);
+    if (!rq) {
+        if (!bio)
+            return;
+        rq = blk_mq_get_new_requests(q, plug, bio, nr_segs);
+        if (unlikely(!rq))
+            return;
+    }
+
+    panic("%s: END!\n", __func__);
+}
