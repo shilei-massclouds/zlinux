@@ -246,6 +246,30 @@ struct xa_state {
     .xa_head    = NULL,                                 \
 }
 
+/**
+ * DEFINE_XARRAY_FLAGS() - Define an XArray with custom flags.
+ * @name: A string that names your XArray.
+ * @flags: XA_FLAG values.
+ *
+ * This is intended for file scope definitions of XArrays.  It declares
+ * and initialises an empty XArray with the chosen name and flags.  It is
+ * equivalent to calling xa_init_flags() on the array, but it does the
+ * initialisation at compiletime instead of runtime.
+ */
+#define DEFINE_XARRAY_FLAGS(name, flags)                \
+    struct xarray name = XARRAY_INIT(name, flags)
+
+/**
+ * DEFINE_XARRAY() - Define an XArray.
+ * @name: A string that names your XArray.
+ *
+ * This is intended for file scope definitions of XArrays.  It declares
+ * and initialises an empty XArray with the chosen name.  It is equivalent
+ * to calling xa_init() on the array, but it does the initialisation at
+ * compiletime instead of runtime.
+ */
+#define DEFINE_XARRAY(name) DEFINE_XARRAY_FLAGS(name, 0)
+
 /*
  * We encode errnos in the xas->xa_node.  If an error has happened, we need to
  * drop the lock to fix it, and once we've done so the xa_state is invalid.
@@ -455,6 +479,12 @@ static inline bool xa_is_node(const void *entry)
 static inline void *xa_head(const struct xarray *xa)
 {
     return rcu_dereference_check(xa->xa_head);
+}
+
+/* Private */
+static inline void *xa_mk_sibling(unsigned int offset)
+{
+    return xa_mk_internal(offset);
 }
 
 /* Private */
@@ -874,5 +904,9 @@ static inline void xas_split_alloc(struct xa_state *xas, void *entry,
  */
 #define xas_for_each_conflict(xas, entry) \
     while ((entry = xas_find_conflict(xas)))
+
+void *xa_load(struct xarray *, unsigned long index);
+
+void *xa_store(struct xarray *, unsigned long index, void *entry, gfp_t);
 
 #endif /* _LINUX_XARRAY_H */

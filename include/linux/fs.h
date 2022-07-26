@@ -4,9 +4,7 @@
 
 #include <linux/linkage.h>
 #include <linux/dcache.h>
-#if 0
 #include <linux/wait_bit.h>
-#endif
 #include <linux/kdev_t.h>
 #include <linux/path.h>
 #include <linux/stat.h>
@@ -1291,6 +1289,16 @@ static inline void insert_inode_hash(struct inode *inode)
 static inline loff_t i_size_read(const struct inode *inode)
 {
     return inode->i_size;
+}
+
+/*
+ * NOTE: unlike i_size_read(), i_size_write() does need locking around it
+ * (normally i_mutex), otherwise on 32bit/SMP an update of i_size_seqcount
+ * can be lost, resulting in subsequent i_size_read() calls spinning forever.
+ */
+static inline void i_size_write(struct inode *inode, loff_t i_size)
+{
+    inode->i_size = i_size;
 }
 
 extern void __remove_inode_hash(struct inode *);

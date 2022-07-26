@@ -98,6 +98,19 @@ static __always_inline int buffer_##name(const struct buffer_head *bh)  \
 }
 
 /*
+ * test_set_buffer_foo() and test_clear_buffer_foo()
+ */
+#define TAS_BUFFER_FNS(bit, name)                   \
+static __always_inline int test_set_buffer_##name(struct buffer_head *bh) \
+{                                   \
+    return test_and_set_bit(BH_##bit, &(bh)->b_state);      \
+}                                   \
+static __always_inline int test_clear_buffer_##name(struct buffer_head *bh) \
+{                                   \
+    return test_and_clear_bit(BH_##bit, &(bh)->b_state);        \
+}                                   \
+
+/*
  * Generic address_space_operations implementations for buffer_head-backed
  * address_spaces.
  */
@@ -129,7 +142,18 @@ void buffer_check_dirty_writeback(struct page *page,
                                   bool *dirty, bool *writeback);
 
 BUFFER_FNS(Uptodate, uptodate)
+BUFFER_FNS(Lock, locked)
+BUFFER_FNS(Req, req)
+TAS_BUFFER_FNS(Req, req)
 BUFFER_FNS(Mapped, mapped)
+BUFFER_FNS(Async_Read, async_read)
+BUFFER_FNS(Delay, delay)
+BUFFER_FNS(Write_EIO, write_io_error)
+BUFFER_FNS(Unwritten, unwritten)
+BUFFER_FNS(Meta, meta)
+BUFFER_FNS(Prio, prio)
+
+#define bh_offset(bh)   ((unsigned long)(bh)->b_data & ~PAGE_MASK)
 
 /* If we *know* page->private refers to buffer_heads */
 #define page_buffers(page)      \
@@ -141,5 +165,20 @@ BUFFER_FNS(Mapped, mapped)
 #define page_has_buffers(page)  PagePrivate(page)
 
 void buffer_init(void);
+
+void unlock_buffer(struct buffer_head *bh);
+void __lock_buffer(struct buffer_head *bh);
+
+static inline int trylock_buffer(struct buffer_head *bh)
+{
+    return likely(!test_and_set_bit_lock(BH_Lock, &bh->b_state));
+}
+
+static inline void lock_buffer(struct buffer_head *bh)
+{
+    might_sleep();
+    if (!trylock_buffer(bh))
+        __lock_buffer(bh);
+}
 
 #endif /* _LINUX_BUFFER_HEAD_H */

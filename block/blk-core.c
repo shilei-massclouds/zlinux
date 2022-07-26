@@ -52,6 +52,7 @@
 #include <linux/idr.h>
 
 #include "blk.h"
+#include "blk-mq.h"
 #if 0
 #include "blk-mq-sched.h"
 #include "blk-pm.h"
@@ -223,6 +224,85 @@ int iocb_bio_iopoll(struct kiocb *kiocb, struct io_comp_batch *iob,
 }
 EXPORT_SYMBOL_GPL(iocb_bio_iopoll);
 
+/**
+ * submit_bio_noacct - re-submit a bio to the block device layer for I/O
+ * @bio:  The bio describing the location in memory and on the device.
+ *
+ * This is a version of submit_bio() that shall only be used for I/O that is
+ * resubmitted to lower level drivers by stacking block drivers.  All file
+ * systems and other upper level users of the block layer should use
+ * submit_bio() instead.
+ */
+void submit_bio_noacct(struct bio *bio)
+{
+    struct block_device *bdev = bio->bi_bdev;
+    struct request_queue *q = bdev_get_queue(bdev);
+    blk_status_t status = BLK_STS_IOERR;
+    struct blk_plug *plug;
+
+    might_sleep();
+
+    plug = blk_mq_plug(q, bio);
+    if (plug && plug->nowait)
+        bio->bi_opf |= REQ_NOWAIT;
+
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * submit_bio - submit a bio to the block device layer for I/O
+ * @bio: The &struct bio which describes the I/O
+ *
+ * submit_bio() is used to submit I/O requests to block devices.  It is passed a
+ * fully set up &struct bio that describes the I/O that needs to be done.  The
+ * bio will be send to the device described by the bi_bdev field.
+ *
+ * The success/failure status of the request, along with notification of
+ * completion, is delivered asynchronously through the ->bi_end_io() callback
+ * in @bio.  The bio must NOT be touched by thecaller until ->bi_end_io() has
+ * been called.
+ */
+void submit_bio(struct bio *bio)
+{
+#if 0
+    /*
+     * If it's a regular read/write or a barrier with data attached,
+     * go through the normal accounting stuff before submission.
+     */
+    if (bio_has_data(bio)) {
+       unsigned int count = bio_sectors(bio);
+
+        if (op_is_write(bio_op(bio))) {
+            count_vm_events(PGPGOUT, count);
+        } else {
+            task_io_account_read(bio->bi_iter.bi_size);
+            count_vm_events(PGPGIN, count);
+        }
+    }
+#endif
+
+    /*
+     * If we're reading data that is part of the userspace workingset, count
+     * submission time as memory stall.  When the device is congested, or
+     * the submitting cgroup IO-throttled, submission can be a significant
+     * part of overall IO time.
+     */
+    if (unlikely(bio_op(bio) == REQ_OP_READ &&
+        bio_flagged(bio, BIO_WORKINGSET))) {
+#if 0
+        unsigned long pflags;
+
+        psi_memstall_enter(&pflags);
+        submit_bio_noacct(bio);
+        psi_memstall_leave(&pflags);
+#endif
+        panic("%s: REQ_OP_READ & BIO_WORKINGSET!\n", __func__);
+        return;
+    }
+
+    submit_bio_noacct(bio);
+}
+EXPORT_SYMBOL(submit_bio);
 
 int __init blk_dev_init(void)
 {

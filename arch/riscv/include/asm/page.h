@@ -120,6 +120,8 @@ extern phys_addr_t phys_ram_base;
 #define virt_to_page(vaddr) (pfn_to_page(virt_to_pfn(vaddr)))
 #define page_to_virt(page)  (pfn_to_virt(page_to_pfn(page)))
 
+#define page_to_phys(page)  (pfn_to_phys(page_to_pfn(page)))
+
 #define pfn_valid(pfn) \
     (((pfn) >= ARCH_PFN_OFFSET) && (((pfn) - ARCH_PFN_OFFSET) < max_mapnr))
 

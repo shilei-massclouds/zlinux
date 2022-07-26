@@ -298,6 +298,12 @@ struct task_struct {
     struct list_head        children;
     struct list_head        sibling;
 
+    /* Stacked block device info: */
+    struct bio_list         *bio_list;
+
+    /* Stack plugging: */
+    struct blk_plug         *plug;
+
     /* Protection against (de-)allocation: mm, files, fs, tty, keyrings, mems_allowed, mempolicy: */
     spinlock_t alloc_lock;
 

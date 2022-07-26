@@ -740,4 +740,10 @@ static inline void totalram_pages_inc(void)
     atomic_long_inc(&_totalram_pages);
 }
 
+/* Returns the number of bytes in this potentially compound page. */
+static inline unsigned long page_size(struct page *page)
+{
+    return PAGE_SIZE << compound_order(page);
+}
+
 #endif /* _LINUX_MM_H */

@@ -194,4 +194,8 @@ static inline void attach_page_private(struct page *page, void *data)
     folio_attach_private(page_folio(page), data);
 }
 
+void folio_unlock(struct folio *folio);
+
+void unlock_page(struct page *page);
+
 #endif /* _LINUX_PAGEMAP_H */

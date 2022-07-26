@@ -27,4 +27,32 @@ typedef struct mempool_s {
 #endif
 } mempool_t;
 
+int mempool_init(mempool_t *pool, int min_nr, mempool_alloc_t *alloc_fn,
+                 mempool_free_t *free_fn, void *pool_data);
+
+/*
+ * A mempool_alloc_t and mempool_free_t that get the memory from
+ * a slab cache that is passed in through pool_data.
+ * Note: the slab cache may not have a ctor function.
+ */
+void *mempool_alloc_slab(gfp_t gfp_mask, void *pool_data);
+void mempool_free_slab(void *element, void *pool_data);
+
+static inline int
+mempool_init_slab_pool(mempool_t *pool, int min_nr, struct kmem_cache *kc)
+{
+    return mempool_init(pool, min_nr, mempool_alloc_slab, mempool_free_slab,
+                        (void *) kc);
+}
+
+static inline bool mempool_initialized(mempool_t *pool)
+{
+    return pool->elements != NULL;
+}
+
+extern int mempool_resize(mempool_t *pool, int new_min_nr);
+extern void mempool_destroy(mempool_t *pool);
+extern void *mempool_alloc(mempool_t *pool, gfp_t gfp_mask) __malloc;
+extern void mempool_free(void *element, mempool_t *pool);
+
 #endif /* _LINUX_MEMPOOL_H */

@@ -46,7 +46,7 @@
 #include <linux/bit_spinlock.h>
 #include <linux/pagevec.h>
 #include <linux/sched/mm.h>
-//#include <linux/fscrypt.h>
+#include <linux/fscrypt.h>
 
 #include "internal.h"
 
@@ -294,6 +294,113 @@ create_page_buffers(struct page *page, struct inode *inode,
     return page_buffers(page);
 }
 
+void __lock_buffer(struct buffer_head *bh)
+{
+    wait_on_bit_lock_io(&bh->b_state, BH_Lock, TASK_UNINTERRUPTIBLE);
+}
+EXPORT_SYMBOL(__lock_buffer);
+
+static void end_buffer_async_read(struct buffer_head *bh, int uptodate)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * I/O completion handler for block_read_full_page() - pages
+ * which come unlocked at the end of I/O.
+ */
+static void end_buffer_async_read_io(struct buffer_head *bh, int uptodate)
+{
+    end_buffer_async_read(bh, uptodate);
+}
+
+/*
+ * If a page's buffers are under async readin (end_buffer_async_read
+ * completion) then there is a possibility that another thread of
+ * control could lock one of the buffers after it has completed
+ * but while some of the other buffers have not completed.  This
+ * locked buffer would confuse end_buffer_async_read() into not unlocking
+ * the page.  So the absence of BH_Async_Read tells end_buffer_async_read()
+ * that this buffer is not under async I/O.
+ *
+ * The page comes unlocked when it has no locked buffer_async buffers
+ * left.
+ *
+ * PageLocked prevents anyone starting new async I/O reads any of
+ * the buffers.
+ *
+ * PageWriteback is used to prevent simultaneous writeout of the same
+ * page.
+ *
+ * PageLocked prevents anyone from starting writeback of a page which is
+ * under read I/O (PageWriteback is only ever set against a locked page).
+ */
+static void mark_buffer_async_read(struct buffer_head *bh)
+{
+    bh->b_end_io = end_buffer_async_read_io;
+    set_buffer_async_read(bh);
+}
+
+static void end_bio_bh_io_sync(struct bio *bio)
+{
+    struct buffer_head *bh = bio->bi_private;
+
+    if (unlikely(bio_flagged(bio, BIO_QUIET)))
+        set_bit(BH_Quiet, &bh->b_state);
+
+    bh->b_end_io(bh, !bio->bi_status);
+    bio_put(bio);
+}
+
+static int submit_bh_wbc(int op, int op_flags, struct buffer_head *bh,
+                         struct writeback_control *wbc)
+{
+    struct bio *bio;
+
+    BUG_ON(!buffer_locked(bh));
+    BUG_ON(!buffer_mapped(bh));
+    BUG_ON(!bh->b_end_io);
+    BUG_ON(buffer_delay(bh));
+    BUG_ON(buffer_unwritten(bh));
+
+    /*
+     * Only clear out a write error when rewriting
+     */
+    if (test_set_buffer_req(bh) && (op == REQ_OP_WRITE))
+        clear_buffer_write_io_error(bh);
+
+    if (buffer_meta(bh))
+        op_flags |= REQ_META;
+    if (buffer_prio(bh))
+        op_flags |= REQ_PRIO;
+
+    bio = bio_alloc(bh->b_bdev, 1, op | op_flags, GFP_NOIO);
+
+    bio->bi_iter.bi_sector = bh->b_blocknr * (bh->b_size >> 9);
+
+    bio_add_page(bio, bh->b_page, bh->b_size, bh_offset(bh));
+    BUG_ON(bio->bi_iter.bi_size != bh->b_size);
+
+    bio->bi_end_io = end_bio_bh_io_sync;
+    bio->bi_private = bh;
+
+    /* Take care of bh's that straddle the end of the device */
+    guard_bio_eod(bio);
+
+    if (wbc) {
+        panic("%s: wbc!\n", __func__);
+    }
+
+    submit_bio(bio);
+    return 0;
+}
+
+int submit_bh(int op, int op_flags, struct buffer_head *bh)
+{
+    return submit_bh_wbc(op, op_flags, bh, NULL);
+}
+EXPORT_SYMBOL(submit_bh);
+
 /*
  * Generic "read page" function for block devices that have the normal
  * get_block functionality. This is most of the block device filesystems.
@@ -320,10 +427,6 @@ int block_read_full_page(struct page *page, get_block_t *get_block)
     nr = 0;
     i = 0;
 
-    printk("###### %s: i_size(%x) bbits(%d) \n",
-           __func__, i_size_read(inode), bbits);
-    printk("###### %s: (%d , %d) \n", __func__, iblock, lblock);
-
     do {
         if (buffer_uptodate(bh))
             continue;
@@ -338,13 +441,56 @@ int block_read_full_page(struct page *page, get_block_t *get_block)
                 if (err)
                     SetPageError(page);
             }
-
-            panic("%s: !buffer_mapped!\n", __func__);
+            if (!buffer_mapped(bh)) {
+                zero_user(page, i * blocksize, blocksize);
+                if (!err)
+                    set_buffer_uptodate(bh);
+                continue;
+            }
+            /*
+             * get_block() might have updated the buffer
+             * synchronously
+             */
+            if (buffer_uptodate(bh))
+                continue;
         }
-        panic("%s: 1!\n", __func__);
+        arr[nr++] = bh;
     } while (i++, iblock++, (bh = bh->b_this_page) != head);
 
-    panic("%s: END!\n", __func__);
+    if (fully_mapped)
+        SetPageMappedToDisk(page);
+
+    if (!nr) {
+        /*
+         * All buffers are uptodate - we can set the page uptodate
+         * as well. But not if get_block() returned an error.
+         */
+        if (!PageError(page))
+            SetPageUptodate(page);
+        unlock_page(page);
+        return 0;
+    }
+
+    /* Stage two: lock the buffers */
+    for (i = 0; i < nr; i++) {
+        bh = arr[i];
+        lock_buffer(bh);
+        mark_buffer_async_read(bh);
+    }
+
+    /*
+     * Stage 3: start the IO.  Check for uptodateness
+     * inside the buffer lock in case another process reading
+     * the underlying blockdev brought it uptodate (the sct fix).
+     */
+    for (i = 0; i < nr; i++) {
+        bh = arr[i];
+        if (buffer_uptodate(bh))
+            end_buffer_async_read(bh, 1);
+        else
+            submit_bh(REQ_OP_READ, 0, bh);
+    }
+    return 0;
 }
 EXPORT_SYMBOL(block_read_full_page);
 

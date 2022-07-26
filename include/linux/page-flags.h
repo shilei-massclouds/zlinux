@@ -242,10 +242,6 @@ static __always_inline int TestClearPage##uname(struct page *page)  \
     SETPAGEFLAG_NOOP(uname, lname)      \
     CLEARPAGEFLAG_NOOP(uname, lname)
 
-#define TESTCLEARFLAG(uname, lname, policy) \
-static __always_inline int TestClearPage##uname(struct page *page) \
-{ return test_and_clear_bit(PG_##lname, &policy(page, 1)->flags); }
-
 __PAGEFLAG(Locked, locked, PF_NO_TAIL)
 
 PAGEFLAG(Error, error, PF_NO_TAIL) TESTCLEARFLAG(Error, error, PF_NO_TAIL)
@@ -262,6 +258,9 @@ PAGEFLAG(Active, active, PF_HEAD)
     __CLEARPAGEFLAG(Active, active, PF_HEAD)
     TESTCLEARFLAG(Active, active, PF_HEAD)
 
+PAGEFLAG(Workingset, workingset, PF_HEAD)
+    TESTCLEARFLAG(Workingset, workingset, PF_HEAD)
+
 PAGEFLAG(Reserved, reserved, PF_NO_COMPOUND)
     __CLEARPAGEFLAG(Reserved, reserved, PF_NO_COMPOUND)
     __SETPAGEFLAG(Reserved, reserved, PF_NO_COMPOUND)
@@ -276,6 +275,8 @@ PAGEFLAG(SwapBacked, swapbacked, PF_NO_TAIL)
  * - PG_private and PG_private_2 cause releasepage() and co to be invoked
  */
 PAGEFLAG(Private, private, PF_ANY)
+
+PAGEFLAG(MappedToDisk, mappedtodisk, PF_NO_TAIL)
 
 PAGEFLAG_FALSE(HighMem, highmem)
 
@@ -456,10 +457,28 @@ static inline bool folio_test_uptodate(struct folio *folio)
     return ret;
 }
 
+static __always_inline void folio_mark_uptodate(struct folio *folio)
+{
+    /*
+     * Memory barrier must be issued before setting the PG_uptodate bit,
+     * so that all previous stores issued in order to bring the folio
+     * uptodate are actually visible before folio_test_uptodate becomes true.
+     */
+    smp_wmb();
+    set_bit(PG_uptodate, folio_flags(folio, 0));
+}
+
+static __always_inline void SetPageUptodate(struct page *page)
+{
+    folio_mark_uptodate((struct folio *)page);
+}
+
 static inline int PageUptodate(struct page *page)
 {
     return folio_test_uptodate(page_folio(page));
 }
+
+CLEARPAGEFLAG(Uptodate, uptodate, PF_NO_TAIL)
 
 #endif /* !__GENERATING_BOUNDS_H */
 

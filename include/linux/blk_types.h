@@ -55,6 +55,73 @@ typedef u16 blk_short_t;
 #define REQ_OP_MASK     ((1 << REQ_OP_BITS) - 1)
 #define REQ_FLAG_BITS   24
 
+#define bio_op(bio) \
+    ((bio)->bi_opf & REQ_OP_MASK)
+
+enum req_flag_bits {
+    __REQ_FAILFAST_DEV =    /* no driver retries of device errors */
+        REQ_OP_BITS,
+    __REQ_FAILFAST_TRANSPORT, /* no driver retries of transport errors */
+    __REQ_FAILFAST_DRIVER,  /* no driver retries of driver errors */
+    __REQ_SYNC,     /* request is sync (sync write or read) */
+    __REQ_META,     /* metadata io request */
+    __REQ_PRIO,     /* boost priority in cfq */
+    __REQ_NOMERGE,      /* don't touch this for merging */
+    __REQ_IDLE,     /* anticipate more IO after this one */
+    __REQ_INTEGRITY,    /* I/O includes block integrity payload */
+    __REQ_FUA,      /* forced unit access */
+    __REQ_PREFLUSH,     /* request for cache flush */
+    __REQ_RAHEAD,       /* read ahead, can fail anytime */
+    __REQ_BACKGROUND,   /* background IO */
+    __REQ_NOWAIT,           /* Don't wait if request will block */
+    /*
+     * When a shared kthread needs to issue a bio for a cgroup, doing
+     * so synchronously can lead to priority inversions as the kthread
+     * can be trapped waiting for that cgroup.  CGROUP_PUNT flag makes
+     * submit_bio() punt the actual issuing to a dedicated per-blkcg
+     * work item to avoid such priority inversions.
+     */
+    __REQ_CGROUP_PUNT,
+
+    /* command specific flags for REQ_OP_WRITE_ZEROES: */
+    __REQ_NOUNMAP,      /* do not free blocks when zeroing */
+
+    __REQ_POLLED,       /* caller polls for completion using bio_poll */
+
+    /* for driver use */
+    __REQ_DRV,
+    __REQ_SWAP,     /* swapping request. */
+    __REQ_NR_BITS,      /* stops here */
+};
+
+#define REQ_FAILFAST_DEV        (1ULL << __REQ_FAILFAST_DEV)
+#define REQ_FAILFAST_TRANSPORT  (1ULL << __REQ_FAILFAST_TRANSPORT)
+#define REQ_FAILFAST_DRIVER     (1ULL << __REQ_FAILFAST_DRIVER)
+#define REQ_SYNC        (1ULL << __REQ_SYNC)
+#define REQ_META        (1ULL << __REQ_META)
+#define REQ_PRIO        (1ULL << __REQ_PRIO)
+#define REQ_NOMERGE     (1ULL << __REQ_NOMERGE)
+#define REQ_IDLE        (1ULL << __REQ_IDLE)
+#define REQ_INTEGRITY   (1ULL << __REQ_INTEGRITY)
+#define REQ_FUA         (1ULL << __REQ_FUA)
+#define REQ_PREFLUSH    (1ULL << __REQ_PREFLUSH)
+#define REQ_RAHEAD      (1ULL << __REQ_RAHEAD)
+#define REQ_BACKGROUND  (1ULL << __REQ_BACKGROUND)
+#define REQ_NOWAIT      (1ULL << __REQ_NOWAIT)
+#define REQ_CGROUP_PUNT (1ULL << __REQ_CGROUP_PUNT)
+
+#define REQ_NOUNMAP     (1ULL << __REQ_NOUNMAP)
+#define REQ_POLLED      (1ULL << __REQ_POLLED)
+
+#define REQ_DRV         (1ULL << __REQ_DRV)
+#define REQ_SWAP        (1ULL << __REQ_SWAP)
+
+#define REQ_FAILFAST_MASK \
+    (REQ_FAILFAST_DEV | REQ_FAILFAST_TRANSPORT | REQ_FAILFAST_DRIVER)
+
+#define REQ_NOMERGE_FLAGS \
+    (REQ_NOMERGE | REQ_PREFLUSH | REQ_FUA)
+
 struct block_device {
     sector_t        bd_start_sect;
     sector_t        bd_nr_sectors;
@@ -104,10 +171,10 @@ struct bio {
     struct bvec_iter    bi_iter;
 
 #if 0
-    blk_qc_t        bi_cookie;
-    bio_end_io_t        *bi_end_io;
+    blk_qc_t            bi_cookie;
 #endif
-    void            *bi_private;
+    bio_end_io_t        *bi_end_io;
+    void                *bi_private;
 
     unsigned short      bi_vcnt;    /* how many bio_vec's */
 
@@ -117,7 +184,7 @@ struct bio {
 
     unsigned short      bi_max_vecs;    /* max bvl_vecs we can hold */
 
-    atomic_t        __bi_cnt;   /* pin count */
+    atomic_t            __bi_cnt;   /* pin count */
 
     struct bio_vec      *bi_io_vec; /* the actual vec list */
 
@@ -166,5 +233,22 @@ enum req_opf {
 
 #define dev_to_bdev(device) \
     container_of((device), struct block_device, bd_device)
+
+#define BLK_STS_OK 0
+#define BLK_STS_NOTSUPP     ((__force blk_status_t)1)
+#define BLK_STS_TIMEOUT     ((__force blk_status_t)2)
+#define BLK_STS_NOSPC       ((__force blk_status_t)3)
+#define BLK_STS_TRANSPORT   ((__force blk_status_t)4)
+#define BLK_STS_TARGET      ((__force blk_status_t)5)
+#define BLK_STS_NEXUS       ((__force blk_status_t)6)
+#define BLK_STS_MEDIUM      ((__force blk_status_t)7)
+#define BLK_STS_PROTECTION  ((__force blk_status_t)8)
+#define BLK_STS_RESOURCE    ((__force blk_status_t)9)
+#define BLK_STS_IOERR       ((__force blk_status_t)10)
+
+static inline bool op_is_write(unsigned int op)
+{
+    return (op & 1);
+}
 
 #endif /* __LINUX_BLK_TYPES_H */

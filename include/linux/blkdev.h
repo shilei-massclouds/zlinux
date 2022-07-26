@@ -345,6 +345,33 @@ enum blk_unique_id {
     BLK_UID_NAA     = 3,
 };
 
+/*
+ * blk_plug permits building a queue of related requests by holding the I/O
+ * fragments for a short period. This allows merging of sequential requests
+ * into single larger request. As the requests are moved from a per-task list to
+ * the device's request_queue in a batch, this results in improved scalability
+ * as the lock contention for request_queue lock is reduced.
+ *
+ * It is ok not to disable preemption when adding the request to the plug list
+ * or when attempting a merge. For details, please see schedule() where
+ * blk_flush_plug() is called.
+ */
+struct blk_plug {
+    struct request *mq_list; /* blk-mq requests */
+
+    /* if ios_left is > 1, we can batch tag/rq allocations */
+    struct request *cached_rq;
+    unsigned short nr_ios;
+
+    unsigned short rq_count;
+
+    bool multiple_queues;
+    bool has_elevator;
+    bool nowait;
+
+    struct list_head cb_list; /* md requires an unplug callback */
+};
+
 /**
  * DOC: genhd capability flags
  *
@@ -630,6 +657,25 @@ void set_capacity(struct gendisk *disk, sector_t size);
 static inline loff_t bdev_nr_bytes(struct block_device *bdev)
 {
     return (loff_t)bdev_nr_sectors(bdev) << SECTOR_SHIFT;
+}
+
+void submit_bio_noacct(struct bio *bio);
+
+static inline enum blk_zoned_model
+blk_queue_zoned_model(struct request_queue *q)
+{
+    return BLK_ZONED_NONE;
+}
+
+static inline bool blk_queue_is_zoned(struct request_queue *q)
+{
+    switch (blk_queue_zoned_model(q)) {
+    case BLK_ZONED_HA:
+    case BLK_ZONED_HM:
+        return true;
+    default:
+        return false;
+    }
 }
 
 #endif /* _LINUX_BLKDEV_H */
