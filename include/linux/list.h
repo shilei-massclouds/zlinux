@@ -376,4 +376,34 @@ static inline void __hlist_del(struct hlist_node *n)
         WRITE_ONCE(next->pprev, pprev);
 }
 
+/**
+ * list_is_head - tests whether @list is the list @head
+ * @list: the entry to test
+ * @head: the head of the list
+ */
+static inline int
+list_is_head(const struct list_head *list, const struct list_head *head)
+{
+    return list == head;
+}
+
+/**
+ * list_empty_careful - tests whether a list is empty and not being modified
+ * @head: the list to test
+ *
+ * Description:
+ * tests whether a list is empty _and_ checks that no other CPU might be
+ * in the process of modifying either member (next or prev)
+ *
+ * NOTE: using list_empty_careful() without synchronization
+ * can only be safe if the only activity that can happen
+ * to the list entry is list_del_init(). Eg. it cannot be used
+ * if another CPU could re-list_add() it.
+ */
+static inline int list_empty_careful(const struct list_head *head)
+{
+    struct list_head *next = smp_load_acquire(&head->next);
+    return list_is_head(next, head) && (next == head->prev);
+}
+
 #endif /* _LINUX_LIST_H */

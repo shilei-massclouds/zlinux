@@ -67,6 +67,30 @@ enum {
     __PERCPU_REF_FLAG_BITS  = 2,
 };
 
+/* @flags for percpu_ref_init() */
+enum {
+    /*
+     * Start w/ ref == 1 in atomic mode.  Can be switched to percpu
+     * operation using percpu_ref_switch_to_percpu().  If initialized
+     * with this flag, the ref will stay in atomic mode until
+     * percpu_ref_switch_to_percpu() is invoked on it.
+     * Implies ALLOW_REINIT.
+     */
+    PERCPU_REF_INIT_ATOMIC  = 1 << 0,
+
+    /*
+     * Start dead w/ ref == 0 in atomic mode.  Must be revived with
+     * percpu_ref_reinit() before used.  Implies INIT_ATOMIC and
+     * ALLOW_REINIT.
+     */
+    PERCPU_REF_INIT_DEAD    = 1 << 1,
+
+    /*
+     * Allow switching from atomic mode to percpu mode.
+     */
+    PERCPU_REF_ALLOW_REINIT = 1 << 2,
+};
+
 struct percpu_ref_data {
     atomic_long_t       count;
     percpu_ref_func_t   *release;
@@ -93,6 +117,13 @@ struct percpu_ref {
     struct percpu_ref_data *data;
 };
 
+int __must_check percpu_ref_init(struct percpu_ref *ref,
+                                 percpu_ref_func_t *release,
+                                 unsigned int flags,
+                                 gfp_t gfp);
+
+void percpu_ref_exit(struct percpu_ref *ref);
+
 /*
  * Internal helper.  Don't use outside percpu-refcount proper.  The
  * function doesn't return the pointer and let the caller test it for NULL
@@ -100,7 +131,7 @@ struct percpu_ref {
  * branches as it can't assume that @ref->percpu_count is not NULL.
  */
 static inline bool __ref_is_percpu(struct percpu_ref *ref,
-                      unsigned long __percpu **percpu_countp)
+                                   unsigned long __percpu **percpu_countp)
 {
     unsigned long percpu_ptr;
 
@@ -166,6 +197,28 @@ static inline void percpu_ref_put_many(struct percpu_ref *ref, unsigned long nr)
 static inline void percpu_ref_put(struct percpu_ref *ref)
 {
     percpu_ref_put_many(ref, 1);
+}
+
+/**
+ * percpu_ref_tryget_live_rcu - same as percpu_ref_tryget_live() but the
+ * caller is responsible for taking RCU.
+ *
+ * This function is safe to call as long as @ref is between init and exit.
+ */
+static inline bool percpu_ref_tryget_live_rcu(struct percpu_ref *ref)
+{
+    unsigned long __percpu *percpu_count;
+    bool ret = false;
+
+    printk("%s: step0\n", __func__);
+    if (likely(__ref_is_percpu(ref, &percpu_count))) {
+        printk("%s: step1.1\n", __func__);
+        this_cpu_inc(*percpu_count);
+        ret = true;
+    } else if (!(ref->percpu_count_ptr & __PERCPU_REF_DEAD)) {
+        ret = atomic_long_inc_not_zero(&ref->data->count);
+    }
+    return ret;
 }
 
 #endif /* _LINUX_PERCPU_REFCOUNT_H */

@@ -186,9 +186,7 @@ struct queue_limits {
 
 struct request_queue {
     struct request      *last_merge;
-#if 0
     struct elevator_queue   *elevator;
-#endif
 
     struct percpu_ref   q_usage_counter;
 
@@ -199,10 +197,8 @@ struct request_queue {
 #endif
     const struct blk_mq_ops *mq_ops;
 
-#if 0
     /* sw queues */
     struct blk_mq_ctx __percpu  *queue_ctx;
-#endif
 
     unsigned int        queue_depth;
 
@@ -214,7 +210,7 @@ struct request_queue {
      * The queue owner gets to use this for whatever they like.
      * ll_rw_blk doesn't touch it.
      */
-    void            *queuedata;
+    void                *queuedata;
 
     /*
      * various queue flags, see QUEUE_* below
@@ -266,11 +262,11 @@ struct request_queue {
 
     struct timer_list   timeout;
     struct work_struct  timeout_work;
+#endif
 
     atomic_t        nr_active_requests_shared_tags;
 
     struct blk_mq_tags  *sched_shared_tags;
-#endif
 
     struct list_head    icq_list;
     struct queue_limits limits;
@@ -280,17 +276,16 @@ struct request_queue {
     int                 node;
     struct mutex        debugfs_mutex;
 
-#if 0
     /*
      * for flush operations
      */
     struct blk_flush_queue  *fq;
-#endif
 
     struct list_head    requeue_list;
     spinlock_t          requeue_lock;
 #if 0
     struct delayed_work requeue_work;
+#endif
 
     struct mutex        sysfs_lock;
     struct mutex        sysfs_dir_lock;
@@ -300,9 +295,9 @@ struct request_queue {
      * nr_hw_queues
      */
     struct list_head    unused_hctx_list;
-    spinlock_t      unused_hctx_lock;
+    spinlock_t          unused_hctx_lock;
 
-    int         mq_freeze_depth;
+    int                 mq_freeze_depth;
     struct rcu_head     rcu_head;
     wait_queue_head_t   mq_freeze_wq;
     /*
@@ -311,9 +306,8 @@ struct request_queue {
      */
     struct mutex        mq_freeze_lock;
 
-    int         quiesce_depth;
+    int                 quiesce_depth;
 
-#endif
     struct blk_mq_tag_set   *tag_set;
     struct list_head    tag_set_list;
     struct bio_set      bio_split;
@@ -482,10 +476,17 @@ struct gendisk *__blk_alloc_disk(int node, struct lock_class_key *lkclass);
 #define blk_queue_has_srcu(q)   test_bit(QUEUE_FLAG_HAS_SRCU, &(q)->queue_flags)
 #define blk_queue_nowait(q)     test_bit(QUEUE_FLAG_NOWAIT, &(q)->queue_flags)
 #define blk_queue_discard(q)    test_bit(QUEUE_FLAG_DISCARD, &(q)->queue_flags)
+#define blk_queue_nomerges(q)   test_bit(QUEUE_FLAG_NOMERGES, &(q)->queue_flags)
+#define blk_queue_io_stat(q)    test_bit(QUEUE_FLAG_IO_STAT, &(q)->queue_flags)
+#define blk_queue_quiesced(q)   test_bit(QUEUE_FLAG_QUIESCED, &(q)->queue_flags)
 #define blk_queue_secure_erase(q) \
     (test_bit(QUEUE_FLAG_SECERASE, &(q)->queue_flags))
 #define blk_queue_zone_resetall(q)  \
     test_bit(QUEUE_FLAG_ZONE_RESETALL, &(q)->queue_flags)
+
+#define blk_queue_pm_only(q)    atomic_read(&(q)->pm_only)
+#define blk_queue_registered(q) \
+    test_bit(QUEUE_FLAG_REGISTERED, &(q)->queue_flags)
 
 bool __must_check blk_get_queue(struct request_queue *);
 extern void blk_put_queue(struct request_queue *);
@@ -684,6 +685,23 @@ static inline bool blk_queue_is_zoned(struct request_queue *q)
     default:
         return false;
     }
+}
+
+extern int blk_lld_busy(struct request_queue *q);
+extern void blk_queue_split(struct bio **);
+extern int blk_queue_enter(struct request_queue *q, blk_mq_req_flags_t flags);
+extern void blk_queue_exit(struct request_queue *q);
+extern void blk_sync_queue(struct request_queue *q);
+
+static inline enum rpm_status queue_rpm_status(struct request_queue *q)
+{
+    return q->rpm_status;
+}
+
+static inline bool blk_op_is_passthrough(unsigned int op)
+{
+    op &= REQ_OP_MASK;
+    return op == REQ_OP_DRV_IN || op == REQ_OP_DRV_OUT;
 }
 
 #endif /* _LINUX_BLKDEV_H */

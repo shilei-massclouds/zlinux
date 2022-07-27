@@ -3,12 +3,25 @@
 #define BLK_INTERNAL_H
 
 #include <linux/memblock.h> /* for max_pfn/max_low_pfn */
+#include <linux/blk-mq.h>
 #if 0
 #include <linux/blk-crypto.h>
 #include "blk-crypto-internal.h"
 #endif
 
 struct elevator_type;
+
+struct blk_flush_queue {
+    unsigned int        flush_pending_idx:1;
+    unsigned int        flush_running_idx:1;
+    blk_status_t        rq_status;
+    unsigned long       flush_pending_since;
+    struct list_head    flush_queue[2];
+    struct list_head    flush_data_in_flight;
+    struct request      *flush_rq;
+
+    spinlock_t          mq_flush_lock;
+};
 
 extern struct kmem_cache *blk_requestq_cachep;
 extern struct kmem_cache *blk_requestq_srcu_cachep;
@@ -43,7 +56,25 @@ static inline void bio_clear_polled(struct bio *bio)
 
 static inline bool blk_try_enter_queue(struct request_queue *q, bool pm)
 {
-    panic("%s: END!\n", __func__);
+    rcu_read_lock();
+    if (!percpu_ref_tryget_live_rcu(&q->q_usage_counter))
+        goto fail;
+
+    /*
+     * The code that increments the pm_only counter must ensure that the
+     * counter is globally visible before the queue is unfrozen.
+     */
+    if (blk_queue_pm_only(q) && (!pm || queue_rpm_status(q) == RPM_SUSPENDED))
+        goto fail_put;
+
+    rcu_read_unlock();
+    return true;
+
+fail_put:
+    blk_queue_exit(q);
+fail:
+    rcu_read_unlock();
+    return false;
 }
 
 int __bio_queue_enter(struct request_queue *q, struct bio *bio);
@@ -97,5 +128,24 @@ static inline bool blk_may_split(struct request_queue *q, struct bio *bio)
 
 void __blk_queue_split(struct request_queue *q, struct bio **bio,
                        unsigned int *nr_segs);
+
+bool blk_attempt_plug_merge(struct request_queue *q, struct bio *bio,
+                            unsigned int nr_segs);
+bool blk_bio_list_merge(struct request_queue *q, struct list_head *list,
+                        struct bio *bio, unsigned int nr_segs);
+
+struct blk_flush_queue *blk_alloc_flush_queue(int node, int cmd_size,
+                                              gfp_t flags);
+void blk_free_flush_queue(struct blk_flush_queue *q);
+
+static inline void req_ref_set(struct request *req, int value)
+{
+    atomic_set(&req->ref, value);
+}
+
+static inline int req_ref_read(struct request *req)
+{
+    return atomic_read(&req->ref);
+}
 
 #endif /* BLK_INTERNAL_H */

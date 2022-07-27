@@ -30,8 +30,8 @@
 #include <linux/atomic.h>
 #if 0
 #include <linux/shrinker.h>
-#include <linux/migrate_mode.h>
 #endif
+#include <linux/migrate_mode.h>
 #include <linux/uidgid.h>
 #include <linux/lockdep.h>
 #include <linux/uuid.h>

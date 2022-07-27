@@ -30,8 +30,8 @@
 #include <linux/log2.h>
 
 #include "blk.h"
-#if 0
 #include "blk-mq-sched.h"
+#if 0
 #include "blk-rq-qos.h"
 #include "blk-cgroup.h"
 #endif
@@ -237,7 +237,6 @@ int __must_check device_add_disk(struct device *parent, struct gendisk *disk,
     if (queue_is_mq(disk->queue) && disk->fops->poll_bio)
         return -EINVAL;
 
-#if 0
     /*
      * The disk queue should now be all set with enough information about
      * the device for the elevator code to pick an adequate default
@@ -245,7 +244,6 @@ int __must_check device_add_disk(struct device *parent, struct gendisk *disk,
      * registration.
      */
     elevator_init_mq(disk->queue);
-#endif
 
     /*
      * If the driver provides an explicit major number it also must provide

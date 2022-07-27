@@ -566,7 +566,7 @@ struct vm_operations_struct {
                     unsigned long end, unsigned long newflags);
     vm_fault_t (*fault)(struct vm_fault *vmf);
     vm_fault_t (*huge_fault)(struct vm_fault *vmf,
-            enum page_entry_size pe_size);
+                             enum page_entry_size pe_size);
     vm_fault_t (*map_pages)(struct vm_fault *vmf,
                             pgoff_t start_pgoff, pgoff_t end_pgoff);
 

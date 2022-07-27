@@ -58,6 +58,8 @@ typedef u16 blk_short_t;
 #define bio_op(bio) \
     ((bio)->bi_opf & REQ_OP_MASK)
 
+typedef __u32 __bitwise blk_mq_req_flags_t;
+
 enum req_flag_bits {
     __REQ_FAILFAST_DEV =    /* no driver retries of device errors */
         REQ_OP_BITS,
@@ -251,6 +253,66 @@ enum req_opf {
 #define BLK_STS_PROTECTION  ((__force blk_status_t)8)
 #define BLK_STS_RESOURCE    ((__force blk_status_t)9)
 #define BLK_STS_IOERR       ((__force blk_status_t)10)
+
+/* hack for device mapper, don't use elsewhere: */
+#define BLK_STS_DM_REQUEUE  ((__force blk_status_t)11)
+
+#define BLK_STS_AGAIN       ((__force blk_status_t)12)
+
+/*
+ * BLK_STS_DEV_RESOURCE is returned from the driver to the block layer if
+ * device related resources are unavailable, but the driver can guarantee
+ * that the queue will be rerun in the future once resources become
+ * available again. This is typically the case for device specific
+ * resources that are consumed for IO. If the driver fails allocating these
+ * resources, we know that inflight (or pending) IO will free these
+ * resource upon completion.
+ *
+ * This is different from BLK_STS_RESOURCE in that it explicitly references
+ * a device specific resource. For resources of wider scope, allocation
+ * failure can happen without having pending IO. This means that we can't
+ * rely on request completions freeing these resources, as IO may not be in
+ * flight. Examples of that are kernel memory allocations, DMA mappings, or
+ * any other system wide resources.
+ */
+#define BLK_STS_DEV_RESOURCE    ((__force blk_status_t)13)
+
+/*
+ * BLK_STS_ZONE_RESOURCE is returned from the driver to the block layer if zone
+ * related resources are unavailable, but the driver can guarantee the queue
+ * will be rerun in the future once the resources become available again.
+ *
+ * This is different from BLK_STS_DEV_RESOURCE in that it explicitly references
+ * a zone specific resource and IO to a different zone on the same device could
+ * still be served. Examples of that are zones that are write-locked, but a read
+ * to the same zone could be served.
+ */
+#define BLK_STS_ZONE_RESOURCE   ((__force blk_status_t)14)
+
+/*
+ * BLK_STS_ZONE_OPEN_RESOURCE is returned from the driver in the completion
+ * path if the device returns a status indicating that too many zone resources
+ * are currently open. The same command should be successful if resubmitted
+ * after the number of open zones decreases below the device's limits, which is
+ * reported in the request_queue's max_open_zones.
+ */
+#define BLK_STS_ZONE_OPEN_RESOURCE  ((__force blk_status_t)15)
+
+/*
+ * BLK_STS_ZONE_ACTIVE_RESOURCE is returned from the driver in the completion
+ * path if the device returns a status indicating that too many zone resources
+ * are currently active. The same command should be successful if resubmitted
+ * after the number of active zones decreases below the device's limits, which
+ * is reported in the request_queue's max_active_zones.
+ */
+#define BLK_STS_ZONE_ACTIVE_RESOURCE    ((__force blk_status_t)16)
+
+/*
+ * BLK_STS_OFFLINE is returned from the driver when the target device is offline
+ * or is being taken offline. This could help differentiate the case where a
+ * device is intentionally being shut down from a real I/O error.
+ */
+#define BLK_STS_OFFLINE     ((__force blk_status_t)17)
 
 static inline bool op_is_write(unsigned int op)
 {

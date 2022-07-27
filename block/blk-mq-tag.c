@@ -83,3 +83,104 @@ void blk_mq_free_tags(struct blk_mq_tags *tags)
 #endif
     panic("%s: END!\n", __func__);
 }
+
+/*
+ * If a previously inactive queue goes active, bump the active user count.
+ * We need to do this before try to allocate driver tag, then even if fail
+ * to get tag when first time, the other shared-tag users could reserve
+ * budget for it.
+ */
+bool __blk_mq_tag_busy(struct blk_mq_hw_ctx *hctx)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * If a previously busy queue goes inactive, potential waiters could now
+ * be allowed to queue. Wake them up and check.
+ */
+void __blk_mq_tag_idle(struct blk_mq_hw_ctx *hctx)
+{
+    panic("%s: END!\n", __func__);
+}
+
+void blk_mq_put_tag(struct blk_mq_tags *tags, struct blk_mq_ctx *ctx,
+                    unsigned int tag)
+{
+    if (!blk_mq_tag_is_reserved(tags, tag)) {
+        const int real_tag = tag - tags->nr_reserved_tags;
+
+        BUG_ON(real_tag >= tags->nr_tags);
+        sbitmap_queue_clear(&tags->bitmap_tags, real_tag, ctx->cpu);
+    } else {
+        BUG_ON(tag >= tags->nr_reserved_tags);
+        sbitmap_queue_clear(&tags->breserved_tags, tag, ctx->cpu);
+    }
+}
+
+static int __blk_mq_get_tag(struct blk_mq_alloc_data *data,
+                            struct sbitmap_queue *bt)
+{
+    if (!data->q->elevator && !(data->flags & BLK_MQ_REQ_RESERVED) &&
+        !hctx_may_queue(data->hctx, bt))
+        return BLK_MQ_NO_TAG;
+
+    if (data->shallow_depth)
+        return sbitmap_queue_get_shallow(bt, data->shallow_depth);
+    else
+        return __sbitmap_queue_get(bt);
+}
+
+unsigned int blk_mq_get_tag(struct blk_mq_alloc_data *data)
+{
+    struct blk_mq_tags *tags = blk_mq_tags_from_data(data);
+    struct sbitmap_queue *bt;
+    struct sbq_wait_state *ws;
+    //DEFINE_SBQ_WAIT(wait);
+    unsigned int tag_offset;
+    int tag;
+
+    if (data->flags & BLK_MQ_REQ_RESERVED) {
+        if (unlikely(!tags->nr_reserved_tags)) {
+            WARN_ON_ONCE(1);
+            return BLK_MQ_NO_TAG;
+        }
+        bt = &tags->breserved_tags;
+        tag_offset = 0;
+    } else {
+        bt = &tags->bitmap_tags;
+        tag_offset = tags->nr_reserved_tags;
+    }
+
+    tag = __blk_mq_get_tag(data, bt);
+    if (tag != BLK_MQ_NO_TAG)
+        goto found_tag;
+
+    panic("%s: END!\n", __func__);
+
+ found_tag:
+    /*
+     * Give up this allocation if the hctx is inactive.  The caller will
+     * retry on an active hctx.
+     */
+    if (unlikely(test_bit(BLK_MQ_S_INACTIVE, &data->hctx->state))) {
+        blk_mq_put_tag(tags, data->ctx, tag + tag_offset);
+        return BLK_MQ_NO_TAG;
+    }
+    return tag + tag_offset;
+}
+
+unsigned long blk_mq_get_tags(struct blk_mq_alloc_data *data, int nr_tags,
+                              unsigned int *offset)
+{
+    struct blk_mq_tags *tags = blk_mq_tags_from_data(data);
+    struct sbitmap_queue *bt = &tags->bitmap_tags;
+    unsigned long ret;
+
+    if (data->shallow_depth ||data->flags & BLK_MQ_REQ_RESERVED ||
+        data->hctx->flags & BLK_MQ_F_TAG_QUEUE_SHARED)
+        return 0;
+    ret = __sbitmap_queue_get_batch(bt, nr_tags, offset);
+    *offset += tags->nr_reserved_tags;
+    return ret;
+}

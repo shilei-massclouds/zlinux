@@ -128,4 +128,10 @@ arch_atomic_long_sub_and_test(long i, atomic_long_t *v)
     return arch_atomic64_sub_and_test(i, v);
 }
 
+static __always_inline bool
+arch_atomic_long_inc_not_zero(atomic_long_t *v)
+{
+    return arch_atomic64_inc_not_zero(v);
+}
+
 #endif /* _LINUX_ATOMIC_LONG_H */

@@ -569,7 +569,6 @@ static inline bool xas_valid(const struct xa_state *xas)
 static inline void *xas_reload(struct xa_state *xas)
 {
     struct xa_node *node = xas->xa_node;
-    void *entry;
     char offset;
 
     if (!node)
@@ -908,5 +907,7 @@ static inline void xas_split_alloc(struct xa_state *xas, void *entry,
 void *xa_load(struct xarray *, unsigned long index);
 
 void *xa_store(struct xarray *, unsigned long index, void *entry, gfp_t);
+
+void xa_destroy(struct xarray *);
 
 #endif /* _LINUX_XARRAY_H */

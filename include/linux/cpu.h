@@ -19,6 +19,8 @@
 #include <linux/cpumask.h>
 #include <linux/cpuhotplug.h>
 
+struct device;
+
 extern void boot_cpu_init(void);
 
 extern void boot_cpu_hotplug_init(void);

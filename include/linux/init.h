@@ -25,11 +25,18 @@
 #define __exitdata  __section(".exit.data")
 #define __exit_call __used __section(".exitcall.exit")
 
+/* Used for MEMORY_HOTPLUG */
+#define __meminit __section(".meminit.text") __cold notrace __latent_entropy
+
+#define __meminitdata    __section(".meminit.data")
+#define __meminitconst   __section(".meminit.rodata")
+#define __memexit        __section(".memexit.text") __exitused __cold notrace
+#define __memexitdata    __section(".memexit.data")
+#define __memexitconst   __section(".memexit.rodata")
+
 #define __ref       __section(".ref.text") noinline
 #define __refdata   __section(".ref.data")
 #define __refconst  __section(".ref.rodata")
-
-#define __meminit   __section(".meminit.text") __cold notrace __latent_entropy
 
 /* For assembly routines */
 #define __HEAD  .section ".head.text","ax"

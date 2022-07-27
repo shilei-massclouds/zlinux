@@ -116,9 +116,6 @@ extern int memblock_debug;
 #define memblock_dbg(fmt, ...) \
     if (memblock_debug) printk(KERN_INFO pr_fmt(fmt), ##__VA_ARGS__)
 
-#define __init_memblock
-#define __initdata_memblock
-
 #define for_each_memblock(memblock_type, region)                    \
     for (region = memblock.memblock_type.regions;                   \
          region < (memblock.memblock_type.regions + memblock.memblock_type.cnt);    \

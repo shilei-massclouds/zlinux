@@ -197,4 +197,110 @@ static inline int sbitmap_calculate_shift(unsigned int depth)
     return shift;
 }
 
+/**
+ * sbitmap_init_node() - Initialize a &struct sbitmap on a specific memory node.
+ * @sb: Bitmap to initialize.
+ * @depth: Number of bits to allocate.
+ * @shift: Use 2^@shift bits per word in the bitmap; if a negative number if
+ *         given, a good default is chosen.
+ * @flags: Allocation flags.
+ * @node: Memory node to allocate on.
+ * @round_robin: If true, be stricter about allocation order; always allocate
+ *               starting from the last allocated bit. This is less efficient
+ *               than the default behavior (false).
+ * @alloc_hint: If true, apply percpu hint for where to start searching for
+ *              a free bit.
+ *
+ * Return: Zero on success or negative errno on failure.
+ */
+int sbitmap_init_node(struct sbitmap *sb, unsigned int depth, int shift,
+                      gfp_t flags, int node, bool round_robin, bool alloc_hint);
+
+/**
+ * sbitmap_resize() - Resize a &struct sbitmap.
+ * @sb: Bitmap to resize.
+ * @depth: New number of bits to resize to.
+ *
+ * Doesn't reallocate anything. It's up to the caller to ensure that the new
+ * depth doesn't exceed the depth that the sb was initialized with.
+ */
+void sbitmap_resize(struct sbitmap *sb, unsigned int depth);
+
+/**
+ * sbitmap_queue_min_shallow_depth() - Inform a &struct sbitmap_queue of the
+ * minimum shallow depth that will be used.
+ * @sbq: Bitmap queue in question.
+ * @min_shallow_depth: The minimum shallow depth that will be passed to
+ * sbitmap_queue_get_shallow() or __sbitmap_queue_get_shallow().
+ *
+ * sbitmap_queue_clear() batches wakeups as an optimization. The batch size
+ * depends on the depth of the bitmap. Since the shallow allocation functions
+ * effectively operate with a different depth, the shallow depth must be taken
+ * into account when calculating the batch size. This function must be called
+ * with the minimum shallow depth that will be used. Failure to do so can result
+ * in missed wakeups.
+ */
+void sbitmap_queue_min_shallow_depth(struct sbitmap_queue *sbq,
+                                     unsigned int min_shallow_depth);
+
+/**
+ * sbitmap_queue_clear() - Free an allocated bit and wake up waiters on a
+ * &struct sbitmap_queue.
+ * @sbq: Bitmap to free from.
+ * @nr: Bit number to free.
+ * @cpu: CPU the bit was allocated on.
+ */
+void sbitmap_queue_clear(struct sbitmap_queue *sbq, unsigned int nr,
+                         unsigned int cpu);
+
+/**
+ * sbitmap_queue_get_shallow() - Try to allocate a free bit from a &struct
+ * sbitmap_queue, limiting the depth used from each word, with preemption
+ * already disabled.
+ * @sbq: Bitmap queue to allocate from.
+ * @shallow_depth: The maximum number of bits to allocate from a single word.
+ * See sbitmap_get_shallow().
+ *
+ * If you call this, make sure to call sbitmap_queue_min_shallow_depth() after
+ * initializing @sbq.
+ *
+ * Return: Non-negative allocated bit number if successful, -1 otherwise.
+ */
+int sbitmap_queue_get_shallow(struct sbitmap_queue *sbq,
+                              unsigned int shallow_depth);
+
+/**
+ * __sbitmap_queue_get() - Try to allocate a free bit from a &struct
+ * sbitmap_queue with preemption already disabled.
+ * @sbq: Bitmap queue to allocate from.
+ *
+ * Return: Non-negative allocated bit number if successful, -1 otherwise.
+ */
+int __sbitmap_queue_get(struct sbitmap_queue *sbq);
+
+#define SB_NR_TO_INDEX(sb, bitnr) ((bitnr) >> (sb)->shift)
+#define SB_NR_TO_BIT(sb, bitnr) \
+    ((bitnr) & ((1U << (sb)->shift) - 1U))
+
+/* sbitmap internal helper */
+static inline unsigned int __map_depth(const struct sbitmap *sb, int index)
+{
+    if (index == sb->map_nr - 1)
+        return sb->depth - (index << sb->shift);
+    return 1U << sb->shift;
+}
+
+/**
+ * __sbitmap_queue_get_batch() - Try to allocate a batch of free bits
+ * @sbq: Bitmap queue to allocate from.
+ * @nr_tags: number of tags requested
+ * @offset: offset to add to returned bits
+ *
+ * Return: Mask of allocated tags, 0 if none are found. Each tag allocated is
+ * a bit in the mask returned, and the caller must add @offset to the value to
+ * get the absolute tag value.
+ */
+unsigned long __sbitmap_queue_get_batch(struct sbitmap_queue *sbq, int nr_tags,
+                                        unsigned int *offset);
+
 #endif /* __LINUX_SCALE_BITMAP_H */

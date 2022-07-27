@@ -195,4 +195,12 @@ static inline struct bio *bio_list_pop(struct bio_list *bl)
     return bio;
 }
 
+extern int bioset_init(struct bio_set *, unsigned int, unsigned int, int flags);
+extern void bioset_exit(struct bio_set *);
+extern int biovec_init_pool(mempool_t *pool, int pool_entries);
+extern int bioset_init_from_src(struct bio_set *bs, struct bio_set *src);
+
+#define bio_prio(bio)           (bio)->bi_ioprio
+#define bio_set_prio(bio, prio) ((bio)->bi_ioprio = prio)
+
 #endif /* __LINUX_BIO_H */

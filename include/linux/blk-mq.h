@@ -14,6 +14,9 @@
 #define BLK_TAG_ALLOC_FIFO  0 /* allocate starting from 0 */
 #define BLK_TAG_ALLOC_RR    1 /* allocate starting from last allocated tag */
 
+#define BLKDEV_MIN_RQ       4
+#define BLKDEV_DEFAULT_RQ   128
+
 struct blk_mq_tags;
 struct blk_flush_queue;
 
@@ -22,6 +25,48 @@ typedef void (rq_end_io_fn)(struct request *, blk_status_t);
 /*
  * request flags */
 typedef __u32 __bitwise req_flags_t;
+
+/* drive already may have started this one */
+#define RQF_STARTED     ((__force req_flags_t)(1 << 1))
+/* may not be passed by ioscheduler */
+#define RQF_SOFTBARRIER     ((__force req_flags_t)(1 << 3))
+/* request for flush sequence */
+#define RQF_FLUSH_SEQ       ((__force req_flags_t)(1 << 4))
+/* merge of different types, fail separately */
+#define RQF_MIXED_MERGE     ((__force req_flags_t)(1 << 5))
+/* track inflight for MQ */
+#define RQF_MQ_INFLIGHT     ((__force req_flags_t)(1 << 6))
+/* don't call prep for this one */
+#define RQF_DONTPREP        ((__force req_flags_t)(1 << 7))
+/* vaguely specified driver internal error.  Ignored by the block layer */
+#define RQF_FAILED      ((__force req_flags_t)(1 << 10))
+/* don't warn about errors */
+#define RQF_QUIET       ((__force req_flags_t)(1 << 11))
+/* elevator private data attached */
+#define RQF_ELVPRIV     ((__force req_flags_t)(1 << 12))
+/* account into disk and partition IO statistics */
+#define RQF_IO_STAT     ((__force req_flags_t)(1 << 13))
+/* runtime pm request */
+#define RQF_PM          ((__force req_flags_t)(1 << 15))
+/* on IO scheduler merge hash */
+#define RQF_HASHED      ((__force req_flags_t)(1 << 16))
+/* track IO completion time */
+#define RQF_STATS       ((__force req_flags_t)(1 << 17))
+/* Look at ->special_vec for the actual data payload instead of the
+   bio chain. */
+#define RQF_SPECIAL_PAYLOAD ((__force req_flags_t)(1 << 18))
+/* The per-zone write lock is held for this request */
+#define RQF_ZONE_WRITE_LOCKED   ((__force req_flags_t)(1 << 19))
+/* already slept for hybrid poll */
+#define RQF_MQ_POLL_SLEPT   ((__force req_flags_t)(1 << 20))
+/* ->timeout has been called, don't expire again */
+#define RQF_TIMED_OUT       ((__force req_flags_t)(1 << 21))
+/* queue has elevator attached */
+#define RQF_ELV         ((__force req_flags_t)(1 << 22))
+
+/* flags that prevent us from merging requests: */
+#define RQF_NOMERGE_FLAGS \
+    (RQF_STARTED | RQF_SOFTBARRIER | RQF_FLUSH_SEQ | RQF_SPECIAL_PAYLOAD)
 
 /**
  * struct blk_mq_queue_map - Map software queues to hardware queues
@@ -87,11 +132,9 @@ enum {
  * especially blk_mq_rq_ctx_init() to take care of the added fields.
  */
 struct request {
-#if 0
-    struct request_queue *q;
-    struct blk_mq_ctx *mq_ctx;
-    struct blk_mq_hw_ctx *mq_hctx;
-#endif
+    struct request_queue    *q;
+    struct blk_mq_ctx       *mq_ctx;
+    struct blk_mq_hw_ctx    *mq_hctx;
 
     unsigned int cmd_flags;     /* op and common flags */
     req_flags_t rq_flags;
@@ -108,7 +151,6 @@ struct request {
     struct bio *bio;
     struct bio *biotail;
 
-#if 0
     union {
         struct list_head queuelist;
         struct request *rq_next;
@@ -136,14 +178,12 @@ struct request {
 
     unsigned short write_hint;
     unsigned short ioprio;
-#endif
 
     enum mq_rq_state state;
     atomic_t ref;
 
     unsigned long deadline;
 
-#if 0
     /*
      * The hash is used inside the scheduler, and killed once the
      * request reaches the dispatch list. The ipi_list is only used
@@ -167,6 +207,7 @@ struct request {
         void *completion_data;
     };
 
+#if 0
     /*
      * Three pointers are available for the IO schedulers, if they need
      * more they have to dynamically allocate it.  Flush requests are
@@ -190,13 +231,13 @@ struct request {
         struct __call_single_data csd;
         u64 fifo_time;
     };
+#endif
 
     /*
      * completion callback.
      */
     rq_end_io_fn *end_io;
     void *end_io_data;
-#endif
 };
 
 /**
@@ -209,7 +250,6 @@ struct blk_mq_queue_data {
     struct request *rq;
     bool last;
 };
-
 
 /**
  * enum hctx_type - Type of hardware queue
@@ -276,6 +316,162 @@ struct blk_mq_tag_set {
 
     struct mutex        tag_list_lock;
     struct list_head    tag_list;
+};
+
+/**
+ * struct blk_mq_hw_ctx - State for a hardware queue facing the hardware
+ * block device
+ */
+struct blk_mq_hw_ctx {
+    struct {
+        /** @lock: Protects the dispatch list. */
+        spinlock_t      lock;
+        /**
+         * @dispatch: Used for requests that are ready to be
+         * dispatched to the hardware but for some reason (e.g. lack of
+         * resources) could not be sent to the hardware. As soon as the
+         * driver can send new requests, requests at this list will
+         * be sent first for a fairer dispatch.
+         */
+        struct list_head    dispatch;
+         /**
+          * @state: BLK_MQ_S_* flags. Defines the state of the hw
+          * queue (active, scheduled to restart, stopped).
+          */
+        unsigned long       state;
+    } ____cacheline_aligned_in_smp;
+
+#if 0
+    /**
+     * @run_work: Used for scheduling a hardware queue run at a later time.
+     */
+    struct delayed_work run_work;
+#endif
+    /** @cpumask: Map of available CPUs where this hctx can run. */
+    cpumask_var_t       cpumask;
+    /**
+     * @next_cpu: Used by blk_mq_hctx_next_cpu() for round-robin CPU
+     * selection from @cpumask.
+     */
+    int         next_cpu;
+    /**
+     * @next_cpu_batch: Counter of how many works left in the batch before
+     * changing to the next CPU.
+     */
+    int         next_cpu_batch;
+
+    /** @flags: BLK_MQ_F_* flags. Defines the behaviour of the queue. */
+    unsigned long       flags;
+
+    /**
+     * @sched_data: Pointer owned by the IO scheduler attached to a request
+     * queue. It's up to the IO scheduler how to use this pointer.
+     */
+    void            *sched_data;
+    /**
+     * @queue: Pointer to the request queue that owns this hardware context.
+     */
+    struct request_queue    *queue;
+    /** @fq: Queue of requests that need to perform a flush operation. */
+    struct blk_flush_queue  *fq;
+
+    /**
+     * @driver_data: Pointer to data owned by the block driver that created
+     * this hctx
+     */
+    void            *driver_data;
+
+    /**
+     * @ctx_map: Bitmap for each software queue. If bit is on, there is a
+     * pending request in that software queue.
+     */
+    struct sbitmap      ctx_map;
+
+    /**
+     * @dispatch_from: Software queue to be used when no scheduler was
+     * selected.
+     */
+    struct blk_mq_ctx   *dispatch_from;
+    /**
+     * @dispatch_busy: Number used by blk_mq_update_dispatch_busy() to
+     * decide if the hw_queue is busy using Exponential Weighted Moving
+     * Average algorithm.
+     */
+    unsigned int        dispatch_busy;
+
+    /** @type: HCTX_TYPE_* flags. Type of hardware queue. */
+    unsigned short      type;
+    /** @nr_ctx: Number of software queues. */
+    unsigned short      nr_ctx;
+    /** @ctxs: Array of software queues. */
+    struct blk_mq_ctx   **ctxs;
+
+    /** @dispatch_wait_lock: Lock for dispatch_wait queue. */
+    spinlock_t      dispatch_wait_lock;
+#if 0
+    /**
+     * @dispatch_wait: Waitqueue to put requests when there is no tag
+     * available at the moment, to wait for another try in the future.
+     */
+    wait_queue_entry_t  dispatch_wait;
+#endif
+
+    /**
+     * @wait_index: Index of next available dispatch_wait queue to insert
+     * requests.
+     */
+    atomic_t        wait_index;
+
+    /**
+     * @tags: Tags owned by the block driver. A tag at this set is only
+     * assigned when a request is dispatched from a hardware queue.
+     */
+    struct blk_mq_tags  *tags;
+    /**
+     * @sched_tags: Tags owned by I/O scheduler. If there is an I/O
+     * scheduler associated with a request queue, a tag is assigned when
+     * that request is allocated. Else, this member is not used.
+     */
+    struct blk_mq_tags  *sched_tags;
+
+    /** @queued: Number of queued requests. */
+    unsigned long       queued;
+    /** @run: Number of dispatched requests. */
+    unsigned long       run;
+
+    /** @numa_node: NUMA node the storage adapter has been connected to. */
+    unsigned int        numa_node;
+    /** @queue_num: Index of this hardware queue. */
+    unsigned int        queue_num;
+
+    /**
+     * @nr_active: Number of active requests. Only used when a tag set is
+     * shared across request queues.
+     */
+    atomic_t        nr_active;
+
+    /** @cpuhp_online: List to store request if CPU is going to die */
+    struct hlist_node   cpuhp_online;
+    /** @cpuhp_dead: List to store request if some CPU die. */
+    struct hlist_node   cpuhp_dead;
+    /** @kobj: Kernel object for sysfs. */
+    struct kobject      kobj;
+
+#if 0
+    /**
+     * @debugfs_dir: debugfs directory for this hardware queue. Named
+     * as cpu<cpu_number>.
+     */
+    struct dentry       *debugfs_dir;
+    /** @sched_debugfs_dir: debugfs directory for the scheduler. */
+    struct dentry       *sched_debugfs_dir;
+#endif
+
+    /**
+     * @hctx_list: if this hctx is not in use, this is an entry in
+     * q->unused_hctx_list.
+     */
+    struct list_head    hctx_list;
 };
 
 /**
@@ -431,5 +627,66 @@ __blk_mq_alloc_disk(struct blk_mq_tag_set *set, void *queuedata,
                                                 \
     __blk_mq_alloc_disk(set, queuedata, &__key);\
 })
+
+#define rq_list_peek(listptr)       \
+({                                  \
+    struct request *__req = NULL;   \
+    if ((listptr) && *(listptr))    \
+        __req = *(listptr);         \
+    __req;                          \
+})
+
+#define rq_list_next(rq)    (rq)->rq_next
+#define rq_list_empty(list) ((list) == (struct request *) NULL)
+
+#define queue_for_each_hw_ctx(q, hctx, i)               \
+    xa_for_each(&(q)->hctx_table, (i), (hctx))
+
+enum {
+    /* return when out of requests */
+    BLK_MQ_REQ_NOWAIT   = (__force blk_mq_req_flags_t)(1 << 0),
+    /* allocate from reserved pool */
+    BLK_MQ_REQ_RESERVED = (__force blk_mq_req_flags_t)(1 << 1),
+    /* set RQF_PM */
+    BLK_MQ_REQ_PM       = (__force blk_mq_req_flags_t)(1 << 2),
+};
+
+/*
+ * Only need start/end time stamping if we have iostat or
+ * blk stats enabled, or using an IO scheduler.
+ */
+static inline bool blk_mq_need_time_stamp(struct request *rq)
+{
+    return (rq->rq_flags & (RQF_IO_STAT | RQF_STATS | RQF_ELV));
+}
+
+static inline void blk_mq_cleanup_rq(struct request *rq)
+{
+    if (rq->q->mq_ops->cleanup_rq)
+        rq->q->mq_ops->cleanup_rq(rq);
+}
+
+static inline void blk_rq_bio_prep(struct request *rq, struct bio *bio,
+                                   unsigned int nr_segs)
+{
+    rq->nr_phys_segments = nr_segs;
+    rq->__data_len = bio->bi_iter.bi_size;
+    rq->bio = rq->biotail = bio;
+    rq->ioprio = bio_prio(bio);
+}
+
+/**
+ * blk_mq_rq_state() - read the current MQ_RQ_* state of a request
+ * @rq: target request.
+ */
+static inline enum mq_rq_state blk_mq_rq_state(struct request *rq)
+{
+    return READ_ONCE(rq->state);
+}
+
+static inline int blk_mq_request_started(struct request *rq)
+{
+    return blk_mq_rq_state(rq) != MQ_RQ_IDLE;
+}
 
 #endif /* BLK_MQ_H */

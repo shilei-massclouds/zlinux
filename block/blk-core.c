@@ -105,6 +105,17 @@ void blk_cleanup_queue(struct request_queue *q)
     panic("%s: END!\n", __func__);
 }
 
+static void blk_queue_usage_counter_release(struct percpu_ref *ref)
+{
+#if 0
+    struct request_queue *q =
+        container_of(ref, struct request_queue, q_usage_counter);
+
+    wake_up_all(&q->mq_freeze_wq);
+#endif
+    panic("%s: END!\n", __func__);
+}
+
 struct request_queue *blk_alloc_queue(int node_id, bool alloc_srcu)
 {
     struct request_queue *q;
@@ -130,46 +141,54 @@ struct request_queue *blk_alloc_queue(int node_id, bool alloc_srcu)
     if (q->id < 0)
         goto fail_srcu;
 
-#if 0
     ret = bioset_init(&q->bio_split, BIO_POOL_SIZE, 0, 0);
     if (ret)
         goto fail_id;
 
+#if 0
     q->stats = blk_alloc_queue_stats();
     if (!q->stats)
         goto fail_split;
+#endif
 
     q->node = node_id;
 
     atomic_set(&q->nr_active_requests_shared_tags, 0);
 
+#if 0
     timer_setup(&q->timeout, blk_rq_timed_out_timer, 0);
     INIT_WORK(&q->timeout_work, blk_timeout_work);
+#endif
     INIT_LIST_HEAD(&q->icq_list);
 
-    kobject_init(&q->kobj, &blk_queue_ktype);
+    //kobject_init(&q->kobj, &blk_queue_ktype);
 
     mutex_init(&q->debugfs_mutex);
+#if 0
     mutex_init(&q->sysfs_lock);
     mutex_init(&q->sysfs_dir_lock);
+#endif
     spin_lock_init(&q->queue_lock);
 
+#if 0
     init_waitqueue_head(&q->mq_freeze_wq);
     mutex_init(&q->mq_freeze_lock);
+#endif
 
     /*
      * Init percpu_ref in atomic mode so that it's faster to shutdown.
      * See blk_register_queue() for details.
      */
     if (percpu_ref_init(&q->q_usage_counter,
-                blk_queue_usage_counter_release,
-                PERCPU_REF_INIT_ATOMIC, GFP_KERNEL))
+                        blk_queue_usage_counter_release,
+                        PERCPU_REF_INIT_ATOMIC, GFP_KERNEL))
         goto fail_stats;
 
+#if 0
     blk_queue_dma_alignment(q, 511);
     blk_set_default_limits(&q->limits);
-    q->nr_requests = BLKDEV_DEFAULT_RQ;
 #endif
+    q->nr_requests = BLKDEV_DEFAULT_RQ;
 
     return q;
 

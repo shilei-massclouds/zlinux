@@ -9,16 +9,30 @@
 #ifndef _LINUX_MODULE_H
 #define _LINUX_MODULE_H
 
+#include <linux/list.h>
+#include <linux/stat.h>
+#include <linux/buildid.h>
 #include <linux/compiler.h>
 #include <linux/cache.h>
+#include <linux/kmod.h>
 #include <linux/init.h>
+#include <linux/elf.h>
+#include <linux/stringify.h>
+#include <linux/kobject.h>
 #include <linux/moduleparam.h>
+#include <linux/jump_label.h>
 #include <linux/export.h>
+#if 0
+#include <linux/rbtree_latch.h>
+#include <linux/error-injection.h>
+#include <linux/tracepoint-defs.h>
+#include <linux/static_call_types.h>
+#include <linux/cfi.h>
+#endif
+#include <linux/srcu.h>
 
 #include <linux/percpu.h>
-#if 0
-#include <asm/module.h>
-#endif
+//#include <asm/module.h>
 
 #define MODULE_NAME_LEN MAX_PARAM_PREFIX_LEN
 

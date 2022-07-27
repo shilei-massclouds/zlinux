@@ -252,4 +252,22 @@ atomic_long_sub_and_test(long i, atomic_long_t *v)
     return arch_atomic_long_sub_and_test(i, v);
 }
 
+static __always_inline bool
+atomic_long_inc_not_zero(atomic_long_t *v)
+{
+    return arch_atomic_long_inc_not_zero(v);
+}
+
+#define xchg(ptr, ...) \
+({ \
+    typeof(ptr) __ai_ptr = (ptr); \
+    arch_xchg(__ai_ptr, __VA_ARGS__); \
+})
+
+static __always_inline void
+atomic_sub(int i, atomic_t *v)
+{
+    arch_atomic_sub(i, v);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */

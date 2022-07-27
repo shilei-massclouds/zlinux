@@ -3,3 +3,4 @@
 # and is generally not a function of system call inputs.
 
 obj-y += tree.o
+obj-y += srcutree.o

@@ -414,4 +414,8 @@ static inline bool cpumask_intersects(const struct cpumask *src1p,
                              nr_cpumask_bits);
 }
 
+static inline void free_cpumask_var(cpumask_var_t mask)
+{
+}
+
 #endif /* __LINUX_CPUMASK_H */
