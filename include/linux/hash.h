@@ -63,4 +63,9 @@ static __always_inline u32 hash_64_generic(u64 val, unsigned int bits)
     return val * GOLDEN_RATIO_64 >> (64 - bits);
 }
 
+static inline u32 hash_ptr(const void *ptr, unsigned int bits)
+{
+    return hash_long((unsigned long)ptr, bits);
+}
+
 #endif /* _LINUX_HASH_H */

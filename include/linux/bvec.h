@@ -57,4 +57,48 @@ static inline void *bvec_virt(struct bio_vec *bvec)
     return page_address(bvec->bv_page) + bvec->bv_offset;
 }
 
+/*
+ * various member access, note that bio_data should of course not be used
+ * on highmem page vectors
+ */
+#define __bvec_iter_bvec(bvec, iter)    (&(bvec)[(iter).bi_idx])
+
+/* multi-page (mp_bvec) helpers */
+#define mp_bvec_iter_page(bvec, iter)               \
+    (__bvec_iter_bvec((bvec), (iter))->bv_page)
+
+#define mp_bvec_iter_len(bvec, iter)                \
+    min((iter).bi_size,                 \
+        __bvec_iter_bvec((bvec), (iter))->bv_len - (iter).bi_bvec_done)
+
+#define mp_bvec_iter_offset(bvec, iter)             \
+    (__bvec_iter_bvec((bvec), (iter))->bv_offset + (iter).bi_bvec_done)
+
+#define mp_bvec_iter_page_idx(bvec, iter)           \
+    (mp_bvec_iter_offset((bvec), (iter)) / PAGE_SIZE)
+
+#define mp_bvec_iter_bvec(bvec, iter)               \
+((struct bio_vec) {                     \
+    .bv_page    = mp_bvec_iter_page((bvec), (iter)),    \
+    .bv_len     = mp_bvec_iter_len((bvec), (iter)), \
+    .bv_offset  = mp_bvec_iter_offset((bvec), (iter)),  \
+})
+
+/*
+ * A simpler version of bvec_iter_advance(), @bytes should not span
+ * across multiple bvec entries, i.e. bytes <= bv[i->bi_idx].bv_len
+ */
+static inline void bvec_iter_advance_single(const struct bio_vec *bv,
+                struct bvec_iter *iter, unsigned int bytes)
+{
+    unsigned int done = iter->bi_bvec_done + bytes;
+
+    if (done == bv[iter->bi_idx].bv_len) {
+        done = 0;
+        iter->bi_idx++;
+    }
+    iter->bi_bvec_done = done;
+    iter->bi_size -= bytes;
+}
+
 #endif /* __LINUX_BVEC_H */

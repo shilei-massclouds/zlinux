@@ -285,24 +285,41 @@ static int virtblk_map_data(struct blk_mq_hw_ctx *hctx, struct request *req,
     if (!blk_rq_nr_phys_segments(req))
         return 0;
 
-#if 0
     vbr->sg_table.sgl = vbr->sg;
-    err = sg_alloc_table_chained(&vbr->sg_table,
-                     blk_rq_nr_phys_segments(req),
-                     vbr->sg_table.sgl,
-                     VIRTIO_BLK_INLINE_SG_CNT);
+    err = sg_alloc_table_chained(&vbr->sg_table, blk_rq_nr_phys_segments(req),
+                                 vbr->sg_table.sgl, VIRTIO_BLK_INLINE_SG_CNT);
     if (unlikely(err))
         return -ENOMEM;
 
     return blk_rq_map_sg(hctx->queue, req, vbr->sg_table.sgl);
-#endif
-    panic("%s: END!\n", __func__);
 }
 
 static void virtblk_cleanup_cmd(struct request *req)
 {
     if (req->rq_flags & RQF_SPECIAL_PAYLOAD)
         kfree(bvec_virt(&req->special_vec));
+}
+
+static int virtblk_add_req(struct virtqueue *vq, struct virtblk_req *vbr,
+                           struct scatterlist *data_sg, bool have_data)
+{
+    struct scatterlist hdr, status, *sgs[3];
+    unsigned int num_out = 0, num_in = 0;
+
+    sg_init_one(&hdr, &vbr->out_hdr, sizeof(vbr->out_hdr));
+    sgs[num_out++] = &hdr;
+
+    if (have_data) {
+        if (vbr->out_hdr.type & cpu_to_virtio32(vq->vdev, VIRTIO_BLK_T_OUT))
+            sgs[num_out++] = data_sg;
+        else
+            sgs[num_out + num_in++] = data_sg;
+    }
+
+    sg_init_one(&status, &vbr->status, sizeof(vbr->status));
+    sgs[num_out + num_in++] = &status;
+
+    return virtqueue_add_sgs(vq, sgs, num_out, num_in, vbr, GFP_ATOMIC);
 }
 
 static blk_status_t virtio_queue_rq(struct blk_mq_hw_ctx *hctx,
@@ -330,7 +347,35 @@ static blk_status_t virtio_queue_rq(struct blk_mq_hw_ctx *hctx,
         return BLK_STS_RESOURCE;
     }
 
-    panic("%s: END!\n", __func__);
+    spin_lock_irqsave(&vblk->vqs[qid].lock, flags);
+    err = virtblk_add_req(vblk->vqs[qid].vq, vbr, vbr->sg_table.sgl, num);
+    if (err) {
+        virtqueue_kick(vblk->vqs[qid].vq);
+        /* Don't stop the queue if -ENOMEM: we may have failed to
+         * bounce the buffer due to global resource outage.
+         */
+        if (err == -ENOSPC)
+            blk_mq_stop_hw_queue(hctx);
+        spin_unlock_irqrestore(&vblk->vqs[qid].lock, flags);
+        virtblk_unmap_data(req, vbr);
+        virtblk_cleanup_cmd(req);
+        switch (err) {
+        case -ENOSPC:
+            return BLK_STS_DEV_RESOURCE;
+        case -ENOMEM:
+            return BLK_STS_RESOURCE;
+        default:
+            return BLK_STS_IOERR;
+        }
+    }
+
+    if (bd->last && virtqueue_kick_prepare(vblk->vqs[qid].vq))
+        notify = true;
+    spin_unlock_irqrestore(&vblk->vqs[qid].lock, flags);
+
+    if (notify)
+        virtqueue_notify(vblk->vqs[qid].vq);
+    return BLK_STS_OK;
 }
 
 static inline void virtblk_request_done(struct request *req)

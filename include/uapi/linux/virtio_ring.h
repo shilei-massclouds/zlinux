@@ -37,6 +37,11 @@
 #include <linux/types.h>
 #include <linux/virtio_types.h>
 
+/* The Host uses this in used->flags to advise the Guest: don't kick me when
+ * you add a buffer.  It's unreliable, so it's simply an optimization.  Guest
+ * will still kick if it's out of buffers. */
+#define VRING_USED_F_NO_NOTIFY  1
+
 /* The Guest uses this in avail->flags to advise the Host: don't interrupt me
  * when you consume a buffer.  It's unreliable, so it's simply an
  * optimization.  */
@@ -84,6 +89,11 @@
 #define VRING_AVAIL_ALIGN_SIZE  2
 #define VRING_USED_ALIGN_SIZE   4
 #define VRING_DESC_ALIGN_SIZE   16
+
+/* We publish the used event index at the end of the available ring, and vice
+ * versa. They are at the end for backwards compatibility. */
+#define vring_used_event(vr) ((vr)->avail->ring[(vr)->num])
+#define vring_avail_event(vr) (*(__virtio16 *)&(vr)->used->ring[(vr)->num])
 
 /* Virtio ring descriptors: 16 bytes.  These can chain together via "next". */
 struct vring_desc {
@@ -167,6 +177,20 @@ static inline void vring_init(struct vring *vr, unsigned int num, void *p,
                                        num * sizeof(struct vring_desc));
     vr->used = (void *)(((uintptr_t)&vr->avail->ring[num] +
                          sizeof(__virtio16) + align-1) & ~(align - 1));
+}
+
+/* The following is used with USED_EVENT_IDX and AVAIL_EVENT_IDX */
+/* Assuming a given event_idx value from the other side, if
+ * we have just incremented index from old to new_idx,
+ * should we trigger an event? */
+static inline int vring_need_event(__u16 event_idx, __u16 new_idx, __u16 old)
+{
+    /* Note: Xen has similar logic for notification hold-off
+     * in include/xen/interface/io/ring.h with req_event and req_prod
+     * corresponding to event_idx + 1 and new_idx respectively.
+     * Note also that req_event and req_prod in Xen start at 1,
+     * event indexes in virtio start at 0. */
+    return (__u16)(new_idx - event_idx - 1) < (__u16)(new_idx - old);
 }
 
 #endif /* _UAPI_LINUX_VIRTIO_RING_H */

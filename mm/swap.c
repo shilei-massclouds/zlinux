@@ -169,3 +169,19 @@ void folio_add_lru(struct folio *folio)
     local_unlock(&lru_pvecs.lock);
 }
 EXPORT_SYMBOL(folio_add_lru);
+
+/*
+ * Mark a page as having seen activity.
+ *
+ * inactive,unreferenced    ->  inactive,referenced
+ * inactive,referenced      ->  active,unreferenced
+ * active,unreferenced      ->  active,referenced
+ *
+ * When a newly allocated page is not yet visible, so safe for non-atomic ops,
+ * __SetPageReferenced(page) may be substituted for mark_page_accessed(page).
+ */
+void folio_mark_accessed(struct folio *folio)
+{
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL(folio_mark_accessed);

@@ -11,6 +11,21 @@
 #include <asm/current.h>
 //#include <uapi/linux/wait.h>
 
+typedef struct wait_queue_entry wait_queue_entry_t;
+
+typedef int (*wait_queue_func_t)(struct wait_queue_entry *wq_entry,
+                                 unsigned mode, int flags, void *key);
+
+/*
+ * A single wait-queue entry structure:
+ */
+struct wait_queue_entry {
+    unsigned int        flags;
+    void                *private;
+    wait_queue_func_t   func;
+    struct list_head    entry;
+};
+
 struct wait_queue_head {
     spinlock_t          lock;
     struct list_head    head;
@@ -18,6 +33,9 @@ struct wait_queue_head {
 typedef struct wait_queue_head wait_queue_head_t;
 
 struct task_struct;
+
+int default_wake_function(struct wait_queue_entry *wq_entry,
+                          unsigned mode, int flags, void *key);
 
 /*
  * Macros for declaration and initialisaton of the datatypes
@@ -39,5 +57,16 @@ struct task_struct;
     struct wait_queue_head name = __WAIT_QUEUE_HEAD_INITIALIZER(name)
 
 #define DECLARE_WAIT_QUEUE_HEAD_ONSTACK(name) DECLARE_WAIT_QUEUE_HEAD(name)
+
+int autoremove_wake_function(struct wait_queue_entry *wq_entry,
+                             unsigned mode, int sync, void *key);
+
+#define init_wait(wait)                             \
+    do {                                            \
+        (wait)->private = current;                  \
+        (wait)->func = autoremove_wake_function;    \
+        INIT_LIST_HEAD(&(wait)->entry);             \
+        (wait)->flags = 0;                          \
+    } while (0)
 
 #endif /* _LINUX_WAIT_H */

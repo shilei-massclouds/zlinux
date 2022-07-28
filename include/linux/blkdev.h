@@ -704,4 +704,19 @@ static inline bool blk_op_is_passthrough(unsigned int op)
     return op == REQ_OP_DRV_IN || op == REQ_OP_DRV_OUT;
 }
 
+static inline unsigned int queue_max_segment_size(const struct request_queue *q)
+{
+    return q->limits.max_segment_size;
+}
+
+static inline unsigned long
+queue_segment_boundary(const struct request_queue *q)
+{
+    return q->limits.seg_boundary_mask;
+}
+
+/* This should not be used directly - use rq_for_each_segment */
+#define for_each_bio(_bio)      \
+    for (; _bio; _bio = _bio->bi_next)
+
 #endif /* _LINUX_BLKDEV_H */

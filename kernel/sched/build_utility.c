@@ -64,6 +64,7 @@
 #include "clock.c"
 #endif
 #include "swait.c"
+#include "wait.c"
 
 #include "stop_task.c"
 

@@ -61,6 +61,21 @@
 #include <asm/mman.h>
 #endif
 
+/*
+ * A choice of three behaviors for folio_wait_bit_common():
+ */
+enum behavior {
+    EXCLUSIVE,  /* Hold ref to page and take the bit when woken, like
+                 * __folio_lock() waiting on then setting PG_locked.
+                 */
+    SHARED,     /* Hold ref to page and check the bit when woken, like
+                 * folio_wait_writeback() waiting on PG_writeback.
+                 */
+    DROP,       /* Drop ref to page before wait, no check when woken,
+                 * like folio_put_wait_locked() on PG_locked.
+                 */
+};
+
 vm_fault_t filemap_map_pages(struct vm_fault *vmf,
                              pgoff_t start_pgoff, pgoff_t end_pgoff)
 {
@@ -240,11 +255,27 @@ do_read_cache_folio(struct address_space *mapping,
         else
             err = mapping->a_ops->readpage(data, &folio->page);
 
+        if (err < 0) {
+            folio_put(folio);
+            return ERR_PTR(err);
+        }
+
+        folio_wait_locked(folio);
+        if (!folio_test_uptodate(folio)) {
+            folio_put(folio);
+            return ERR_PTR(-EIO);
+        }
+
         panic("%s: folio a_ops(%lx) NULL!\n", __func__, mapping->a_ops);
         panic("%s: folio filler(%lx) NULL!\n", __func__, filler);
+        goto out;
     }
 
     panic("%s: END!\n", __func__);
+
+ out:
+    folio_mark_accessed(folio);
+    return folio;
 }
 
 static struct page *
@@ -418,3 +449,99 @@ void folio_unlock(struct folio *folio)
         folio_wake_bit(folio, PG_locked);
 }
 EXPORT_SYMBOL(folio_unlock);
+
+/*
+ * In order to wait for pages to become available there must be
+ * waitqueues associated with pages. By using a hash table of
+ * waitqueues where the bucket discipline is to maintain all
+ * waiters on the same queue and wake all when any of the pages
+ * become available, and for the woken contexts to check to be
+ * sure the appropriate page became available, this saves space
+ * at a cost of "thundering herd" phenomena during rare hash
+ * collisions.
+ */
+#define PAGE_WAIT_TABLE_BITS 8
+#define PAGE_WAIT_TABLE_SIZE (1 << PAGE_WAIT_TABLE_BITS)
+static wait_queue_head_t folio_wait_table[PAGE_WAIT_TABLE_SIZE]
+    __cacheline_aligned;
+
+static wait_queue_head_t *folio_waitqueue(struct folio *folio)
+{
+    return &folio_wait_table[hash_ptr(folio, PAGE_WAIT_TABLE_BITS)];
+}
+
+/*
+ * The page wait code treats the "wait->flags" somewhat unusually, because
+ * we have multiple different kinds of waits, not just the usual "exclusive"
+ * one.
+ *
+ * We have:
+ *
+ *  (a) no special bits set:
+ *
+ *  We're just waiting for the bit to be released, and when a waker
+ *  calls the wakeup function, we set WQ_FLAG_WOKEN and wake it up,
+ *  and remove it from the wait queue.
+ *
+ *  Simple and straightforward.
+ *
+ *  (b) WQ_FLAG_EXCLUSIVE:
+ *
+ *  The waiter is waiting to get the lock, and only one waiter should
+ *  be woken up to avoid any thundering herd behavior. We'll set the
+ *  WQ_FLAG_WOKEN bit, wake it up, and remove it from the wait queue.
+ *
+ *  This is the traditional exclusive wait.
+ *
+ *  (c) WQ_FLAG_EXCLUSIVE | WQ_FLAG_CUSTOM:
+ *
+ *  The waiter is waiting to get the bit, and additionally wants the
+ *  lock to be transferred to it for fair lock behavior. If the lock
+ *  cannot be taken, we stop walking the wait queue without waking
+ *  the waiter.
+ *
+ *  This is the "fair lock handoff" case, and in addition to setting
+ *  WQ_FLAG_WOKEN, we set WQ_FLAG_DONE to let the waiter easily see
+ *  that it now has the lock.
+ */
+static int wake_page_function(wait_queue_entry_t *wait,
+                              unsigned mode, int sync, void *arg)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static inline int
+folio_wait_bit_common(struct folio *folio, int bit_nr,
+                      int state, enum behavior behavior)
+{
+    wait_queue_head_t *q = folio_waitqueue(folio);
+#if 0
+    int unfairness = sysctl_page_lock_unfairness;
+#endif
+    struct wait_page_queue wait_page;
+    wait_queue_entry_t *wait = &wait_page.wait;
+    bool thrashing = false;
+    bool delayacct = false;
+    unsigned long pflags;
+
+    if (bit_nr == PG_locked &&
+        !folio_test_uptodate(folio) && folio_test_workingset(folio)) {
+        if (!folio_test_swapbacked(folio)) {
+            delayacct = true;
+        }
+        thrashing = true;
+    }
+
+    init_wait(wait);
+    wait->func = wake_page_function;
+    wait_page.folio = folio;
+    wait_page.bit_nr = bit_nr;
+
+    panic("%s: END!\n", __func__);
+}
+
+void folio_wait_bit(struct folio *folio, int bit_nr)
+{
+    folio_wait_bit_common(folio, bit_nr, TASK_UNINTERRUPTIBLE, SHARED);
+}
+EXPORT_SYMBOL(folio_wait_bit);

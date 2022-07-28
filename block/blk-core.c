@@ -318,8 +318,6 @@ static void __submit_bio(struct bio *bio)
         disk->fops->submit_bio(bio);
         blk_queue_exit(disk->queue);
     }
-
-    panic("%s: END!\n", __func__);
 }
 
 static void __submit_bio_noacct_mq(struct bio *bio)

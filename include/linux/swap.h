@@ -55,5 +55,7 @@ extern struct list_lru shadow_nodes;
     }                               \
 } while (0)
 
+void folio_mark_accessed(struct folio *);
+
 #endif /* __KERNEL__*/
 #endif /* _LINUX_SWAP_H */

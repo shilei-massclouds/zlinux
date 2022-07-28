@@ -72,7 +72,6 @@ int sg_alloc_table_chained(struct sg_table *table, int nents,
                            struct scatterlist *first_chunk,
                            unsigned nents_first_chunk)
 {
-#if 0
     int ret;
 
     BUG_ON(!nents);
@@ -85,6 +84,7 @@ int sg_alloc_table_chained(struct sg_table *table, int nents,
         }
     }
 
+#if 0
     /* User supposes that the 1st SGL includes real entry */
     if (nents_first_chunk <= 1) {
         first_chunk = NULL;

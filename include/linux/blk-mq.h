@@ -746,4 +746,16 @@ static inline unsigned short blk_rq_nr_phys_segments(struct request *rq)
     return rq->nr_phys_segments;
 }
 
+int __blk_rq_map_sg(struct request_queue *q, struct request *rq,
+                    struct scatterlist *sglist, struct scatterlist **last_sg);
+static inline int blk_rq_map_sg(struct request_queue *q, struct request *rq,
+                                struct scatterlist *sglist)
+{
+    struct scatterlist *last_sg = NULL;
+
+    return __blk_rq_map_sg(q, rq, sglist, &last_sg);
+}
+
+void blk_mq_stop_hw_queue(struct blk_mq_hw_ctx *hctx);
+
 #endif /* BLK_MQ_H */

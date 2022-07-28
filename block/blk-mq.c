@@ -1337,7 +1337,6 @@ __blk_mq_issue_directly(struct blk_mq_hw_ctx *hctx,
         break;
     }
 
-    panic("%s: END!\n", __func__);
     return ret;
 }
 
@@ -1389,6 +1388,32 @@ __blk_mq_try_issue_directly(struct blk_mq_hw_ctx *hctx,
 }
 
 /**
+ * blk_mq_request_bypass_insert - Insert a request at dispatch list.
+ * @rq: Pointer to request to be inserted.
+ * @at_head: true if the request should be inserted at the head of the list.
+ * @run_queue: If we should run the hardware queue after inserting the request.
+ *
+ * Should only be used carefully, when the caller knows we want to
+ * bypass a potential IO scheduler on the target device.
+ */
+void blk_mq_request_bypass_insert(struct request *rq, bool at_head,
+                                  bool run_queue)
+{
+    panic("%s: END!\n", __func__);
+}
+
+void blk_mq_end_request(struct request *rq, blk_status_t error)
+{
+#if 0
+    if (blk_update_request(rq, error, blk_rq_bytes(rq)))
+        BUG();
+    __blk_mq_end_request(rq, error);
+#endif
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL(blk_mq_end_request);
+
+/**
  * blk_mq_try_issue_directly - Try to send a request directly to device driver.
  * @hctx: Pointer of the associated hardware queue.
  * @rq: Pointer to request to be sent.
@@ -1403,7 +1428,10 @@ static void blk_mq_try_issue_directly(struct blk_mq_hw_ctx *hctx,
 {
     blk_status_t ret = __blk_mq_try_issue_directly(hctx, rq, false, true);
 
-    panic("%s: END!\n", __func__);
+    if (ret == BLK_STS_RESOURCE || ret == BLK_STS_DEV_RESOURCE)
+        blk_mq_request_bypass_insert(rq, false, true);
+    else if (ret != BLK_STS_OK)
+        blk_mq_end_request(rq, ret);
 }
 
 /**
@@ -1495,3 +1523,21 @@ void blk_mq_start_request(struct request *rq)
 #endif
 }
 EXPORT_SYMBOL(blk_mq_start_request);
+
+/*
+ * This function is often used for pausing .queue_rq() by driver when
+ * there isn't enough resource or some conditions aren't satisfied, and
+ * BLK_STS_RESOURCE is usually returned.
+ *
+ * We do not guarantee that dispatch can be drained or blocked
+ * after blk_mq_stop_hw_queue() returns. Please use
+ * blk_mq_quiesce_queue() for that requirement.
+ */
+void blk_mq_stop_hw_queue(struct blk_mq_hw_ctx *hctx)
+{
+    //cancel_delayed_work(&hctx->run_work);
+
+    set_bit(BLK_MQ_S_STOPPED, &hctx->state);
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL(blk_mq_stop_hw_queue);

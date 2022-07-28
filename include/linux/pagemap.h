@@ -47,6 +47,12 @@ enum mapping_flags {
     AS_LARGE_FOLIO_SUPPORT = 6,
 };
 
+struct wait_page_queue {
+    struct folio *folio;
+    int bit_nr;
+    wait_queue_entry_t wait;
+};
+
 typedef int filler_t(void *, struct page *);
 
 /**
@@ -197,5 +203,25 @@ static inline void attach_page_private(struct page *page, void *data)
 void folio_unlock(struct folio *folio);
 
 void unlock_page(struct page *page);
+
+/*
+ * This is exported only for folio_wait_locked/folio_wait_writeback, etc.,
+ * and should not be used directly.
+ */
+void folio_wait_bit(struct folio *folio, int bit_nr);
+int folio_wait_bit_killable(struct folio *folio, int bit_nr);
+
+/*
+ * Wait for a folio to be unlocked.
+ *
+ * This must be called with the caller "holding" the folio,
+ * ie with increased "page->count" so that the folio won't
+ * go away during the wait..
+ */
+static inline void folio_wait_locked(struct folio *folio)
+{
+    if (folio_test_locked(folio))
+        folio_wait_bit(folio, PG_locked);
+}
 
 #endif /* _LINUX_PAGEMAP_H */

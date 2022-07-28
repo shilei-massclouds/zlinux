@@ -36,4 +36,44 @@ vring_create_virtqueue(unsigned int index,
                        void (*callback)(struct virtqueue *vq),
                        const char *name);
 
+/*
+ * Barriers in virtio are tricky.  Non-SMP virtio guests can't assume
+ * they're not on an SMP host system, so they need to assume real
+ * barriers.  Non-SMP virtio hosts could skip the barriers, but does
+ * anyone care?
+ *
+ * For virtio_pci on SMP, we don't need to order with respect to MMIO
+ * accesses through relaxed memory I/O windows, so virt_mb() et al are
+ * sufficient.
+ *
+ * For using virtio to talk to real devices (eg. other heterogeneous
+ * CPUs) we do need real barriers.  In theory, we could be using both
+ * kinds of virtio, so it's a runtime decision, and the branch is
+ * actually quite cheap.
+ */
+
+static inline void virtio_mb(bool weak_barriers)
+{
+    if (weak_barriers)
+        virt_mb();
+    else
+        mb();
+}
+
+static inline void virtio_rmb(bool weak_barriers)
+{
+    if (weak_barriers)
+        virt_rmb();
+    else
+        dma_rmb();
+}
+
+static inline void virtio_wmb(bool weak_barriers)
+{
+    if (weak_barriers)
+        virt_wmb();
+    else
+        dma_wmb();
+}
+
 #endif /* _LINUX_VIRTIO_RING_H */

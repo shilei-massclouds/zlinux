@@ -2,8 +2,8 @@
 #ifndef __LINUX_SWIOTLB_H
 #define __LINUX_SWIOTLB_H
 
-//#include <linux/device.h>
-//#include <linux/dma-direction.h>
+#include <linux/device.h>
+#include <linux/dma-direction.h>
 #include <linux/init.h>
 #include <linux/types.h>
 #include <linux/limits.h>
