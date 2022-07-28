@@ -129,5 +129,13 @@ arch_vmap_pte_range_map_size(unsigned long addr, unsigned long end,
 
 extern void *vmalloc(unsigned long size) __alloc_size(1);
 extern void *vzalloc(unsigned long size) __alloc_size(1);
+extern void *__vmalloc(unsigned long size, gfp_t gfp_mask) __alloc_size(1);
+
+struct vm_struct **
+pcpu_get_vm_areas(const unsigned long *offsets,
+                  const size_t *sizes, int nr_vms,
+                  size_t align);
+
+void pcpu_free_vm_areas(struct vm_struct **vms, int nr_vms);
 
 #endif /* _LINUX_VMALLOC_H */

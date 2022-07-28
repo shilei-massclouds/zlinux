@@ -689,4 +689,61 @@ static inline int blk_mq_request_started(struct request *rq)
     return blk_mq_rq_state(rq) != MQ_RQ_IDLE;
 }
 
+
+/**
+ * blk_mq_rq_to_pdu - cast a request to a PDU
+ * @rq: the request to be casted
+ *
+ * Return: pointer to the PDU
+ *
+ * Driver command data is immediately after the request. So add request to get
+ * the PDU.
+ */
+static inline void *blk_mq_rq_to_pdu(struct request *rq)
+{
+    return rq + 1;
+}
+
+/*
+ * blk_rq_pos()         : the current sector
+ * blk_rq_bytes()       : bytes left in the entire request
+ * blk_rq_cur_bytes()       : bytes left in the current segment
+ * blk_rq_sectors()     : sectors left in the entire request
+ * blk_rq_cur_sectors()     : sectors left in the current segment
+ * blk_rq_stats_sectors()   : sectors of the entire request used for stats
+ */
+static inline sector_t blk_rq_pos(const struct request *rq)
+{
+    return rq->__sector;
+}
+
+static inline unsigned short req_get_ioprio(struct request *req)
+{
+    return req->ioprio;
+}
+
+#define req_op(req) \
+    ((req)->cmd_flags & REQ_OP_MASK)
+
+void blk_mq_start_request(struct request *rq);
+void blk_mq_end_request(struct request *rq, blk_status_t error);
+void __blk_mq_end_request(struct request *rq, blk_status_t error);
+void blk_mq_end_request_batch(struct io_comp_batch *ib);
+
+/*
+ * Number of physical segments as sent to the device.
+ *
+ * Normally this is the number of discontiguous data segments sent by the
+ * submitter.  But for data-less command like discard we might have no
+ * actual data segments submitted, but the driver might have to add it's
+ * own special payload.  In that case we still return 1 here so that this
+ * special payload will be mapped.
+ */
+static inline unsigned short blk_rq_nr_phys_segments(struct request *rq)
+{
+    if (rq->rq_flags & RQF_SPECIAL_PAYLOAD)
+        return 1;
+    return rq->nr_phys_segments;
+}
+
 #endif /* BLK_MQ_H */

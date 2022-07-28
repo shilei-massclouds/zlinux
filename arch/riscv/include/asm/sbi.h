@@ -136,4 +136,8 @@ sbi_mk_version(unsigned long major, unsigned long minor)
             SBI_SPEC_VERSION_MAJOR_SHIFT) | minor;
 }
 
+int sbi_remote_sfence_vma(const struct cpumask *cpu_mask,
+                          unsigned long start,
+                          unsigned long size);
+
 #endif /* _ASM_RISCV_SBI_H */

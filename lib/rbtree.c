@@ -445,3 +445,32 @@ struct rb_node *rb_next(const struct rb_node *node)
     return parent;
 }
 EXPORT_SYMBOL(rb_next);
+
+struct rb_node *rb_prev(const struct rb_node *node)
+{
+    struct rb_node *parent;
+
+    if (RB_EMPTY_NODE(node))
+        return NULL;
+
+    /*
+     * If we have a left-hand child, go down and then right as far
+     * as we can.
+     */
+    if (node->rb_left) {
+        node = node->rb_left;
+        while (node->rb_right)
+            node = node->rb_right;
+        return (struct rb_node *)node;
+    }
+
+    /*
+     * No left-hand children. Go up till we find an ancestor which
+     * is a right-hand child of its parent.
+     */
+    while ((parent = rb_parent(node)) && node == parent->rb_left)
+        node = parent;
+
+    return parent;
+}
+EXPORT_SYMBOL(rb_prev);

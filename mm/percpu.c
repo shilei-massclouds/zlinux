@@ -196,19 +196,112 @@ static const size_t *pcpu_group_sizes __ro_after_init;
 static unsigned int pcpu_low_unit_cpu __ro_after_init;
 static unsigned int pcpu_high_unit_cpu __ro_after_init;
 
-#include "percpu-vm.c"
+static void pcpu_init_md_blocks(struct pcpu_chunk *chunk);
+
+/**
+ * pcpu_mem_zalloc - allocate memory
+ * @size: bytes to allocate
+ * @gfp: allocation flags
+ *
+ * Allocate @size bytes.  If @size is smaller than PAGE_SIZE,
+ * kzalloc() is used; otherwise, the equivalent of vzalloc() is used.
+ * This is to facilitate passing through whitelisted flags.  The
+ * returned memory is always zeroed.
+ *
+ * RETURNS:
+ * Pointer to the allocated area on success, NULL on failure.
+ */
+static void *pcpu_mem_zalloc(size_t size, gfp_t gfp)
+{
+    if (WARN_ON_ONCE(!slab_is_available()))
+        return NULL;
+
+    if (size <= PAGE_SIZE)
+        return kzalloc(size, gfp);
+    else
+        return __vmalloc(size, gfp | __GFP_ZERO);
+}
+
+/**
+ * pcpu_mem_free - free memory
+ * @ptr: memory to free
+ *
+ * Free @ptr.  @ptr should have been allocated using pcpu_mem_zalloc().
+ */
+static void pcpu_mem_free(void *ptr)
+{
+    kvfree(ptr);
+}
+
+static struct pcpu_chunk *pcpu_alloc_chunk(gfp_t gfp)
+{
+    struct pcpu_chunk *chunk;
+    int region_bits;
+
+    chunk = pcpu_mem_zalloc(pcpu_chunk_struct_size, gfp);
+    if (!chunk)
+        return NULL;
+
+    INIT_LIST_HEAD(&chunk->list);
+    chunk->nr_pages = pcpu_unit_pages;
+    region_bits = pcpu_chunk_map_bits(chunk);
+
+    chunk->alloc_map = pcpu_mem_zalloc(BITS_TO_LONGS(region_bits) *
+                                       sizeof(chunk->alloc_map[0]), gfp);
+    if (!chunk->alloc_map)
+        goto alloc_map_fail;
+
+    chunk->bound_map = pcpu_mem_zalloc(BITS_TO_LONGS(region_bits + 1) *
+                                       sizeof(chunk->bound_map[0]), gfp);
+    if (!chunk->bound_map)
+        goto bound_map_fail;
+
+    chunk->md_blocks = pcpu_mem_zalloc(pcpu_chunk_nr_blocks(chunk) *
+                                       sizeof(chunk->md_blocks[0]), gfp);
+    if (!chunk->md_blocks)
+        goto md_blocks_fail;
+
+    pcpu_init_md_blocks(chunk);
+
+    /* init metadata */
+    chunk->free_bytes = chunk->nr_pages * PAGE_SIZE;
+
+    return chunk;
+
+md_blocks_fail:
+    pcpu_mem_free(chunk->bound_map);
+bound_map_fail:
+    pcpu_mem_free(chunk->alloc_map);
+alloc_map_fail:
+    pcpu_mem_free(chunk);
+
+    return NULL;
+}
+
+static int __maybe_unused pcpu_page_idx(unsigned int cpu, int page_idx)
+{
+    return pcpu_unit_map[cpu] * pcpu_unit_pages + page_idx;
+}
 
 static unsigned long pcpu_unit_page_offset(unsigned int cpu, int page_idx)
 {
     return pcpu_unit_offsets[cpu] + (page_idx << PAGE_SHIFT);
 }
 
-static unsigned long
-pcpu_chunk_addr(struct pcpu_chunk *chunk, unsigned int cpu, int page_idx)
+static unsigned long pcpu_chunk_addr(struct pcpu_chunk *chunk,
+                                     unsigned int cpu, int page_idx)
 {
     return (unsigned long)chunk->base_addr +
         pcpu_unit_page_offset(cpu, page_idx);
 }
+
+/* set the pointer to a chunk in a page struct */
+static void pcpu_set_page_chunk(struct page *page, struct pcpu_chunk *pcpu)
+{
+    page->index = (unsigned long)pcpu;
+}
+
+#include "percpu-vm.c"
 
 /*
  * The following are helper functions to help access bitmaps and convert

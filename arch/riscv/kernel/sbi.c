@@ -295,3 +295,21 @@ int sbi_remote_fence_i(const struct cpumask *cpu_mask)
     return __sbi_rfence(SBI_EXT_RFENCE_REMOTE_FENCE_I, cpu_mask, 0, 0, 0, 0);
 }
 EXPORT_SYMBOL(sbi_remote_fence_i);
+
+/**
+ * sbi_remote_sfence_vma() - Execute SFENCE.VMA instructions on given remote
+ *               harts for the specified virtual address range.
+ * @cpu_mask: A cpu mask containing all the target harts.
+ * @start: Start of the virtual address
+ * @size: Total size of the virtual address range.
+ *
+ * Return: 0 on success, appropriate linux error code otherwise.
+ */
+int sbi_remote_sfence_vma(const struct cpumask *cpu_mask,
+                          unsigned long start,
+                          unsigned long size)
+{
+    return __sbi_rfence(SBI_EXT_RFENCE_REMOTE_SFENCE_VMA,
+                        cpu_mask, start, size, 0, 0);
+}
+EXPORT_SYMBOL(sbi_remote_sfence_vma);

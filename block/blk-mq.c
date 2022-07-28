@@ -1460,3 +1460,38 @@ void blk_mq_submit_bio(struct bio *bio)
         blk_mq_run_dispatch_ops(rq->q,
                                 blk_mq_try_issue_directly(rq->mq_hctx, rq));
 }
+
+/**
+ * blk_mq_start_request - Start processing a request
+ * @rq: Pointer to request to be started
+ *
+ * Function used by device drivers to notify the block layer that a request
+ * is going to be processed now, so blk layer can do proper initializations
+ * such as starting the timeout timer.
+ */
+void blk_mq_start_request(struct request *rq)
+{
+    struct request_queue *q = rq->q;
+
+    if (test_bit(QUEUE_FLAG_STATS, &q->queue_flags)) {
+#if 0
+        rq->io_start_time_ns = ktime_get_ns();
+        rq->stats_sectors = blk_rq_sectors(rq);
+        rq->rq_flags |= RQF_STATS;
+        rq_qos_issue(q, rq);
+        panic("%s: QUEUE_FLAG_STATS!\n", __func__);
+#endif
+    }
+
+    WARN_ON_ONCE(blk_mq_rq_state(rq) != MQ_RQ_IDLE);
+
+    //Todo
+    //blk_add_timer(rq);
+    WRITE_ONCE(rq->state, MQ_RQ_IN_FLIGHT);
+
+#if 0
+    if (rq->bio && rq->bio->bi_opf & REQ_POLLED)
+        WRITE_ONCE(rq->bio->bi_cookie, blk_rq_to_qc(rq));
+#endif
+}
+EXPORT_SYMBOL(blk_mq_start_request);

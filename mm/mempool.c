@@ -173,3 +173,65 @@ int mempool_init(mempool_t *pool, int min_nr,
                              pool_data, GFP_KERNEL, NUMA_NO_NODE);
 }
 EXPORT_SYMBOL(mempool_init);
+
+/**
+ * mempool_create - create a memory pool
+ * @min_nr:    the minimum number of elements guaranteed to be
+ *             allocated for this pool.
+ * @alloc_fn:  user-defined element-allocation function.
+ * @free_fn:   user-defined element-freeing function.
+ * @pool_data: optional private data available to the user-defined functions.
+ *
+ * this function creates and allocates a guaranteed size, preallocated
+ * memory pool. The pool can be used from the mempool_alloc() and mempool_free()
+ * functions. This function might sleep. Both the alloc_fn() and the free_fn()
+ * functions might sleep - as long as the mempool_alloc() function is not called
+ * from IRQ contexts.
+ *
+ * Return: pointer to the created memory pool object or %NULL on error.
+ */
+mempool_t *mempool_create(int min_nr, mempool_alloc_t *alloc_fn,
+                          mempool_free_t *free_fn, void *pool_data)
+{
+    return mempool_create_node(min_nr, alloc_fn, free_fn, pool_data,
+                               GFP_KERNEL, NUMA_NO_NODE);
+}
+EXPORT_SYMBOL(mempool_create);
+
+mempool_t *mempool_create_node(int min_nr, mempool_alloc_t *alloc_fn,
+                               mempool_free_t *free_fn, void *pool_data,
+                               gfp_t gfp_mask, int node_id)
+{
+    mempool_t *pool;
+
+    pool = kzalloc_node(sizeof(*pool), gfp_mask, node_id);
+    if (!pool)
+        return NULL;
+
+    if (mempool_init_node(pool, min_nr, alloc_fn, free_fn, pool_data,
+                          gfp_mask, node_id)) {
+        kfree(pool);
+        return NULL;
+    }
+
+    return pool;
+}
+EXPORT_SYMBOL(mempool_create_node);
+
+/**
+ * mempool_destroy - deallocate a memory pool
+ * @pool:      pointer to the memory pool which was allocated via
+ *             mempool_create().
+ *
+ * Free all reserved elements in @pool and @pool itself.  This function
+ * only sleeps if the free_fn() function sleeps.
+ */
+void mempool_destroy(mempool_t *pool)
+{
+    if (unlikely(!pool))
+        return;
+
+    mempool_exit(pool);
+    kfree(pool);
+}
+EXPORT_SYMBOL(mempool_destroy);

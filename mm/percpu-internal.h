@@ -32,28 +32,28 @@ struct pcpu_block_md {
 };
 
 struct pcpu_chunk {
-    struct list_head list;  /* linked to pcpu_slot lists */
-    int free_bytes;         /* free bytes in the chunk */
+    struct list_head    list;       /* linked to pcpu_slot lists */
+    int                 free_bytes; /* free bytes in the chunk */
     struct pcpu_block_md    chunk_md;
+    void                *base_addr; /* base address of this chunk */
 
-    void *base_addr;    /* base address of this chunk */
-
-    unsigned long           *alloc_map; /* allocation map */
-    unsigned long           *bound_map; /* boundary map */
+    unsigned long       *alloc_map; /* allocation map */
+    unsigned long       *bound_map; /* boundary map */
     struct pcpu_block_md    *md_blocks; /* metadata blocks */
 
-    bool immutable;     /* no [de]population allowed */
-    bool isolated;      /* isolated from active chunk slots */
+    void            *data;      /* chunk data */
+    bool            immutable;  /* no [de]population allowed */
+    bool            isolated;   /* isolated from active chunk slots */
+    int             start_offset;   /* the overlap with the previous
+                                       region to have a page aligned
+                                       base_addr */
+    int             end_offset; /* additional area required to
+                                   have the region end page
+                                   aligned */
 
-    int start_offset;   /* the overlap with the previous
-                           region to have a page aligned base_addr */
-    int end_offset;     /* additional area required
-                           to have the region end page aligned */
-
-    int nr_pages;           /* # of pages served by this chunk */
-    int nr_populated;       /* # of populated pages */
-    int nr_empty_pop_pages; /* # of empty populated pages */
-
+    int             nr_pages;   /* # of pages served by this chunk */
+    int             nr_populated;   /* # of populated pages */
+    int             nr_empty_pop_pages; /* # of empty populated pages */
     unsigned long   populated[];    /* populated bitmap */
 };
 

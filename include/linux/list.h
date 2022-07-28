@@ -406,4 +406,17 @@ static inline int list_empty_careful(const struct list_head *head)
     return list_is_head(next, head) && (next == head->prev);
 }
 
+/**
+ * list_for_each_entry_from_reverse - iterate backwards over list of given type
+ *                                    from the current point
+ * @pos:    the type * to use as a loop cursor.
+ * @head:   the head for your list.
+ * @member: the name of the list_head within the struct.
+ *
+ * Iterate backwards over list of given type, continuing from current position.
+ */
+#define list_for_each_entry_from_reverse(pos, head, member)     \
+    for (; !list_entry_is_head(pos, head, member);          \
+         pos = list_prev_entry(pos, member))
+
 #endif /* _LINUX_LIST_H */

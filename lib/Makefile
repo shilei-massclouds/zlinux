@@ -17,6 +17,7 @@ obj-y += hweight.o bitmap.o sbitmap.o
 obj-y += kasprintf.o string_helpers.o
 
 obj-y += devres.o
+obj-y += sg_pool.o
 
 libfdt_files = fdt.o fdt_ro.o find_bit.o
 

@@ -1061,7 +1061,6 @@ merge_or_add_vmap_area_augment(struct vmap_area *va,
     return va;
 }
 
-
 /*
  * Free a vmap area, caller ensuring that the area has been unmapped
  * and flush_cache_vunmap had been called for the correct range
@@ -1885,3 +1884,324 @@ void *vzalloc(unsigned long size)
                           __builtin_return_address(0));
 }
 EXPORT_SYMBOL(vzalloc);
+
+void *__vmalloc(unsigned long size, gfp_t gfp_mask)
+{
+    return __vmalloc_node(size, 1, gfp_mask, NUMA_NO_NODE,
+                          __builtin_return_address(0));
+}
+EXPORT_SYMBOL(__vmalloc);
+
+/**
+ * pvm_find_va_enclose_addr - find the vmap_area @addr belongs to
+ * @addr: target address
+ *
+ * Returns: vmap_area if it is found. If there is no such area
+ *   the first highest(reverse order) vmap_area is returned
+ *   i.e. va->va_start < addr && va->va_end < addr or NULL
+ *   if there are no any areas before @addr.
+ */
+static struct vmap_area *
+pvm_find_va_enclose_addr(unsigned long addr)
+{
+    struct vmap_area *va, *tmp;
+    struct rb_node *n;
+
+    n = free_vmap_area_root.rb_node;
+    va = NULL;
+
+    while (n) {
+        tmp = rb_entry(n, struct vmap_area, rb_node);
+        if (tmp->va_start <= addr) {
+            va = tmp;
+            if (tmp->va_end >= addr)
+                break;
+
+            n = n->rb_right;
+        } else {
+            n = n->rb_left;
+        }
+    }
+
+    return va;
+}
+
+/**
+ * pvm_determine_end_from_reverse - find the highest aligned address
+ * of free block below VMALLOC_END
+ * @va:
+ *   in - the VA we start the search(reverse order);
+ *   out - the VA with the highest aligned end address.
+ * @align: alignment for required highest address
+ *
+ * Returns: determined end address within vmap_area
+ */
+static unsigned long
+pvm_determine_end_from_reverse(struct vmap_area **va, unsigned long align)
+{
+    unsigned long vmalloc_end = VMALLOC_END & ~(align - 1);
+    unsigned long addr;
+
+    if (likely(*va)) {
+        list_for_each_entry_from_reverse((*va), &free_vmap_area_list, list) {
+            addr = min((*va)->va_end & ~(align - 1), vmalloc_end);
+            if ((*va)->va_start < addr)
+                return addr;
+        }
+    }
+
+    return 0;
+}
+
+static struct vmap_area *node_to_va(struct rb_node *n)
+{
+    return rb_entry_safe(n, struct vmap_area, rb_node);
+}
+
+/**
+ * pcpu_get_vm_areas - allocate vmalloc areas for percpu allocator
+ * @offsets: array containing offset of each area
+ * @sizes: array containing size of each area
+ * @nr_vms: the number of areas to allocate
+ * @align: alignment, all entries in @offsets and @sizes must be aligned to this
+ *
+ * Returns: kmalloc'd vm_struct pointer array pointing to allocated
+ *      vm_structs on success, %NULL on failure
+ *
+ * Percpu allocator wants to use congruent vm areas so that it can
+ * maintain the offsets among percpu areas.  This function allocates
+ * congruent vmalloc areas for it with GFP_KERNEL.  These areas tend to
+ * be scattered pretty far, distance between two areas easily going up
+ * to gigabytes.  To avoid interacting with regular vmallocs, these
+ * areas are allocated from top.
+ *
+ * Despite its complicated look, this allocator is rather simple. It
+ * does everything top-down and scans free blocks from the end looking
+ * for matching base. While scanning, if any of the areas do not fit the
+ * base address is pulled down to fit the area. Scanning is repeated till
+ * all the areas fit and then all necessary data structures are inserted
+ * and the result is returned.
+ */
+struct vm_struct **pcpu_get_vm_areas(const unsigned long *offsets,
+                                     const size_t *sizes, int nr_vms,
+                                     size_t align)
+{
+    const unsigned long vmalloc_start = ALIGN(VMALLOC_START, align);
+    const unsigned long vmalloc_end = VMALLOC_END & ~(align - 1);
+    struct vmap_area **vas, *va;
+    struct vm_struct **vms;
+    int area, area2, last_area, term_area;
+    unsigned long base, start, size, end, last_end, orig_start, orig_end;
+    bool purged = false;
+    enum fit_type type;
+
+    /* verify parameters and allocate data structures */
+    BUG_ON(offset_in_page(align) || !is_power_of_2(align));
+    for (last_area = 0, area = 0; area < nr_vms; area++) {
+        start = offsets[area];
+        end = start + sizes[area];
+
+        /* is everything aligned properly? */
+        BUG_ON(!IS_ALIGNED(offsets[area], align));
+        BUG_ON(!IS_ALIGNED(sizes[area], align));
+
+        /* detect the area with the highest address */
+        if (start > offsets[last_area])
+            last_area = area;
+
+        for (area2 = area + 1; area2 < nr_vms; area2++) {
+            unsigned long start2 = offsets[area2];
+            unsigned long end2 = start2 + sizes[area2];
+
+            BUG_ON(start2 < end && start < end2);
+        }
+    }
+    last_end = offsets[last_area] + sizes[last_area];
+
+    if (vmalloc_end - vmalloc_start < last_end) {
+        WARN_ON(true);
+        return NULL;
+    }
+
+    vms = kcalloc(nr_vms, sizeof(vms[0]), GFP_KERNEL);
+    vas = kcalloc(nr_vms, sizeof(vas[0]), GFP_KERNEL);
+    if (!vas || !vms)
+        goto err_free2;
+
+    for (area = 0; area < nr_vms; area++) {
+        vas[area] = kmem_cache_zalloc(vmap_area_cachep, GFP_KERNEL);
+        vms[area] = kzalloc(sizeof(struct vm_struct), GFP_KERNEL);
+        if (!vas[area] || !vms[area])
+            goto err_free;
+    }
+
+ retry:
+    spin_lock(&free_vmap_area_lock);
+
+    /* start scanning - we scan from the top, begin with the last area */
+    area = term_area = last_area;
+    start = offsets[area];
+    end = start + sizes[area];
+
+    va = pvm_find_va_enclose_addr(vmalloc_end);
+    base = pvm_determine_end_from_reverse(&va, align) - end;
+
+    while (true) {
+        /*
+         * base might have underflowed, add last_end before
+         * comparing.
+         */
+        if (base + last_end < vmalloc_start + last_end)
+            goto overflow;
+
+        /*
+         * Fitting base has not been found.
+         */
+        if (va == NULL)
+            goto overflow;
+
+        /*
+         * If required width exceeds current VA block, move
+         * base downwards and then recheck.
+         */
+        if (base + end > va->va_end) {
+            base = pvm_determine_end_from_reverse(&va, align) - end;
+            term_area = area;
+            continue;
+        }
+
+        /*
+         * If this VA does not fit, move base downwards and recheck.
+         */
+        if (base + start < va->va_start) {
+            va = node_to_va(rb_prev(&va->rb_node));
+            base = pvm_determine_end_from_reverse(&va, align) - end;
+            term_area = area;
+            continue;
+        }
+
+        /*
+         * This area fits, move on to the previous one.  If
+         * the previous one is the terminal one, we're done.
+         */
+        area = (area + nr_vms - 1) % nr_vms;
+        if (area == term_area)
+            break;
+
+        start = offsets[area];
+        end = start + sizes[area];
+        va = pvm_find_va_enclose_addr(base + end);
+    }
+
+    /* we've found a fitting base, insert all va's */
+    for (area = 0; area < nr_vms; area++) {
+        int ret;
+
+        start = base + offsets[area];
+        size = sizes[area];
+
+        va = pvm_find_va_enclose_addr(start);
+        if (WARN_ON_ONCE(va == NULL))
+            /* It is a BUG(), but trigger recovery instead. */
+            goto recovery;
+
+        type = classify_va_fit_type(va, start, size);
+        if (WARN_ON_ONCE(type == NOTHING_FIT))
+            /* It is a BUG(), but trigger recovery instead. */
+            goto recovery;
+
+        ret = adjust_va_to_fit_type(va, start, size, type);
+        if (unlikely(ret))
+            goto recovery;
+
+        /* Allocated area. */
+        va = vas[area];
+        va->va_start = start;
+        va->va_end = start + size;
+    }
+
+    spin_unlock(&free_vmap_area_lock);
+
+    /* insert all vm's */
+    spin_lock(&vmap_area_lock);
+    for (area = 0; area < nr_vms; area++) {
+        insert_vmap_area(vas[area], &vmap_area_root, &vmap_area_list);
+
+        setup_vmalloc_vm_locked(vms[area], vas[area], VM_ALLOC,
+                                pcpu_get_vm_areas);
+    }
+    spin_unlock(&vmap_area_lock);
+
+    kfree(vas);
+    return vms;
+
+ recovery:
+    /*
+     * Remove previously allocated areas. There is no
+     * need in removing these areas from the busy tree,
+     * because they are inserted only on the final step
+     * and when pcpu_get_vm_areas() is success.
+     */
+    while (area--) {
+        orig_start = vas[area]->va_start;
+        orig_end = vas[area]->va_end;
+        va = merge_or_add_vmap_area_augment(vas[area], &free_vmap_area_root,
+                                            &free_vmap_area_list);
+        vas[area] = NULL;
+    }
+
+ overflow:
+    spin_unlock(&free_vmap_area_lock);
+    if (!purged) {
+#if 0
+        purge_vmap_area_lazy();
+        purged = true;
+
+        /* Before "retry", check if we recover. */
+        for (area = 0; area < nr_vms; area++) {
+            if (vas[area])
+                continue;
+
+            vas[area] = kmem_cache_zalloc(
+                vmap_area_cachep, GFP_KERNEL);
+            if (!vas[area])
+                goto err_free;
+        }
+
+        goto retry;
+#endif
+        panic("%s: NO implementation!\n", __func__);
+    }
+
+ err_free:
+    for (area = 0; area < nr_vms; area++) {
+        if (vas[area])
+            kmem_cache_free(vmap_area_cachep, vas[area]);
+
+        kfree(vms[area]);
+    }
+ err_free2:
+    kfree(vas);
+    kfree(vms);
+    return NULL;
+
+ err_free_shadow:
+    spin_lock(&free_vmap_area_lock);
+    /*
+     * We release all the vmalloc shadows, even the ones for regions that
+     * hadn't been successfully added. This relies on kasan_release_vmalloc
+     * being able to tolerate this case.
+     */
+    for (area = 0; area < nr_vms; area++) {
+        orig_start = vas[area]->va_start;
+        orig_end = vas[area]->va_end;
+        va = merge_or_add_vmap_area_augment(vas[area], &free_vmap_area_root,
+                                            &free_vmap_area_list);
+        vas[area] = NULL;
+        kfree(vms[area]);
+    }
+    spin_unlock(&free_vmap_area_lock);
+    kfree(vas);
+    kfree(vms);
+    return NULL;
+}

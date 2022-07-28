@@ -55,4 +55,20 @@ extern void mempool_destroy(mempool_t *pool);
 extern void *mempool_alloc(mempool_t *pool, gfp_t gfp_mask) __malloc;
 extern void mempool_free(void *element, mempool_t *pool);
 
+extern mempool_t *
+mempool_create(int min_nr, mempool_alloc_t *alloc_fn,
+               mempool_free_t *free_fn, void *pool_data);
+
+extern mempool_t *
+mempool_create_node(int min_nr, mempool_alloc_t *alloc_fn,
+                    mempool_free_t *free_fn, void *pool_data,
+                    gfp_t gfp_mask, int nid);
+
+static inline mempool_t *
+mempool_create_slab_pool(int min_nr, struct kmem_cache *kc)
+{
+    return mempool_create(min_nr, mempool_alloc_slab, mempool_free_slab,
+                          (void *) kc);
+}
+
 #endif /* _LINUX_MEMPOOL_H */

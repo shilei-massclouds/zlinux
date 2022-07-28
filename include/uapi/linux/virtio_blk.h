@@ -131,4 +131,26 @@ struct virtio_blk_outhdr {
     __virtio64 sector;
 };
 
+/* These two define direction. */
+#define VIRTIO_BLK_T_IN         0
+#define VIRTIO_BLK_T_OUT        1
+
+/* This bit says it's a scsi command, not an actual read or write. */
+#define VIRTIO_BLK_T_SCSI_CMD   2
+
+/* Cache flush command */
+#define VIRTIO_BLK_T_FLUSH      4
+
+/* Get device ID command */
+#define VIRTIO_BLK_T_GET_ID     8
+
+/* Discard command */
+#define VIRTIO_BLK_T_DISCARD    11
+
+/* Write zeroes command */
+#define VIRTIO_BLK_T_WRITE_ZEROES   13
+
+/* Barrier before this op. */
+#define VIRTIO_BLK_T_BARRIER    0x80000000
+
 #endif /* _LINUX_VIRTIO_BLK_H */

@@ -144,4 +144,10 @@ static inline void set_page_refcounted(struct page *page)
     set_page_count(page, 1);
 }
 
+int vmap_pages_range_noflush(unsigned long addr, unsigned long end,
+                             pgprot_t prot, struct page **pages,
+                             unsigned int page_shift);
+
+void vunmap_range_noflush(unsigned long start, unsigned long end);
+
 #endif  /* __MM_INTERNAL_H */
