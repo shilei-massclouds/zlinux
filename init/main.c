@@ -365,6 +365,7 @@ noinline void __ref rest_init(void)
      */
     schedule_preempt_disabled();
 
+    pr_info("###################### %s: 3\n", __func__);
     panic("%s: pid(%d) END!\n", __func__, pid);
 }
 

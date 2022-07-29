@@ -176,7 +176,34 @@ EXPORT_SYMBOL(wake_up_process);
 
 static inline void sched_submit_work(struct task_struct *tsk)
 {
-    panic("%s: NO implementation!\n", __func__);
+    unsigned int task_flags;
+
+    if (task_is_running(tsk))
+        return;
+
+    task_flags = tsk->flags;
+    /*
+     * If a worker goes to sleep, notify and ask workqueue whether it
+     * wants to wake up a task to maintain concurrency.
+     */
+    if (task_flags & (PF_WQ_WORKER | PF_IO_WORKER)) {
+#if 0
+        if (task_flags & PF_WQ_WORKER)
+            wq_worker_sleeping(tsk);
+        else
+            io_wq_worker_sleeping(tsk);
+#endif
+        panic("%s: (PF_WQ_WORKER | PF_IO_WORKER)!\n", __func__);
+    }
+
+    if (tsk_is_pi_blocked(tsk))
+        return;
+
+    /*
+     * If we are going to sleep and we have plugged IO queued,
+     * make sure to submit it to avoid deadlocks.
+     */
+    blk_flush_plug(tsk->plug, true);
 }
 
 static void sched_update_worker(struct task_struct *tsk)
@@ -366,6 +393,8 @@ static void __sched notrace __schedule(unsigned int sched_mode)
     rq = cpu_rq(cpu);
     prev = rq->curr;
 
+    pr_info("############# %s:0 (%x) #############\n",
+            __func__, rq->__lock.raw_lock.lock);
     local_irq_disable();
     //rcu_note_context_switch(!!sched_mode);
 
@@ -434,7 +463,9 @@ asmlinkage __visible void __sched schedule(void)
     sched_submit_work(tsk);
     do {
         preempt_disable();
+        pr_info("############# %s:0 #############\n", __func__);
         __schedule(SM_NONE);
+        pr_info("############# %s:1 #############\n", __func__);
         sched_preempt_enable_no_resched();
     } while (need_resched());
     sched_update_worker(tsk);
@@ -1252,8 +1283,11 @@ void __sched io_schedule(void)
 {
     int token;
 
+    printk("%s: 1\n", __func__);
     token = io_schedule_prepare();
+    printk("%s: 2\n", __func__);
     schedule();
+    printk("%s: 3\n", __func__);
     io_schedule_finish(token);
 }
 EXPORT_SYMBOL(io_schedule);

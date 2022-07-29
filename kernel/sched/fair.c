@@ -185,7 +185,7 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
         cfs_rq = cfs_rq_of(se);
         enqueue_entity(cfs_rq, se, flags);
 
-        panic("%s: NO implementation on_rq(%d)!", __func__, se->on_rq);
+        pr_warn("%s: NO implementation on_rq(%d)!", __func__, se->on_rq);
     }
 }
 

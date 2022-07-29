@@ -59,6 +59,18 @@
 
 #define MAX_SCHEDULE_TIMEOUT    LONG_MAX
 
+#define task_is_running(task) \
+    (READ_ONCE((task)->__state) == TASK_RUNNING)
+
+#define task_is_traced(task) \
+    ((READ_ONCE(task->__state) & __TASK_TRACED) != 0)
+
+#define task_is_stopped(task) \
+    ((READ_ONCE(task->__state) & __TASK_STOPPED) != 0)
+
+#define task_is_stopped_or_traced(task) \
+    ((READ_ONCE(task->__state) & (__TASK_STOPPED | __TASK_TRACED)) != 0)
+
 /*
  * Per process flags
  */
@@ -289,6 +301,13 @@ struct task_struct {
 
     struct wake_q_node wake_q;
 
+    /* PI waiters blocked on a rt_mutex held by this task: */
+    struct rb_root_cached       pi_waiters;
+    /* Updated under owner's pi_lock and rq lock */
+    struct task_struct          *pi_top_task;
+    /* Deadlock detection and priority inheritance handling: */
+    struct rt_mutex_waiter      *pi_blocked_on;
+
     /* Protection of the PI data structures: */
     raw_spinlock_t pi_lock;
 
@@ -471,7 +490,7 @@ extern struct root_domain def_root_domain;
 extern struct mutex sched_domains_mutex;
 
 /* Increase resolution of cpu_capacity calculations */
-# define SCHED_CAPACITY_SHIFT       SCHED_FIXEDPOINT_SHIFT
-# define SCHED_CAPACITY_SCALE       (1L << SCHED_CAPACITY_SHIFT)
+#define SCHED_CAPACITY_SHIFT    SCHED_FIXEDPOINT_SHIFT
+#define SCHED_CAPACITY_SCALE    (1L << SCHED_CAPACITY_SHIFT)
 
 #endif /* _LINUX_SCHED_H */

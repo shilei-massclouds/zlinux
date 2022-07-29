@@ -19,4 +19,22 @@ static inline int rt_prio(int prio)
  */
 #define RR_TIMESLICE        (100 * HZ / 1000)
 
+/*
+ * Must hold either p->pi_lock or task_rq(p)->lock.
+ */
+static inline struct task_struct *rt_mutex_get_top_task(struct task_struct *p)
+{
+    return p->pi_top_task;
+}
+
+extern void rt_mutex_setprio(struct task_struct *p,
+                             struct task_struct *pi_task);
+
+extern void rt_mutex_adjust_pi(struct task_struct *p);
+
+static inline bool tsk_is_pi_blocked(struct task_struct *tsk)
+{
+    return tsk->pi_blocked_on != NULL;
+}
+
 #endif /* _LINUX_SCHED_RT_H */

@@ -316,17 +316,13 @@ dup_task_struct(struct task_struct *orig, int node)
     tsk->task_frag.page = NULL;
 #endif
     tsk->wake_q.next = NULL;
-#if 0
     tsk->worker_private = NULL;
-#endif
 
     return tsk;
 
-#if 0
  free_stack:
     exit_task_stack_account(tsk);
     free_thread_stack(tsk);
-#endif
 
  free_tsk:
     free_task_struct(tsk);
