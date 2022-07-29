@@ -72,6 +72,22 @@ static struct task_struct *pick_next_task_dl(struct rq *rq)
     return p;
 }
 
+void init_dl_rq(struct dl_rq *dl_rq)
+{
+    dl_rq->root = RB_ROOT_CACHED;
+
+    /* zero means no -deadline tasks */
+    dl_rq->earliest_dl.curr = dl_rq->earliest_dl.next = 0;
+
+    dl_rq->dl_nr_migratory = 0;
+    dl_rq->overloaded = 0;
+    dl_rq->pushable_dl_tasks_root = RB_ROOT_CACHED;
+
+    dl_rq->running_bw = 0;
+    dl_rq->this_bw = 0;
+    //init_dl_rq_bw_ratio(dl_rq);
+}
+
 DEFINE_SCHED_CLASS(dl) = {
     .pick_next_task     = pick_next_task_dl,
     .put_prev_task      = put_prev_task_dl,

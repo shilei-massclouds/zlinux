@@ -11,6 +11,14 @@
 #include <asm/current.h>
 //#include <uapi/linux/wait.h>
 
+/* wait_queue_entry::flags */
+#define WQ_FLAG_EXCLUSIVE   0x01
+#define WQ_FLAG_WOKEN       0x02
+#define WQ_FLAG_BOOKMARK    0x04
+#define WQ_FLAG_CUSTOM      0x08
+#define WQ_FLAG_DONE        0x10
+#define WQ_FLAG_PRIORITY    0x20
+
 typedef struct wait_queue_entry wait_queue_entry_t;
 
 typedef int (*wait_queue_func_t)(struct wait_queue_entry *wq_entry,
@@ -68,5 +76,23 @@ int autoremove_wake_function(struct wait_queue_entry *wq_entry,
         INIT_LIST_HEAD(&(wait)->entry);             \
         (wait)->flags = 0;                          \
     } while (0)
+
+extern void
+__init_waitqueue_head(struct wait_queue_head *wq_head,
+                      const char *name, struct lock_class_key *);
+
+#define init_waitqueue_head(wq_head)        \
+    do {                                    \
+        static struct lock_class_key __key; \
+                                            \
+        __init_waitqueue_head((wq_head), #wq_head, &__key); \
+    } while (0)
+
+static inline void
+__add_wait_queue_entry_tail(struct wait_queue_head *wq_head,
+                            struct wait_queue_entry *wq_entry)
+{
+    list_add_tail(&wq_entry->entry, &wq_head->head);
+}
 
 #endif /* _LINUX_WAIT_H */

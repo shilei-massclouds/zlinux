@@ -13,12 +13,12 @@
 #include <linux/sched/mm.h>
 #include <linux/sched/debug.h>
 #include <linux/sched/isolation.h>
+#include <linux/sched/task_stack.h>
 #if 0
 #include <linux/sched/clock.h>
 #include <linux/sched/cputime.h>
 #include <linux/sched/loadavg.h>
 #include <linux/sched/rseq_api.h>
-#include <linux/sched/task_stack.h>
 
 #include <linux/cpufreq.h>
 #include <linux/cpumask_api.h>
@@ -64,8 +64,13 @@
 #include "clock.c"
 #endif
 #include "swait.c"
+#include "wait_bit.c"
 #include "wait.c"
 
+#include "cpupri.c"
 #include "stop_task.c"
+#include "topology.c"
+
+//#include "membarrier.c"
 
 #include "isolation.c"

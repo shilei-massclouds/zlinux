@@ -21,9 +21,9 @@
 #include <linux/sched/rt.h>
 
 #include <linux/slab.h>
+#include <linux/jiffies.h>
 #if 0
 #include <linux/cpuidle.h>
-#include <linux/jiffies.h>
 #include <linux/livepatch.h>
 #include <linux/psi.h>
 #include <linux/seqlock_api.h>
@@ -47,5 +47,8 @@
 #include "idle.c"
 
 #include "rt.c"
+
+#include "cpudeadline.c"
+//#include "pelt.c"
 
 #include "deadline.c"

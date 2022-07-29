@@ -378,6 +378,25 @@ int __bio_queue_enter(struct request_queue *q, struct bio *bio)
     panic("%s: END!\n", __func__);
 }
 
+void __blk_flush_plug(struct blk_plug *plug, bool from_schedule)
+{
+#if 0
+    if (!list_empty(&plug->cb_list))
+        flush_plug_callbacks(plug, from_schedule);
+    if (!rq_list_empty(plug->mq_list))
+        blk_mq_flush_plug_list(plug, from_schedule);
+    /*
+     * Unconditionally flush out cached requests, even if the unplug
+     * event came from schedule. Since we know hold references to the
+     * queue for cached requests, we don't want a blocked task holding
+     * up a queue freeze/quiesce event.
+     */
+    if (unlikely(!rq_list_empty(plug->cached_rq)))
+        blk_mq_free_plug_rqs(plug);
+#endif
+    panic("%s: END!\n", __func__);
+}
+
 /**
  * submit_bio_noacct - re-submit a bio to the block device layer for I/O
  * @bio:  The bio describing the location in memory and on the device.

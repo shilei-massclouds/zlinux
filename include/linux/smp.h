@@ -12,7 +12,7 @@
 #include <linux/list.h>
 #include <linux/cpumask.h>
 #include <linux/init.h>
-//#include <linux/smp_types.h>
+#include <linux/smp_types.h>
 
 #include <linux/preempt.h>
 #include <linux/kernel.h>
@@ -27,9 +27,7 @@ typedef bool (*smp_cond_func_t)(int cpu, void *info);
  * structure shares (partial) layout with struct irq_work
  */
 struct __call_single_data {
-#if 0
     struct __call_single_node node;
-#endif
     smp_call_func_t func;
     void *info;
 };
@@ -50,6 +48,18 @@ void kick_all_cpus_sync(void);
 
 extern void __init setup_nr_cpu_ids(void);
 extern void __init smp_init(void);
+
+#define CSD_INIT(_func, _info) \
+    (struct __call_single_data){ .func = (_func), .info = (_info), }
+
+/* Use __aligned() to avoid to use 2 cache lines for 1 csd */
+typedef struct __call_single_data call_single_data_t
+    __aligned(sizeof(struct __call_single_data));
+
+#define INIT_CSD(_csd, _func, _info)        \
+do {                        \
+    *(_csd) = CSD_INIT((_func), (_info));   \
+} while (0)
 
 #define get_cpu()       ({ preempt_disable(); __smp_processor_id(); })
 #define put_cpu()       preempt_enable()

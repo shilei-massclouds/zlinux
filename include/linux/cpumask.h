@@ -418,4 +418,10 @@ static inline void free_cpumask_var(cpumask_var_t mask)
 {
 }
 
+static inline bool zalloc_cpumask_var(cpumask_var_t *mask, gfp_t flags)
+{
+    cpumask_clear(*mask);
+    return true;
+}
+
 #endif /* __LINUX_CPUMASK_H */

@@ -719,4 +719,11 @@ queue_segment_boundary(const struct request_queue *q)
 #define for_each_bio(_bio)      \
     for (; _bio; _bio = _bio->bi_next)
 
+void __blk_flush_plug(struct blk_plug *plug, bool from_schedule);
+static inline void blk_flush_plug(struct blk_plug *plug, bool async)
+{
+    if (plug)
+        __blk_flush_plug(plug, async);
+}
+
 #endif /* _LINUX_BLKDEV_H */

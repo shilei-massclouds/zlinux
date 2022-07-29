@@ -45,4 +45,6 @@ wait_on_bit_lock_io(unsigned long *word, int bit, unsigned mode)
     panic("%s: END!\n", __func__);
 }
 
+extern void __init wait_bit_init(void);
+
 #endif /* _LINUX_WAIT_BIT_H */

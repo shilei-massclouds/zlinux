@@ -470,6 +470,18 @@ static wait_queue_head_t *folio_waitqueue(struct folio *folio)
     return &folio_wait_table[hash_ptr(folio, PAGE_WAIT_TABLE_BITS)];
 }
 
+void __init pagecache_init(void)
+{
+    int i;
+
+    for (i = 0; i < PAGE_WAIT_TABLE_SIZE; i++)
+        init_waitqueue_head(&folio_wait_table[i]);
+
+#if 0
+    page_writeback_init();
+#endif
+}
+
 /*
  * The page wait code treats the "wait->flags" somewhat unusually, because
  * we have multiple different kinds of waits, not just the usual "exclusive"
@@ -510,14 +522,32 @@ static int wake_page_function(wait_queue_entry_t *wait,
     panic("%s: END!\n", __func__);
 }
 
+/*
+ * Attempt to check (or get) the folio flag, and mark us done
+ * if successful.
+ */
+static inline bool folio_trylock_flag(struct folio *folio, int bit_nr,
+                                      struct wait_queue_entry *wait)
+{
+    if (wait->flags & WQ_FLAG_EXCLUSIVE) {
+        if (test_and_set_bit(bit_nr, &folio->flags))
+            return false;
+    } else if (test_bit(bit_nr, &folio->flags))
+        return false;
+
+    wait->flags |= WQ_FLAG_WOKEN | WQ_FLAG_DONE;
+    return true;
+}
+
+/* How many times do we accept lock stealing from under a waiter? */
+int sysctl_page_lock_unfairness = 5;
+
 static inline int
 folio_wait_bit_common(struct folio *folio, int bit_nr,
                       int state, enum behavior behavior)
 {
     wait_queue_head_t *q = folio_waitqueue(folio);
-#if 0
     int unfairness = sysctl_page_lock_unfairness;
-#endif
     struct wait_page_queue wait_page;
     wait_queue_entry_t *wait = &wait_page.wait;
     bool thrashing = false;
@@ -536,6 +566,68 @@ folio_wait_bit_common(struct folio *folio, int bit_nr,
     wait->func = wake_page_function;
     wait_page.folio = folio;
     wait_page.bit_nr = bit_nr;
+
+ repeat:
+    wait->flags = 0;
+    if (behavior == EXCLUSIVE) {
+        wait->flags = WQ_FLAG_EXCLUSIVE;
+        if (--unfairness < 0)
+            wait->flags |= WQ_FLAG_CUSTOM;
+    }
+
+    /*
+     * Do one last check whether we can get the
+     * page bit synchronously.
+     *
+     * Do the folio_set_waiters() marking before that
+     * to let any waker we _just_ missed know they
+     * need to wake us up (otherwise they'll never
+     * even go to the slow case that looks at the
+     * page queue), and add ourselves to the wait
+     * queue if we need to sleep.
+     *
+     * This part needs to be done under the queue
+     * lock to avoid races.
+     */
+    spin_lock_irq(&q->lock);
+    folio_set_waiters(folio);
+    if (!folio_trylock_flag(folio, bit_nr, wait))
+        __add_wait_queue_entry_tail(q, wait);
+    spin_unlock_irq(&q->lock);
+
+    /*
+     * From now on, all the logic will be based on
+     * the WQ_FLAG_WOKEN and WQ_FLAG_DONE flag, to
+     * see whether the page bit testing has already
+     * been done by the wake function.
+     *
+     * We can drop our reference to the folio.
+     */
+    if (behavior == DROP)
+        folio_put(folio);
+
+    /*
+     * Note that until the "finish_wait()", or until
+     * we see the WQ_FLAG_WOKEN flag, we need to
+     * be very careful with the 'wait->flags', because
+     * we may race with a waker that sets them.
+     */
+    for (;;) {
+        unsigned int flags;
+
+        set_current_state(state);
+
+        /* Loop until we've been woken or interrupted */
+        flags = smp_load_acquire(&wait->flags);
+        if (!(flags & WQ_FLAG_WOKEN)) {
+            if (signal_pending_state(state, current))
+                break;
+
+            io_schedule();
+            continue;
+        }
+        panic("%s: 1!\n", __func__);
+    }
 
     panic("%s: END!\n", __func__);
 }

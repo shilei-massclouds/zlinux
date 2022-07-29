@@ -69,6 +69,8 @@
 #define __node_2_se(node) \
     rb_entry((node), struct sched_entity, run_node)
 
+const_debug unsigned int sysctl_sched_migration_cost = 500000UL;
+
 static inline bool entity_before(struct sched_entity *a, struct sched_entity *b)
 {
     return (s64)(a->vruntime - b->vruntime) < 0;
@@ -183,7 +185,7 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
         cfs_rq = cfs_rq_of(se);
         enqueue_entity(cfs_rq, se, flags);
 
-        pr_warn("%s: NO implementation on_rq(%d)!", __func__, se->on_rq);
+        panic("%s: NO implementation on_rq(%d)!", __func__, se->on_rq);
     }
 }
 
@@ -205,7 +207,7 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 void set_task_rq_fair(struct sched_entity *se,
                       struct cfs_rq *prev, struct cfs_rq *next)
 {
-    pr_warn("%s: NO implementation!\n", __func__);
+    panic("%s: NO implementation!\n", __func__);
 }
 
 /*
@@ -472,7 +474,7 @@ pick_next_task_fair(struct rq *rq, struct task_struct *prev,
     return p;
 
  idle:
-    pr_warn("%s: idle ...\n", __func__);
+    panic("%s: idle ...\n", __func__);
     if (!rf)
         return NULL;
 
@@ -482,6 +484,13 @@ pick_next_task_fair(struct rq *rq, struct task_struct *prev,
 static struct task_struct *__pick_next_task_fair(struct rq *rq)
 {
     return pick_next_task_fair(rq, NULL, NULL);
+}
+
+void init_cfs_rq(struct cfs_rq *cfs_rq)
+{
+    cfs_rq->tasks_timeline = RB_ROOT_CACHED;
+    cfs_rq->min_vruntime = (u64)(-(1LL << 20));
+    raw_spin_lock_init(&cfs_rq->removed.lock);
 }
 
 /*

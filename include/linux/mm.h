@@ -746,4 +746,6 @@ static inline unsigned long page_size(struct page *page)
     return PAGE_SIZE << compound_order(page);
 }
 
+extern void __init pagecache_init(void);
+
 #endif /* _LINUX_MM_H */

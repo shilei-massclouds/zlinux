@@ -46,20 +46,22 @@ static inline int signal_pending(struct task_struct *p)
         return 1;
     return task_sigpending(p);
 #endif
+    panic("%s: END!\n", __func__);
     return 1;
 }
 
 static inline int
 signal_pending_state(unsigned int state, struct task_struct *p)
 {
-#if 0
     if (!(state & (TASK_INTERRUPTIBLE | TASK_WAKEKILL)))
         return 0;
     if (!signal_pending(p))
         return 0;
 
+#if 0
     return (state & TASK_INTERRUPTIBLE) || __fatal_signal_pending(p);
 #endif
+    panic("%s: END!\n", __func__);
     return 0;
 }
 

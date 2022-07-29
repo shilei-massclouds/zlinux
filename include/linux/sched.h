@@ -117,6 +117,11 @@ static inline int _cond_resched(void) { return 0; }
         smp_store_mb(current->__state, (state_value));      \
     } while (0)
 
+struct load_weight {
+    unsigned long   weight;
+    u32             inv_weight;
+};
+
 struct wake_q_node {
     struct wake_q_node *next;
 };
@@ -240,6 +245,30 @@ struct task_struct {
     unsigned            sched_reset_on_fork:1;
     unsigned            sched_contributes_to_load:1;
     unsigned            sched_migrated:1;
+
+    /* Force alignment to the next boundary: */
+    unsigned            :0;
+
+    /* Unserialized, strictly 'current' */
+
+    /*
+     * This field must not be in the scheduler word above due to wakelist
+     * queueing no longer being serialized by p->on_cpu. However:
+     *
+     * p->XXX = X;          ttwu()
+     * schedule()             if (p->on_rq && ..) // false
+     *   smp_mb__after_spinlock();    if (smp_load_acquire(&p->on_cpu) && //true
+     *   deactivate_task()            ttwu_queue_wakelist())
+     *     p->on_rq = 0;            p->sched_remote_wakeup = Y;
+     *
+     * guarantees all stores of 'current' are visible before
+     * ->sched_remote_wakeup gets used, so it can be in this word.
+     */
+    unsigned            sched_remote_wakeup:1;
+
+    /* Bit to tell LSMs we're in execve(): */
+    unsigned            in_execve:1;
+    unsigned            in_iowait:1;
 
     /* CLONE_CHILD_SETTID: */
     int __user          *set_child_tid;
@@ -365,5 +394,14 @@ static inline struct cfs_rq *group_cfs_rq(struct sched_entity *grp)
 {
     return grp->my_q;
 }
+
+extern void io_schedule(void);
+
+extern struct root_domain def_root_domain;
+extern struct mutex sched_domains_mutex;
+
+/* Increase resolution of cpu_capacity calculations */
+# define SCHED_CAPACITY_SHIFT       SCHED_FIXEDPOINT_SHIFT
+# define SCHED_CAPACITY_SCALE       (1L << SCHED_CAPACITY_SHIFT)
 
 #endif /* _LINUX_SCHED_H */

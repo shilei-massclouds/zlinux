@@ -43,8 +43,8 @@
 
 #include <linux/init_task.h>
 #include <linux/mmzone.h>
-#if 0
 #include <linux/blkdev.h>
+#if 0
 #include <linux/context_tracking.h>
 #include <linux/cpuset.h>
 #include <linux/delayacct.h>
@@ -60,14 +60,14 @@
 #include <linux/perf_event_api.h>
 #include <linux/profile.h>
 #include <linux/psi.h>
-#include <linux/rcuwait_api.h>
 #include <linux/sched/wake_q.h>
 #include <linux/scs.h>
 #include <linux/syscalls.h>
 #include <linux/vtime.h>
-#include <linux/wait_api.h>
 #include <linux/workqueue_api.h>
 #endif
+#include <linux/wait_api.h>
+#include <linux/rcuwait_api.h>
 #include <linux/slab.h>
 #include <linux/mmu_context.h>
 
@@ -92,6 +92,13 @@
 #endif
 
 DEFINE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
+
+static void balance_push(struct rq *rq);
+
+struct callback_head balance_push_callback = {
+    .next = NULL,
+    .func = (void (*)(struct callback_head *))balance_push,
+};
 
 static inline void prepare_task(struct task_struct *next)
 {
@@ -125,12 +132,11 @@ EXPORT_SYMBOL(wake_up_process);
 
 static inline void sched_submit_work(struct task_struct *tsk)
 {
-    pr_warn("%s: NO implementation!\n", __func__);
+    panic("%s: NO implementation!\n", __func__);
 }
 
 static void sched_update_worker(struct task_struct *tsk)
 {
-    pr_warn("%s: NO implementation!\n", __func__);
 #if 0
     if (tsk->flags & (PF_WQ_WORKER | PF_IO_WORKER)) {
         if (tsk->flags & PF_WQ_WORKER)
@@ -139,6 +145,7 @@ static void sched_update_worker(struct task_struct *tsk)
             io_wq_worker_running(tsk);
     }
 #endif
+    panic("%s: NO implementation!\n", __func__);
 }
 
 /*
@@ -936,6 +943,21 @@ void __init init_idle(struct task_struct *idle, int cpu)
     sprintf(idle->comm, "%s/%d", INIT_TASK_COMM, cpu);
 }
 
+static void nohz_csd_func(void *info)
+{
+    panic("%s: NO implementation!", __func__);
+}
+
+static void hrtick_rq_init(struct rq *rq)
+{
+#if 0
+    INIT_CSD(&rq->hrtick_csd, __hrtick_start, rq);
+    hrtimer_init(&rq->hrtick_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL_HARD);
+    rq->hrtick_timer.function = hrtick;
+#endif
+    panic("%s: NO implementation!", __func__);
+}
+
 void __init sched_init(void)
 {
     int i;
@@ -947,7 +969,7 @@ void __init sched_init(void)
            &rt_sched_class + 1   != &dl_sched_class);
     BUG_ON(&dl_sched_class + 1   != &stop_sched_class);
 
-    //wait_bit_init();
+    wait_bit_init();
 
     ptr += 2 * nr_cpu_ids * sizeof(void **);
 
@@ -966,6 +988,13 @@ void __init sched_init(void)
 #endif
     }
 
+#if 0
+    init_rt_bandwidth(&def_rt_bandwidth,
+                      global_rt_period(), global_rt_runtime());
+#endif
+
+    init_defrootdomain();
+
     task_group_cache = KMEM_CACHE(task_group, 0);
 
     list_add(&root_task_group.list, &task_groups);
@@ -980,12 +1009,12 @@ void __init sched_init(void)
         rq->nr_running = 0;
         rq->calc_load_active = 0;
         rq->calc_load_update = jiffies + LOAD_FREQ;
-#if 0
         init_cfs_rq(&rq->cfs);
         init_rt_rq(&rq->rt);
         init_dl_rq(&rq->dl);
-#endif
 
+        INIT_LIST_HEAD(&rq->leaf_cfs_rq_list);
+        rq->tmp_alone_branch = &rq->leaf_cfs_rq_list;
         /*
          * How much CPU bandwidth does root_task_group get?
          *
@@ -1007,7 +1036,36 @@ void __init sched_init(void)
          */
         init_tg_cfs_entry(&root_task_group, &rq->cfs, NULL, i, NULL);
 
+        rq->rt.rt_runtime = def_rt_bandwidth.rt_runtime;
+
+        rq->sd = NULL;
+        rq->rd = NULL;
+        rq->cpu_capacity = rq->cpu_capacity_orig = SCHED_CAPACITY_SCALE;
+        rq->balance_callback = &balance_push_callback;
+        rq->active_balance = 0;
+        rq->next_balance = jiffies;
+        rq->push_cpu = 0;
+        rq->cpu = i;
+        rq->online = 0;
+        rq->idle_stamp = 0;
+        rq->avg_idle = 2*sysctl_sched_migration_cost;
+        rq->wake_stamp = jiffies;
+        rq->wake_avg_idle = rq->avg_idle;
+        rq->max_idle_balance_cost = sysctl_sched_migration_cost;
+
         INIT_LIST_HEAD(&rq->cfs_tasks);
+
+        rq_attach_root(rq, &def_root_domain);
+        rq->last_blocked_load_update_tick = jiffies;
+        atomic_set(&rq->nohz_flags, 0);
+
+        INIT_CSD(&rq->nohz_csd, nohz_csd_func, rq);
+        rcuwait_init(&rq->hotplug_wait);
+
+        hrtick_rq_init(rq);
+        atomic_set(&rq->nr_iowait, 0);
+
+        panic("%s: 1!", __func__);
     }
 
     /*
@@ -1018,7 +1076,7 @@ void __init sched_init(void)
      */
     init_idle(current, smp_processor_id());
 
-    pr_warn("%s: NO implementation!", __func__);
+    panic("%s: NO implementation!", __func__);
 }
 
 /**
@@ -1070,3 +1128,38 @@ int default_wake_function(wait_queue_entry_t *curr,
     return try_to_wake_up(curr->private, mode, wake_flags);
 }
 EXPORT_SYMBOL(default_wake_function);
+
+int io_schedule_prepare(void)
+{
+    int old_iowait = current->in_iowait;
+
+    current->in_iowait = 1;
+    blk_flush_plug(current->plug, true);
+    return old_iowait;
+}
+
+void io_schedule_finish(int token)
+{
+    current->in_iowait = token;
+}
+
+void __sched io_schedule(void)
+{
+    int token;
+
+    token = io_schedule_prepare();
+    schedule();
+    io_schedule_finish(token);
+}
+EXPORT_SYMBOL(io_schedule);
+
+/*
+ * Ensure we only run per-cpu kthreads once the CPU goes !active.
+ *
+ * This is enabled below SCHED_AP_ACTIVE; when !cpu_active(), but only
+ * effective when the hotplug motion is down.
+ */
+static void balance_push(struct rq *rq)
+{
+    panic("%s: NOT-implemented!\n", __func__);
+}

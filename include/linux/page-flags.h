@@ -139,6 +139,9 @@ static __always_inline int PageCompound(struct page *page)
     page; })
 #define PF_ANY(page, enforce)   PF_POISONED_CHECK(page)
 #define PF_HEAD(page, enforce)  PF_POISONED_CHECK(compound_head(page))
+#define PF_ONLY_HEAD(page, enforce) ({              \
+        VM_BUG_ON_PGFLAGS(PageTail(page), page);    \
+        PF_POISONED_CHECK(page); })
 #define PF_NO_TAIL(page, enforce) ({                    \
     VM_BUG_ON_PGFLAGS(enforce && PageTail(page), page); \
     PF_POISONED_CHECK(compound_head(page)); })
@@ -243,7 +246,7 @@ static __always_inline int TestClearPage##uname(struct page *page)  \
     CLEARPAGEFLAG_NOOP(uname, lname)
 
 __PAGEFLAG(Locked, locked, PF_NO_TAIL)
-
+PAGEFLAG(Waiters, waiters, PF_ONLY_HEAD)
 PAGEFLAG(Error, error, PF_NO_TAIL) TESTCLEARFLAG(Error, error, PF_NO_TAIL)
 
 PAGEFLAG(Dirty, dirty, PF_HEAD)
@@ -479,6 +482,13 @@ static inline int PageUptodate(struct page *page)
 }
 
 CLEARPAGEFLAG(Uptodate, uptodate, PF_NO_TAIL)
+
+#undef PF_ANY
+#undef PF_HEAD
+#undef PF_ONLY_HEAD
+#undef PF_NO_TAIL
+#undef PF_NO_COMPOUND
+#undef PF_SECOND
 
 #endif /* !__GENERATING_BOUNDS_H */
 

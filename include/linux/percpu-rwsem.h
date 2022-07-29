@@ -4,9 +4,7 @@
 
 #include <linux/atomic.h>
 #include <linux/percpu.h>
-#if 0
 #include <linux/rcuwait.h>
-#endif
 #include <linux/rcu_sync.h>
 #include <linux/wait.h>
 #include <linux/lockdep.h>

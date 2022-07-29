@@ -722,6 +722,7 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
     fork_init();
 
     vfs_caches_init();
+    pagecache_init();
 
     /* Do the rest non-__init'ed, we're now alive */
     arch_call_rest_init();
