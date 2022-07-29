@@ -889,4 +889,31 @@ extern void init_sched_dl_class(void);
 extern void init_sched_rt_class(void);
 extern void init_sched_fair_class(void);
 
+/*
+ * rq::clock_update_flags bits
+ *
+ * %RQCF_REQ_SKIP - will request skipping of clock update on the next
+ *  call to __schedule(). This is an optimisation to avoid
+ *  neighbouring rq clock updates.
+ *
+ * %RQCF_ACT_SKIP - is set from inside of __schedule() when skipping is
+ *  in effect and calls to update_rq_clock() are being ignored.
+ *
+ * %RQCF_UPDATED - is a debug flag that indicates whether a call has been
+ *  made to update_rq_clock() since the last time rq::lock was pinned.
+ *
+ * If inside of __schedule(), clock_update_flags will have been
+ * shifted left (a left shift is a cheap operation for the fast path
+ * to promote %RQCF_REQ_SKIP to %RQCF_ACT_SKIP), so you must use,
+ *
+ *  if (rq-clock_update_flags >= RQCF_UPDATED)
+ *
+ * to check if %RQCF_UPDATED is set. It'll never be shifted more than
+ * one position though, because the next rq_unpin_lock() will shift it
+ * back.
+ */
+#define RQCF_REQ_SKIP       0x01
+#define RQCF_ACT_SKIP       0x02
+#define RQCF_UPDATED        0x04
+
 #endif /* _KERNEL_SCHED_SCHED_H */

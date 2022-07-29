@@ -304,6 +304,19 @@ prepare_task_switch(struct rq *rq, struct task_struct *prev,
     prepare_task(next);
 }
 
+static inline void
+prepare_lock_switch(struct rq *rq, struct task_struct *next,
+                    struct rq_flags *rf)
+{
+    /*
+     * Since the runqueue lock will be released by the next
+     * task (which is an invalid locking op but in the case
+     * of the scheduler it's an obvious special-case), so we
+     * do an early lockdep release here:
+     */
+    rq_unpin_lock(rq, rf);
+}
+
 /*
  * context_switch - switch to the new MM and the new thread's register state.
  */
@@ -330,9 +343,9 @@ context_switch(struct rq *rq, struct task_struct *prev,
         panic("%s: next->mm!\n", __func__);
     }
 
-#if 0
     rq->clock_update_flags &= ~(RQCF_ACT_SKIP|RQCF_REQ_SKIP);
-#endif
+
+    prepare_lock_switch(rq, next, rf);
 
     /* Here we just switch the register state and the stack. */
     switch_to(prev, next, prev);
