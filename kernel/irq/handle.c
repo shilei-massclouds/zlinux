@@ -36,6 +36,22 @@ int __init set_handle_irq(void (*handle_irq)(struct pt_regs *))
 }
 
 /**
+ * generic_handle_arch_irq - root irq handler for architectures which do no
+ *                           entry accounting themselves
+ * @regs:   Register file coming from the low-level handling code
+ */
+asmlinkage void noinstr generic_handle_arch_irq(struct pt_regs *regs)
+{
+    struct pt_regs *old_regs;
+
+    //irq_enter();
+    old_regs = set_irq_regs(regs);
+    handle_arch_irq(regs);
+    set_irq_regs(old_regs);
+    //irq_exit();
+}
+
+/**
  * handle_bad_irq - handle spurious and unhandled irqs
  * @desc:      description of the interrupt
  *
@@ -53,3 +69,4 @@ void handle_bad_irq(struct irq_desc *desc)
 #endif
 }
 EXPORT_SYMBOL_GPL(handle_bad_irq);
+

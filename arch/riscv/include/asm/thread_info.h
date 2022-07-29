@@ -10,6 +10,8 @@
 
 #define THREAD_ALIGN    (2 * THREAD_SIZE)
 
+#define THREAD_SHIFT    (PAGE_SHIFT + THREAD_SIZE_ORDER)
+
 #ifndef __ASSEMBLY__
 
 #include <asm/processor.h>
