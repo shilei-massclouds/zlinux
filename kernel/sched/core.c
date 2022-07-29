@@ -44,6 +44,7 @@
 #include <linux/init_task.h>
 #include <linux/mmzone.h>
 #include <linux/blkdev.h>
+#include <linux/kthread.h>
 #if 0
 #include <linux/context_tracking.h>
 #include <linux/cpuset.h>
@@ -88,8 +89,51 @@
 
 #include "../workqueue_internal.h"
 #include "../../fs/io-wq.h"
-#include "../smpboot.h"
 #endif
+#include "../smpboot.h"
+
+__read_mostly int scheduler_running;
+
+/*
+ * Nice levels are multiplicative, with a gentle 10% change for every
+ * nice level changed. I.e. when a CPU-bound task goes from nice 0 to
+ * nice 1, it will get ~10% less CPU time than another CPU-bound task
+ * that remained on nice 0.
+ *
+ * The "10% effect" is relative and cumulative: from _any_ nice level,
+ * if you go up 1 level, it's -10% CPU usage, if you go down 1 level
+ * it's +10% CPU usage. (to achieve that we use a multiplier of 1.25.
+ * If a task goes up by ~10% and another task goes down by ~10% then
+ * the relative distance between them is ~25%.)
+ */
+const int sched_prio_to_weight[40] = {
+ /* -20 */     88761,     71755,     56483,     46273,     36291,
+ /* -15 */     29154,     23254,     18705,     14949,     11916,
+ /* -10 */      9548,      7620,      6100,      4904,      3906,
+ /*  -5 */      3121,      2501,      1991,      1586,      1277,
+ /*   0 */      1024,       820,       655,       526,       423,
+ /*   5 */       335,       272,       215,       172,       137,
+ /*  10 */       110,        87,        70,        56,        45,
+ /*  15 */        36,        29,        23,        18,        15,
+};
+
+/*
+ * Inverse (2^32/x) values of the sched_prio_to_weight[] array, precalculated.
+ *
+ * In cases where the weight does not change often, we can use the
+ * precalculated inverse to speed up arithmetics by turning divisions
+ * into multiplications:
+ */
+const u32 sched_prio_to_wmult[40] = {
+ /* -20 */     48388,     59856,     76040,     92818,    118348,
+ /* -15 */    147320,    184698,    229616,    287308,    360437,
+ /* -10 */    449829,    563644,    704093,    875809,   1099582,
+ /*  -5 */   1376151,   1717300,   2157191,   2708050,   3363326,
+ /*   0 */   4194304,   5237765,   6557202,   8165337,  10153587,
+ /*   5 */  12820798,  15790321,  19976592,  24970740,  31350126,
+ /*  10 */  39045157,  49367440,  61356676,  76695844,  95443717,
+ /*  15 */ 119304647, 148102320, 186737708, 238609294, 286331153,
+};
 
 DEFINE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
 
@@ -955,7 +999,48 @@ static void hrtick_rq_init(struct rq *rq)
     hrtimer_init(&rq->hrtick_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL_HARD);
     rq->hrtick_timer.function = hrtick;
 #endif
-    panic("%s: NO implementation!", __func__);
+    pr_warn("!!!!!! %s: NO implementation!", __func__);
+}
+
+static void set_load_weight(struct task_struct *p, bool update_load)
+{
+    int prio = p->static_prio - MAX_RT_PRIO;
+    struct load_weight *load = &p->se.load;
+
+    /*
+     * SCHED_IDLE tasks get minimal weight:
+     */
+    if (task_has_idle_policy(p)) {
+        load->weight = scale_load(WEIGHT_IDLEPRIO);
+        load->inv_weight = WMULT_IDLEPRIO;
+        return;
+    }
+
+    /*
+     * SCHED_OTHER tasks have to update their load when changing their
+     * weight
+     */
+    if (update_load && p->sched_class == &fair_sched_class) {
+        reweight_task(p, prio);
+    } else {
+        load->weight = scale_load(sched_prio_to_weight[prio]);
+        load->inv_weight = sched_prio_to_wmult[prio];
+    }
+}
+
+static void balance_push_set(int cpu, bool on)
+{
+    struct rq *rq = cpu_rq(cpu);
+    struct rq_flags rf;
+
+    rq_lock_irqsave(rq, &rf);
+    if (on) {
+        WARN_ON_ONCE(rq->balance_callback);
+        rq->balance_callback = &balance_push_callback;
+    } else if (rq->balance_callback == &balance_push_callback) {
+        rq->balance_callback = NULL;
+    }
+    rq_unlock_irqrestore(rq, &rf);
 }
 
 void __init sched_init(void)
@@ -1064,9 +1149,22 @@ void __init sched_init(void)
 
         hrtick_rq_init(rq);
         atomic_set(&rq->nr_iowait, 0);
-
-        panic("%s: 1!", __func__);
     }
+
+    set_load_weight(&init_task, false);
+
+    /*
+     * The boot idle thread does lazy MMU switching as well:
+     */
+    mmgrab(&init_mm);
+
+    /*
+     * The idle task doesn't need the kthread struct to function, but it
+     * is dressed up as a per-CPU kthread and thus needs to play the part
+     * if we want to avoid special-casing it in code that deals with per-CPU
+     * kthreads.
+     */
+    WARN_ON(!set_kthread_struct(current));
 
     /*
      * Make us the idle thread. Technically, schedule() should not be
@@ -1076,7 +1174,14 @@ void __init sched_init(void)
      */
     init_idle(current, smp_processor_id());
 
-    panic("%s: NO implementation!", __func__);
+    calc_load_update = jiffies + LOAD_FREQ;
+
+    idle_thread_set_boot_cpu();
+    balance_push_set(smp_processor_id(), false);
+
+    //init_sched_fair_class();
+
+    scheduler_running = 1;
 }
 
 /**
@@ -1162,4 +1267,34 @@ EXPORT_SYMBOL(io_schedule);
 static void balance_push(struct rq *rq)
 {
     panic("%s: NOT-implemented!\n", __func__);
+}
+
+void set_rq_online(struct rq *rq)
+{
+    if (!rq->online) {
+        const struct sched_class *class;
+
+        cpumask_set_cpu(rq->cpu, rq->rd->online);
+        rq->online = 1;
+
+        for_each_class(class) {
+            if (class->rq_online)
+                class->rq_online(rq);
+        }
+    }
+}
+
+void set_rq_offline(struct rq *rq)
+{
+    if (rq->online) {
+        const struct sched_class *class;
+
+        for_each_class(class) {
+            if (class->rq_offline)
+                class->rq_offline(rq);
+        }
+
+        cpumask_clear_cpu(rq->cpu, rq->rd->online);
+        rq->online = 0;
+    }
 }

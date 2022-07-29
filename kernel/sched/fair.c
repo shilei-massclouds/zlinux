@@ -207,7 +207,7 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 void set_task_rq_fair(struct sched_entity *se,
                       struct cfs_rq *prev, struct cfs_rq *next)
 {
-    panic("%s: NO implementation!\n", __func__);
+    pr_warn("!!!!!! %s: NO implementation!\n", __func__);
 }
 
 /*
@@ -491,6 +491,32 @@ void init_cfs_rq(struct cfs_rq *cfs_rq)
     cfs_rq->tasks_timeline = RB_ROOT_CACHED;
     cfs_rq->min_vruntime = (u64)(-(1LL << 20));
     raw_spin_lock_init(&cfs_rq->removed.lock);
+}
+
+void reweight_task(struct task_struct *p, int prio)
+{
+#if 0
+    struct sched_entity *se = &p->se;
+    struct cfs_rq *cfs_rq = cfs_rq_of(se);
+    struct load_weight *load = &se->load;
+    unsigned long weight = scale_load(sched_prio_to_weight[prio]);
+
+    reweight_entity(cfs_rq, se, weight);
+    load->inv_weight = sched_prio_to_wmult[prio];
+#endif
+    panic("%s: NO implementation!", __func__);
+}
+
+__init void init_sched_fair_class(void)
+{
+#if 0
+    open_softirq(SCHED_SOFTIRQ, run_rebalance_domains);
+
+    nohz.next_balance = jiffies;
+    nohz.next_blocked = jiffies;
+    zalloc_cpumask_var(&nohz.idle_cpus_mask, GFP_NOWAIT);
+#endif
+    panic("%s: NO implementation!", __func__);
 }
 
 /*

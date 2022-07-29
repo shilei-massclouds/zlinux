@@ -56,7 +56,52 @@ void init_defrootdomain(void)
     atomic_set(&def_root_domain.refcount, 1);
 }
 
+static void free_rootdomain(struct rcu_head *rcu)
+{
+    struct root_domain *rd = container_of(rcu, struct root_domain, rcu);
+
+    cpupri_cleanup(&rd->cpupri);
+    cpudl_cleanup(&rd->cpudl);
+    free_cpumask_var(rd->dlo_mask);
+    free_cpumask_var(rd->rto_mask);
+    free_cpumask_var(rd->online);
+    free_cpumask_var(rd->span);
+    kfree(rd);
+}
+
 void rq_attach_root(struct rq *rq, struct root_domain *rd)
 {
-    panic("%s: END!\n", __func__);
+    struct root_domain *old_rd = NULL;
+    unsigned long flags;
+
+    raw_spin_rq_lock_irqsave(rq, flags);
+
+    if (rq->rd) {
+        old_rd = rq->rd;
+
+        if (cpumask_test_cpu(rq->cpu, old_rd->online))
+            set_rq_offline(rq);
+
+        cpumask_clear_cpu(rq->cpu, old_rd->span);
+
+        /*
+         * If we dont want to free the old_rd yet then
+         * set old_rd to NULL to skip the freeing later
+         * in this function:
+         */
+        if (!atomic_dec_and_test(&old_rd->refcount))
+            old_rd = NULL;
+    }
+
+    atomic_inc(&rd->refcount);
+    rq->rd = rd;
+
+    cpumask_set_cpu(rq->cpu, rd->span);
+    if (cpumask_test_cpu(rq->cpu, cpu_active_mask))
+        set_rq_online(rq);
+
+    raw_spin_rq_unlock_irqrestore(rq, flags);
+
+    if (old_rd)
+        call_rcu(&old_rd->rcu, free_rootdomain);
 }

@@ -11,4 +11,6 @@ bool set_kthread_struct(struct task_struct *p);
 
 int kthread_stop(struct task_struct *k);
 
+bool set_kthread_struct(struct task_struct *p);
+
 #endif /* _LINUX_KTHREAD_H */

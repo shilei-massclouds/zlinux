@@ -3,6 +3,7 @@
 #include <linux/init_task.h>
 #include <linux/export.h>
 #include <linux/sched.h>
+#include <linux/sched/rt.h>
 #include <linux/sched/task.h>
 #include <linux/sched/signal.h>
 #include <linux/sched/autogroup.h>
@@ -48,6 +49,7 @@ struct task_struct init_task __aligned(L1_CACHE_BYTES) = {
     .__state        = 0,
     .stack          = init_stack,
     .prio           = MAX_PRIO - 20,
+    .static_prio    = MAX_PRIO - 20,
     .normal_prio    = MAX_PRIO - 20,
     .policy         = SCHED_NORMAL,
     .usage          = REFCOUNT_INIT(2),
@@ -69,6 +71,12 @@ struct task_struct init_task __aligned(L1_CACHE_BYTES) = {
     .se             = {
         .group_node     = LIST_HEAD_INIT(init_task.se.group_node),
     },
+#if 0
+    .rt             = {
+        .run_list   = LIST_HEAD_INIT(init_task.rt.run_list),
+        .time_slice = RR_TIMESLICE,
+    },
+#endif
     .sched_task_group = &root_task_group,
 };
 EXPORT_SYMBOL(init_task);

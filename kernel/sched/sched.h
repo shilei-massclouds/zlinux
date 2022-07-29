@@ -438,17 +438,60 @@ struct rq_flags {
 };
 
 struct sched_class {
-    void (*enqueue_task)(struct rq *rq, struct task_struct *p, int flags);
+    void (*enqueue_task) (struct rq *rq, struct task_struct *p, int flags);
     void (*dequeue_task) (struct rq *rq, struct task_struct *p, int flags);
+    void (*yield_task)   (struct rq *rq);
+    bool (*yield_to_task)(struct rq *rq, struct task_struct *p);
+
+    void (*check_preempt_curr)(struct rq *rq, struct task_struct *p, int flags);
 
     struct task_struct *(*pick_next_task)(struct rq *rq);
 
     void (*put_prev_task)(struct rq *rq, struct task_struct *p);
     void (*set_next_task)(struct rq *rq, struct task_struct *p, bool first);
 
-    int (*select_task_rq)(struct task_struct *p, int task_cpu, int flags);
+    int (*balance)(struct rq *rq, struct task_struct *prev,
+                   struct rq_flags *rf);
+
+    int  (*select_task_rq)(struct task_struct *p, int task_cpu, int flags);
+
     struct task_struct * (*pick_task)(struct rq *rq);
+
+    void (*migrate_task_rq)(struct task_struct *p, int new_cpu);
+
     void (*task_woken)(struct rq *this_rq, struct task_struct *task);
+
+    void (*set_cpus_allowed)(struct task_struct *p,
+                             const struct cpumask *newmask,
+                             u32 flags);
+
+    void (*rq_online)(struct rq *rq);
+    void (*rq_offline)(struct rq *rq);
+
+    struct rq *(*find_lock_rq)(struct task_struct *p, struct rq *rq);
+
+    void (*task_tick)(struct rq *rq, struct task_struct *p, int queued);
+    void (*task_fork)(struct task_struct *p);
+    void (*task_dead)(struct task_struct *p);
+
+    /*
+     * The switched_from() call is allowed to drop rq->lock, therefore we
+     * cannot assume the switched_from/switched_to pair is serialized by
+     * rq->lock. They are however serialized by p->pi_lock.
+     */
+    void (*switched_from)(struct rq *this_rq, struct task_struct *task);
+    void (*switched_to)  (struct rq *this_rq, struct task_struct *task);
+    void (*prio_changed) (struct rq *this_rq, struct task_struct *task,
+                          int oldprio);
+
+    unsigned int (*get_rr_interval)(struct rq *rq, struct task_struct *task);
+
+    void (*update_curr)(struct rq *rq);
+
+#define TASK_SET_GROUP      0
+#define TASK_MOVE_GROUP     1
+
+    void (*task_change_group)(struct task_struct *p, int type);
 };
 
 /* Task group related information */
@@ -574,6 +617,11 @@ static inline void raw_spin_rq_unlock_irqrestore(struct rq *rq, unsigned long fl
     raw_spin_rq_unlock(rq);
     local_irq_restore(flags);
 }
+
+#define raw_spin_rq_lock_irqsave(rq, flags) \
+do {                                        \
+    flags = _raw_spin_rq_lock_irqsave(rq);  \
+} while (0)
 
 static inline bool sched_core_enabled(struct rq *rq)
 {
@@ -770,5 +818,75 @@ extern void init_dl_inactive_task_timer(struct sched_dl_entity *dl_se);
 
 extern const_debug unsigned int sysctl_sched_nr_migrate;
 extern const_debug unsigned int sysctl_sched_migration_cost;
+
+extern void set_rq_online (struct rq *rq);
+extern void set_rq_offline(struct rq *rq);
+extern bool sched_smp_initialized;
+
+/*
+ * To aid in avoiding the subversion of "niceness" due to uneven distribution
+ * of tasks with abnormal "nice" values across CPUs the contribution that
+ * each task makes to its run queue's load is weighted according to its
+ * scheduling class and "nice" value. For SCHED_NORMAL tasks this is just a
+ * scaled version of the new time slice allocation that they receive on time
+ * slice expiry etc.
+ */
+
+#define WEIGHT_IDLEPRIO     3
+#define WMULT_IDLEPRIO      1431655765
+
+#define scale_load(w)       ((w) << SCHED_FIXEDPOINT_SHIFT)
+#define scale_load_down(w) \
+({ \
+    unsigned long __w = (w); \
+    if (__w) \
+        __w = max(2UL, __w >> SCHED_FIXEDPOINT_SHIFT); \
+    __w; \
+})
+
+extern void reweight_task(struct task_struct *p, int prio);
+
+extern __read_mostly int scheduler_running;
+
+extern unsigned long calc_load_update;
+extern atomic_long_t calc_load_tasks;
+
+/*
+ * Lockdep annotation that avoids accidental unlocks; it's like a
+ * sticky/continuous lockdep_assert_held().
+ *
+ * This avoids code that has access to 'struct rq *rq' (basically everything in
+ * the scheduler) from accidentally unlocking the rq if they do not also have a
+ * copy of the (on-stack) 'struct rq_flags rf'.
+ *
+ * Also see Documentation/locking/lockdep-design.rst.
+ */
+static inline void rq_pin_lock(struct rq *rq, struct rq_flags *rf)
+{
+}
+
+static inline void rq_unpin_lock(struct rq *rq, struct rq_flags *rf)
+{
+}
+
+static inline void
+rq_lock_irqsave(struct rq *rq, struct rq_flags *rf)
+    __acquires(rq->lock)
+{
+    raw_spin_rq_lock_irqsave(rq, rf->flags);
+    rq_pin_lock(rq, rf);
+}
+
+static inline void
+rq_unlock_irqrestore(struct rq *rq, struct rq_flags *rf)
+    __releases(rq->lock)
+{
+    rq_unpin_lock(rq, rf);
+    raw_spin_rq_unlock_irqrestore(rq, rf->flags);
+}
+
+extern void init_sched_dl_class(void);
+extern void init_sched_rt_class(void);
+extern void init_sched_fair_class(void);
 
 #endif /* _KERNEL_SCHED_SCHED_H */
