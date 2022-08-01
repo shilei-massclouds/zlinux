@@ -51,6 +51,7 @@
 #define __TASK_STOPPED          0x0004
 #define __TASK_TRACED           0x0008
 
+#define TASK_DEAD               0x0080
 #define TASK_WAKEKILL           0x0100
 
 #define TASK_NEW                0x0800

@@ -743,6 +743,43 @@ static void task_struct_whitelist(unsigned long *offset, unsigned long *size)
 }
 
 /*
+ * Called when the last reference to the mm
+ * is dropped: either by a lazy thread or by
+ * mmput. Free the page directory and the mm.
+ */
+void __mmdrop(struct mm_struct *mm)
+{
+#if 0
+    BUG_ON(mm == &init_mm);
+    WARN_ON_ONCE(mm == current->mm);
+    WARN_ON_ONCE(mm == current->active_mm);
+    mm_free_pgd(mm);
+    destroy_context(mm);
+    mmu_notifier_subscriptions_destroy(mm);
+    check_mm(mm);
+    put_user_ns(mm->user_ns);
+    mm_pasid_drop(mm);
+    free_mm(mm);
+#endif
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL_GPL(__mmdrop);
+
+static void release_task_stack(struct task_struct *tsk)
+{
+    if (WARN_ON(READ_ONCE(tsk->__state) != TASK_DEAD))
+        return;  /* Better to leak the stack than to free prematurely */
+
+    free_thread_stack(tsk);
+}
+
+void put_task_stack(struct task_struct *tsk)
+{
+    if (refcount_dec_and_test(&tsk->stack_refcount))
+        release_task_stack(tsk);
+}
+
+/*
  * set_max_threads
  */
 static void set_max_threads(unsigned int max_threads_suggested)

@@ -168,9 +168,8 @@ static inline void prepare_task(struct task_struct *next)
  */
 int wake_up_process(struct task_struct *p)
 {
-    panic("%s: NOT-implemented!\n", __func__);
-    return 0;
     //return try_to_wake_up(p, TASK_NORMAL, 0);
+    panic("%s: NOT-implemented!\n", __func__);
 }
 EXPORT_SYMBOL(wake_up_process);
 
@@ -406,8 +405,6 @@ static void __sched notrace __schedule(unsigned int sched_mode)
     rq = cpu_rq(cpu);
     prev = rq->curr;
 
-    pr_info("############# %s:0 (%x) #############\n",
-            __func__, rq->__lock.raw_lock.lock);
     local_irq_disable();
     //rcu_note_context_switch(!!sched_mode);
 
@@ -429,7 +426,6 @@ static void __sched notrace __schedule(unsigned int sched_mode)
     rq_lock(rq, &rf);
     smp_mb__after_spinlock();
 
-    printk("%s: rq(%p) prev(%p)\n", __func__, rq, prev);
     next = pick_next_task(rq, prev, &rf);
 
     clear_tsk_need_resched(prev);
@@ -464,9 +460,12 @@ static void __sched notrace __schedule(unsigned int sched_mode)
         /* Also unlocks the rq: */
         rq = context_switch(rq, prev, next, &rf);
     } else {
-        panic("%s: prev(%p) next(%p)\n", __func__, prev, next);
+        rq->clock_update_flags &= ~(RQCF_ACT_SKIP|RQCF_REQ_SKIP);
+
+        rq_unpin_lock(rq, &rf);
+        //__balance_callbacks(rq);
+        raw_spin_rq_unlock_irq(rq);
     }
-    panic("%s: END!\n", __func__);
 }
 
 asmlinkage __visible void __sched schedule(void)
@@ -481,8 +480,7 @@ asmlinkage __visible void __sched schedule(void)
         pr_info("############# %s:1 #############\n", __func__);
         sched_preempt_enable_no_resched();
     } while (need_resched());
-    sched_update_worker(tsk);
-    panic("%s: NO implementation!\n", __func__);
+    //sched_update_worker(tsk);
 }
 EXPORT_SYMBOL(schedule);
 
@@ -652,6 +650,33 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
     return 0;
 }
 
+static inline void finish_task(struct task_struct *prev)
+{
+    /*
+     * This must be the very last reference to @prev from this CPU. After
+     * p->on_cpu is cleared, the task can be moved to a different CPU. We
+     * must ensure this doesn't happen until the switch is completely
+     * finished.
+     *
+     * In particular, the load of prev->state in finish_task_switch() must
+     * happen before this.
+     *
+     * Pairs with the smp_cond_load_acquire() in try_to_wake_up().
+     */
+    smp_store_release(&prev->on_cpu, 0);
+}
+
+static inline void finish_lock_switch(struct rq *rq)
+{
+    /*
+     * If we are tracking spinlock dependencies then we have to
+     * fix up the runqueue lock - which gets 'carried over' from
+     * prev into current:
+     */
+    //__balance_callbacks(rq);
+    raw_spin_rq_unlock_irq(rq);
+}
+
 /**
  * finish_task_switch - clean up after a task-switch
  * @prev: the thread we just switched away from.
@@ -707,26 +732,11 @@ finish_task_switch(struct task_struct *prev) __releases(rq->lock)
      * running on another CPU and we could rave with its RUNNING -> DEAD
      * transition, resulting in a double drop.
      */
-#if 0
     prev_state = READ_ONCE(prev->__state);
-    vtime_task_switch(prev);
-    perf_event_task_sched_in(prev, current);
     finish_task(prev);
-    tick_nohz_task_switch();
     finish_lock_switch(rq);
-    finish_arch_post_lock_switch();
-    kcov_finish_switch(current);
 
-    /*
-     * kmap_local_sched_out() is invoked with rq::lock held and
-     * interrupts disabled. There is no requirement for that, but the
-     * sched out code does not have an interrupt enabled section.
-     * Restoring the maps on sched in does not require interrupts being
-     * disabled either.
-     */
-    kmap_local_sched_in();
-
-    fire_sched_in_preempt_notifiers(current);
+    //fire_sched_in_preempt_notifiers(current);
     /*
      * When switching through a kernel thread, the loop in
      * membarrier_{private,global}_expedited() may have observed that
@@ -740,7 +750,6 @@ finish_task_switch(struct task_struct *prev) __releases(rq->lock)
      * - a sync_core for SYNC_CORE.
      */
     if (mm) {
-        membarrier_mm_sync_core_before_usermode(mm);
         mmdrop_sched(mm);
     }
     if (unlikely(prev_state == TASK_DEAD)) {
@@ -752,7 +761,6 @@ finish_task_switch(struct task_struct *prev) __releases(rq->lock)
 
         put_task_struct_rcu_user(prev);
     }
-#endif
 
     return rq;
 }
@@ -1029,6 +1037,8 @@ void __init init_idle(struct task_struct *idle, int cpu)
      */
     idle->sched_class = &idle_sched_class;
     sprintf(idle->comm, "%s/%d", INIT_TASK_COMM, cpu);
+
+    printk("++++++ %s: ref(%d)\n", __func__, rq->__lock.raw_lock.lock);
 }
 
 static void nohz_csd_func(void *info)
@@ -1296,11 +1306,8 @@ void __sched io_schedule(void)
 {
     int token;
 
-    printk("%s: 1\n", __func__);
     token = io_schedule_prepare();
-    printk("%s: 2\n", __func__);
     schedule();
-    printk("%s: 3\n", __func__);
     io_schedule_finish(token);
 }
 EXPORT_SYMBOL(io_schedule);

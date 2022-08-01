@@ -260,7 +260,9 @@ do_read_cache_folio(struct address_space *mapping,
             return ERR_PTR(err);
         }
 
+        printk("%s: before folio_wait_locked ...\n", __func__);
         folio_wait_locked(folio);
+        printk("%s: after folio_wait_locked ok!\n", __func__);
         if (!folio_test_uptodate(folio)) {
             folio_put(folio);
             return ERR_PTR(-EIO);

@@ -57,4 +57,6 @@ static inline struct vm_struct *task_stack_vm_area(const struct task_struct *t)
 
 extern asmlinkage void schedule_tail(struct task_struct *prev);
 
+void put_task_struct_rcu_user(struct task_struct *task);
+
 #endif /* _LINUX_SCHED_TASK_H */
