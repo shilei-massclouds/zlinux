@@ -333,6 +333,7 @@ static int vm_find_vqs(struct virtio_device *vdev, unsigned nvqs,
     if (irq < 0)
         return irq;
 
+    printk("###### %s: 1 irq(%d) ######\n", __func__, irq);
     err = request_irq(irq, vm_interrupt, IRQF_SHARED,
                       dev_name(&vdev->dev), vm_dev);
     if (err)

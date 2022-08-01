@@ -29,7 +29,6 @@ static struct task_struct *pick_next_task_stop(struct rq *rq)
 {
     struct task_struct *p = pick_task_stop(rq);
 
-    printk("%s: 1\n", __func__);
     if (p)
         set_next_task_stop(rq, p, true);
 

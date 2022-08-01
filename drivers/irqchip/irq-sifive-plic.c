@@ -114,8 +114,7 @@ static inline void plic_irq_toggle(const struct cpumask *mask,
     int cpu;
     struct plic_priv *priv = irq_data_get_irq_chip_data(d);
 
-    writel(enable,
-           priv->regs + PRIORITY_BASE + d->hwirq * PRIORITY_PER_ID);
+    writel(enable, priv->regs + PRIORITY_BASE + d->hwirq * PRIORITY_PER_ID);
     for_each_cpu(cpu, mask) {
         struct plic_handler *handler = per_cpu_ptr(&plic_handlers, cpu);
 

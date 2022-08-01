@@ -670,6 +670,7 @@ __setup_irq(unsigned int irq,
     wake_up_and_wait_for_irq_thread_ready(desc, new);
     wake_up_and_wait_for_irq_thread_ready(desc, new->secondary);
 
+    pr_info("+++++++++++++++ %s: 2\n", __func__);
 #if 0
     register_irq_proc(irq, desc);
     new->dir = NULL;

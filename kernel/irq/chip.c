@@ -286,6 +286,7 @@ void unmask_irq(struct irq_desc *desc)
         return;
 
     if (desc->irq_data.chip->irq_unmask) {
+        printk("+++++++++++++++ %s: %s\n", __func__, desc->irq_data.chip->name);
         desc->irq_data.chip->irq_unmask(&desc->irq_data);
         irq_state_clr_masked(desc);
     }

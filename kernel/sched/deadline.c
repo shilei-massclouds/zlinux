@@ -64,7 +64,6 @@ static struct task_struct *pick_next_task_dl(struct rq *rq)
 {
     struct task_struct *p;
 
-    printk("%s: 1\n", __func__);
     p = pick_task_dl(rq);
     if (p)
         set_next_task_dl(rq, p, true);

@@ -3,9 +3,11 @@
 #define __LINUX_NODEMASK_H
 
 #include <linux/threads.h>
-//#include <linux/bitmap.h>
-//#include <linux/minmax.h>
+#include <linux/bitmap.h>
+#include <linux/minmax.h>
 #include <linux/numa.h>
+
+#define num_online_nodes()  num_node_state(N_ONLINE)
 
 typedef struct { DECLARE_BITMAP(bits, MAX_NUMNODES); } nodemask_t;
 

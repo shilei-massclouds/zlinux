@@ -475,9 +475,7 @@ asmlinkage __visible void __sched schedule(void)
     sched_submit_work(tsk);
     do {
         preempt_disable();
-        pr_info("############# %s:0 #############\n", __func__);
         __schedule(SM_NONE);
-        pr_info("############# %s:1 #############\n", __func__);
         sched_preempt_enable_no_resched();
     } while (need_resched());
     //sched_update_worker(tsk);

@@ -694,8 +694,7 @@ static int __irq_domain_activate_irq(struct irq_data *irqd, bool reserve)
         struct irq_domain *domain = irqd->domain;
 
         if (irqd->parent_data)
-            ret = __irq_domain_activate_irq(irqd->parent_data,
-                            reserve);
+            ret = __irq_domain_activate_irq(irqd->parent_data, reserve);
         if (!ret && domain->ops->activate) {
             ret = domain->ops->activate(domain, irqd, reserve);
             /* Rollback in case of error */
@@ -719,6 +718,7 @@ int irq_domain_activate_irq(struct irq_data *irq_data, bool reserve)
 {
     int ret = 0;
 
+    printk("###### %s: irq(%d) ######\n", __func__, irq_data->irq);
     if (!irqd_is_activated(irq_data))
         ret = __irq_domain_activate_irq(irq_data, reserve);
     if (!ret)

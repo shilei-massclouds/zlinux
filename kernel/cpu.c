@@ -204,3 +204,28 @@ void __init boot_cpu_hotplug_init(void)
     cpumask_set_cpu(smp_processor_id(), &cpus_booted_once_mask);
     this_cpu_write(cpuhp_state.state, CPUHP_ONLINE);
 }
+
+static int cpu_up(unsigned int cpu, enum cpuhp_state target)
+{
+    int err = 0;
+
+    if (!cpu_possible(cpu)) {
+        pr_err("can't online cpu %d because it is not configured "
+               "as may-hotadd at boot time\n", cpu);
+        return -EINVAL;
+    }
+
+    panic("%s: END!\n", __func__);
+}
+
+void bringup_nonboot_cpus(unsigned int setup_max_cpus)
+{
+    unsigned int cpu;
+
+    for_each_present_cpu(cpu) {
+        if (num_online_cpus() >= setup_max_cpus)
+            break;
+        if (!cpu_online(cpu))
+            cpu_up(cpu, CPUHP_ONLINE);
+    }
+}

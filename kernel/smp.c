@@ -30,12 +30,16 @@
 #include <linux/sched/debug.h>
 #include <linux/jump_label.h>
 
-//#include "smpboot.h"
+#include "smpboot.h"
 //#include "sched/smp.h"
 
 /* Setup number of possible processor ids */
 unsigned int nr_cpu_ids __read_mostly = NR_CPUS;
 EXPORT_SYMBOL(nr_cpu_ids);
+
+/* Setup configured maximum number of CPUs to activate */
+unsigned int setup_max_cpus = NR_CPUS;
+EXPORT_SYMBOL(setup_max_cpus);
 
 /**
  * smp_call_function_many(): Run a function on a set of CPUs.
@@ -111,4 +115,25 @@ EXPORT_SYMBOL_GPL(kick_all_cpus_sync);
 void __init setup_nr_cpu_ids(void)
 {
     nr_cpu_ids = find_last_bit(cpumask_bits(cpu_possible_mask), NR_CPUS) + 1;
+}
+
+/* Called by boot processor to activate the rest. */
+void __init smp_init(void)
+{
+    int num_nodes, num_cpus;
+
+    idle_threads_init();
+#if 0
+    cpuhp_threads_init();
+#endif
+
+    pr_info("Bringing up secondary CPUs ...\n");
+
+    bringup_nonboot_cpus(setup_max_cpus);
+
+    num_nodes = num_online_nodes();
+    num_cpus  = num_online_cpus();
+    pr_info("Brought up %d node%s, %d CPU%s\n",
+            num_nodes, (num_nodes > 1 ? "s" : ""),
+            num_cpus,  (num_cpus  > 1 ? "s" : ""));
 }

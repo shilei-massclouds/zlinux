@@ -14,4 +14,6 @@ int smpboot_unpark_threads(unsigned int cpu);
 
 void __init cpuhp_threads_init(void);
 
+void idle_threads_init(void);
+
 #endif /* SMPBOOT_H */

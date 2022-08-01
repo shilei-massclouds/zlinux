@@ -38,4 +38,6 @@ int remove_cpu(unsigned int cpu);
 int cpu_device_down(struct device *dev);
 extern void smp_shutdown_nonboot_cpus(unsigned int primary_cpu);
 
+void bringup_nonboot_cpus(unsigned int setup_max_cpus);
+
 #endif /* _LINUX_CPU_H_ */
