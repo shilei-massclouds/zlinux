@@ -44,7 +44,6 @@ asmlinkage void noinstr generic_handle_arch_irq(struct pt_regs *regs)
 {
     struct pt_regs *old_regs;
 
-    panic("%s: END!\n", __func__);
     //irq_enter();
     old_regs = set_irq_regs(regs);
     handle_arch_irq(regs);

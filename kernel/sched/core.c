@@ -155,6 +155,126 @@ static inline void prepare_task(struct task_struct *next)
     WRITE_ONCE(next->on_cpu, 1);
 }
 
+/*
+ * Invoked from try_to_wake_up() to check whether the task can be woken up.
+ *
+ * The caller holds p::pi_lock if p != current or has preemption
+ * disabled when p == current.
+ *
+ * The rules of PREEMPT_RT saved_state:
+ *
+ *   The related locking code always holds p::pi_lock when updating
+ *   p::saved_state, which means the code is fully serialized in both cases.
+ *
+ *   The lock wait and lock wakeups happen via TASK_RTLOCK_WAIT. No other
+ *   bits set. This allows to distinguish all wakeup scenarios.
+ */
+static __always_inline
+bool ttwu_state_match(struct task_struct *p, unsigned int state, int *success)
+{
+    if (READ_ONCE(p->__state) & state) {
+        *success = 1;
+        return true;
+    }
+
+    return false;
+}
+
+static void
+ttwu_stat(struct task_struct *p, int cpu, int wake_flags)
+{
+}
+
+/**
+ * try_to_wake_up - wake up a thread
+ * @p: the thread to be awakened
+ * @state: the mask of task states that can be woken
+ * @wake_flags: wake modifier flags (WF_*)
+ *
+ * Conceptually does:
+ *
+ *   If (@state & @p->state) @p->state = TASK_RUNNING.
+ *
+ * If the task was not queued/runnable, also place it back on a runqueue.
+ *
+ * This function is atomic against schedule() which would dequeue the task.
+ *
+ * It issues a full memory barrier before accessing @p->state, see the comment
+ * with set_current_state().
+ *
+ * Uses p->pi_lock to serialize against concurrent wake-ups.
+ *
+ * Relies on p->pi_lock stabilizing:
+ *  - p->sched_class
+ *  - p->cpus_ptr
+ *  - p->sched_task_group
+ * in order to do migration, see its use of select_task_rq()/set_task_cpu().
+ *
+ * Tries really hard to only take one task_rq(p)->lock for performance.
+ * Takes rq->lock in:
+ *  - ttwu_runnable()    -- old rq, unavoidable, see comment there;
+ *  - ttwu_queue()       -- new rq, for enqueue of the task;
+ *  - psi_ttwu_dequeue() -- much sadness :-( accounting will kill us.
+ *
+ * As a consequence we race really badly with just about everything. See the
+ * many memory barriers and their comments for details.
+ *
+ * Return: %true if @p->state changes (an actual wakeup was done),
+ *     %false otherwise.
+ */
+static int
+try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
+{
+    unsigned long flags;
+    int cpu, success = 0;
+
+    preempt_disable();
+    if (p == current) {
+        /*
+         * We're waking current, this means 'p->on_rq' and 'task_cpu(p)
+         * == smp_processor_id()'. Together this means we can special
+         * case the whole 'p->on_rq && ttwu_runnable()' case below
+         * without taking any locks.
+         *
+         * In particular:
+         *  - we rely on Program-Order guarantees for all the ordering,
+         *  - we're serialized against set_special_state() by virtue of
+         *    it disabling IRQs (this allows not taking ->pi_lock).
+         */
+        if (!ttwu_state_match(p, state, &success))
+            goto out;
+
+        WRITE_ONCE(p->__state, TASK_RUNNING);
+        goto out;
+    }
+
+    printk("%s: step1 p(%lx)\n", __func__, p);
+
+    /*
+     * If we are going to wake up a thread waiting for CONDITION we
+     * need to ensure that CONDITION=1 done by the caller can not be
+     * reordered with p->state check below. This pairs with smp_store_mb()
+     * in set_current_state() that the waiting thread does.
+     */
+    raw_spin_lock_irqsave(&p->pi_lock, flags);
+    printk("%s: step2\n", __func__);
+    smp_mb__after_spinlock();
+    printk("%s: step3\n", __func__);
+    if (!ttwu_state_match(p, state, &success))
+        goto unlock;
+
+    panic("%s: NO implementation!\n", __func__);
+
+ unlock:
+    raw_spin_unlock_irqrestore(&p->pi_lock, flags);
+ out:
+    if (success)
+        ttwu_stat(p, task_cpu(p), wake_flags);
+    preempt_enable();
+
+    return success;
+}
+
 /**
  * wake_up_process - Wake up a specific process
  * @p: The process to be woken up.
@@ -168,8 +288,7 @@ static inline void prepare_task(struct task_struct *next)
  */
 int wake_up_process(struct task_struct *p)
 {
-    //return try_to_wake_up(p, TASK_NORMAL, 0);
-    panic("%s: NOT-implemented!\n", __func__);
+    return try_to_wake_up(p, TASK_NORMAL, 0);
 }
 EXPORT_SYMBOL(wake_up_process);
 
@@ -1239,49 +1358,6 @@ void __init sched_init(void)
     //init_sched_fair_class();
 
     scheduler_running = 1;
-}
-
-/**
- * try_to_wake_up - wake up a thread
- * @p: the thread to be awakened
- * @state: the mask of task states that can be woken
- * @wake_flags: wake modifier flags (WF_*)
- *
- * Conceptually does:
- *
- *   If (@state & @p->state) @p->state = TASK_RUNNING.
- *
- * If the task was not queued/runnable, also place it back on a runqueue.
- *
- * This function is atomic against schedule() which would dequeue the task.
- *
- * It issues a full memory barrier before accessing @p->state, see the comment
- * with set_current_state().
- *
- * Uses p->pi_lock to serialize against concurrent wake-ups.
- *
- * Relies on p->pi_lock stabilizing:
- *  - p->sched_class
- *  - p->cpus_ptr
- *  - p->sched_task_group
- * in order to do migration, see its use of select_task_rq()/set_task_cpu().
- *
- * Tries really hard to only take one task_rq(p)->lock for performance.
- * Takes rq->lock in:
- *  - ttwu_runnable()    -- old rq, unavoidable, see comment there;
- *  - ttwu_queue()       -- new rq, for enqueue of the task;
- *  - psi_ttwu_dequeue() -- much sadness :-( accounting will kill us.
- *
- * As a consequence we race really badly with just about everything. See the
- * many memory barriers and their comments for details.
- *
- * Return: %true if @p->state changes (an actual wakeup was done),
- *     %false otherwise.
- */
-static int
-try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
-{
-    panic("%s: NOT-implemented!\n", __func__);
 }
 
 int default_wake_function(wait_queue_entry_t *curr,

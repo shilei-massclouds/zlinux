@@ -58,6 +58,9 @@
 
 #define TASK_KILLABLE           (TASK_WAKEKILL | TASK_UNINTERRUPTIBLE)
 
+/* Convenience macros for the sake of wake_up(): */
+#define TASK_NORMAL             (TASK_INTERRUPTIBLE | TASK_UNINTERRUPTIBLE)
+
 #define MAX_SCHEDULE_TIMEOUT    LONG_MAX
 
 #define task_is_running(task) \

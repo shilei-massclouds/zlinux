@@ -560,7 +560,7 @@ EXPORT_SYMBOL(__cpuhp_setup_state);
 
 void __init cpuhp_threads_init(void)
 {
-    BUG_ON(smpboot_register_percpu_thread(&cpuhp_threads));
+    //BUG_ON(smpboot_register_percpu_thread(&cpuhp_threads));
     //kthread_unpark(this_cpu_read(cpuhp_state.thread));
     panic("%s: END!\n", __func__);
 }

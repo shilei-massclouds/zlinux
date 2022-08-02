@@ -23,7 +23,6 @@ static asmlinkage void riscv_intc_irq(struct pt_regs *regs)
 {
     unsigned long cause = regs->cause & ~CAUSE_IRQ_FLAG;
 
-    panic("%s: END!\n", __func__);
     if (unlikely(cause >= BITS_PER_LONG))
         panic("unexpected interrupt cause");
 
