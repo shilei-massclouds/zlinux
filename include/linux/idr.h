@@ -171,4 +171,6 @@ static inline int ida_alloc(struct ida *ida, gfp_t gfp)
     return ida_alloc_range(ida, 0, ~0, gfp);
 }
 
+void *idr_find(const struct idr *, unsigned long id);
+
 #endif /* __IDR_H__ */

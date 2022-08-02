@@ -123,9 +123,7 @@ void __init smp_init(void)
     int num_nodes, num_cpus;
 
     idle_threads_init();
-#if 0
     cpuhp_threads_init();
-#endif
 
     pr_info("Bringing up secondary CPUs ...\n");
 

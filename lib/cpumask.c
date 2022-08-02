@@ -22,3 +22,33 @@ unsigned int cpumask_next(int n, const struct cpumask *srcp)
     return find_next_bit(cpumask_bits(srcp), nr_cpumask_bits, n + 1);
 }
 EXPORT_SYMBOL(cpumask_next);
+
+/**
+ * Returns an arbitrary cpu within srcp1 & srcp2.
+ *
+ * Iterated calls using the same srcp1 and srcp2 will be distributed within
+ * their intersection.
+ *
+ * Returns >= nr_cpu_ids if the intersection is empty.
+ */
+int cpumask_any_and_distribute(const struct cpumask *src1p,
+                   const struct cpumask *src2p)
+{
+#if 0
+    int next, prev;
+
+    /* NOTE: our first selection will skip 0. */
+    prev = __this_cpu_read(distribute_cpu_mask_prev);
+
+    next = cpumask_next_and(prev, src1p, src2p);
+    if (next >= nr_cpu_ids)
+        next = cpumask_first_and(src1p, src2p);
+
+    if (next < nr_cpu_ids)
+        __this_cpu_write(distribute_cpu_mask_prev, next);
+
+    return next;
+#endif
+    panic("%s: NOT-implemented!\n", __func__);
+}
+EXPORT_SYMBOL(cpumask_any_and_distribute);

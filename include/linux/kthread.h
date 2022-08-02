@@ -5,6 +5,8 @@
 #include <linux/err.h>
 #include <linux/sched.h>
 
+extern struct task_struct *kthreadd_task;
+
 extern int tsk_fork_get_node(struct task_struct *tsk);
 
 bool set_kthread_struct(struct task_struct *p);
@@ -12,5 +14,10 @@ bool set_kthread_struct(struct task_struct *p);
 int kthread_stop(struct task_struct *k);
 
 bool set_kthread_struct(struct task_struct *p);
+
+struct task_struct *kthread_create_on_cpu(int (*threadfn)(void *data),
+                                          void *data,
+                                          unsigned int cpu,
+                                          const char *namefmt);
 
 #endif /* _LINUX_KTHREAD_H */

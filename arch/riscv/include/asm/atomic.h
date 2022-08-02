@@ -318,4 +318,9 @@ arch_atomic64_sub_if_positive(atomic64_t *v, s64 offset)
 }
 #define arch_atomic64_dec_if_positive(v)    arch_atomic64_sub_if_positive(v, 1)
 
+static __always_inline int arch_atomic_read(const atomic_t *v)
+{
+    return READ_ONCE(v->counter);
+}
+
 #endif /* _ASM_RISCV_ATOMIC_H */

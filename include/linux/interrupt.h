@@ -209,4 +209,6 @@ request_irq(unsigned int irq, irq_handler_t handler,
 
 #define local_softirq_pending() (__this_cpu_read(local_softirq_pending_ref))
 
+extern void enable_percpu_irq(unsigned int irq, unsigned int type);
+
 #endif /* _LINUX_INTERRUPT_H */

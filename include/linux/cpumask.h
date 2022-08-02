@@ -424,4 +424,33 @@ static inline bool zalloc_cpumask_var(cpumask_var_t *mask, gfp_t flags)
     return true;
 }
 
+/**
+ * cpumask_subset - (*src1p & ~*src2p) == 0
+ * @src1p: the first input
+ * @src2p: the second input
+ *
+ * Returns 1 if *@src1p is a subset of *@src2p, else returns 0
+ */
+static inline int cpumask_subset(const struct cpumask *src1p,
+                                 const struct cpumask *src2p)
+{
+    return bitmap_subset(cpumask_bits(src1p), cpumask_bits(src2p),
+                         nr_cpumask_bits);
+}
+
+/**
+ * cpumask_equal - *src1p == *src2p
+ * @src1p: the first input
+ * @src2p: the second input
+ */
+static inline bool cpumask_equal(const struct cpumask *src1p,
+                const struct cpumask *src2p)
+{
+    return bitmap_equal(cpumask_bits(src1p), cpumask_bits(src2p),
+                        nr_cpumask_bits);
+}
+
+int cpumask_any_and_distribute(const struct cpumask *src1p,
+                               const struct cpumask *src2p);
+
 #endif /* __LINUX_CPUMASK_H */

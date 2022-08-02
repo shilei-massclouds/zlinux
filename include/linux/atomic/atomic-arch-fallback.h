@@ -297,4 +297,22 @@ arch_atomic64_inc_not_zero(atomic64_t *v)
 #define arch_atomic64_inc_not_zero arch_atomic64_inc_not_zero
 #endif
 
+#ifndef arch_atomic_read_acquire
+static __always_inline int
+arch_atomic_read_acquire(const atomic_t *v)
+{
+    int ret;
+
+    if (__native_word(atomic_t)) {
+        ret = smp_load_acquire(&(v)->counter);
+    } else {
+        ret = arch_atomic_read(v);
+        __atomic_acquire_fence();
+    }
+
+    return ret;
+}
+#define arch_atomic_read_acquire arch_atomic_read_acquire
+#endif
+
 #endif /* _LINUX_ATOMIC_FALLBACK_H */

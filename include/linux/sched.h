@@ -257,11 +257,22 @@ struct task_struct {
 
     /* PID/PID hash table linkage. */
     struct pid *thread_pid;
+    struct hlist_node pid_links[PIDTYPE_MAX];
 
     unsigned int __state;
 
     struct mm_struct    *mm;
     struct mm_struct    *active_mm;
+
+    int exit_state;
+    int exit_code;
+    int exit_signal;
+    /* The signal sent when the parent dies: */
+    int pdeath_signal;
+
+    /* Thread group tracking: */
+    u64 parent_exec_id;
+    u64 self_exec_id;
 
     void *stack;
     refcount_t usage;
@@ -372,6 +383,7 @@ struct task_struct {
     int pagefault_disabled;
 
     pid_t               pid;
+    pid_t               tgid;
 
     /* Process credentials: */
 
@@ -416,6 +428,7 @@ struct task_struct {
      */
     struct list_head        children;
     struct list_head        sibling;
+    struct task_struct      *group_leader;
 
     /* Stacked block device info: */
     struct bio_list         *bio_list;
@@ -493,5 +506,17 @@ extern struct mutex sched_domains_mutex;
 /* Increase resolution of cpu_capacity calculations */
 #define SCHED_CAPACITY_SHIFT    SCHED_FIXEDPOINT_SHIFT
 #define SCHED_CAPACITY_SCALE    (1L << SCHED_CAPACITY_SHIFT)
+
+extern unsigned long
+wait_task_inactive(struct task_struct *, unsigned int match_state);
+
+extern void do_set_cpus_allowed(struct task_struct *p,
+                                const struct cpumask *new_mask);
+
+extern struct task_struct *
+find_task_by_pid_ns(pid_t nr, struct pid_namespace *ns);
+
+extern int set_cpus_allowed_ptr(struct task_struct *p,
+                                const struct cpumask *new_mask);
 
 #endif /* _LINUX_SCHED_H */

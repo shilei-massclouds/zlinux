@@ -884,12 +884,15 @@ static inline void enqueue_task(struct rq *rq, struct task_struct *p, int flags)
     }
 #endif
 
+    printk("%s: 1 \n", __func__);
     p->sched_class->enqueue_task(rq, p, flags);
+    printk("%s: 2 \n", __func__);
 }
 
 void activate_task(struct rq *rq, struct task_struct *p, int flags)
 {
     enqueue_task(rq, p, flags);
+    printk("%s: 2 \n", __func__);
 
     p->on_rq = TASK_ON_RQ_QUEUED;
 }
@@ -929,6 +932,7 @@ void wake_up_new_task(struct task_struct *p)
     post_init_entity_util_avg(p);
 #endif
 
+    printk("%s: 1 \n", __func__);
     activate_task(rq, p, ENQUEUE_NOCLOCK);
 #if 0
     check_preempt_curr(rq, p, WF_FORK);
@@ -936,6 +940,7 @@ void wake_up_new_task(struct task_struct *p)
     if (p->sched_class->task_woken) {
         panic("%s: no task_woken for sched_class.\n", __func__);
     }
+    printk("%s: 2 \n", __func__);
     task_rq_unlock(rq, p, &rf);
 }
 
@@ -1348,5 +1353,191 @@ void set_rq_offline(struct rq *rq)
 
         cpumask_clear_cpu(rq->cpu, rq->rd->online);
         rq->online = 0;
+    }
+}
+
+/*
+ * wait_task_inactive - wait for a thread to unschedule.
+ *
+ * If @match_state is nonzero, it's the @p->state value just checked and
+ * not expected to change.  If it changes, i.e. @p might have woken up,
+ * then return zero.  When we succeed in waiting for @p to be off its CPU,
+ * we return a positive number (its total switch count).  If a second call
+ * a short while later returns the same number, the caller can be sure that
+ * @p has remained unscheduled the whole time.
+ *
+ * The caller must ensure that the task *will* unschedule sometime soon,
+ * else this function might spin for a *long* time. This function can't
+ * be called with interrupts off, or it may introduce deadlock with
+ * smp_call_function() if an IPI is sent by the same process we are
+ * waiting to become inactive.
+ */
+unsigned long wait_task_inactive(struct task_struct *p, unsigned int match_state)
+{
+    int running, queued;
+    struct rq_flags rf;
+    unsigned long ncsw;
+    struct rq *rq;
+
+    panic("%s: NOT-implemented!\n", __func__);
+}
+
+static void
+__do_set_cpus_allowed(struct task_struct *p,
+                      const struct cpumask *new_mask,
+                      u32 flags)
+{
+    panic("%s: NOT-implemented!\n", __func__);
+}
+
+void do_set_cpus_allowed(struct task_struct *p, const struct cpumask *new_mask)
+{
+    __do_set_cpus_allowed(p, new_mask, 0);
+}
+
+/*
+ * Called with both p->pi_lock and rq->lock held; drops both before returning.
+ */
+static int __set_cpus_allowed_ptr_locked(struct task_struct *p,
+                                         const struct cpumask *new_mask,
+                                         u32 flags,
+                                         struct rq *rq,
+                                         struct rq_flags *rf)
+    __releases(rq->lock)
+    __releases(p->pi_lock)
+{
+    const struct cpumask *cpu_allowed_mask = task_cpu_possible_mask(p);
+    const struct cpumask *cpu_valid_mask = cpu_active_mask;
+    bool kthread = p->flags & PF_KTHREAD;
+    struct cpumask *user_mask = NULL;
+    unsigned int dest_cpu;
+    int ret = 0;
+
+    //update_rq_clock(rq);
+
+    if (kthread || is_migration_disabled(p)) {
+        /*
+         * Kernel threads are allowed on online && !active CPUs,
+         * however, during cpu-hot-unplug, even these might get pushed
+         * away if not KTHREAD_IS_PER_CPU.
+         *
+         * Specifically, migration_disabled() tasks must not fail the
+         * cpumask_any_and_distribute() pick below, esp. so on
+         * SCA_MIGRATE_ENABLE, otherwise we'll not call
+         * set_cpus_allowed_common() and actually reset p->cpus_ptr.
+         */
+        cpu_valid_mask = cpu_online_mask;
+    }
+
+    if (!kthread && !cpumask_subset(new_mask, cpu_allowed_mask)) {
+        ret = -EINVAL;
+        goto out;
+    }
+
+    /*
+     * Must re-check here, to close a race against __kthread_bind(),
+     * sched_setaffinity() is not guaranteed to observe the flag.
+     */
+    if ((flags & SCA_CHECK) && (p->flags & PF_NO_SETAFFINITY)) {
+        ret = -EINVAL;
+        goto out;
+    }
+
+    if (!(flags & SCA_MIGRATE_ENABLE)) {
+        if (cpumask_equal(&p->cpus_mask, new_mask))
+            goto out;
+
+        if (WARN_ON_ONCE(p == current && is_migration_disabled(p) &&
+                         !cpumask_test_cpu(task_cpu(p), new_mask))) {
+            ret = -EBUSY;
+            goto out;
+        }
+    }
+
+#if 0
+    /*
+     * Picking a ~random cpu helps in cases where we are changing affinity
+     * for groups of tasks (ie. cpuset), so that load balancing is not
+     * immediately required to distribute the tasks within their new mask.
+     */
+    dest_cpu = cpumask_any_and_distribute(cpu_valid_mask, new_mask);
+    if (dest_cpu >= nr_cpu_ids) {
+        ret = -EINVAL;
+        goto out;
+    }
+#endif
+
+    panic("%s: NOT-implemented!\n", __func__);
+
+ out:
+    task_rq_unlock(rq, p, rf);
+
+    return ret;
+}
+
+/*
+ * Change a given task's CPU affinity. Migrate the thread to a
+ * proper CPU and schedule it away if the CPU it's executing on
+ * is removed from the allowed bitmask.
+ *
+ * NOTE: the caller must have a valid reference to the task, the
+ * task must not exit() & deallocate itself prematurely. The
+ * call is not atomic; no spinlocks may be held.
+ */
+static int __set_cpus_allowed_ptr(struct task_struct *p,
+                                  const struct cpumask *new_mask, u32 flags)
+{
+    struct rq_flags rf;
+    struct rq *rq;
+
+    rq = task_rq_lock(p, &rf);
+    return __set_cpus_allowed_ptr_locked(p, new_mask, flags, rq, &rf);
+}
+
+int set_cpus_allowed_ptr(struct task_struct *p, const struct cpumask *new_mask)
+{
+    return __set_cpus_allowed_ptr(p, new_mask, 0);
+}
+EXPORT_SYMBOL_GPL(set_cpus_allowed_ptr);
+
+/*
+ * task_rq_lock - lock p->pi_lock and lock the rq @p resides on.
+ */
+struct rq *task_rq_lock(struct task_struct *p, struct rq_flags *rf)
+    __acquires(p->pi_lock)
+    __acquires(rq->lock)
+{
+    struct rq *rq;
+
+    for (;;) {
+        raw_spin_lock_irqsave(&p->pi_lock, rf->flags);
+        rq = task_rq(p);
+        raw_spin_rq_lock(rq);
+        /*
+         *  move_queued_task()      task_rq_lock()
+         *
+         *  ACQUIRE (rq->lock)
+         *  [S] ->on_rq = MIGRATING     [L] rq = task_rq()
+         *  WMB (__set_task_cpu())      ACQUIRE (rq->lock);
+         *  [S] ->cpu = new_cpu     [L] task_rq()
+         *                  [L] ->on_rq
+         *  RELEASE (rq->lock)
+         *
+         * If we observe the old CPU in task_rq_lock(), the acquire of
+         * the old rq->lock will fully serialize against the stores.
+         *
+         * If we observe the new CPU in task_rq_lock(), the address
+         * dependency headed by '[L] rq = task_rq()' and the acquire
+         * will pair with the WMB to ensure we then also see migrating.
+         */
+        if (likely(rq == task_rq(p) && !task_on_rq_migrating(p))) {
+            rq_pin_lock(rq, rf);
+            return rq;
+        }
+        raw_spin_rq_unlock(rq);
+        raw_spin_unlock_irqrestore(&p->pi_lock, rf->flags);
+
+        while (unlikely(task_on_rq_migrating(p)))
+            cpu_relax();
     }
 }

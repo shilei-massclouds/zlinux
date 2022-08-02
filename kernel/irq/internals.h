@@ -203,5 +203,13 @@ extern int irq_do_set_affinity(struct irq_data *data,
 
 extern int irq_setup_affinity(struct irq_desc *desc);
 
+#define _IRQ_DESC_CHECK     (1 << 0)
+#define _IRQ_DESC_PERCPU    (1 << 1)
+
+#define IRQ_GET_DESC_CHECK_GLOBAL   (_IRQ_DESC_CHECK)
+#define IRQ_GET_DESC_CHECK_PERCPU   (_IRQ_DESC_CHECK | _IRQ_DESC_PERCPU)
+
 #define for_each_action_of_desc(desc, act)          \
     for (act = desc->action; act; act = act->next)
+
+extern void irq_percpu_enable(struct irq_desc *desc, unsigned int cpu);

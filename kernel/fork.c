@@ -112,6 +112,7 @@
 #include <linux/pid.h>
 #include <linux/sched/signal.h>
 #include <linux/math64.h>
+#include <linux/pid_namespace.h>
 #include <uapi/linux/futex.h>
 
 /*
@@ -329,6 +330,23 @@ dup_task_struct(struct task_struct *orig, int node)
     return NULL;
 }
 
+static inline void init_task_pid_links(struct task_struct *task)
+{
+    enum pid_type type;
+
+    for (type = PIDTYPE_PID; type < PIDTYPE_MAX; ++type)
+        INIT_HLIST_NODE(&task->pid_links[type]);
+}
+
+static inline void
+init_task_pid(struct task_struct *task, enum pid_type type, struct pid *pid)
+{
+    if (type == PIDTYPE_PID)
+        task->thread_pid = pid;
+    else
+        task->signal->pids[type] = pid;
+}
+
 /*
  * This creates a new process as a copy of the old one,
  * but does not actually start it yet.
@@ -346,7 +364,7 @@ copy_process(struct pid *pid, int trace, int node,
     //struct multiprocess_signals delayed;
     struct file *pidfile = NULL;
     u64 clone_flags = args->flags;
-    //struct nsproxy *nsp = current->nsproxy;
+    struct nsproxy *nsp = current->nsproxy;
 
     /*
      * Don't allow sharing the root directory with processes in a different
@@ -387,13 +405,13 @@ copy_process(struct pid *pid, int trace, int node,
      * If the new process will be in a different pid or user namespace
      * do not allow it to share a thread group with the forking task.
      */
-#if 0
     if (clone_flags & CLONE_THREAD) {
         if ((clone_flags & (CLONE_NEWUSER | CLONE_NEWPID)) ||
             (task_active_pid_ns(current) != nsp->pid_ns_for_children))
             return ERR_PTR(-EINVAL);
     }
 
+#if 0
     /*
      * If the new process will be in a different time namespace
      * do not allow it to share VM or a thread group with the forking task.
@@ -585,8 +603,133 @@ copy_process(struct pid *pid, int trace, int node,
 
     /* ok, now we should be set up.. */
     p->pid = pid_nr(pid);
+    if (clone_flags & CLONE_THREAD) {
+        p->group_leader = current->group_leader;
+        p->tgid = current->tgid;
+    } else {
+        p->group_leader = p;
+        p->tgid = p->pid;
+    }
 
-    pr_info("%s: pid(%d) END!\n", __func__, p->pid);
+#if 0
+    p->nr_dirtied = 0;
+    p->nr_dirtied_pause = 128 >> (PAGE_SHIFT - 10);
+    p->dirty_paused_when = 0;
+
+    p->pdeath_signal = 0;
+    INIT_LIST_HEAD(&p->thread_group);
+    p->task_works = NULL;
+    clear_posix_cputimers_work(p);
+
+    /*
+     * Ensure that the cgroup subsystem policies allow the new process to be
+     * forked. It should be noted that the new process's css_set can be changed
+     * between here and cgroup_post_fork() if an organisation operation is in
+     * progress.
+     */
+    retval = cgroup_can_fork(p, args);
+    if (retval)
+        goto bad_fork_put_pidfd;
+
+    /*
+     * Now that the cgroups are pinned, re-clone the parent cgroup and put
+     * the new task on the correct runqueue. All this *before* the task
+     * becomes visible.
+     *
+     * This isn't part of ->can_fork() because while the re-cloning is
+     * cgroup specific, it unconditionally needs to place the task on a
+     * runqueue.
+     */
+    sched_cgroup_fork(p, args);
+
+    /*
+     * From this point on we must avoid any synchronous user-space
+     * communication until we take the tasklist-lock. In particular, we do
+     * not want user-space to be able to predict the process start-time by
+     * stalling fork(2) after we recorded the start_time but before it is
+     * visible to the system.
+     */
+
+    p->start_time = ktime_get_ns();
+    p->start_boottime = ktime_get_boottime_ns();
+
+    /*
+     * Make it visible to the rest of the system, but dont wake it up yet.
+     * Need tasklist lock for parent etc handling!
+     */
+    write_lock_irq(&tasklist_lock);
+#endif
+
+    /* CLONE_PARENT re-uses the old parent */
+    if (clone_flags & (CLONE_PARENT|CLONE_THREAD)) {
+        p->real_parent = current->real_parent;
+        p->parent_exec_id = current->parent_exec_id;
+        if (clone_flags & CLONE_THREAD)
+            p->exit_signal = -1;
+        else
+            p->exit_signal = current->group_leader->exit_signal;
+    } else {
+        p->real_parent = current;
+        p->parent_exec_id = current->self_exec_id;
+        p->exit_signal = args->exit_signal;
+    }
+
+#if 0
+    spin_lock(&current->sighand->siglock);
+
+    /*
+     * Copy seccomp details explicitly here, in case they were changed
+     * before holding sighand lock.
+     */
+    copy_seccomp(p);
+
+    rseq_fork(p, clone_flags);
+
+    /* Don't start children in a dying pid namespace */
+    if (unlikely(!(ns_of_pid(pid)->pid_allocated & PIDNS_ADDING))) {
+        retval = -ENOMEM;
+        goto bad_fork_cancel_cgroup;
+    }
+
+    /* Let kill terminate clone/fork in the middle */
+    if (fatal_signal_pending(current)) {
+        retval = -EINTR;
+        goto bad_fork_cancel_cgroup;
+    }
+#endif
+
+    init_task_pid_links(p);
+    if (likely(p->pid)) {
+#if 0
+        ptrace_init_task(p, (clone_flags & CLONE_PTRACE) || trace);
+#endif
+
+        init_task_pid(p, PIDTYPE_PID, pid);
+        if (thread_group_leader(p)) {
+            pr_warn("%s: thread_group_leader!\n", __func__);
+        } else {
+            panic("%s: !thread_group_leader\n", __func__);
+        }
+        attach_pid(p, PIDTYPE_PID);
+        nr_threads++;
+    }
+
+    total_forks++;
+#if 0
+    hlist_del_init(&delayed.node);
+    spin_unlock(&current->sighand->siglock);
+    syscall_tracepoint_update(p);
+    write_unlock_irq(&tasklist_lock);
+
+    if (pidfile)
+        fd_install(pidfd, pidfile);
+
+    cgroup_post_fork(p, args);
+    perf_event_fork(p);
+
+    copy_oom_score_adj(clone_flags, p);
+#endif
+
     return p;
 
  bad_fork_cleanup_thread:
@@ -641,7 +784,6 @@ pid_t kernel_clone(struct kernel_clone_args *args)
         return -EINVAL;
 
     p = copy_process(NULL, trace, NUMA_NO_NODE, args);
-
     if (IS_ERR(p))
         return PTR_ERR(p);
 

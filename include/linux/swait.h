@@ -46,6 +46,11 @@ struct swait_queue_head {
     struct list_head    task_list;
 };
 
+#define __SWAIT_QUEUE_HEAD_INITIALIZER(name) {              \
+    .lock       = __RAW_SPIN_LOCK_UNLOCKED(name.lock),      \
+    .task_list  = LIST_HEAD_INIT((name).task_list),     \
+}
+
 extern void
 __init_swait_queue_head(struct swait_queue_head *q,
                         const char *name,

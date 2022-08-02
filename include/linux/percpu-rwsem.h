@@ -12,7 +12,7 @@
 struct percpu_rw_semaphore {
     struct rcu_sync     rss;
     unsigned int __percpu   *read_count;
-    //struct rcuwait      writer;
+    struct rcuwait      writer;
     wait_queue_head_t   waiters;
     atomic_t            block;
 };
@@ -39,7 +39,26 @@ extern bool __percpu_down_read(struct percpu_rw_semaphore *, bool);
 
 static inline void percpu_down_read(struct percpu_rw_semaphore *sem)
 {
-    panic("%s: END!\n", __func__);
+    might_sleep();
+
+    preempt_disable();
+    /*
+     * We are in an RCU-sched read-side critical section, so the writer
+     * cannot both change sem->state from readers_fast and start checking
+     * counters while we are here. So if we see !sem->state, we know that
+     * the writer won't be checking until we're past the preempt_enable()
+     * and that once the synchronize_rcu() is done, the writer will see
+     * anything we did within this RCU-sched read-size critical section.
+     */
+    if (likely(rcu_sync_is_idle(&sem->rss)))
+        this_cpu_inc(*sem->read_count);
+    else
+        __percpu_down_read(sem, false); /* Unconditional memory barrier */
+    /*
+     * The preempt_enable() prevents the compiler from
+     * bleeding the critical section out.
+     */
+    preempt_enable();
 }
 
 static inline bool percpu_down_read_trylock(struct percpu_rw_semaphore *sem)
@@ -49,7 +68,6 @@ static inline bool percpu_down_read_trylock(struct percpu_rw_semaphore *sem)
 
 static inline void percpu_up_read(struct percpu_rw_semaphore *sem)
 {
-#if 0
     preempt_disable();
     /*
      * Same as in percpu_down_read().
@@ -71,8 +89,6 @@ static inline void percpu_up_read(struct percpu_rw_semaphore *sem)
         rcuwait_wake_up(&sem->writer);
     }
     preempt_enable();
-#endif
-    panic("%s: END!\n", __func__);
 }
 
 extern void percpu_down_write(struct percpu_rw_semaphore *);

@@ -25,4 +25,6 @@ static inline void rcuwait_init(struct rcuwait *w)
     w->task = NULL;
 }
 
+extern int rcuwait_wake_up(struct rcuwait *w);
+
 #endif /* _LINUX_RCUWAIT_H_ */

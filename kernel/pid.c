@@ -334,6 +334,42 @@ void put_pid(struct pid *pid)
 }
 EXPORT_SYMBOL_GPL(put_pid);
 
+struct pid *find_pid_ns(int nr, struct pid_namespace *ns)
+{
+    return idr_find(&ns->idr, nr);
+}
+EXPORT_SYMBOL_GPL(find_pid_ns);
+
+struct task_struct *pid_task(struct pid *pid, enum pid_type type)
+{
+    struct task_struct *result = NULL;
+    if (pid) {
+        struct hlist_node *first;
+        first = rcu_dereference_check(hlist_first_rcu(&pid->tasks[type]));
+        if (first)
+            result = hlist_entry(first, struct task_struct, pid_links[(type)]);
+    }
+    return result;
+}
+EXPORT_SYMBOL(pid_task);
+
+/*
+ * Must be called under rcu_read_lock().
+ */
+struct task_struct *find_task_by_pid_ns(pid_t nr, struct pid_namespace *ns)
+{
+    return pid_task(find_pid_ns(nr, ns), PIDTYPE_PID);
+}
+
+/*
+ * attach_pid() must be called with the tasklist_lock write-held.
+ */
+void attach_pid(struct task_struct *task, enum pid_type type)
+{
+    struct pid *pid = *task_pid_ptr(task, type);
+    hlist_add_head_rcu(&task->pid_links[type], &pid->tasks[type]);
+}
+
 void __init pid_idr_init(void)
 {
     /* Verify no one has done anything silly: */

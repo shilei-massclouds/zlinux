@@ -263,6 +263,31 @@ static void plic_handle_irq(struct irq_desc *desc)
 #endif
 }
 
+static int plic_dying_cpu(unsigned int cpu)
+{
+#if 0
+    if (plic_parent_irq)
+        disable_percpu_irq(plic_parent_irq);
+#endif
+
+    panic("%s: END!\n", __func__);
+    return 0;
+}
+
+static int plic_starting_cpu(unsigned int cpu)
+{
+    struct plic_handler *handler = this_cpu_ptr(&plic_handlers);
+
+    if (plic_parent_irq)
+        enable_percpu_irq(plic_parent_irq,
+                          irq_get_trigger_type(plic_parent_irq));
+    else
+        pr_warn("cpu%d: parent irq not available\n", cpu);
+    plic_set_threshold(handler, PLIC_ENABLE_THRESHOLD);
+
+    return 0;
+}
+
 static int __init
 plic_init(struct device_node *node, struct device_node *parent)
 {
@@ -364,11 +389,9 @@ plic_init(struct device_node *node, struct device_node *parent)
      */
     handler = this_cpu_ptr(&plic_handlers);
     if (handler->present && !plic_cpuhp_setup_done) {
-#if 0
         cpuhp_setup_state(CPUHP_AP_IRQ_SIFIVE_PLIC_STARTING,
                           "irqchip/sifive/plic:starting",
                           plic_starting_cpu, plic_dying_cpu);
-#endif
         plic_cpuhp_setup_done = true;
     }
 

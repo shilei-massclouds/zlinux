@@ -28,6 +28,23 @@ struct completion {
     struct swait_queue_head wait;
 };
 
+#define COMPLETION_INITIALIZER(work) \
+    { 0, __SWAIT_QUEUE_HEAD_INITIALIZER((work).wait) }
+
+/**
+ * DECLARE_COMPLETION - declare and initialize a completion structure
+ * @work:  identifier for the completion structure
+ *
+ * This macro declares and initializes a completion structure. Generally used
+ * for static declarations. You should use the _ONSTACK variant for automatic
+ * variables.
+ */
+#define DECLARE_COMPLETION(work) \
+    struct completion work = COMPLETION_INITIALIZER(work)
+
+#define DECLARE_COMPLETION_ONSTACK(work) DECLARE_COMPLETION(work)
+#define DECLARE_COMPLETION_ONSTACK_MAP(work, map) DECLARE_COMPLETION(work)
+
 /**
  * init_completion - Initialize a dynamically allocated completion
  * @x:  pointer to completion structure that is to be initialized

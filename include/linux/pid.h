@@ -129,4 +129,21 @@ alloc_pid(struct pid_namespace *ns, pid_t *set_tid, size_t set_tid_size);
 
 extern void put_pid(struct pid *pid);
 
+/*
+ * these helpers must be called with the tasklist_lock write-held.
+ */
+extern void attach_pid(struct task_struct *task, enum pid_type);
+extern void detach_pid(struct task_struct *task, enum pid_type);
+extern void change_pid(struct task_struct *task, enum pid_type,
+                       struct pid *pid);
+extern void exchange_tids(struct task_struct *task, struct task_struct *old);
+extern void transfer_pid(struct task_struct *old, struct task_struct *new,
+                         enum pid_type);
+
+extern struct pid_namespace init_pid_ns;
+
+extern int pid_max;
+extern int pid_max_min, pid_max_max;
+
+
 #endif /* _LINUX_PID_H */

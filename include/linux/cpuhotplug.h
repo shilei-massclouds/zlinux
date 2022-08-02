@@ -237,4 +237,35 @@ enum cpuhp_state {
     CPUHP_ONLINE,
 };
 
+int __cpuhp_setup_state(enum cpuhp_state state, const char *name, bool invoke,
+                        int (*startup)(unsigned int cpu),
+                        int (*teardown)(unsigned int cpu), bool multi_instance);
+
+int __cpuhp_setup_state_cpuslocked(enum cpuhp_state state,
+                                   const char *name,
+                                   bool invoke,
+                                   int (*startup)(unsigned int cpu),
+                                   int (*teardown)(unsigned int cpu),
+                                   bool multi_instance);
+
+/**
+ * cpuhp_setup_state - Setup hotplug state callbacks with calling the @startup
+ *                     callback
+ * @state:  The state for which the calls are installed
+ * @name:   Name of the callback (will be used in debug output)
+ * @startup:    startup callback function or NULL if not required
+ * @teardown:   teardown callback function or NULL if not required
+ *
+ * Installs the callback functions and invokes the @startup callback on
+ * the online cpus which have already reached the @state.
+ */
+static inline
+int cpuhp_setup_state(enum cpuhp_state state,
+                      const char *name,
+                      int (*startup)(unsigned int cpu),
+                      int (*teardown)(unsigned int cpu))
+{
+    return __cpuhp_setup_state(state, name, true, startup, teardown, false);
+}
+
 #endif /* __CPUHOTPLUG_H */

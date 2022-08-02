@@ -65,4 +65,9 @@ signal_pending_state(unsigned int state, struct task_struct *p)
     return 0;
 }
 
+static inline bool thread_group_leader(struct task_struct *p)
+{
+    return p->exit_signal >= 0;
+}
+
 #endif /* _LINUX_SCHED_SIGNAL_H */

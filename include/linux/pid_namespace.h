@@ -44,4 +44,6 @@ static inline struct pid_namespace *get_pid_ns(struct pid_namespace *ns)
 
 extern void put_pid_ns(struct pid_namespace *ns);
 
+extern struct pid_namespace *task_active_pid_ns(struct task_struct *tsk);
+
 #endif /* _LINUX_PID_NS_H */

@@ -270,4 +270,10 @@ atomic_sub(int i, atomic_t *v)
     arch_atomic_sub(i, v);
 }
 
+static __always_inline int
+atomic_read_acquire(const atomic_t *v)
+{
+    return arch_atomic_read_acquire(v);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */

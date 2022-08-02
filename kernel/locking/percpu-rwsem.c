@@ -71,3 +71,60 @@ void percpu_up_write(struct percpu_rw_semaphore *sem)
     panic("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL_GPL(percpu_up_write);
+
+static bool __percpu_down_read_trylock(struct percpu_rw_semaphore *sem)
+{
+    this_cpu_inc(*sem->read_count);
+
+    /*
+     * Due to having preemption disabled the decrement happens on
+     * the same CPU as the increment, avoiding the
+     * increment-on-one-CPU-and-decrement-on-another problem.
+     *
+     * If the reader misses the writer's assignment of sem->block, then the
+     * writer is guaranteed to see the reader's increment.
+     *
+     * Conversely, any readers that increment their sem->read_count after
+     * the writer looks are guaranteed to see the sem->block value, which
+     * in turn means that they are guaranteed to immediately decrement
+     * their sem->read_count, so that it doesn't matter that the writer
+     * missed them.
+     */
+
+    smp_mb(); /* A matches D */
+
+    /*
+     * If !sem->block the critical section starts here, matched by the
+     * release in percpu_up_write().
+     */
+    if (likely(!atomic_read_acquire(&sem->block)))
+        return true;
+
+    this_cpu_dec(*sem->read_count);
+
+    /* Prod writer to re-evaluate readers_active_check() */
+    rcuwait_wake_up(&sem->writer);
+
+    return false;
+}
+
+static void percpu_rwsem_wait(struct percpu_rw_semaphore *sem, bool reader)
+{
+    panic("%s: END!\n", __func__);
+}
+
+bool __sched __percpu_down_read(struct percpu_rw_semaphore *sem, bool try)
+{
+    if (__percpu_down_read_trylock(sem))
+        return true;
+
+    if (try)
+        return false;
+
+    preempt_enable();
+    percpu_rwsem_wait(sem, /* .reader = */ true);
+    preempt_disable();
+
+    return true;
+}
+EXPORT_SYMBOL_GPL(__percpu_down_read);

@@ -29,6 +29,24 @@
 #include <linux/numa.h>
 //#include <linux/sched/isolation.h>
 
+static DEFINE_SPINLOCK(kthread_create_lock);
+static LIST_HEAD(kthread_create_list);
+struct task_struct *kthreadd_task;
+
+struct kthread_create_info
+{
+    /* Information passed to kthread() from kthreadd. */
+    int (*threadfn)(void *data);
+    void *data;
+    int node;
+
+    /* Result passed back to kthread_create() from kthreadd. */
+    struct task_struct *result;
+    struct completion *done;
+
+    struct list_head list;
+};
+
 struct kthread {
     unsigned long flags;
     unsigned int cpu;
@@ -106,3 +124,134 @@ int kthread_stop(struct task_struct *k)
 #endif
     panic("%s: END!\n", __func__);
 }
+
+static __printf(4, 0)
+struct task_struct *__kthread_create_on_node(int (*threadfn)(void *data),
+                                             void *data, int node,
+                                             const char namefmt[],
+                                             va_list args)
+{
+    DECLARE_COMPLETION_ONSTACK(done);
+    struct task_struct *task;
+    struct kthread_create_info *create = kmalloc(sizeof(*create), GFP_KERNEL);
+    if (!create)
+        return ERR_PTR(-ENOMEM);
+
+    create->threadfn = threadfn;
+    create->data = data;
+    create->node = node;
+    create->done = &done;
+
+    spin_lock(&kthread_create_lock);
+    list_add_tail(&create->list, &kthread_create_list);
+    spin_unlock(&kthread_create_lock);
+
+    wake_up_process(kthreadd_task);
+
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * kthread_create_on_node - create a kthread.
+ * @threadfn: the function to run until signal_pending(current).
+ * @data: data ptr for @threadfn.
+ * @node: task and thread structures for the thread are allocated on this node
+ * @namefmt: printf-style name for the thread.
+ *
+ * Description: This helper function creates and names a kernel
+ * thread.  The thread will be stopped: use wake_up_process() to start
+ * it.  See also kthread_run().  The new thread has SCHED_NORMAL policy and
+ * is affine to all CPUs.
+ *
+ * If thread is going to be bound on a particular cpu, give its node
+ * in @node, to get NUMA affinity for kthread stack, or else give NUMA_NO_NODE.
+ * When woken, the thread will run @threadfn() with @data as its
+ * argument. @threadfn() can either return directly if it is a
+ * standalone thread for which no one will call kthread_stop(), or
+ * return when 'kthread_should_stop()' is true (which means
+ * kthread_stop() has been called).  The return value should be zero
+ * or a negative error number; it will be passed to kthread_stop().
+ *
+ * Returns a task_struct or ERR_PTR(-ENOMEM) or ERR_PTR(-EINTR).
+ */
+struct task_struct *kthread_create_on_node(int (*threadfn)(void *data),
+                       void *data, int node,
+                       const char namefmt[],
+                       ...)
+{
+    struct task_struct *task;
+    va_list args;
+
+    va_start(args, namefmt);
+    task = __kthread_create_on_node(threadfn, data, node, namefmt, args);
+    va_end(args);
+
+    return task;
+}
+EXPORT_SYMBOL(kthread_create_on_node);
+
+static void __kthread_bind_mask(struct task_struct *p,
+                                const struct cpumask *mask,
+                                unsigned int state)
+{
+    unsigned long flags;
+
+    if (!wait_task_inactive(p, state)) {
+        WARN_ON(1);
+        return;
+    }
+
+    /* It's safe because the task is inactive. */
+    raw_spin_lock_irqsave(&p->pi_lock, flags);
+    do_set_cpus_allowed(p, mask);
+    p->flags |= PF_NO_SETAFFINITY;
+    raw_spin_unlock_irqrestore(&p->pi_lock, flags);
+}
+
+static void __kthread_bind(struct task_struct *p,
+                           unsigned int cpu,
+                           unsigned int state)
+{
+    __kthread_bind_mask(p, cpumask_of(cpu), state);
+}
+
+/**
+ * kthread_bind - bind a just-created kthread to a cpu.
+ * @p: thread created by kthread_create().
+ * @cpu: cpu (might not be online, must be possible) for @k to run on.
+ *
+ * Description: This function is equivalent to set_cpus_allowed(),
+ * except that @cpu doesn't need to be online, and the thread must be
+ * stopped (i.e., just returned from kthread_create()).
+ */
+void kthread_bind(struct task_struct *p, unsigned int cpu)
+{
+    __kthread_bind(p, cpu, TASK_UNINTERRUPTIBLE);
+}
+EXPORT_SYMBOL(kthread_bind);
+
+/**
+ * kthread_create_on_cpu - Create a cpu bound kthread
+ * @threadfn: the function to run until signal_pending(current).
+ * @data: data ptr for @threadfn.
+ * @cpu: The cpu on which the thread should be bound,
+ * @namefmt: printf-style name for the thread. Format is restricted
+ *       to "name.*%u". Code fills in cpu number.
+ *
+ * Description: This helper function creates and names a kernel thread
+ */
+struct task_struct *kthread_create_on_cpu(int (*threadfn)(void *data),
+                      void *data, unsigned int cpu,
+                      const char *namefmt)
+{
+    struct task_struct *p;
+
+    p = kthread_create_on_node(threadfn, data, cpu_to_node(cpu), namefmt, cpu);
+    if (IS_ERR(p))
+        return p;
+    kthread_bind(p, cpu);
+    /* CPU hotplug need to bind once again when unparking the thread. */
+    to_kthread(p)->cpu = cpu;
+    return p;
+}
+EXPORT_SYMBOL(kthread_create_on_cpu);

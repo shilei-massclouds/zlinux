@@ -84,6 +84,11 @@
 #include "cpupri.h"
 #include "cpudeadline.h"
 
+#define SCA_CHECK           0x01
+#define SCA_MIGRATE_DISABLE 0x02
+#define SCA_MIGRATE_ENABLE  0x04
+#define SCA_USER            0x08
+
 #define SCHED_WARN_ON(x)   ({ (void)(x), 0; })
 
 /* An entity is a task if it doesn't "own" a runqueue */
@@ -98,6 +103,8 @@ DECLARE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
 #define cpu_rq(cpu)     (&per_cpu(runqueues, (cpu)))
 #define this_rq()       this_cpu_ptr(&runqueues)
 #define task_rq(p)      cpu_rq(task_cpu(p))
+
+#define sched_feat(x) !!(sysctl_sched_features & (1UL << __SCHED_FEAT_##x))
 
 #define ENQUEUE_WAKEUP      0x01
 #define ENQUEUE_RESTORE     0x02
@@ -633,15 +640,6 @@ static inline bool sched_core_disabled(void)
     return true;
 }
 
-static inline void
-task_rq_unlock(struct rq *rq, struct task_struct *p, struct rq_flags *rf)
-    __releases(rq->lock)
-    __releases(p->pi_lock)
-{
-    raw_spin_rq_unlock(rq);
-    raw_spin_unlock_irqrestore(&p->pi_lock, rf->flags);
-}
-
 /*
  * Be careful with this function; not for general use. The return value isn't
  * stable unless you actually hold a relevant rq->__lock.
@@ -915,5 +913,55 @@ extern void init_sched_fair_class(void);
 #define RQCF_REQ_SKIP       0x01
 #define RQCF_ACT_SKIP       0x02
 #define RQCF_UPDATED        0x04
+
+struct rq *__task_rq_lock(struct task_struct *p, struct rq_flags *rf)
+    __acquires(rq->lock);
+
+struct rq *task_rq_lock(struct task_struct *p, struct rq_flags *rf)
+    __acquires(p->pi_lock)
+    __acquires(rq->lock);
+
+static inline void __task_rq_unlock(struct rq *rq, struct rq_flags *rf)
+    __releases(rq->lock)
+{
+    rq_unpin_lock(rq, rf);
+    raw_spin_rq_unlock(rq);
+}
+
+static inline void
+task_rq_unlock(struct rq *rq, struct task_struct *p, struct rq_flags *rf)
+    __releases(rq->lock)
+    __releases(p->pi_lock)
+{
+    rq_unpin_lock(rq, rf);
+    raw_spin_rq_unlock(rq);
+    raw_spin_unlock_irqrestore(&p->pi_lock, rf->flags);
+}
+
+static inline void se_update_runnable(struct sched_entity *se)
+{
+    if (!entity_is_task(se))
+        se->runnable_weight = se->my_q->h_nr_running;
+}
+
+static inline long se_runnable(struct sched_entity *se)
+{
+    if (entity_is_task(se))
+        return !!se->on_rq;
+    else
+        return se->runnable_weight;
+}
+
+static inline void add_nr_running(struct rq *rq, unsigned count)
+{
+    unsigned prev_nr = rq->nr_running;
+
+    rq->nr_running = prev_nr + count;
+
+    if (prev_nr < 2 && rq->nr_running >= 2) {
+        if (!READ_ONCE(rq->rd->overload))
+            WRITE_ONCE(rq->rd->overload, 1);
+    }
+}
 
 #endif /* _KERNEL_SCHED_SCHED_H */

@@ -428,3 +428,12 @@ void handle_fasteoi_irq(struct irq_desc *desc)
     panic("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL_GPL(handle_fasteoi_irq);
+
+void irq_percpu_enable(struct irq_desc *desc, unsigned int cpu)
+{
+    if (desc->irq_data.chip->irq_enable)
+        desc->irq_data.chip->irq_enable(&desc->irq_data);
+    else
+        desc->irq_data.chip->irq_unmask(&desc->irq_data);
+    cpumask_set_cpu(cpu, desc->percpu_enabled);
+}

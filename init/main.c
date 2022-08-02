@@ -29,6 +29,7 @@
 #include <linux/irq.h>
 #include <linux/fs.h>
 #include <linux/init_syscalls.h>
+#include <linux/kthread.h>
 
 #include <asm/setup.h>
 #include "z_tests.h"
@@ -337,6 +338,7 @@ static int __ref kernel_init(void *unused)
 
 noinline void __ref rest_init(void)
 {
+    struct task_struct *tsk;
     int pid;
 
     printk("############## %s: ...\n", __func__);
@@ -351,6 +353,23 @@ noinline void __ref rest_init(void)
      * we schedule it before we create kthreadd, will OOPS.
      */
     pid = kernel_thread(kernel_init, NULL, CLONE_FS);
+    /*
+     * Pin init on the boot CPU. Task migration is not properly working
+     * until sched_init_smp() has been run. It will set the allowed
+     * CPUs for init to the non isolated CPUs.
+     */
+    rcu_read_lock();
+    tsk = find_task_by_pid_ns(pid, &init_pid_ns);
+    tsk->flags |= PF_NO_SETAFFINITY;
+    //set_cpus_allowed_ptr(tsk, cpumask_of(smp_processor_id()));
+    rcu_read_unlock();
+
+#if 0
+    pid = kernel_thread(kthreadd, NULL, CLONE_FS | CLONE_FILES);
+    rcu_read_lock();
+    kthreadd_task = find_task_by_pid_ns(pid, &init_pid_ns);
+    rcu_read_unlock();
+#endif
 
     /*
      * Enable might_sleep() and smp_processor_id() checks.

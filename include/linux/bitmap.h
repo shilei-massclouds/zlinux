@@ -200,6 +200,36 @@ bitmap_complement(unsigned long *dst, const unsigned long *src,
         __bitmap_complement(dst, src, nbits);
 }
 
+int __bitmap_subset(const unsigned long *bitmap1,
+                    const unsigned long *bitmap2,
+                    unsigned int nbits);
+
+static inline int bitmap_subset(const unsigned long *src1,
+                                const unsigned long *src2,
+                                unsigned int nbits)
+{
+    if (small_const_nbits(nbits))
+        return ! ((*src1 & ~(*src2)) & BITMAP_LAST_WORD_MASK(nbits));
+    else
+        return __bitmap_subset(src1, src2, nbits);
+}
+
+int __bitmap_equal(const unsigned long *bitmap1,
+                   const unsigned long *bitmap2,
+                   unsigned int nbits);
+
+static inline int bitmap_equal(const unsigned long *src1,
+                               const unsigned long *src2,
+                               unsigned int nbits)
+{
+    if (small_const_nbits(nbits))
+        return !((*src1 ^ *src2) & BITMAP_LAST_WORD_MASK(nbits));
+    if (__builtin_constant_p(nbits & BITMAP_MEM_MASK) &&
+        IS_ALIGNED(nbits, BITMAP_MEM_ALIGNMENT))
+        return !memcmp(src1, src2, nbits / 8);
+    return __bitmap_equal(src1, src2, nbits);
+}
+
 #endif /* __ASSEMBLY__ */
 
 #endif /* __LINUX_BITMAP_H */
