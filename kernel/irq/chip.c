@@ -414,6 +414,52 @@ int irq_chip_retrigger_hierarchy(struct irq_data *data)
 }
 EXPORT_SYMBOL_GPL(irq_chip_retrigger_hierarchy);
 
+static bool irq_check_poll(struct irq_desc *desc)
+{
+    if (!(desc->istate & IRQS_POLL_INPROGRESS))
+        return false;
+    //return irq_wait_for_poll(desc);
+    panic("%s: END!\n", __func__);
+}
+
+static bool irq_may_run(struct irq_desc *desc)
+{
+    unsigned int mask = IRQD_IRQ_INPROGRESS | IRQD_WAKEUP_ARMED;
+
+    /*
+     * If the interrupt is not in progress and is not an armed
+     * wakeup interrupt, proceed.
+     */
+    if (!irqd_has_set(&desc->irq_data, mask))
+        return true;
+
+    /*
+     * Handle a potential concurrent poll on a different core.
+     */
+    return irq_check_poll(desc);
+}
+
+static void cond_unmask_eoi_irq(struct irq_desc *desc, struct irq_chip *chip)
+{
+    if (!(desc->istate & IRQS_ONESHOT)) {
+        chip->irq_eoi(&desc->irq_data);
+        return;
+    }
+    /*
+     * We need to unmask in the following cases:
+     * - Oneshot irq which did not wake the thread (caused by a
+     *   spurious interrupt or a primary handler handling it
+     *   completely).
+     */
+    if (!irqd_irq_disabled(&desc->irq_data) &&
+        irqd_irq_masked(&desc->irq_data) && !desc->threads_oneshot) {
+        chip->irq_eoi(&desc->irq_data);
+        unmask_irq(desc);
+    } else if (!(chip->flags & IRQCHIP_EOI_THREADED)) {
+        chip->irq_eoi(&desc->irq_data);
+    }
+}
+
 /**
  *  handle_fasteoi_irq - irq handler for transparent controllers
  *  @desc:  the interrupt description structure for this irq
@@ -425,7 +471,40 @@ EXPORT_SYMBOL_GPL(irq_chip_retrigger_hierarchy);
  */
 void handle_fasteoi_irq(struct irq_desc *desc)
 {
-    panic("%s: END!\n", __func__);
+    struct irq_chip *chip = desc->irq_data.chip;
+
+    raw_spin_lock(&desc->lock);
+
+    if (!irq_may_run(desc))
+        goto out;
+
+    desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
+
+    /*
+     * If its disabled or no action available
+     * then mask it and get out of here:
+     */
+    if (unlikely(!desc->action || irqd_irq_disabled(&desc->irq_data))) {
+        desc->istate |= IRQS_PENDING;
+        mask_irq(desc);
+        goto out;
+    }
+
+    kstat_incr_irqs_this_cpu(desc);
+    if (desc->istate & IRQS_ONESHOT)
+        mask_irq(desc);
+
+    handle_irq_event(desc);
+
+    cond_unmask_eoi_irq(desc, chip);
+
+    raw_spin_unlock(&desc->lock);
+    return;
+
+ out:
+    if (!(chip->flags & IRQCHIP_EOI_IF_HANDLED))
+        chip->irq_eoi(&desc->irq_data);
+    raw_spin_unlock(&desc->lock);
 }
 EXPORT_SYMBOL_GPL(handle_fasteoi_irq);
 

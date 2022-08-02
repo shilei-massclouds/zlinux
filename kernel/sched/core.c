@@ -71,6 +71,7 @@
 #include <linux/rcuwait_api.h>
 #include <linux/slab.h>
 #include <linux/mmu_context.h>
+#include <linux/kernel_stat.h>
 
 #include <asm/switch_to.h>
 #if 0
@@ -91,6 +92,12 @@
 #include "../../fs/io-wq.h"
 #endif
 #include "../smpboot.h"
+
+DEFINE_PER_CPU(struct kernel_stat, kstat);
+DEFINE_PER_CPU(struct kernel_cpustat, kernel_cpustat);
+
+EXPORT_PER_CPU_SYMBOL(kstat);
+EXPORT_PER_CPU_SYMBOL(kernel_cpustat);
 
 __read_mostly int scheduler_running;
 

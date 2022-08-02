@@ -213,3 +213,19 @@ extern int irq_setup_affinity(struct irq_desc *desc);
     for (act = desc->action; act; act = act->next)
 
 extern void irq_percpu_enable(struct irq_desc *desc, unsigned int cpu);
+
+static inline void __kstat_incr_irqs_this_cpu(struct irq_desc *desc)
+{
+    __this_cpu_inc(*desc->kstat_irqs);
+    __this_cpu_inc(kstat.irqs_sum);
+}
+
+static inline void kstat_incr_irqs_this_cpu(struct irq_desc *desc)
+{
+    __kstat_incr_irqs_this_cpu(desc);
+    desc->tot_count++;
+}
+
+irqreturn_t __handle_irq_event_percpu(struct irq_desc *desc);
+irqreturn_t handle_irq_event_percpu(struct irq_desc *desc);
+irqreturn_t handle_irq_event(struct irq_desc *desc);

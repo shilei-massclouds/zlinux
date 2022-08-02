@@ -9,9 +9,7 @@
 #include <linux/io.h>
 #include <linux/irq.h>
 #include <linux/irqchip.h>
-#if 0
 #include <linux/irqchip/chained_irq.h>
-#endif
 #include <linux/irqdomain.h>
 #include <linux/module.h>
 #include <linux/of.h>
@@ -150,8 +148,6 @@ static void plic_irq_unmask(struct irq_data *d)
 
 static void plic_irq_eoi(struct irq_data *d)
 {
-    panic("%s: END!\n", __func__);
-#if 0
     struct plic_handler *handler = this_cpu_ptr(&plic_handlers);
 
     if (irqd_irq_masked(d)) {
@@ -161,7 +157,6 @@ static void plic_irq_eoi(struct irq_data *d)
     } else {
         writel(d->hwirq, handler->hart_base + CONTEXT_CLAIM);
     }
-#endif
 }
 
 static int plic_set_affinity(struct irq_data *d,
@@ -242,8 +237,6 @@ static const struct irq_domain_ops plic_irqdomain_ops = {
  */
 static void plic_handle_irq(struct irq_desc *desc)
 {
-    panic("%s: END!\n", __func__);
-#if 0
     struct plic_handler *handler = this_cpu_ptr(&plic_handlers);
     struct irq_chip *chip = irq_desc_get_chip(desc);
     void __iomem *claim = handler->hart_base + CONTEXT_CLAIM;
@@ -260,7 +253,6 @@ static void plic_handle_irq(struct irq_desc *desc)
     }
 
     chained_irq_exit(chip, desc);
-#endif
 }
 
 static int plic_dying_cpu(unsigned int cpu)

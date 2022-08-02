@@ -151,6 +151,22 @@ struct irqaction {
 
 #define IRQ_AFFINITY_MAX_SETS  4
 
+enum
+{
+    HI_SOFTIRQ=0,
+    TIMER_SOFTIRQ,
+    NET_TX_SOFTIRQ,
+    NET_RX_SOFTIRQ,
+    BLOCK_SOFTIRQ,
+    IRQ_POLL_SOFTIRQ,
+    TASKLET_SOFTIRQ,
+    SCHED_SOFTIRQ,
+    HRTIMER_SOFTIRQ,
+    RCU_SOFTIRQ,    /* Preferable RCU should always be the last softirq */
+
+    NR_SOFTIRQS
+};
+
 /**
  * struct irq_affinity - Description for automatic irq affinity assignements
  * @pre_vectors:    Don't apply affinity to @pre_vectors at beginning of

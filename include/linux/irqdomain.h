@@ -357,4 +357,10 @@ irq_domain_alloc_irqs(struct irq_domain *domain,
     return __irq_domain_alloc_irqs(domain, -1, nr_irqs, node, arg, false, NULL);
 }
 
+static inline struct irq_desc *
+irq_resolve_mapping(struct irq_domain *domain, irq_hw_number_t hwirq)
+{
+    return __irq_resolve_mapping(domain, hwirq, NULL);
+}
+
 #endif /* _LINUX_IRQDOMAIN_H */
