@@ -39,6 +39,8 @@
 DEFINE_PER_CPU_ALIGNED(irq_cpustat_t, irq_stat);
 EXPORT_PER_CPU_SYMBOL(irq_stat);
 
+DEFINE_PER_CPU(struct task_struct *, ksoftirqd);
+
 unsigned int __weak arch_dynirq_lower_bound(unsigned int from)
 {
     return from;
@@ -71,4 +73,53 @@ void __local_bh_enable_ip(unsigned long ip, unsigned int cnt)
     }
 
     preempt_count_dec();
+}
+
+void __raise_softirq_irqoff(unsigned int nr)
+{
+    or_softirq_pending(1UL << nr);
+}
+
+/*
+ * we cannot loop indefinitely here to avoid userspace starvation,
+ * but we also don't want to introduce a worst case 1/HZ latency
+ * to the pending events, so lets the scheduler to balance
+ * the softirq load for us.
+ */
+static void wakeup_softirqd(void)
+{
+    /* Interrupts are disabled: no need to stop preemption */
+    struct task_struct *tsk = __this_cpu_read(ksoftirqd);
+
+    if (tsk)
+        wake_up_process(tsk);
+}
+
+/*
+ * This function must run with irqs disabled!
+ */
+inline void raise_softirq_irqoff(unsigned int nr)
+{
+    __raise_softirq_irqoff(nr);
+
+    /*
+     * If we're in an interrupt or softirq, we're done
+     * (this also catches softirq-disabled code). We will
+     * actually run the softirq once we return from
+     * the irq or softirq.
+     *
+     * Otherwise we wake up ksoftirqd to make sure we
+     * schedule the softirq soon.
+     */
+    if (!in_interrupt())
+        wakeup_softirqd();
+}
+
+void raise_softirq(unsigned int nr)
+{
+    unsigned long flags;
+
+    local_irq_save(flags);
+    raise_softirq_irqoff(nr);
+    local_irq_restore(flags);
 }

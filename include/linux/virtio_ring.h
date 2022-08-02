@@ -76,4 +76,16 @@ static inline void virtio_wmb(bool weak_barriers)
         dma_wmb();
 }
 
+irqreturn_t vring_interrupt(int irq, void *_vq);
+
+#define virtio_store_mb(weak_barriers, p, v) \
+do { \
+    if (weak_barriers) { \
+        virt_store_mb(*p, v); \
+    } else { \
+        WRITE_ONCE(*p, v); \
+        mb(); \
+    } \
+} while (0)
+
 #endif /* _LINUX_VIRTIO_RING_H */

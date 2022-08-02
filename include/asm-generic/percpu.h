@@ -315,4 +315,17 @@ do {                                            \
 #define raw_cpu_add_return_8(pcp, val)  raw_cpu_generic_add_return(pcp, val)
 #endif
 
+#ifndef raw_cpu_or_1
+#define raw_cpu_or_1(pcp, val)      raw_cpu_generic_to_op(pcp, val, |=)
+#endif
+#ifndef raw_cpu_or_2
+#define raw_cpu_or_2(pcp, val)      raw_cpu_generic_to_op(pcp, val, |=)
+#endif
+#ifndef raw_cpu_or_4
+#define raw_cpu_or_4(pcp, val)      raw_cpu_generic_to_op(pcp, val, |=)
+#endif
+#ifndef raw_cpu_or_8
+#define raw_cpu_or_8(pcp, val)      raw_cpu_generic_to_op(pcp, val, |=)
+#endif
+
 #endif /* _ASM_GENERIC_PERCPU_H_ */

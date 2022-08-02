@@ -137,4 +137,17 @@ bool virtqueue_kick_prepare(struct virtqueue *vq);
 
 bool virtqueue_notify(struct virtqueue *vq);
 
+void virtio_config_changed(struct virtio_device *dev);
+
+void virtqueue_disable_cb(struct virtqueue *vq);
+
+bool virtqueue_enable_cb(struct virtqueue *vq);
+
+bool virtqueue_is_broken(struct virtqueue *vq);
+
+void *virtqueue_get_buf(struct virtqueue *vq, unsigned int *len);
+
+void *virtqueue_get_buf_ctx(struct virtqueue *vq, unsigned int *len,
+                            void **ctx);
+
 #endif /* _LINUX_VIRTIO_H */

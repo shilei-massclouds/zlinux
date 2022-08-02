@@ -204,7 +204,29 @@ static void vm_reset(struct virtio_device *vdev)
 /* Notify all virtqueues on an interrupt. */
 static irqreturn_t vm_interrupt(int irq, void *opaque)
 {
-    panic("%s: irq(%d) END!\n", __func__, irq);
+    struct virtio_mmio_device *vm_dev = opaque;
+    struct virtio_mmio_vq_info *info;
+    unsigned long status;
+    unsigned long flags;
+    irqreturn_t ret = IRQ_NONE;
+
+    /* Read and acknowledge interrupts */
+    status = readl(vm_dev->base + VIRTIO_MMIO_INTERRUPT_STATUS);
+    writel(status, vm_dev->base + VIRTIO_MMIO_INTERRUPT_ACK);
+
+    if (unlikely(status & VIRTIO_MMIO_INT_CONFIG)) {
+        virtio_config_changed(&vm_dev->vdev);
+        ret = IRQ_HANDLED;
+    }
+
+    if (likely(status & VIRTIO_MMIO_INT_VRING)) {
+        spin_lock_irqsave(&vm_dev->lock, flags);
+        list_for_each_entry(info, &vm_dev->virtqueues, node)
+            ret |= vring_interrupt(irq, info->vq);
+        spin_unlock_irqrestore(&vm_dev->lock, flags);
+    }
+
+    return ret;
 }
 
 static void vm_del_vqs(struct virtio_device *vdev)

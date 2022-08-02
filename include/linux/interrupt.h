@@ -227,4 +227,11 @@ request_irq(unsigned int irq, irq_handler_t handler,
 
 extern void enable_percpu_irq(unsigned int irq, unsigned int type);
 
+#define or_softirq_pending(x)   (__this_cpu_or(local_softirq_pending_ref, (x)))
+
+extern void softirq_init(void);
+
+extern void raise_softirq_irqoff(unsigned int nr);
+extern void raise_softirq(unsigned int nr);
+
 #endif /* _LINUX_INTERRUPT_H */

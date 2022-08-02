@@ -758,4 +758,28 @@ static inline int blk_rq_map_sg(struct request_queue *q, struct request *rq,
 
 void blk_mq_stop_hw_queue(struct blk_mq_hw_ctx *hctx);
 
+/**
+ * blk_mq_rq_from_pdu - cast a PDU to a request
+ * @pdu: the PDU (Protocol Data Unit) to be casted
+ *
+ * Return: request
+ *
+ * Driver command data is immediately after the request. So subtract request
+ * size to get back to the original request.
+ */
+static inline struct request *blk_mq_rq_from_pdu(void *pdu)
+{
+    return pdu - sizeof(struct request);
+}
+
+static inline bool blk_should_fake_timeout(struct request_queue *q)
+{
+    return false;
+}
+
+void blk_mq_complete_request(struct request *rq);
+bool blk_mq_complete_request_remote(struct request *rq);
+
+void blk_mq_start_stopped_hw_queues(struct request_queue *q, bool async);
+
 #endif /* BLK_MQ_H */

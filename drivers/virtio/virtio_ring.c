@@ -946,3 +946,307 @@ int virtqueue_add_sgs(struct virtqueue *_vq,
     return virtqueue_add(_vq, sgs, total_sg, out_sgs, in_sgs, data, NULL, gfp);
 }
 EXPORT_SYMBOL_GPL(virtqueue_add_sgs);
+
+static inline bool more_used_split(const struct vring_virtqueue *vq)
+{
+    return vq->last_used_idx != virtio16_to_cpu(vq->vq.vdev,
+                                                vq->split.vring.used->idx);
+}
+
+static inline bool more_used(const struct vring_virtqueue *vq)
+{
+    return more_used_split(vq);
+}
+
+irqreturn_t vring_interrupt(int irq, void *_vq)
+{
+    struct vring_virtqueue *vq = to_vvq(_vq);
+
+    if (!more_used(vq)) {
+        pr_debug("virtqueue interrupt with no work for %p\n", vq);
+        return IRQ_NONE;
+    }
+
+    if (unlikely(vq->broken))
+        return IRQ_HANDLED;
+
+    /* Just a hint for performance: so it's ok that this can be racy! */
+    if (vq->event)
+        vq->event_triggered = true;
+
+    pr_debug("virtqueue callback for %p (%p)\n", vq, vq->vq.callback);
+    if (vq->vq.callback)
+        vq->vq.callback(&vq->vq);
+
+    return IRQ_HANDLED;
+}
+EXPORT_SYMBOL_GPL(vring_interrupt);
+
+static void virtqueue_disable_cb_split(struct virtqueue *_vq)
+{
+    struct vring_virtqueue *vq = to_vvq(_vq);
+
+    if (!(vq->split.avail_flags_shadow & VRING_AVAIL_F_NO_INTERRUPT)) {
+        vq->split.avail_flags_shadow |= VRING_AVAIL_F_NO_INTERRUPT;
+        if (vq->event)
+            /* TODO: this is a hack. Figure out a cleaner value to write. */
+            vring_used_event(&vq->split.vring) = 0x0;
+        else
+            vq->split.vring.avail->flags =
+                cpu_to_virtio16(_vq->vdev, vq->split.avail_flags_shadow);
+    }
+}
+
+/**
+ * virtqueue_disable_cb - disable callbacks
+ * @_vq: the struct virtqueue we're talking about.
+ *
+ * Note that this is not necessarily synchronous, hence unreliable and only
+ * useful as an optimization.
+ *
+ * Unlike other operations, this need not be serialized.
+ */
+void virtqueue_disable_cb(struct virtqueue *_vq)
+{
+    struct vring_virtqueue *vq = to_vvq(_vq);
+
+    /* If device triggered an event already it won't trigger one again:
+     * no need to disable.
+     */
+    if (vq->event_triggered)
+        return;
+
+    virtqueue_disable_cb_split(_vq);
+}
+EXPORT_SYMBOL_GPL(virtqueue_disable_cb);
+
+static unsigned virtqueue_enable_cb_prepare_split(struct virtqueue *_vq)
+{
+    struct vring_virtqueue *vq = to_vvq(_vq);
+    u16 last_used_idx;
+
+    /* We optimistically turn back on interrupts, then check if there was
+     * more to do. */
+    /* Depending on the VIRTIO_RING_F_EVENT_IDX feature, we need to
+     * either clear the flags bit or point the event index at the next
+     * entry. Always do both to keep code simple. */
+    if (vq->split.avail_flags_shadow & VRING_AVAIL_F_NO_INTERRUPT) {
+        vq->split.avail_flags_shadow &= ~VRING_AVAIL_F_NO_INTERRUPT;
+        if (!vq->event)
+            vq->split.vring.avail->flags =
+                cpu_to_virtio16(_vq->vdev, vq->split.avail_flags_shadow);
+    }
+    vring_used_event(&vq->split.vring) =
+        cpu_to_virtio16(_vq->vdev, last_used_idx = vq->last_used_idx);
+    return last_used_idx;
+}
+
+/**
+ * virtqueue_enable_cb_prepare - restart callbacks after disable_cb
+ * @_vq: the struct virtqueue we're talking about.
+ *
+ * This re-enables callbacks; it returns current queue state
+ * in an opaque unsigned value. This value should be later tested by
+ * virtqueue_poll, to detect a possible race between the driver checking for
+ * more work, and enabling callbacks.
+ *
+ * Caller must ensure we don't call this with other virtqueue
+ * operations at the same time (except where noted).
+ */
+unsigned virtqueue_enable_cb_prepare(struct virtqueue *_vq)
+{
+    struct vring_virtqueue *vq = to_vvq(_vq);
+
+    if (vq->event_triggered)
+        vq->event_triggered = false;
+
+    return virtqueue_enable_cb_prepare_split(_vq);
+}
+EXPORT_SYMBOL_GPL(virtqueue_enable_cb_prepare);
+
+static bool virtqueue_poll_split(struct virtqueue *_vq, unsigned last_used_idx)
+{
+    struct vring_virtqueue *vq = to_vvq(_vq);
+
+    return (u16)last_used_idx !=
+        virtio16_to_cpu(_vq->vdev, vq->split.vring.used->idx);
+}
+
+/**
+ * virtqueue_poll - query pending used buffers
+ * @_vq: the struct virtqueue we're talking about.
+ * @last_used_idx: virtqueue state (from call to virtqueue_enable_cb_prepare).
+ *
+ * Returns "true" if there are pending used buffers in the queue.
+ *
+ * This does not need to be serialized.
+ */
+bool virtqueue_poll(struct virtqueue *_vq, unsigned last_used_idx)
+{
+    struct vring_virtqueue *vq = to_vvq(_vq);
+
+    if (unlikely(vq->broken))
+        return false;
+
+    virtio_mb(vq->weak_barriers);
+    return virtqueue_poll_split(_vq, last_used_idx);
+}
+EXPORT_SYMBOL_GPL(virtqueue_poll);
+
+/**
+ * virtqueue_enable_cb - restart callbacks after disable_cb.
+ * @_vq: the struct virtqueue we're talking about.
+ *
+ * This re-enables callbacks; it returns "false" if there are pending
+ * buffers in the queue, to detect a possible race between the driver
+ * checking for more work, and enabling callbacks.
+ *
+ * Caller must ensure we don't call this with other virtqueue
+ * operations at the same time (except where noted).
+ */
+bool virtqueue_enable_cb(struct virtqueue *_vq)
+{
+    unsigned last_used_idx = virtqueue_enable_cb_prepare(_vq);
+
+    return !virtqueue_poll(_vq, last_used_idx);
+}
+EXPORT_SYMBOL_GPL(virtqueue_enable_cb);
+
+bool virtqueue_is_broken(struct virtqueue *_vq)
+{
+    struct vring_virtqueue *vq = to_vvq(_vq);
+
+    return READ_ONCE(vq->broken);
+}
+EXPORT_SYMBOL_GPL(virtqueue_is_broken);
+
+static void detach_buf_split(struct vring_virtqueue *vq, unsigned int head,
+                             void **ctx)
+{
+    unsigned int i, j;
+    __virtio16 nextflag = cpu_to_virtio16(vq->vq.vdev, VRING_DESC_F_NEXT);
+
+    /* Clear data ptr. */
+    vq->split.desc_state[head].data = NULL;
+
+    /* Put back on free list: unmap first-level descriptors and find end */
+    i = head;
+
+    while (vq->split.vring.desc[i].flags & nextflag) {
+        vring_unmap_one_split(vq, i);
+        i = vq->split.desc_extra[i].next;
+        vq->vq.num_free++;
+    }
+
+    vring_unmap_one_split(vq, i);
+    vq->split.desc_extra[i].next = vq->free_head;
+    vq->free_head = head;
+
+    /* Plus final descriptor */
+    vq->vq.num_free++;
+
+    if (vq->indirect) {
+        struct vring_desc *indir_desc = vq->split.desc_state[head].indir_desc;
+        u32 len;
+
+        /* Free the indirect table, if any, now that it's unmapped. */
+        if (!indir_desc)
+            return;
+
+        len = vq->split.desc_extra[head].len;
+
+        BUG_ON(!(vq->split.desc_extra[head].flags & VRING_DESC_F_INDIRECT));
+        BUG_ON(len == 0 || len % sizeof(struct vring_desc));
+
+        for (j = 0; j < len / sizeof(struct vring_desc); j++)
+            vring_unmap_one_split_indirect(vq, &indir_desc[j]);
+
+        kfree(indir_desc);
+        vq->split.desc_state[head].indir_desc = NULL;
+    } else if (ctx) {
+        *ctx = vq->split.desc_state[head].indir_desc;
+    }
+}
+
+static void *
+virtqueue_get_buf_ctx_split(struct virtqueue *_vq, unsigned int *len,
+                            void **ctx)
+{
+    struct vring_virtqueue *vq = to_vvq(_vq);
+    void *ret;
+    unsigned int i;
+    u16 last_used;
+
+    if (unlikely(vq->broken)) {
+        return NULL;
+    }
+
+    if (!more_used_split(vq)) {
+        pr_debug("No more buffers in queue\n");
+        return NULL;
+    }
+
+    /* Only get used array entries after they have been exposed by host. */
+    virtio_rmb(vq->weak_barriers);
+
+    last_used = (vq->last_used_idx & (vq->split.vring.num - 1));
+    i = virtio32_to_cpu(_vq->vdev,
+                        vq->split.vring.used->ring[last_used].id);
+    *len = virtio32_to_cpu(_vq->vdev,
+                           vq->split.vring.used->ring[last_used].len);
+
+    if (unlikely(i >= vq->split.vring.num)) {
+        panic("id %u out of range\n", i);
+        return NULL;
+    }
+    if (unlikely(!vq->split.desc_state[i].data)) {
+        panic("id %u is not a head!\n", i);
+        return NULL;
+    }
+
+    /* detach_buf_split clears data, so grab it now. */
+    ret = vq->split.desc_state[i].data;
+    detach_buf_split(vq, i, ctx);
+    vq->last_used_idx++;
+    /* If we expect an interrupt for the next entry, tell host
+     * by writing event index and flush out the write before
+     * the read in the next get_buf call. */
+    if (!(vq->split.avail_flags_shadow & VRING_AVAIL_F_NO_INTERRUPT))
+        virtio_store_mb(vq->weak_barriers,
+                        &vring_used_event(&vq->split.vring),
+                        cpu_to_virtio16(_vq->vdev, vq->last_used_idx));
+
+    return ret;
+}
+
+/**
+ * virtqueue_get_buf_ctx - get the next used buffer
+ * @_vq: the struct virtqueue we're talking about.
+ * @len: the length written into the buffer
+ * @ctx: extra context for the token
+ *
+ * If the device wrote data into the buffer, @len will be set to the
+ * amount written.  This means you don't need to clear the buffer
+ * beforehand to ensure there's no data leakage in the case of short
+ * writes.
+ *
+ * Caller must ensure we don't call this with other virtqueue
+ * operations at the same time (except where noted).
+ *
+ * Returns NULL if there are no used buffers, or the "data" token
+ * handed to virtqueue_add_*().
+ */
+void *virtqueue_get_buf_ctx(struct virtqueue *_vq, unsigned int *len,
+                            void **ctx)
+{
+    struct vring_virtqueue *vq = to_vvq(_vq);
+
+    return virtqueue_get_buf_ctx_split(_vq, len, ctx);
+}
+EXPORT_SYMBOL_GPL(virtqueue_get_buf_ctx);
+
+void *virtqueue_get_buf(struct virtqueue *_vq, unsigned int *len)
+{
+    return virtqueue_get_buf_ctx(_vq, len, NULL);
+}
+EXPORT_SYMBOL_GPL(virtqueue_get_buf);

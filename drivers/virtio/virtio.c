@@ -297,6 +297,16 @@ void virtio_check_driver_offered_feature(const struct virtio_device *vdev,
 }
 EXPORT_SYMBOL_GPL(virtio_check_driver_offered_feature);
 
+void virtio_config_changed(struct virtio_device *dev)
+{
+    unsigned long flags;
+
+    spin_lock_irqsave(&dev->config_lock, flags);
+    __virtio_config_changed(dev);
+    spin_unlock_irqrestore(&dev->config_lock, flags);
+}
+EXPORT_SYMBOL_GPL(virtio_config_changed);
+
 int register_virtio_driver(struct virtio_driver *driver)
 {
     /* Catch this early. */

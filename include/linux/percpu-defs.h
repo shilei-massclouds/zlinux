@@ -198,6 +198,7 @@ do {                                    \
 #define raw_cpu_add(pcp, val)   __pcpu_size_call(raw_cpu_add_, pcp, val)
 #define raw_cpu_add_return(pcp, val) \
     __pcpu_size_call_return2(raw_cpu_add_return_, pcp, val)
+#define raw_cpu_or(pcp, val)    __pcpu_size_call(raw_cpu_or_, pcp, val)
 #define raw_cpu_xchg(pcp, nval) \
     __pcpu_size_call_return2(raw_cpu_xchg_, pcp, nval)
 #define raw_cpu_cmpxchg(pcp, oval, nval) \
@@ -292,6 +293,11 @@ do {                        \
     __this_cpu_add_return(pcp, -(typeof(pcp))(val))
 #define __this_cpu_inc_return(pcp)  __this_cpu_add_return(pcp, 1)
 #define __this_cpu_dec_return(pcp)  __this_cpu_add_return(pcp, -1)
+
+#define __this_cpu_or(pcp, val)                     \
+({                                  \
+    raw_cpu_or(pcp, val);                       \
+})
 
 #endif /* __ASSEMBLY__ */
 

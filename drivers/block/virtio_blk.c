@@ -145,7 +145,25 @@ static void virtblk_done(struct virtqueue *vq)
     unsigned long flags;
     unsigned int len;
 
-    panic("%s: END!\n", __func__);
+    spin_lock_irqsave(&vblk->vqs[qid].lock, flags);
+    do {
+        virtqueue_disable_cb(vq);
+        while ((vbr = virtqueue_get_buf(vblk->vqs[qid].vq, &len)) != NULL) {
+            struct request *req = blk_mq_rq_from_pdu(vbr);
+
+            if (likely(!blk_should_fake_timeout(req->q)))
+                blk_mq_complete_request(req);
+            req_done = true;
+        }
+        if (unlikely(virtqueue_is_broken(vq)))
+            break;
+    } while (!virtqueue_enable_cb(vq));
+
+    /* In case queue is stopped waiting for more buffers. */
+    if (req_done)
+        blk_mq_start_stopped_hw_queues(vblk->disk->queue, true);
+
+    spin_unlock_irqrestore(&vblk->vqs[qid].lock, flags);
 }
 
 static int init_vq(struct virtio_blk *vblk)

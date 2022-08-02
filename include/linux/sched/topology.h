@@ -14,4 +14,6 @@ struct sched_domain {
     int flags;  /* See SD_* */
 };
 
+bool cpus_share_cache(int this_cpu, int that_cpu);
+
 #endif /* _LINUX_SCHED_TOPOLOGY_H */

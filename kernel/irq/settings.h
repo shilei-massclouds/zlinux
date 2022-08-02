@@ -125,3 +125,8 @@ static inline bool irq_settings_can_autoenable(struct irq_desc *desc)
 {
     return !(desc->status_use_accessors & _IRQ_NOAUTOEN);
 }
+
+static inline bool irq_settings_no_debug(struct irq_desc *desc)
+{
+    return desc->status_use_accessors & _IRQ_NO_DEBUG;
+}

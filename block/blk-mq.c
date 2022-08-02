@@ -46,6 +46,8 @@
 #include "blk.h"
 #include "blk-mq-tag.h"
 
+static DEFINE_PER_CPU(struct llist_head, blk_cpu_done);
+
 static int blk_mq_realloc_tag_set_tags(struct blk_mq_tag_set *set,
                                        int cur_nr_hw_queues,
                                        int new_nr_hw_queues)
@@ -1541,3 +1543,104 @@ void blk_mq_stop_hw_queue(struct blk_mq_hw_ctx *hctx)
     panic("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL(blk_mq_stop_hw_queue);
+
+static inline bool blk_mq_complete_need_ipi(struct request *rq)
+{
+    int cpu = raw_smp_processor_id();
+
+    if (!test_bit(QUEUE_FLAG_SAME_COMP, &rq->q->queue_flags))
+        return false;
+
+    /*
+     * With force threaded interrupts enabled, raising softirq from an SMP
+     * function call will always result in waking the ksoftirqd thread.
+     * This is probably worse than completing the request on a different
+     * cache domain.
+     */
+    if (force_irqthreads())
+        return false;
+
+    /* same CPU or cache domain?  Complete locally */
+    if (cpu == rq->mq_ctx->cpu ||
+        (!test_bit(QUEUE_FLAG_SAME_FORCE, &rq->q->queue_flags) &&
+         cpus_share_cache(cpu, rq->mq_ctx->cpu)))
+        return false;
+
+    panic("%s: END!\n", __func__);
+}
+
+static void blk_mq_complete_send_ipi(struct request *rq)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static void blk_mq_raise_softirq(struct request *rq)
+{
+    struct llist_head *list;
+
+    preempt_disable();
+    list = this_cpu_ptr(&blk_cpu_done);
+    if (llist_add(&rq->ipi_list, list))
+        raise_softirq(BLOCK_SOFTIRQ);
+    preempt_enable();
+}
+
+bool blk_mq_complete_request_remote(struct request *rq)
+{
+    WRITE_ONCE(rq->state, MQ_RQ_COMPLETE);
+
+    /*
+     * For a polled request, always complete locallly, it's pointless
+     * to redirect the completion.
+     */
+    if (rq->cmd_flags & REQ_POLLED)
+        return false;
+
+    if (blk_mq_complete_need_ipi(rq)) {
+        blk_mq_complete_send_ipi(rq);
+        return true;
+    }
+
+    if (rq->q->nr_hw_queues == 1) {
+        blk_mq_raise_softirq(rq);
+        return true;
+    }
+    panic("%s: END!\n", __func__);
+    return false;
+}
+EXPORT_SYMBOL_GPL(blk_mq_complete_request_remote);
+
+/**
+ * blk_mq_complete_request - end I/O on a request
+ * @rq:     the request being processed
+ *
+ * Description:
+ *  Complete a request by scheduling the ->complete_rq operation.
+ **/
+void blk_mq_complete_request(struct request *rq)
+{
+    if (!blk_mq_complete_request_remote(rq))
+        rq->q->mq_ops->complete(rq);
+}
+EXPORT_SYMBOL(blk_mq_complete_request);
+
+void blk_mq_start_stopped_hw_queue(struct blk_mq_hw_ctx *hctx, bool async)
+{
+    if (!blk_mq_hctx_stopped(hctx))
+        return;
+
+    clear_bit(BLK_MQ_S_STOPPED, &hctx->state);
+    //blk_mq_run_hw_queue(hctx, async);
+    pr_warn("!!!!!! %s: NO implementation!\n", __func__);
+}
+EXPORT_SYMBOL_GPL(blk_mq_start_stopped_hw_queue);
+
+void blk_mq_start_stopped_hw_queues(struct request_queue *q, bool async)
+{
+    struct blk_mq_hw_ctx *hctx;
+    unsigned long i;
+
+    queue_for_each_hw_ctx(q, hctx, i)
+        blk_mq_start_stopped_hw_queue(hctx, async);
+}
+EXPORT_SYMBOL(blk_mq_start_stopped_hw_queues);

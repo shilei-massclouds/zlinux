@@ -143,12 +143,13 @@ irqreturn_t handle_irq_event_percpu(struct irq_desc *desc)
 
 #if 0
     add_interrupt_randomness(desc->irq_data.irq);
+#endif
 
+#if 0
     if (!irq_settings_no_debug(desc))
         note_interrupt(desc, retval);
-    return retval;
 #endif
-    panic("%s: END!\n", __func__);
+    return retval;
 }
 
 irqreturn_t handle_irq_event(struct irq_desc *desc)

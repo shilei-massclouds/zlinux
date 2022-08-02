@@ -63,4 +63,20 @@ struct llist_node {
     struct llist_node *next;
 };
 
+extern bool llist_add_batch(struct llist_node *new_first,
+                            struct llist_node *new_last,
+                            struct llist_head *head);
+
+/**
+ * llist_add - add a new entry
+ * @new:    new entry to be added
+ * @head:   the head for your lock-less list
+ *
+ * Returns true if the list was empty prior to adding this entry.
+ */
+static inline bool llist_add(struct llist_node *new, struct llist_head *head)
+{
+    return llist_add_batch(new, new, head);
+}
+
 #endif /* LLIST_H */
