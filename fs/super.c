@@ -587,6 +587,84 @@ void kill_block_super(struct super_block *sb)
 }
 EXPORT_SYMBOL(kill_block_super);
 
+static int set_bdev_super(struct super_block *s, void *data)
+{
+    s->s_bdev = data;
+    s->s_dev = s->s_bdev->bd_dev;
+    s->s_bdi = bdi_get(s->s_bdev->bd_disk->bdi);
+
+    if (blk_queue_stable_writes(s->s_bdev->bd_disk->queue))
+        s->s_iflags |= SB_I_STABLE_WRITES;
+    return 0;
+}
+
+static int test_bdev_super(struct super_block *s, void *data)
+{
+    return (void *)s->s_bdev == data;
+}
+
+/**
+ *  sget    -   find or create a superblock
+ *  @type:    filesystem type superblock should belong to
+ *  @test:    comparison callback
+ *  @set:     setup callback
+ *  @flags:   mount flags
+ *  @data:    argument to each of them
+ */
+struct super_block *sget(struct file_system_type *type,
+                         int (*test)(struct super_block *,void *),
+                         int (*set)(struct super_block *,void *),
+                         int flags,
+                         void *data)
+{
+    struct user_namespace *user_ns = current_user_ns();
+    struct super_block *s = NULL;
+    struct super_block *old;
+    int err;
+
+    /* We don't yet pass the user namespace of the parent
+     * mount through to here so always use &init_user_ns
+     * until that changes.
+     */
+    if (flags & SB_SUBMOUNT)
+        user_ns = &init_user_ns;
+
+ retry:
+    spin_lock(&sb_lock);
+    if (test) {
+        hlist_for_each_entry(old, &type->fs_supers, s_instances) {
+            if (!test(old, data))
+                continue;
+        
+            panic("%s: 1!\n", __func__);
+        }
+    }
+    if (!s) {
+        spin_unlock(&sb_lock);
+        s = alloc_super(type, (flags & ~SB_SUBMOUNT), user_ns);
+        if (!s)
+            return ERR_PTR(-ENOMEM);
+        goto retry;
+    }
+
+    err = set(s, data);
+    if (err) {
+        spin_unlock(&sb_lock);
+        destroy_unused_super(s);
+        return ERR_PTR(err);
+    }
+    s->s_type = type;
+    strlcpy(s->s_id, type->name, sizeof(s->s_id));
+    list_add_tail(&s->s_list, &super_blocks);
+    hlist_add_head(&s->s_instances, &type->fs_supers);
+    spin_unlock(&sb_lock);
+    get_filesystem(type);
+#if 0
+    register_shrinker_prepared(&s->s_shrink);
+#endif
+    return s;
+}
+
 struct dentry *mount_bdev(struct file_system_type *fs_type,
                           int flags, const char *dev_name, void *data,
                           int (*fill_super)(struct super_block *, void *, int))
@@ -604,6 +682,44 @@ struct dentry *mount_bdev(struct file_system_type *fs_type,
     if (IS_ERR(bdev))
         return ERR_CAST(bdev);
 
+    /*
+     * once the super is inserted into the list by sget, s_umount
+     * will protect the lockfs code from trying to start a snapshot
+     * while we are mounting
+     */
+    mutex_lock(&bdev->bd_fsfreeze_mutex);
+    if (bdev->bd_fsfreeze_count > 0) {
+        mutex_unlock(&bdev->bd_fsfreeze_mutex);
+        error = -EBUSY;
+        goto error_bdev;
+    }
+    s = sget(fs_type, test_bdev_super, set_bdev_super, flags | SB_NOSEC, bdev);
+    mutex_unlock(&bdev->bd_fsfreeze_mutex);
+    if (IS_ERR(s))
+        goto error_s;
+
+    if (s->s_root) {
+        panic("%s: s_root!\n", __func__);
+    } else {
+        s->s_mode = mode;
+        snprintf(s->s_id, sizeof(s->s_id), "%pg", bdev);
+        sb_set_blocksize(s, block_size(bdev));
+        error = fill_super(s, data, flags & SB_SILENT ? 1 : 0);
+        if (error) {
+            deactivate_locked_super(s);
+            goto error;
+        }
+
+        panic("%s: ELSE s_root!\n", __func__);
+    }
     panic("%s: dev(%s) END!\n", __func__, dev_name);
+    return dget(s->s_root);
+
+ error_s:
+    error = PTR_ERR(s);
+ error_bdev:
+    blkdev_put(bdev, mode);
+ error:
+    return ERR_PTR(error);
 }
 EXPORT_SYMBOL(mount_bdev);

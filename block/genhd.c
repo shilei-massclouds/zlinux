@@ -356,7 +356,6 @@ int __must_check device_add_disk(struct device *parent, struct gendisk *disk,
         dev_set_uevent_suppress(ddev, 0);
         disk_uevent(disk, KOBJ_ADD);
 #endif
-        panic("%s: GENHD_FL_HIDDEN\n", __func__);
     }
 
 #if 0

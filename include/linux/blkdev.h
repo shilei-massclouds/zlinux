@@ -390,6 +390,15 @@ enum {
     GENHD_FL_NO_PART    = 1 << 2,
 };
 
+enum {
+    /* Poll even if events_poll_msecs is unset */
+    DISK_EVENT_FLAG_POLL            = 1 << 0,
+    /* Forward events to udev */
+    DISK_EVENT_FLAG_UEVENT          = 1 << 1,
+    /* Block event polling when open for exclusive write */
+    DISK_EVENT_FLAG_BLOCK_ON_EXCL_WRITE = 1 << 2,
+};
+
 struct block_device_operations {
     void (*submit_bio)(struct bio *bio);
     int (*poll_bio)(struct bio *bio, struct io_comp_batch *iob,
@@ -477,6 +486,10 @@ struct gendisk *__blk_alloc_disk(int node, struct lock_class_key *lkclass);
 #define blk_queue_nowait(q)     test_bit(QUEUE_FLAG_NOWAIT, &(q)->queue_flags)
 #define blk_queue_discard(q)    test_bit(QUEUE_FLAG_DISCARD, &(q)->queue_flags)
 #define blk_queue_nomerges(q)   test_bit(QUEUE_FLAG_NOMERGES, &(q)->queue_flags)
+
+#define blk_queue_stable_writes(q) \
+    test_bit(QUEUE_FLAG_STABLE_WRITES, &(q)->queue_flags)
+
 #define blk_queue_io_stat(q)    test_bit(QUEUE_FLAG_IO_STAT, &(q)->queue_flags)
 #define blk_queue_quiesced(q)   test_bit(QUEUE_FLAG_QUIESCED, &(q)->queue_flags)
 #define blk_queue_secure_erase(q) \
@@ -727,5 +740,10 @@ static inline void blk_flush_plug(struct blk_plug *plug, bool async)
 }
 
 extern const char *blk_op_str(unsigned int op);
+
+static inline unsigned int block_size(struct block_device *bdev)
+{
+    return 1 << bdev->bd_inode->i_blkbits;
+}
 
 #endif /* _LINUX_BLKDEV_H */

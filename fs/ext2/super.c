@@ -79,9 +79,90 @@ static void destroy_inodecache(void)
     kmem_cache_destroy(ext2_inode_cachep);
 }
 
+static unsigned long get_sb_block(void **data)
+{
+    unsigned long sb_block;
+    char *options = (char *) *data;
+
+    if (!options || strncmp(options, "sb=", 3) != 0)
+        return 1;   /* Default location */
+
+    panic("%s: END!\n", __func__);
+}
+
+void ext2_msg(struct super_block *sb, const char *prefix,
+        const char *fmt, ...)
+{
+    struct va_format vaf;
+    va_list args;
+
+    va_start(args, fmt);
+
+    vaf.fmt = fmt;
+    vaf.va = &args;
+
+    printk("%sEXT2-fs (%s): %pV\n", prefix, sb->s_id, &vaf);
+
+    va_end(args);
+}
+
 static int ext2_fill_super(struct super_block *sb, void *data, int silent)
 {
+    struct buffer_head *bh;
+    struct ext2_sb_info *sbi;
+    struct ext2_super_block *es;
+    struct inode *root;
+    unsigned long block;
+    unsigned long sb_block = get_sb_block(&data);
+    unsigned long logic_sb_block;
+    unsigned long offset = 0;
+    unsigned long def_mount_opts;
+    long ret = -ENOMEM;
+    int blocksize = BLOCK_SIZE;
+    int db_count;
+    int i, j;
+    __le32 features;
+    int err;
+    struct ext2_mount_options opts;
+
+    sbi = kzalloc(sizeof(*sbi), GFP_KERNEL);
+    if (!sbi)
+        return -ENOMEM;
+
+    sbi->s_blockgroup_lock =
+        kzalloc(sizeof(struct blockgroup_lock), GFP_KERNEL);
+    if (!sbi->s_blockgroup_lock) {
+        kfree(sbi);
+        return -ENOMEM;
+    }
+    sb->s_fs_info = sbi;
+    sbi->s_sb_block = sb_block;
+    sbi->s_daxdev = NULL;
+
+    spin_lock_init(&sbi->s_lock);
+    ret = -EINVAL;
+
+    /*
+     * See what the current blocksize for the device is, and
+     * use that as the blocksize.  Otherwise (or if the blocksize
+     * is smaller than the default) use the default.
+     * This is important for devices that have a hardware
+     * sectorsize that is larger than the default.
+     */
+    blocksize = sb_min_blocksize(sb, BLOCK_SIZE);
+    if (!blocksize) {
+        ext2_msg(sb, KERN_ERR, "error: unable to set blocksize");
+        goto failed_sbi;
+    }
+
+    printk("%s: blocksize(%d)\n", __func__, blocksize);
     panic("%s: END!\n", __func__);
+
+ failed_sbi:
+    sb->s_fs_info = NULL;
+    kfree(sbi->s_blockgroup_lock);
+    kfree(sbi);
+    return ret;
 }
 
 static struct dentry *ext2_mount(struct file_system_type *fs_type,

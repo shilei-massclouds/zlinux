@@ -130,4 +130,6 @@ static inline const struct cred *get_cred(const struct cred *cred)
 #define current_user()      (current_cred_xxx(user))
 #define current_ucounts()   (current_cred_xxx(ucounts))
 
+#define current_user_ns()   (current_cred_xxx(user_ns))
+
 #endif /* _LINUX_CRED_H */

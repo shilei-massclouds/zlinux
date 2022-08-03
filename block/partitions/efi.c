@@ -58,7 +58,16 @@ static u64 last_lba(struct gendisk *disk)
  */
 static int is_pmbr_valid(legacy_mbr *mbr, sector_t total_sectors)
 {
+    uint32_t sz = 0;
+    int i, part = 0, ret = 0; /* invalid by default */
+
+    if (!mbr || le16_to_cpu(mbr->signature) != MSDOS_MBR_SIGNATURE)
+        goto done;
+
     panic("%s: END!\n", __func__);
+
+ done:
+    return ret;
 }
 
 /**
@@ -87,10 +96,15 @@ static size_t read_lba(struct parsed_partitions *state,
         if (!data)
             break;
 
-        panic("%s: count(%d) !\n", __func__, count);
+        if (copied > count)
+            copied = count;
+        memcpy(buffer, data, copied);
+        put_dev_sector(sect);
+        buffer += copied;
+        totalreadcount += copied;
+        count -= copied;
     }
-
-    panic("%s: END!\n", __func__);
+    return totalreadcount;
 }
 
 /**

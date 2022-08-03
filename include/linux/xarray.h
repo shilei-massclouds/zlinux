@@ -910,4 +910,16 @@ void *xa_store(struct xarray *, unsigned long index, void *entry, gfp_t);
 
 void xa_destroy(struct xarray *);
 
+/**
+ * xa_empty() - Determine if an array has any present entries.
+ * @xa: XArray.
+ *
+ * Context: Any context.
+ * Return: %true if the array contains only NULL pointers.
+ */
+static inline bool xa_empty(const struct xarray *xa)
+{
+    return xa->xa_head == NULL;
+}
+
 #endif /* _LINUX_XARRAY_H */

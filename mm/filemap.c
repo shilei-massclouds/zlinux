@@ -41,8 +41,8 @@
 #include <linux/rmap.h>
 #include <linux/delayacct.h>
 #include <linux/psi.h>
-#include <linux/page_idle.h>
 #endif
+#include <linux/page_idle.h>
 #include <linux/shmem_fs.h>
 #include <linux/ramfs.h>
 #if 0
@@ -119,12 +119,73 @@ int filemap_check_errors(struct address_space *mapping)
 }
 EXPORT_SYMBOL(filemap_check_errors);
 
+/**
+ * filemap_fdatawrite_wbc - start writeback on mapping dirty pages in range
+ * @mapping:    address space structure to write
+ * @wbc:    the writeback_control controlling the writeout
+ *
+ * Call writepages on the mapping using the provided wbc to control the
+ * writeout.
+ *
+ * Return: %0 on success, negative error code otherwise.
+ */
+int filemap_fdatawrite_wbc(struct address_space *mapping,
+               struct writeback_control *wbc)
+{
+    int ret;
+
+    if (!mapping_can_writeback(mapping) ||
+        !mapping_tagged(mapping, PAGECACHE_TAG_DIRTY))
+        return 0;
+
+#if 0
+    wbc_attach_fdatawrite_inode(wbc, mapping->host);
+    ret = do_writepages(mapping, wbc);
+    wbc_detach_inode(wbc);
+    return ret;
+#endif
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL(filemap_fdatawrite_wbc);
+
+/**
+ * __filemap_fdatawrite_range - start writeback on mapping dirty pages in range
+ * @mapping:    address space structure to write
+ * @start:  offset in bytes where the range starts
+ * @end:    offset in bytes where the range ends (inclusive)
+ * @sync_mode:  enable synchronous operation
+ *
+ * Start writeback against all of a mapping's dirty pages that lie
+ * within the byte offsets <start, end> inclusive.
+ *
+ * If sync_mode is WB_SYNC_ALL then this is a "data integrity" operation, as
+ * opposed to a regular memory cleansing writeback.  The difference between
+ * these two operations is that if a dirty page/buffer is encountered, it must
+ * be waited upon, and not just skipped over.
+ *
+ * Return: %0 on success, negative error code otherwise.
+ */
+int __filemap_fdatawrite_range(struct address_space *mapping, loff_t start,
+                               loff_t end, int sync_mode)
+{
+    struct writeback_control wbc = {
+        .sync_mode = sync_mode,
+        .nr_to_write = LONG_MAX,
+        .range_start = start,
+        .range_end = end,
+    };
+
+    return filemap_fdatawrite_wbc(mapping, &wbc);
+}
+
 int filemap_write_and_wait_range(struct address_space *mapping,
                                  loff_t lstart, loff_t lend)
 {
     int err = 0;
 
     if (mapping_needs_writeback(mapping)) {
+        err = __filemap_fdatawrite_range(mapping, lstart, lend, WB_SYNC_ALL);
+
         panic("%s: mapping_needs_writeback!\n", __func__);
     } else {
         err = filemap_check_errors(mapping);
@@ -268,6 +329,8 @@ do_read_cache_folio(struct address_space *mapping,
 
         goto out;
     }
+    if (folio_test_uptodate(folio))
+        goto out;
 
     panic("%s: END!\n", __func__);
 
@@ -389,7 +452,35 @@ __filemap_get_folio(struct address_space *mapping, pgoff_t index,
     if (!folio)
         goto no_page;
 
-    panic("%s: folio(%lx) END!\n", __func__, folio);
+    if (fgp_flags & FGP_LOCK) {
+        if (fgp_flags & FGP_NOWAIT) {
+            if (!folio_trylock(folio)) {
+                folio_put(folio);
+                return NULL;
+            }
+        } else {
+            folio_lock(folio);
+        }
+
+        /* Has the page been truncated? */
+        if (unlikely(folio->mapping != mapping)) {
+            folio_unlock(folio);
+            folio_put(folio);
+            goto repeat;
+        }
+        VM_BUG_ON_FOLIO(!folio_contains(folio, index), folio);
+    }
+
+    if (fgp_flags & FGP_ACCESSED)
+        folio_mark_accessed(folio);
+    else if (fgp_flags & FGP_WRITE) {
+        /* Clear idle flag for buffer write */
+        if (folio_test_idle(folio))
+            folio_clear_idle(folio);
+    }
+
+    if (fgp_flags & FGP_STABLE)
+        folio_wait_stable(folio);
 
  no_page:
     if (!folio && (fgp_flags & FGP_CREAT)) {
@@ -632,3 +723,13 @@ void folio_wait_bit(struct folio *folio, int bit_nr)
     folio_wait_bit_common(folio, bit_nr, TASK_UNINTERRUPTIBLE, SHARED);
 }
 EXPORT_SYMBOL(folio_wait_bit);
+
+/**
+ * __folio_lock - Get a lock on the folio, assuming we need to sleep to get it.
+ * @folio: The folio to lock
+ */
+void __folio_lock(struct folio *folio)
+{
+    folio_wait_bit_common(folio, PG_locked, TASK_UNINTERRUPTIBLE, EXCLUSIVE);
+}
+EXPORT_SYMBOL(__folio_lock);

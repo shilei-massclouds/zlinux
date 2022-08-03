@@ -5,7 +5,7 @@
 #include <linux/spinlock.h>
 #include <linux/init.h>
 #include <linux/list.h>
-//#include <linux/llist.h>
+#include <linux/llist.h>
 #include <asm/page.h>       /* pgprot_t */
 #include <linux/rbtree.h>
 #include <linux/overflow.h>
@@ -17,7 +17,12 @@
 #define VM_ALLOC            0x00000002  /* vmalloc() */
 #define VM_UNINITIALIZED    0x00000020  /* vm_struct is not fully initialized */
 #define VM_NO_GUARD         0x00000040  /* ***DANGEROUS*** don't add guard page */
-#define VM_ALLOW_HUGE_VMAP  0x00000400  /* Allow for huge pages on archs with HAVE_ARCH_HUGE_VMALLOC */
+#define VM_FLUSH_RESET_PERMS    0x00000100  /* reset direct map and
+                                               flush TLB on unmap, can't be
+                                               freed in atomic context */
+
+#define VM_ALLOW_HUGE_VMAP  0x00000400  /* Allow for huge pages on archs
+                                           with HAVE_ARCH_HUGE_VMALLOC */
 
 #define VMALLOC_TOTAL (VMALLOC_END - VMALLOC_START)
 
@@ -137,5 +142,7 @@ pcpu_get_vm_areas(const unsigned long *offsets,
                   size_t align);
 
 void pcpu_free_vm_areas(struct vm_struct **vms, int nr_vms);
+
+extern struct vm_struct *remove_vm_area(const void *addr);
 
 #endif /* _LINUX_VMALLOC_H */

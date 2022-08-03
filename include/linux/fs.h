@@ -54,9 +54,12 @@
 #include <linux/time64.h>
 
 #include <asm/byteorder.h>
-#if 0
 #include <uapi/linux/fs.h>
-#endif
+
+/* XArray tags, for tagging dirty and writeback pages in the pagecache. */
+#define PAGECACHE_TAG_DIRTY     XA_MARK_0
+#define PAGECACHE_TAG_WRITEBACK XA_MARK_1
+#define PAGECACHE_TAG_TOWRITE   XA_MARK_2
 
 #define MAX_LFS_FILESIZE    ((loff_t)LLONG_MAX)
 
@@ -1317,5 +1320,17 @@ extern int buffer_migrate_page(struct address_space *,
 extern int buffer_migrate_page_norefs(struct address_space *,
                                       struct page *, struct page *,
                                       enum migrate_mode);
+
+extern int sb_set_blocksize(struct super_block *, int);
+
+extern int sb_min_blocksize(struct super_block *, int);
+
+/*
+ * Returns true if any of the pages in the mapping are marked with the tag.
+ */
+static inline bool mapping_tagged(struct address_space *mapping, xa_mark_t tag)
+{
+    return xa_marked(&mapping->i_pages, tag);
+}
 
 #endif /* _LINUX_FS_H */

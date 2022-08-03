@@ -55,6 +55,14 @@ enum pageflags {
     PG_mlocked,     /* Page is vma mlocked */
 
     __NR_PAGEFLAGS,
+
+    PG_readahead    = PG_reclaim,
+
+    /* Filesystems */
+    PG_checked      = PG_owner_priv_1,
+
+    /* SwapBacked */
+    PG_swapcache    = PG_owner_priv_1, /* Swap page: swp_entry_t in private */
 };
 
 #define PAGEFLAGS_MASK  ((1UL << NR_PAGEFLAGS) - 1)
@@ -294,6 +302,13 @@ PAGEFLAG(SwapBacked, swapbacked, PF_NO_TAIL)
  */
 PAGEFLAG(Private, private, PF_ANY)
 
+/*
+ * Only test-and-set exist for PG_writeback.  The unconditional operators are
+ * risky: they bypass page accounting.
+ */
+TESTPAGEFLAG(Writeback, writeback, PF_NO_TAIL)
+    TESTSCFLAG(Writeback, writeback, PF_NO_TAIL)
+
 PAGEFLAG(MappedToDisk, mappedtodisk, PF_NO_TAIL)
 
 PAGEFLAG_FALSE(HighMem, highmem)
@@ -497,6 +512,12 @@ static inline int PageUptodate(struct page *page)
 }
 
 CLEARPAGEFLAG(Uptodate, uptodate, PF_NO_TAIL)
+
+static __always_inline bool folio_test_swapcache(struct folio *folio)
+{
+    return folio_test_swapbacked(folio) &&
+        test_bit(PG_swapcache, folio_flags(folio, 0));
+}
 
 #undef PF_ANY
 #undef PF_HEAD

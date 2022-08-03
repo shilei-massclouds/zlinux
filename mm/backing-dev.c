@@ -165,3 +165,20 @@ static __init int bdi_class_init(void)
     return 0;
 }
 postcore_initcall(bdi_class_init);
+
+struct backing_dev_info *inode_to_bdi(struct inode *inode)
+{
+#if 0
+    struct super_block *sb;
+
+    if (!inode)
+        return &noop_backing_dev_info;
+
+    sb = inode->i_sb;
+    if (sb_is_blkdev_sb(sb))
+        return I_BDEV(inode)->bd_disk->bdi;
+    return sb->s_bdi;
+#endif
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL(inode_to_bdi);

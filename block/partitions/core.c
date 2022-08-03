@@ -113,7 +113,29 @@ static struct parsed_partitions *check_partition(struct gendisk *hd)
 
     }
 
-    panic("%s: END!\n", __func__);
+    if (res > 0) {
+        printk(KERN_INFO "%s", state->pp_buf);
+
+        free_page((unsigned long)state->pp_buf);
+        return state;
+    }
+    if (state->access_beyond_eod)
+        err = -ENOSPC;
+
+    /*
+     * The partition is unrecognized. So report I/O errors if there were any
+     */
+    if (err)
+        res = err;
+    if (res) {
+        strlcat(state->pp_buf,
+                " unable to read partition table\n", PAGE_SIZE);
+        printk(KERN_INFO "%s", state->pp_buf);
+    }
+
+    free_page((unsigned long)state->pp_buf);
+    free_partitions(state);
+    return ERR_PTR(res);
 }
 
 static int blk_add_partitions(struct gendisk *disk)
@@ -176,7 +198,6 @@ int bdev_disk_changed(struct gendisk *disk, bool invalidate)
         panic("%s: get_capacity == 0!\n", __func__);
     }
 
-    panic("%s: END!\n", __func__);
     return ret;
 }
 EXPORT_SYMBOL_GPL(bdev_disk_changed);
@@ -197,7 +218,6 @@ void *read_part_sector(struct parsed_partitions *state, sector_t n, Sector *p)
     if (PageError(page))
         goto out_put_page;
 
-    panic("%s: END!\n", __func__);
     p->v = page;
     return (unsigned char *)page_address(page) +
         ((n & ((1 << (PAGE_SHIFT - 9)) - 1)) << SECTOR_SHIFT);

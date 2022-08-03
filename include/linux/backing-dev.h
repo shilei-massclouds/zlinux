@@ -45,5 +45,17 @@ int bdi_register_va(struct backing_dev_info *bdi, const char *fmt,
 void bdi_set_owner(struct backing_dev_info *bdi, struct device *owner);
 void bdi_unregister(struct backing_dev_info *bdi);
 
+static inline struct backing_dev_info *bdi_get(struct backing_dev_info *bdi)
+{
+    kref_get(&bdi->refcnt);
+    return bdi;
+}
+
+struct backing_dev_info *inode_to_bdi(struct inode *inode);
+
+static inline bool mapping_can_writeback(struct address_space *mapping)
+{
+    return inode_to_bdi(mapping->host)->capabilities & BDI_CAP_WRITEBACK;
+}
 
 #endif  /* _LINUX_BACKING_DEV_H */

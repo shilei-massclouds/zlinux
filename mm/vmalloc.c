@@ -116,9 +116,62 @@ static inline void set_vm_area_page_order(struct vm_struct *vm,
     BUG_ON(order != 0);
 }
 
+/* Handle removing and resetting vm mappings related to the vm_struct. */
+static void vm_remove_mappings(struct vm_struct *area, int deallocate_pages)
+{
+    unsigned long start = ULONG_MAX, end = 0;
+    unsigned int page_order = vm_area_page_order(area);
+    int flush_reset = area->flags & VM_FLUSH_RESET_PERMS;
+    int flush_dmap = 0;
+    int i;
+
+    remove_vm_area(area->addr);
+
+    /* If this is not VM_FLUSH_RESET_PERMS memory, no need for the below. */
+    if (!flush_reset)
+        return;
+
+    panic("%s: NO implementation!\n", __func__);
+}
+
 static void __vunmap(const void *addr, int deallocate_pages)
 {
-    panic("%s: NO implementation!\n", __func__);
+    struct vm_struct *area;
+
+    if (!addr)
+        return;
+
+    if (WARN(!PAGE_ALIGNED(addr), "Trying to vfree() bad address (%p)\n", addr))
+        return;
+
+    area = find_vm_area(addr);
+    if (unlikely(!area)) {
+        WARN(1, KERN_ERR "Trying to vfree() nonexistent vm area (%p)\n", addr);
+        return;
+    }
+
+    vm_remove_mappings(area, deallocate_pages);
+
+    if (deallocate_pages) {
+        int i;
+
+        for (i = 0; i < area->nr_pages; i++) {
+            struct page *page = area->pages[i];
+
+            BUG_ON(!page);
+            /*
+             * High-order allocs for huge vmallocs are split, so
+             * can be freed as an array of order-0 allocations
+             */
+            __free_pages(page, 0);
+            cond_resched();
+        }
+        atomic_long_sub(area->nr_pages, &nr_vmalloc_pages);
+
+        kvfree(area->pages);
+    }
+
+    kfree(area);
 }
 
 static inline void __vfree_deferred(const void *addr)
@@ -1032,6 +1085,24 @@ void vunmap_range_noflush(unsigned long start, unsigned long end)
     } while (pgd++, addr = next, addr != end);
 }
 
+static __always_inline struct list_head *
+get_va_next_sibling(struct rb_node *parent, struct rb_node **link)
+{
+    struct list_head *list;
+
+    if (unlikely(!parent))
+        /*
+         * The red-black tree where we try to find VA neighbors
+         * before merging or inserting is empty, i.e. it means
+         * there is no free vmap space. Normally it does not
+         * happen but we handle this case anyway.
+         */
+        return NULL;
+
+    list = &rb_entry(parent, struct vmap_area, rb_node)->list;
+    return (&parent->rb_right == link ? list->next : list);
+}
+
 /*
  * Merge de-allocated chunk of VA memory with previous
  * and next free blocks. If coalesce is not done a new
@@ -1047,7 +1118,34 @@ static __always_inline struct vmap_area *
 merge_or_add_vmap_area(struct vmap_area *va,
                        struct rb_root *root, struct list_head *head)
 {
+    struct vmap_area *sibling;
+    struct list_head *next;
+    struct rb_node **link;
+    struct rb_node *parent;
+    bool merged = false;
+
+    /*
+     * Find a place in the tree where VA potentially will be
+     * inserted, unless it is merged with its sibling/siblings.
+     */
+    link = find_va_links(va, root, NULL, &parent);
+    if (!link)
+        return NULL;
+
+    /*
+     * Get next node of VA to check if merging can be done.
+     */
+    next = get_va_next_sibling(parent, link);
+    if (unlikely(next == NULL))
+        goto insert;
+
     panic("%s: END!\n", __func__);
+
+ insert:
+    if (!merged)
+        link_va(va, root, parent, link, head);
+
+    return va;
 }
 
 static __always_inline struct vmap_area *

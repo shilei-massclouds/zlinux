@@ -242,4 +242,79 @@ static inline struct page *folio_file_page(struct folio *folio, pgoff_t index)
     return folio_page(folio, index & (folio_nr_pages(folio) - 1));
 }
 
+#define swapcache_index(folio)  __page_file_index(&(folio)->page)
+
+/**
+ * folio_index - File index of a folio.
+ * @folio: The folio.
+ *
+ * For a folio which is either in the page cache or the swap cache,
+ * return its index within the address_space it belongs to.  If you know
+ * the page is definitely in the page cache, you can look at the folio's
+ * index directly.
+ *
+ * Return: The index (offset in units of pages) of a folio in its file.
+ */
+static inline pgoff_t folio_index(struct folio *folio)
+{
+    if (unlikely(folio_test_swapcache(folio))) {
+        //return swapcache_index(folio);
+        panic("%s: END!\n", __func__);
+    }
+    return folio->index;
+}
+
+/**
+ * folio_contains - Does this folio contain this index?
+ * @folio: The folio.
+ * @index: The page index within the file.
+ *
+ * Context: The caller should have the page locked in order to prevent
+ * (eg) shmem from moving the page between the page cache and swap cache
+ * and changing its index in the middle of the operation.
+ * Return: true or false.
+ */
+static inline bool folio_contains(struct folio *folio, pgoff_t index)
+{
+    /* HugeTLBfs indexes the page cache in units of hpage_size */
+    if (folio_test_hugetlb(folio))
+        return folio->index == index;
+    return index - folio_index(folio) < folio_nr_pages(folio);
+}
+
+static inline bool folio_trylock(struct folio *folio)
+{
+    return likely(!test_and_set_bit_lock(PG_locked, folio_flags(folio, 0)));
+}
+
+void __folio_lock(struct folio *folio);
+
+static inline void folio_lock(struct folio *folio)
+{
+    might_sleep();
+    if (!folio_trylock(folio))
+        __folio_lock(folio);
+}
+
+/**
+ * folio_inode - Get the host inode for this folio.
+ * @folio: The folio.
+ *
+ * For folios which are in the page cache, return the inode that this folio
+ * belongs to.
+ *
+ * Do not call this for folios which aren't in the page cache.
+ */
+static inline struct inode *folio_inode(struct folio *folio)
+{
+    return folio->mapping->host;
+}
+
+void folio_wait_stable(struct folio *folio);
+
+static inline bool mapping_empty(struct address_space *mapping)
+{
+    return xa_empty(&mapping->i_pages);
+}
+
 #endif /* _LINUX_PAGEMAP_H */

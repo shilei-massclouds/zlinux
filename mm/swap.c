@@ -188,6 +188,36 @@ static void folio_activate(struct folio *folio)
     panic("%s: END!\n", __func__);
 }
 
+static void __lru_cache_activate_folio(struct folio *folio)
+{
+    struct pagevec *pvec;
+    int i;
+
+    local_lock(&lru_pvecs.lock);
+    pvec = this_cpu_ptr(&lru_pvecs.lru_add);
+
+    /*
+     * Search backwards on the optimistic assumption that the page being
+     * activated has just been added to this pagevec. Note that only
+     * the local pagevec is examined as a !PageLRU page could be in the
+     * process of being released, reclaimed, migrated or on a remote
+     * pagevec that is currently being drained. Furthermore, marking
+     * a remote pagevec's page PageActive potentially hits a race where
+     * a page is marked PageActive just after it is added to the inactive
+     * list causing accounting errors and BUG_ON checks to trigger.
+     */
+    for (i = pagevec_count(pvec) - 1; i >= 0; i--) {
+        struct page *pagevec_page = pvec->pages[i];
+
+        if (pagevec_page == &folio->page) {
+            folio_set_active(folio);
+            break;
+        }
+    }
+
+    local_unlock(&lru_pvecs.lock);
+}
+
 /*
  * Mark a page as having seen activity.
  *
@@ -209,7 +239,6 @@ void folio_mark_accessed(struct folio *folio)
          * unevictable page accessed has no effect.
          */
     } else if (!folio_test_active(folio)) {
-#if 0
         /*
          * If the page is on the LRU, queue it for activation via
          * lru_pvecs.activate_page. Otherwise, assume the page is on a
@@ -221,9 +250,7 @@ void folio_mark_accessed(struct folio *folio)
         else
             __lru_cache_activate_folio(folio);
         folio_clear_referenced(folio);
-        workingset_activation(folio);
-#endif
-        panic("%s: !folio_test_active\n", __func__);
+        //workingset_activation(folio);
     }
     if (folio_test_idle(folio))
         folio_clear_idle(folio);

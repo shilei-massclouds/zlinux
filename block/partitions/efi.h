@@ -19,6 +19,10 @@
 #include <linux/efi.h>
 #include <linux/compiler.h>
 
+#define MSDOS_MBR_SIGNATURE     0xaa55
+#define EFI_PMBR_OSTYPE_EFI     0xEF
+#define EFI_PMBR_OSTYPE_EFI_GPT 0xEE
+
 #define GPT_MBR_PROTECTIVE  1
 #define GPT_MBR_HYBRID      2
 

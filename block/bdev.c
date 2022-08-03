@@ -41,6 +41,7 @@
 struct super_block *blockdev_superblock __read_mostly;
 EXPORT_SYMBOL_GPL(blockdev_superblock);
 
+static  __cacheline_aligned_in_smp DEFINE_SPINLOCK(bdev_lock);
 static struct kmem_cache * bdev_cachep __read_mostly;
 
 struct bdev_inode {
@@ -257,13 +258,117 @@ static int blkdev_get_whole(struct block_device *bdev, fmode_t mode)
     if (test_bit(GD_NEED_PART_SCAN, &disk->state))
         bdev_disk_changed(disk, false);
     bdev->bd_openers++;
-    panic("%s: END!\n", __func__);
     return 0;
 }
 
 static int blkdev_get_part(struct block_device *part, fmode_t mode)
 {
     panic("%s: END!\n", __func__);
+}
+
+/**
+ * bd_may_claim - test whether a block device can be claimed
+ * @bdev: block device of interest
+ * @whole: whole block device containing @bdev, may equal @bdev
+ * @holder: holder trying to claim @bdev
+ *
+ * Test whether @bdev can be claimed by @holder.
+ *
+ * CONTEXT:
+ * spin_lock(&bdev_lock).
+ *
+ * RETURNS:
+ * %true if @bdev can be claimed, %false otherwise.
+ */
+static bool bd_may_claim(struct block_device *bdev,
+                         struct block_device *whole,
+                         void *holder)
+{
+    if (bdev->bd_holder == holder)
+        return true;     /* already a holder */
+    else if (bdev->bd_holder != NULL)
+        return false;    /* held by someone else */
+    else if (whole == bdev)
+        return true;     /* is a whole device which isn't held */
+
+    else if (whole->bd_holder == bd_may_claim)
+        return true;     /* is a partition of a device that is being partitioned */
+    else if (whole->bd_holder != NULL)
+        return false;    /* is a partition of a held device */
+    else
+        return true;     /* is a partition of an un-held device */
+}
+
+/**
+ * bd_prepare_to_claim - claim a block device
+ * @bdev: block device of interest
+ * @holder: holder trying to claim @bdev
+ *
+ * Claim @bdev.  This function fails if @bdev is already claimed by another
+ * holder and waits if another claiming is in progress. return, the caller
+ * has ownership of bd_claiming and bd_holder[s].
+ *
+ * RETURNS:
+ * 0 if @bdev can be claimed, -EBUSY otherwise.
+ */
+int bd_prepare_to_claim(struct block_device *bdev, void *holder)
+{
+    struct block_device *whole = bdev_whole(bdev);
+
+    if (WARN_ON_ONCE(!holder))
+        return -EINVAL;
+
+ retry:
+    spin_lock(&bdev_lock);
+    /* if someone else claimed, fail */
+    if (!bd_may_claim(bdev, whole, holder)) {
+        spin_unlock(&bdev_lock);
+        return -EBUSY;
+    }
+
+    /* if claiming is already in progress, wait for it to finish */
+    if (whole->bd_claiming) {
+        panic("%s: bd_claiming!\n", __func__);
+    }
+
+    /* yay, all mine */
+    whole->bd_claiming = holder;
+    spin_unlock(&bdev_lock);
+    return 0;
+}
+
+static void bd_clear_claiming(struct block_device *whole, void *holder)
+{
+    /* tell others that we're done */
+    BUG_ON(whole->bd_claiming != holder);
+    whole->bd_claiming = NULL;
+    wake_up_bit(&whole->bd_claiming, 0);
+}
+
+/**
+ * bd_finish_claiming - finish claiming of a block device
+ * @bdev: block device of interest
+ * @holder: holder that has claimed @bdev
+ *
+ * Finish exclusive open of a block device. Mark the device as exlusively
+ * open by the holder and wake up all waiters for exclusive open to finish.
+ */
+static void bd_finish_claiming(struct block_device *bdev, void *holder)
+{
+    struct block_device *whole = bdev_whole(bdev);
+
+    spin_lock(&bdev_lock);
+    BUG_ON(!bd_may_claim(bdev, whole, holder));
+    /*
+     * Note that for a whole device bd_holders will be incremented twice,
+     * and bd_holder will be set to bd_may_claim before being set to holder
+     */
+    whole->bd_holders++;
+    whole->bd_holder = bd_may_claim;
+    bdev->bd_holders++;
+    bdev->bd_holder = holder;
+    bd_clear_claiming(whole, holder);
+    spin_unlock(&bdev_lock);
 }
 
 /**
@@ -300,12 +405,9 @@ struct block_device *blkdev_get_by_dev(dev_t dev, fmode_t mode, void *holder)
     disk = bdev->bd_disk;
 
     if (mode & FMODE_EXCL) {
-#if 0
         ret = bd_prepare_to_claim(bdev, holder);
         if (ret)
             goto put_blkdev;
-#endif
-        panic("%s: FMODE_EXCL!\n", __func__);
     }
 
     //disk_block_events(disk);
@@ -322,8 +424,28 @@ struct block_device *blkdev_get_by_dev(dev_t dev, fmode_t mode, void *holder)
         ret = blkdev_get_whole(bdev, mode);
     if (ret)
         goto put_module;
+    if (mode & FMODE_EXCL) {
+        bd_finish_claiming(bdev, holder);
 
-    panic("%s: dev_t(%x) END!\n", __func__, dev);
+        /*
+         * Block event polling for write claims if requested.  Any write
+         * holder makes the write_holder state stick until all are
+         * released.  This is good enough and tracking individual
+         * writeable reference is too fragile given the way @mode is
+         * used in blkdev_get/put().
+         */
+        if ((mode & FMODE_WRITE) && !bdev->bd_write_holder &&
+            (disk->event_flags & DISK_EVENT_FLAG_BLOCK_ON_EXCL_WRITE)) {
+            bdev->bd_write_holder = true;
+            unblock_events = false;
+        }
+    }
+    mutex_unlock(&disk->open_mutex);
+
+#if 0
+    if (unblock_events)
+        disk_unblock_events(disk);
+#endif
     return bdev;
 
  put_module:
@@ -419,3 +541,59 @@ void invalidate_bdev(struct block_device *bdev)
     }
 }
 EXPORT_SYMBOL(invalidate_bdev);
+
+/* Kill _all_ buffers and pagecache , dirty or not.. */
+static void kill_bdev(struct block_device *bdev)
+{
+    struct address_space *mapping = bdev->bd_inode->i_mapping;
+
+    if (mapping_empty(mapping))
+        return;
+
+#if 0
+    invalidate_bh_lrus();
+    truncate_inode_pages(mapping, 0);
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+int set_blocksize(struct block_device *bdev, int size)
+{
+    /* Size must be a power of two, and between 512 and PAGE_SIZE */
+    if (size > PAGE_SIZE || size < 512 || !is_power_of_2(size))
+        return -EINVAL;
+
+    /* Size cannot be smaller than the size supported by the device */
+    if (size < bdev_logical_block_size(bdev))
+        return -EINVAL;
+
+    /* Don't change the size if it is same as current */
+    if (bdev->bd_inode->i_blkbits != blksize_bits(size)) {
+        sync_blockdev(bdev);
+        bdev->bd_inode->i_blkbits = blksize_bits(size);
+        kill_bdev(bdev);
+    }
+    return 0;
+}
+EXPORT_SYMBOL(set_blocksize);
+
+int sb_set_blocksize(struct super_block *sb, int size)
+{
+    if (set_blocksize(sb->s_bdev, size))
+        return 0;
+    /* If we get here, we know size is power of two
+     * and it's value is between 512 and PAGE_SIZE */
+    sb->s_blocksize = size;
+    sb->s_blocksize_bits = blksize_bits(size);
+    return sb->s_blocksize;
+}
+EXPORT_SYMBOL(sb_set_blocksize);
+
+int sb_min_blocksize(struct super_block *sb, int size)
+{
+    int minsize = bdev_logical_block_size(sb->s_bdev);
+    if (size < minsize)
+        size = minsize;
+    return sb_set_blocksize(sb, size);
+}
+EXPORT_SYMBOL(sb_min_blocksize);

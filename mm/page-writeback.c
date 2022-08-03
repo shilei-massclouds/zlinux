@@ -17,9 +17,9 @@
 #include <linux/spinlock.h>
 //#include <linux/fs.h>
 #include <linux/mm.h>
-//#include <linux/swap.h>
+#include <linux/swap.h>
 #include <linux/slab.h>
-//#include <linux/pagemap.h>
+#include <linux/pagemap.h>
 #include <linux/writeback.h>
 #include <linux/init.h>
 /*
@@ -180,3 +180,43 @@ bool noop_dirty_folio(struct address_space *mapping, struct folio *folio)
     return false;
 }
 EXPORT_SYMBOL(noop_dirty_folio);
+
+/**
+ * folio_wait_writeback - Wait for a folio to finish writeback.
+ * @folio: The folio to wait for.
+ *
+ * If the folio is currently being written back to storage, wait for the
+ * I/O to complete.
+ *
+ * Context: Sleeps.  Must be called in process context and with
+ * no spinlocks held.  Caller should hold a reference on the folio.
+ * If the folio is not locked, writeback may start again after writeback
+ * has finished.
+ */
+void folio_wait_writeback(struct folio *folio)
+{
+    while (folio_test_writeback(folio)) {
+        folio_wait_bit(folio, PG_writeback);
+    }
+}
+EXPORT_SYMBOL_GPL(folio_wait_writeback);
+
+/**
+ * folio_wait_stable() - wait for writeback to finish, if necessary.
+ * @folio: The folio to wait on.
+ *
+ * This function determines if the given folio is related to a backing
+ * device that requires folio contents to be held stable during writeback.
+ * If so, then it will wait for any pending writeback to complete.
+ *
+ * Context: Sleeps.  Must be called in process context and with
+ * no spinlocks held.  Caller should hold a reference on the folio.
+ * If the folio is not locked, writeback may start again after writeback
+ * has finished.
+ */
+void folio_wait_stable(struct folio *folio)
+{
+    if (folio_inode(folio)->i_sb->s_iflags & SB_I_STABLE_WRITES)
+        folio_wait_writeback(folio);
+}
+EXPORT_SYMBOL_GPL(folio_wait_stable);
