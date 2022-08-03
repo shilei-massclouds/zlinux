@@ -47,4 +47,9 @@ DECLARE_PER_CPU(struct kernel_cpustat, kernel_cpustat);
 
 extern unsigned long long nr_context_switches(void);
 
+static inline void kstat_incr_softirqs_this_cpu(unsigned int irq)
+{
+    __this_cpu_inc(kstat.softirqs[irq]);
+}
+
 #endif /* _LINUX_KERNEL_STAT_H */

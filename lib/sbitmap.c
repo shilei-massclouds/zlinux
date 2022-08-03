@@ -315,10 +315,80 @@ int __sbitmap_queue_get(struct sbitmap_queue *sbq)
 }
 EXPORT_SYMBOL_GPL(__sbitmap_queue_get);
 
+static inline void sbitmap_update_cpu_hint(struct sbitmap *sb, int cpu, int tag)
+{
+    if (likely(!sb->round_robin && tag < sb->depth))
+        data_race(*per_cpu_ptr(sb->alloc_hint, cpu) = tag);
+}
+
+static struct sbq_wait_state *sbq_wake_ptr(struct sbitmap_queue *sbq)
+{
+    int i, wake_index;
+
+    if (!atomic_read(&sbq->ws_active))
+        return NULL;
+
+    wake_index = atomic_read(&sbq->wake_index);
+    for (i = 0; i < SBQ_WAIT_QUEUES; i++) {
+        struct sbq_wait_state *ws = &sbq->ws[wake_index];
+
+        if (waitqueue_active(&ws->wait)) {
+            if (wake_index != atomic_read(&sbq->wake_index))
+                atomic_set(&sbq->wake_index, wake_index);
+            return ws;
+        }
+
+        wake_index = sbq_index_inc(wake_index);
+    }
+
+    return NULL;
+}
+
+static bool __sbq_wake_up(struct sbitmap_queue *sbq)
+{
+    struct sbq_wait_state *ws;
+    unsigned int wake_batch;
+    int wait_cnt;
+
+    ws = sbq_wake_ptr(sbq);
+    if (!ws)
+        return false;
+
+    panic("%s: END!\n", __func__);
+}
+
+void sbitmap_queue_wake_up(struct sbitmap_queue *sbq)
+{
+    while (__sbq_wake_up(sbq))
+        ;
+}
+EXPORT_SYMBOL_GPL(sbitmap_queue_wake_up);
+
 void sbitmap_queue_clear(struct sbitmap_queue *sbq, unsigned int nr,
                          unsigned int cpu)
 {
-    panic("%s: END!\n", __func__);
+    /*
+     * Once the clear bit is set, the bit may be allocated out.
+     *
+     * Orders READ/WRITE on the associated instance(such as request
+     * of blk_mq) by this bit for avoiding race with re-allocation,
+     * and its pair is the memory barrier implied in __sbitmap_get_word.
+     *
+     * One invariant is that the clear bit has to be zero when the bit
+     * is in use.
+     */
+    smp_mb__before_atomic();
+    sbitmap_deferred_clear_bit(&sbq->sb, nr);
+
+    /*
+     * Pairs with the memory barrier in set_current_state() to ensure the
+     * proper ordering of clear_bit_unlock()/waitqueue_active() in the waker
+     * and test_and_set_bit_lock()/prepare_to_wait()/finish_wait() in the
+     * waiter. See the comment on waitqueue_active().
+     */
+    smp_mb__after_atomic();
+    sbitmap_queue_wake_up(sbq);
+    sbitmap_update_cpu_hint(&sbq->sb, cpu, nr);
 }
 EXPORT_SYMBOL_GPL(sbitmap_queue_clear);
 

@@ -34,6 +34,7 @@
 #include <linux/prefetch.h>
 
 #include <linux/blk-mq.h>
+#include <linux/ioprio.h>
 #include "blk-mq.h"
 #if 0
 #include <linux/t10-pi.h>
@@ -1404,14 +1405,210 @@ void blk_mq_request_bypass_insert(struct request *rq, bool at_head,
     panic("%s: END!\n", __func__);
 }
 
-void blk_mq_end_request(struct request *rq, blk_status_t error)
+static void blk_print_req_error(struct request *req, blk_status_t status)
+{
+    printk_ratelimited(KERN_ERR
+        "%s error, dev %s, sector %llu op 0x%x:(%s) flags 0x%x "
+        "phys_seg %u prio class %u\n",
+        blk_status_to_str(status),
+        req->q->disk ? req->q->disk->disk_name : "?",
+        blk_rq_pos(req), req_op(req), blk_op_str(req_op(req)),
+        req->cmd_flags & ~REQ_OP_MASK,
+        req->nr_phys_segments,
+        IOPRIO_PRIO_CLASS(req->ioprio));
+}
+
+static void blk_account_io_completion(struct request *req, unsigned int bytes)
+{
+    if (req->part && blk_do_io_stat(req)) {
+#if 0
+        const int sgrp = op_stat_group(req_op(req));
+
+        part_stat_lock();
+        part_stat_add(req->part, sectors[sgrp], bytes >> 9);
+        part_stat_unlock();
+#endif
+        panic("%s: END!\n", __func__);
+    }
+}
+
+static void req_bio_endio(struct request *rq, struct bio *bio,
+                          unsigned int nbytes, blk_status_t error)
+{
+    if (unlikely(error)) {
+        bio->bi_status = error;
+    } else if (req_op(rq) == REQ_OP_ZONE_APPEND) {
+        /*
+         * Partial zone append completions cannot be supported as the
+         * BIO fragments may end up not being written sequentially.
+         */
+        if (bio->bi_iter.bi_size != nbytes)
+            bio->bi_status = BLK_STS_IOERR;
+        else
+            bio->bi_iter.bi_sector = rq->__sector;
+    }
+
+    bio_advance(bio, nbytes);
+
+    if (unlikely(rq->rq_flags & RQF_QUIET))
+        bio_set_flag(bio, BIO_QUIET);
+    /* don't actually finish bio if it's part of flush sequence */
+    if (bio->bi_iter.bi_size == 0 && !(rq->rq_flags & RQF_FLUSH_SEQ))
+        bio_endio(bio);
+}
+
+/**
+ * blk_update_request - Complete multiple bytes without completing the request
+ * @req:      the request being processed
+ * @error:    block status code
+ * @nr_bytes: number of bytes to complete for @req
+ *
+ * Description:
+ *     Ends I/O on a number of bytes attached to @req, but doesn't complete
+ *     the request structure even if @req doesn't have leftover.
+ *     If @req has leftover, sets it up for the next range of segments.
+ *
+ *     Passing the result of blk_rq_bytes() as @nr_bytes guarantees
+ *     %false return from this function.
+ *
+ * Note:
+ *  The RQF_SPECIAL_PAYLOAD flag is ignored on purpose in this function
+ *      except in the consistency check at the end of this function.
+ *
+ * Return:
+ *     %false - this request doesn't have any more data
+ *     %true  - this request has more data
+ **/
+bool blk_update_request(struct request *req, blk_status_t error,
+                        unsigned int nr_bytes)
+{
+    int total_bytes;
+
+    if (!req->bio)
+        return false;
+
+    if (unlikely(error && !blk_rq_is_passthrough(req) &&
+                 !(req->rq_flags & RQF_QUIET)) &&
+        !test_bit(GD_DEAD, &req->q->disk->state)) {
+        blk_print_req_error(req, error);
+    }
+
+    blk_account_io_completion(req, nr_bytes);
+
+    total_bytes = 0;
+    while (req->bio) {
+        struct bio *bio = req->bio;
+        unsigned bio_bytes = min(bio->bi_iter.bi_size, nr_bytes);
+
+        if (bio_bytes == bio->bi_iter.bi_size)
+            req->bio = bio->bi_next;
+
+        /* Completion has already been traced */
+        bio_clear_flag(bio, BIO_TRACE_COMPLETION);
+        req_bio_endio(req, bio, bio_bytes, error);
+
+        total_bytes += bio_bytes;
+        nr_bytes -= bio_bytes;
+
+        if (!nr_bytes)
+            break;
+    }
+
+    /*
+     * completely done
+     */
+    if (!req->bio) {
+        /*
+         * Reset counters so that the request stacking driver
+         * can find how many bytes remain in the request
+         * later.
+         */
+        req->__data_len = 0;
+        return false;
+    }
+
+    panic("%s: END!\n", __func__);
+}
+
+static inline void __blk_mq_end_request_acct(struct request *rq, u64 now)
 {
 #if 0
+    if (rq->rq_flags & RQF_STATS) {
+        blk_mq_poll_stats_start(rq->q);
+        blk_stat_add(rq, now);
+    }
+
+    blk_mq_sched_completed_request(rq, now);
+    blk_account_io_done(rq, now);
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+static void __blk_mq_free_request(struct request *rq)
+{
+    struct request_queue *q = rq->q;
+    struct blk_mq_ctx *ctx = rq->mq_ctx;
+    struct blk_mq_hw_ctx *hctx = rq->mq_hctx;
+    const int sched_tag = rq->internal_tag;
+
+#if 0
+    blk_pm_mark_last_busy(rq);
+#endif
+    rq->mq_hctx = NULL;
+    if (rq->tag != BLK_MQ_NO_TAG)
+        blk_mq_put_tag(hctx->tags, ctx, rq->tag);
+    if (sched_tag != BLK_MQ_NO_TAG)
+        blk_mq_put_tag(hctx->sched_tags, ctx, sched_tag);
+    blk_mq_sched_restart(hctx);
+    blk_queue_exit(q);
+}
+
+void blk_mq_free_request(struct request *rq)
+{
+    struct request_queue *q = rq->q;
+    struct blk_mq_hw_ctx *hctx = rq->mq_hctx;
+
+    if ((rq->rq_flags & RQF_ELVPRIV) &&
+        q->elevator->type->ops.finish_request)
+        q->elevator->type->ops.finish_request(rq);
+
+    if (rq->rq_flags & RQF_MQ_INFLIGHT)
+        __blk_mq_dec_active_requests(hctx);
+
+#if 0
+    if (unlikely(laptop_mode && !blk_rq_is_passthrough(rq)))
+        laptop_io_completion(q->disk->bdi);
+
+    rq_qos_done(q, rq);
+#endif
+
+    WRITE_ONCE(rq->state, MQ_RQ_IDLE);
+    if (req_ref_put_and_test(rq))
+        __blk_mq_free_request(rq);
+}
+
+inline void __blk_mq_end_request(struct request *rq, blk_status_t error)
+{
+#if 0
+    if (blk_mq_need_time_stamp(rq)) {
+        __blk_mq_end_request_acct(rq, ktime_get_ns());
+    }
+#endif
+
+    if (rq->end_io) {
+        //rq_qos_done(rq->q, rq);
+        rq->end_io(rq, error);
+    } else {
+        blk_mq_free_request(rq);
+    }
+}
+EXPORT_SYMBOL(__blk_mq_end_request);
+
+void blk_mq_end_request(struct request *rq, blk_status_t error)
+{
     if (blk_update_request(rq, error, blk_rq_bytes(rq)))
         BUG();
     __blk_mq_end_request(rq, error);
-#endif
-    panic("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL(blk_mq_end_request);
 
@@ -1644,3 +1841,39 @@ void blk_mq_start_stopped_hw_queues(struct request_queue *q, bool async)
         blk_mq_start_stopped_hw_queue(hctx, async);
 }
 EXPORT_SYMBOL(blk_mq_start_stopped_hw_queues);
+
+static void blk_complete_reqs(struct llist_head *list)
+{
+    struct llist_node *entry = llist_reverse_order(llist_del_all(list));
+    struct request *rq, *next;
+
+    llist_for_each_entry_safe(rq, next, entry, ipi_list)
+        rq->q->mq_ops->complete(rq);
+}
+
+static __latent_entropy void blk_done_softirq(struct softirq_action *h)
+{
+    blk_complete_reqs(this_cpu_ptr(&blk_cpu_done));
+}
+
+static int __init blk_mq_init(void)
+{
+    int i;
+
+    for_each_possible_cpu(i)
+        init_llist_head(&per_cpu(blk_cpu_done, i));
+    open_softirq(BLOCK_SOFTIRQ, blk_done_softirq);
+
+#if 0
+    cpuhp_setup_state_nocalls(CPUHP_BLOCK_SOFTIRQ_DEAD,
+                              "block/softirq:dead", NULL,
+                              blk_softirq_cpu_dead);
+    cpuhp_setup_state_multi(CPUHP_BLK_MQ_DEAD, "block/mq:dead", NULL,
+                            blk_mq_hctx_notify_dead);
+    cpuhp_setup_state_multi(CPUHP_AP_BLK_MQ_ONLINE, "block/mq:online",
+                            blk_mq_hctx_notify_online,
+                            blk_mq_hctx_notify_offline);
+#endif
+    return 0;
+}
+subsys_initcall(blk_mq_init);

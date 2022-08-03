@@ -84,6 +84,7 @@
 #define PF_WQ_WORKER        0x00000020  /* I'm a workqueue worker */
 #define PF_FORKNOEXEC       0x00000040  /* Forked but didn't exec */
 #define PF_SUPERPRIV        0x00000100  /* Used super-user privileges */
+#define PF_MEMALLOC         0x00000800  /* Allocating memory */
 #define PF_NPROC_EXCEEDED   0x00001000  /* set_user() noticed that RLIMIT_NPROC was exceeded */
 #define PF_MEMALLOC_NOFS    0x00040000  /* All allocation requests will inherit GFP_NOFS */
 #define PF_MEMALLOC_NOIO    0x00080000  /* All allocation requests will inherit GFP_NOIO */
@@ -521,5 +522,23 @@ find_task_by_pid_ns(pid_t nr, struct pid_namespace *ns);
 
 extern int set_cpus_allowed_ptr(struct task_struct *p,
                                 const struct cpumask *new_mask);
+
+/**
+ * is_idle_task - is the specified task an idle task?
+ * @p: the task in question.
+ *
+ * Return: 1 if @p is an idle task. 0 otherwise.
+ */
+static __always_inline bool is_idle_task(const struct task_struct *p)
+{
+    return !!(p->flags & PF_IDLE);
+}
+
+static inline void
+current_restore_flags(unsigned long orig_flags, unsigned long flags)
+{
+    current->flags &= ~flags;
+    current->flags |= orig_flags & flags;
+}
 
 #endif /* _LINUX_SCHED_H */

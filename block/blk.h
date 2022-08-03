@@ -163,4 +163,33 @@ biovec_phys_mergeable(struct request_queue *q,
     return true;
 }
 
+const char *blk_status_to_str(blk_status_t status);
+
+/*
+ * Contribute to IO statistics IFF:
+ *
+ *  a) it's attached to a gendisk, and
+ *  b) the queue had IO stats enabled when this request was started
+ */
+static inline bool blk_do_io_stat(struct request *rq)
+{
+    return (rq->rq_flags & RQF_IO_STAT) && !blk_rq_is_passthrough(rq);
+}
+
+/*
+ * Optimized request reference counting. Ideally we'd make timeouts be more
+ * clever, as that's the only reason we need references at all... But until
+ * this happens, this is faster than using refcount_t. Also see:
+ *
+ * abc54d634334 ("io_uring: switch to atomic_t for io_kiocb reference count")
+ */
+#define req_ref_zero_or_close_to_overflow(req)  \
+    ((unsigned int) atomic_read(&(req->ref)) + 127u <= 127u)
+
+static inline bool req_ref_put_and_test(struct request *req)
+{
+    WARN_ON_ONCE(req_ref_zero_or_close_to_overflow(req));
+    return atomic_dec_and_test(&req->ref);
+}
+
 #endif /* BLK_INTERNAL_H */

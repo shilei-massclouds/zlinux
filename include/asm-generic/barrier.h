@@ -74,6 +74,10 @@
 #define __smp_mb__before_atomic()   __smp_mb()
 #endif
 
+#ifndef __smp_mb__after_atomic
+#define __smp_mb__after_atomic()    __smp_mb()
+#endif
+
 /**
  * smp_acquire__after_ctrl_dep() - Provide ACQUIRE ordering after a control dependency
  *
@@ -89,6 +93,10 @@
 
 #ifndef smp_load_acquire
 #define smp_load_acquire(p) __smp_load_acquire(p)
+#endif
+
+#ifndef smp_mb__after_atomic
+#define smp_mb__after_atomic()  do { __smp_mb__after_atomic(); } while (0)
 #endif
 
 /* Barriers for virtual machine guests when talking to an SMP host */

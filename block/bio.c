@@ -433,9 +433,71 @@ void bio_uninit(struct bio *bio)
 }
 EXPORT_SYMBOL(bio_uninit);
 
+void bvec_free(mempool_t *pool, struct bio_vec *bv, unsigned short nr_vecs)
+{
+    BUG_ON(nr_vecs > BIO_MAX_VECS);
+
+    if (nr_vecs == BIO_MAX_VECS)
+        mempool_free(bv, pool);
+    else if (nr_vecs > BIO_INLINE_VECS)
+        kmem_cache_free(biovec_slab(nr_vecs)->slab, bv);
+}
+
 static void bio_free(struct bio *bio)
 {
-    panic("%s: END!\n", __func__);
+    struct bio_set *bs = bio->bi_pool;
+    void *p;
+
+    bio_uninit(bio);
+
+    if (bs) {
+        bvec_free(&bs->bvec_pool, bio->bi_io_vec, bio->bi_max_vecs);
+
+        /*
+         * If we have front padding, adjust the bio pointer before freeing
+         */
+        p = bio;
+        p -= bs->front_pad;
+
+        mempool_free(p, &bs->bio_pool);
+    } else {
+        /* Bio was allocated by bio_kmalloc() */
+        kfree(bio);
+    }
+}
+
+static inline bool bio_remaining_done(struct bio *bio)
+{
+    /*
+     * If we're not chaining, then ->__bi_remaining is always 1 and
+     * we always end io on the first invocation.
+     */
+    if (!bio_flagged(bio, BIO_CHAIN))
+        return true;
+
+    BUG_ON(atomic_read(&bio->__bi_remaining) <= 0);
+
+    if (atomic_dec_and_test(&bio->__bi_remaining)) {
+        bio_clear_flag(bio, BIO_CHAIN);
+        return true;
+    }
+
+    return false;
+}
+
+static struct bio *__bio_chain_endio(struct bio *bio)
+{
+    struct bio *parent = bio->bi_private;
+
+    if (bio->bi_status && !parent->bi_status)
+        parent->bi_status = bio->bi_status;
+    bio_put(bio);
+    return parent;
+}
+
+static void bio_chain_endio(struct bio *bio)
+{
+    bio_endio(__bio_chain_endio(bio));
 }
 
 /**
@@ -453,7 +515,35 @@ static void bio_free(struct bio *bio)
  **/
 void bio_endio(struct bio *bio)
 {
-    panic("%s: END!\n", __func__);
+ again:
+    if (!bio_remaining_done(bio))
+        return;
+
+#if 0
+    rq_qos_done_bio(bio);
+#endif
+
+    if (bio->bi_bdev && bio_flagged(bio, BIO_TRACE_COMPLETION)) {
+        bio_clear_flag(bio, BIO_TRACE_COMPLETION);
+    }
+
+    /*
+     * Need to have a real endio function for chained bios, otherwise
+     * various corner cases will break (like stacking block devices that
+     * save/restore bi_end_io) - however, we want to avoid unbounded
+     * recursion and blowing the stack. Tail call optimization would
+     * handle this, but compiling with frame pointers also disables
+     * gcc's sibling call optimization.
+     */
+    if (bio->bi_end_io == bio_chain_endio) {
+        bio = __bio_chain_endio(bio);
+        goto again;
+    }
+
+    /* release cgroup info */
+    bio_uninit(bio);
+    if (bio->bi_end_io)
+        bio->bi_end_io(bio);
 }
 
 /**
@@ -562,6 +652,12 @@ void bio_put(struct bio *bio)
     }
 }
 EXPORT_SYMBOL(bio_put);
+
+void __bio_advance(struct bio *bio, unsigned bytes)
+{
+    bio_advance_iter(bio, &bio->bi_iter, bytes);
+}
+EXPORT_SYMBOL(__bio_advance);
 
 /*
  * create memory pools for biovec's in a bio_set.

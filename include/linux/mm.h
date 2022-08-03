@@ -748,4 +748,7 @@ static inline unsigned long page_size(struct page *page)
 
 extern void __init pagecache_init(void);
 
+#define nth_page(page,n)            ((page) + (n))
+#define folio_page_idx(folio, p)    ((p) - &(folio)->page)
+
 #endif /* _LINUX_MM_H */

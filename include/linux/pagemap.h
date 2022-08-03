@@ -224,4 +224,22 @@ static inline void folio_wait_locked(struct folio *folio)
         folio_wait_bit(folio, PG_locked);
 }
 
+/**
+ * folio_file_page - The page for a particular index.
+ * @folio: The folio which contains this index.
+ * @index: The index we want to look up.
+ *
+ * Sometimes after looking up a folio in the page cache, we need to
+ * obtain the specific page for an index (eg a page fault).
+ *
+ * Return: The page containing the file data for this index.
+ */
+static inline struct page *folio_file_page(struct folio *folio, pgoff_t index)
+{
+    /* HugeTLBfs indexes the page cache in units of hpage_size */
+    if (folio_test_hugetlb(folio))
+        return &folio->page;
+    return folio_page(folio, index & (folio_nr_pages(folio) - 1));
+}
+
 #endif /* _LINUX_PAGEMAP_H */

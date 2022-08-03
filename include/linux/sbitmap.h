@@ -91,12 +91,10 @@ struct sbq_wait_state {
      */
     atomic_t wait_cnt;
 
-#if 0
     /**
      * @wait: Wait queue.
      */
     wait_queue_head_t wait;
-#endif
 } ____cacheline_aligned_in_smp;
 
 /**
@@ -302,5 +300,24 @@ static inline unsigned int __map_depth(const struct sbitmap *sb, int index)
  */
 unsigned long __sbitmap_queue_get_batch(struct sbitmap_queue *sbq, int nr_tags,
                                         unsigned int *offset);
+
+/*
+ * This one is special, since it doesn't actually clear the bit, rather it
+ * sets the corresponding bit in the ->cleared mask instead. Paired with
+ * the caller doing sbitmap_deferred_clear() if a given index is full, which
+ * will clear the previously freed entries in the corresponding ->word.
+ */
+static inline
+void sbitmap_deferred_clear_bit(struct sbitmap *sb, unsigned int bitnr)
+{
+    unsigned long *addr = &sb->map[SB_NR_TO_INDEX(sb, bitnr)].cleared;
+
+    set_bit(SB_NR_TO_BIT(sb, bitnr), addr);
+}
+
+static inline int sbq_index_inc(int index)
+{
+    return (index + 1) & (SBQ_WAIT_QUEUES - 1);
+}
 
 #endif /* __LINUX_SCALE_BITMAP_H */

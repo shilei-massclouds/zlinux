@@ -13,6 +13,9 @@ struct wait_bit_key {
     unsigned long   timeout;
 };
 
+#define __WAIT_BIT_KEY_INITIALIZER(word, bit) \
+    { .flags = word, .bit_nr = bit, }
+
 extern int bit_wait(struct wait_bit_key *key, int mode);
 extern int bit_wait_io(struct wait_bit_key *key, int mode);
 extern int bit_wait_timeout(struct wait_bit_key *key, int mode);
@@ -46,5 +49,9 @@ wait_on_bit_lock_io(unsigned long *word, int bit, unsigned mode)
 }
 
 extern void __init wait_bit_init(void);
+
+void __wake_up_bit(struct wait_queue_head *wq_head, void *word, int bit);
+
+void wake_up_bit(void *word, int bit);
 
 #endif /* _LINUX_WAIT_BIT_H */

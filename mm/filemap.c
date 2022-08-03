@@ -260,17 +260,12 @@ do_read_cache_folio(struct address_space *mapping,
             return ERR_PTR(err);
         }
 
-        printk("%s: before folio_wait_locked irq enable(%d) ...\n",
-               __func__, !arch_irqs_disabled());
         folio_wait_locked(folio);
-        printk("%s: after folio_wait_locked ok!\n", __func__);
         if (!folio_test_uptodate(folio)) {
             folio_put(folio);
             return ERR_PTR(-EIO);
         }
 
-        panic("%s: folio a_ops(%lx) NULL!\n", __func__, mapping->a_ops);
-        panic("%s: folio filler(%lx) NULL!\n", __func__, filler);
         goto out;
     }
 
@@ -288,12 +283,9 @@ do_read_cache_page(struct address_space *mapping,
     struct folio *folio;
 
     folio = do_read_cache_folio(mapping, index, filler, data, gfp);
-#if 0
     if (IS_ERR(folio))
         return &folio->page;
     return folio_file_page(folio, index);
-#endif
-    panic("%s: END!\n", __func__);
 }
 
 struct page *read_cache_page(struct address_space *mapping,

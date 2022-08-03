@@ -782,4 +782,14 @@ bool blk_mq_complete_request_remote(struct request *rq);
 
 void blk_mq_start_stopped_hw_queues(struct request_queue *q, bool async);
 
+static inline unsigned int blk_rq_bytes(const struct request *rq)
+{
+    return rq->__data_len;
+}
+
+static inline bool blk_rq_is_passthrough(struct request *rq)
+{
+    return blk_op_is_passthrough(req_op(rq));
+}
+
 #endif /* BLK_MQ_H */

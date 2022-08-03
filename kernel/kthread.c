@@ -33,6 +33,12 @@ static DEFINE_SPINLOCK(kthread_create_lock);
 static LIST_HEAD(kthread_create_list);
 struct task_struct *kthreadd_task;
 
+enum KTHREAD_BITS {
+    KTHREAD_IS_PER_CPU = 0,
+    KTHREAD_SHOULD_STOP,
+    KTHREAD_SHOULD_PARK,
+};
+
 struct kthread_create_info
 {
     /* Information passed to kthread() from kthreadd. */
@@ -255,3 +261,9 @@ struct task_struct *kthread_create_on_cpu(int (*threadfn)(void *data),
     return p;
 }
 EXPORT_SYMBOL(kthread_create_on_cpu);
+
+bool __kthread_should_park(struct task_struct *k)
+{
+    return test_bit(KTHREAD_SHOULD_PARK, &to_kthread(k)->flags);
+}
+EXPORT_SYMBOL_GPL(__kthread_should_park);

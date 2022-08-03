@@ -40,11 +40,11 @@ asmlinkage void noinstr generic_handle_arch_irq(struct pt_regs *regs)
 {
     struct pt_regs *old_regs;
 
-    //irq_enter();
+    irq_enter();
     old_regs = set_irq_regs(regs);
     handle_arch_irq(regs);
     set_irq_regs(old_regs);
-    //irq_exit();
+    irq_exit();
 }
 
 /**

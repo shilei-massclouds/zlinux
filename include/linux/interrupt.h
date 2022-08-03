@@ -103,6 +103,15 @@ DECLARE_STATIC_KEY_FALSE(force_irqthreads_key);
 #define force_irqthreads() \
     (static_branch_unlikely(&force_irqthreads_key))
 
+/* softirq mask and active fields moved to irq_cpustat_t in
+ * asm/hardirq.h to get better cache usage.  KAO
+ */
+
+struct softirq_action
+{
+    void    (*action)(struct softirq_action *);
+};
+
 /**
  * struct irq_affinity_desc - Interrupt affinity descriptor
  * @mask:   cpumask to hold the affinity assignment
@@ -167,6 +176,11 @@ enum
     NR_SOFTIRQS
 };
 
+/* map softirq index to softirq name. update 'softirq_to_name' in
+ * kernel/softirq.c when adding a new softirq.
+ */
+extern const char * const softirq_to_name[NR_SOFTIRQS];
+
 /**
  * struct irq_affinity - Description for automatic irq affinity assignements
  * @pre_vectors:    Don't apply affinity to @pre_vectors at beginning of
@@ -230,8 +244,15 @@ extern void enable_percpu_irq(unsigned int irq, unsigned int type);
 #define or_softirq_pending(x)   (__this_cpu_or(local_softirq_pending_ref, (x)))
 
 extern void softirq_init(void);
+extern void open_softirq(int nr, void (*action)(struct softirq_action *));
 
 extern void raise_softirq_irqoff(unsigned int nr);
 extern void raise_softirq(unsigned int nr);
+
+#define __softirq_entry  __section(".softirqentry.text")
+
+asmlinkage void __do_softirq(void);
+
+#define set_softirq_pending(x)  (__this_cpu_write(local_softirq_pending_ref, (x)))
 
 #endif /* _LINUX_INTERRUPT_H */

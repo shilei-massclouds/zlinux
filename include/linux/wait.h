@@ -95,4 +95,44 @@ __add_wait_queue_entry_tail(struct wait_queue_head *wq_head,
     list_add_tail(&wq_entry->entry, &wq_head->head);
 }
 
+/**
+ * waitqueue_active -- locklessly test for waiters on the queue
+ * @wq_head: the waitqueue to test for waiters
+ *
+ * returns true if the wait list is not empty
+ *
+ * NOTE: this function is lockless and requires care, incorrect usage _will_
+ * lead to sporadic and non-obvious failure.
+ *
+ * Use either while holding wait_queue_head::lock or when used for wakeups
+ * with an extra smp_mb() like::
+ *
+ *      CPU0 - waker                    CPU1 - waiter
+ *
+ *                                      for (;;) {
+ *      @cond = true;                     prepare_to_wait(&wq_head, &wait, state);
+ *      smp_mb();                         // smp_mb() from set_current_state()
+ *      if (waitqueue_active(wq_head))         if (@cond)
+ *        wake_up(wq_head);                      break;
+ *                                        schedule();
+ *                                      }
+ *                                      finish_wait(&wq_head, &wait);
+ *
+ * Because without the explicit smp_mb() it's possible for the
+ * waitqueue_active() load to get hoisted over the @cond store such that we'll
+ * observe an empty wait list while the waiter might not observe @cond.
+ *
+ * Also note that this 'optimization' trades a spin_lock() for an smp_mb(),
+ * which (when the lock is uncontended) are of roughly equal cost.
+ */
+static inline int waitqueue_active(struct wait_queue_head *wq_head)
+{
+    return !list_empty(&wq_head->head);
+}
+
+void __wake_up(struct wait_queue_head *wq_head,
+               unsigned int mode, int nr, void *key);
+
+#define wake_up(x)  __wake_up(x, TASK_NORMAL, 1, NULL)
+
 #endif /* _LINUX_WAIT_H */

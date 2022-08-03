@@ -22,9 +22,7 @@ typedef struct mempool_s {
     void *pool_data;
     mempool_alloc_t *alloc;
     mempool_free_t *free;
-#if 0
     wait_queue_head_t wait;
-#endif
 } mempool_t;
 
 int mempool_init(mempool_t *pool, int min_nr, mempool_alloc_t *alloc_fn,

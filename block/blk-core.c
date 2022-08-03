@@ -69,6 +69,35 @@ DEFINE_IDA(blk_queue_ida);
 struct kmem_cache *blk_requestq_cachep;
 struct kmem_cache *blk_requestq_srcu_cachep;
 
+static const struct {
+    int     errno;
+    const char  *name;
+} blk_errors[] = {
+    [BLK_STS_OK]        = { 0,      "" },
+    [BLK_STS_NOTSUPP]   = { -EOPNOTSUPP, "operation not supported" },
+    [BLK_STS_TIMEOUT]   = { -ETIMEDOUT, "timeout" },
+    [BLK_STS_NOSPC]     = { -ENOSPC,    "critical space allocation" },
+    [BLK_STS_TRANSPORT] = { -ENOLINK,   "recoverable transport" },
+    [BLK_STS_TARGET]    = { -EREMOTEIO, "critical target" },
+    [BLK_STS_NEXUS]     = { -EBADE, "critical nexus" },
+    [BLK_STS_MEDIUM]    = { -ENODATA,   "critical medium" },
+    [BLK_STS_PROTECTION]    = { -EILSEQ,    "protection" },
+    [BLK_STS_RESOURCE]  = { -ENOMEM,    "kernel resource" },
+    [BLK_STS_DEV_RESOURCE]  = { -EBUSY, "device resource" },
+    [BLK_STS_AGAIN]     = { -EAGAIN,    "nonblocking retry" },
+    [BLK_STS_OFFLINE]   = { -ENODEV,    "device offline" },
+
+    /* device mapper special case, should not leak out: */
+    [BLK_STS_DM_REQUEUE]    = { -EREMCHG, "dm internal retry" },
+
+    /* zone device specific errors */
+    [BLK_STS_ZONE_OPEN_RESOURCE]    = { -ETOOMANYREFS, "open zones exceeded" },
+    [BLK_STS_ZONE_ACTIVE_RESOURCE]  = { -EOVERFLOW, "active zones exceeded" },
+
+    /* everything else not covered above: */
+    [BLK_STS_IOERR]     = { -EIO,   "I/O" },
+};
+
 /**
  * blk_queue_flag_set - atomically set a queue flag
  * @flag: flag to be set
@@ -556,6 +585,53 @@ void submit_bio(struct bio *bio)
     submit_bio_noacct(bio);
 }
 EXPORT_SYMBOL(submit_bio);
+
+const char *blk_status_to_str(blk_status_t status)
+{
+    int idx = (__force int)status;
+
+    if (WARN_ON_ONCE(idx >= ARRAY_SIZE(blk_errors)))
+        return "<null>";
+    return blk_errors[idx].name;
+}
+
+#define REQ_OP_NAME(name) [REQ_OP_##name] = #name
+static const char *const blk_op_name[] = {
+    REQ_OP_NAME(READ),
+    REQ_OP_NAME(WRITE),
+    REQ_OP_NAME(FLUSH),
+    REQ_OP_NAME(DISCARD),
+    REQ_OP_NAME(SECURE_ERASE),
+    REQ_OP_NAME(ZONE_RESET),
+    REQ_OP_NAME(ZONE_RESET_ALL),
+    REQ_OP_NAME(ZONE_OPEN),
+    REQ_OP_NAME(ZONE_CLOSE),
+    REQ_OP_NAME(ZONE_FINISH),
+    REQ_OP_NAME(ZONE_APPEND),
+    REQ_OP_NAME(WRITE_ZEROES),
+    REQ_OP_NAME(DRV_IN),
+    REQ_OP_NAME(DRV_OUT),
+};
+#undef REQ_OP_NAME
+
+/**
+ * blk_op_str - Return string XXX in the REQ_OP_XXX.
+ * @op: REQ_OP_XXX.
+ *
+ * Description: Centralize block layer function to convert REQ_OP_XXX into
+ * string format. Useful in the debugging and tracing bio or request. For
+ * invalid REQ_OP_XXX it returns string "UNKNOWN".
+ */
+inline const char *blk_op_str(unsigned int op)
+{
+    const char *op_str = "UNKNOWN";
+
+    if (op < ARRAY_SIZE(blk_op_name) && blk_op_name[op])
+        op_str = blk_op_name[op];
+
+    return op_str;
+}
+EXPORT_SYMBOL_GPL(blk_op_str);
 
 int __init blk_dev_init(void)
 {

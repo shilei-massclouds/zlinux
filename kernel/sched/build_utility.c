@@ -51,6 +51,7 @@
 
 #include <linux/swait_api.h>
 #include <linux/spinlock_api.h>
+#include <linux/hash.h>
 
 #include "sched.h"
 #if 0

@@ -40,10 +40,10 @@ static struct sg_pool sg_pools[] = {
  **/
 void sg_free_table_chained(struct sg_table *table, unsigned nents_first_chunk)
 {
-#if 0
     if (table->orig_nents <= nents_first_chunk)
         return;
 
+#if 0
     if (nents_first_chunk == 1)
         nents_first_chunk = 0;
 

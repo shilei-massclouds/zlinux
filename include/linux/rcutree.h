@@ -19,4 +19,7 @@
 
 void rcu_scheduler_starting(void);
 
+void rcu_irq_enter(void);
+void rcu_irq_exit(void);
+
 #endif /* __LINUX_RCUTREE_H */

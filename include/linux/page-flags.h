@@ -92,6 +92,17 @@ static inline unsigned long _compound_head(const struct page *page)
     const struct page *:    (const struct folio *)_compound_head(p), \
     struct page *:      (struct folio *)_compound_head(p)))
 
+/**
+ * folio_page - Return a page from a folio.
+ * @folio: The folio.
+ * @n: The page number to return.
+ *
+ * @n is relative to the start of the folio.  This function does not
+ * check that the page number lies within @folio; the caller is presumed
+ * to have a reference to the page.
+ */
+#define folio_page(folio, n)    nth_page(&(folio)->page, n)
+
 #define PAGE_POISON_PATTERN -1l
 static inline int PagePoisoned(const struct page *page)
 {
@@ -248,6 +259,10 @@ static __always_inline int TestClearPage##uname(struct page *page)  \
 __PAGEFLAG(Locked, locked, PF_NO_TAIL)
 PAGEFLAG(Waiters, waiters, PF_ONLY_HEAD)
 PAGEFLAG(Error, error, PF_NO_TAIL) TESTCLEARFLAG(Error, error, PF_NO_TAIL)
+
+PAGEFLAG(Referenced, referenced, PF_HEAD)
+    TESTCLEARFLAG(Referenced, referenced, PF_HEAD)
+    __SETPAGEFLAG(Referenced, referenced, PF_HEAD)
 
 PAGEFLAG(Dirty, dirty, PF_HEAD)
     TESTSCFLAG(Dirty, dirty, PF_HEAD)

@@ -726,4 +726,6 @@ static inline void blk_flush_plug(struct blk_plug *plug, bool async)
         __blk_flush_plug(plug, async);
 }
 
+extern const char *blk_op_str(unsigned int op);
+
 #endif /* _LINUX_BLKDEV_H */

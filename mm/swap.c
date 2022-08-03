@@ -34,8 +34,8 @@
 #if 0
 #include <linux/uio.h>
 #include <linux/hugetlb.h>
-#include <linux/page_idle.h>
 #endif
+#include <linux/page_idle.h>
 #include <linux/buffer_head.h>
 #include <linux/local_lock.h>
 
@@ -170,6 +170,24 @@ void folio_add_lru(struct folio *folio)
 }
 EXPORT_SYMBOL(folio_add_lru);
 
+static void folio_activate(struct folio *folio)
+{
+#if 0
+    if (folio_test_lru(folio) && !folio_test_active(folio) &&
+        !folio_test_unevictable(folio)) {
+        struct pagevec *pvec;
+
+        folio_get(folio);
+        local_lock(&lru_pvecs.lock);
+        pvec = this_cpu_ptr(&lru_pvecs.activate_page);
+        if (pagevec_add_and_need_flush(pvec, &folio->page))
+            pagevec_lru_move_fn(pvec, __activate_page);
+        local_unlock(&lru_pvecs.lock);
+    }
+#endif
+    panic("%s: END!\n", __func__);
+}
+
 /*
  * Mark a page as having seen activity.
  *
@@ -182,6 +200,32 @@ EXPORT_SYMBOL(folio_add_lru);
  */
 void folio_mark_accessed(struct folio *folio)
 {
-    panic("%s: END!\n", __func__);
+    if (!folio_test_referenced(folio)) {
+        folio_set_referenced(folio);
+    } else if (folio_test_unevictable(folio)) {
+        /*
+         * Unevictable pages are on the "LRU_UNEVICTABLE" list. But,
+         * this list is never rotated or maintained, so marking an
+         * unevictable page accessed has no effect.
+         */
+    } else if (!folio_test_active(folio)) {
+#if 0
+        /*
+         * If the page is on the LRU, queue it for activation via
+         * lru_pvecs.activate_page. Otherwise, assume the page is on a
+         * pagevec, mark it active and it'll be moved to the active
+         * LRU on the next drain.
+         */
+        if (folio_test_lru(folio))
+            folio_activate(folio);
+        else
+            __lru_cache_activate_folio(folio);
+        folio_clear_referenced(folio);
+        workingset_activation(folio);
+#endif
+        panic("%s: !folio_test_active\n", __func__);
+    }
+    if (folio_test_idle(folio))
+        folio_clear_idle(folio);
 }
 EXPORT_SYMBOL(folio_mark_accessed);

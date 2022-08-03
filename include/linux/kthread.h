@@ -20,4 +20,6 @@ struct task_struct *kthread_create_on_cpu(int (*threadfn)(void *data),
                                           unsigned int cpu,
                                           const char *namefmt);
 
+bool __kthread_should_park(struct task_struct *k);
+
 #endif /* _LINUX_KTHREAD_H */

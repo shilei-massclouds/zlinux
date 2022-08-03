@@ -153,4 +153,9 @@ struct virtio_blk_outhdr {
 /* Barrier before this op. */
 #define VIRTIO_BLK_T_BARRIER    0x80000000
 
+/* And this is the final byte of the write scatter-gather list. */
+#define VIRTIO_BLK_S_OK     0
+#define VIRTIO_BLK_S_IOERR  1
+#define VIRTIO_BLK_S_UNSUPP 2
+
 #endif /* _LINUX_VIRTIO_BLK_H */

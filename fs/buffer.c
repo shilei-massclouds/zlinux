@@ -300,9 +300,74 @@ void __lock_buffer(struct buffer_head *bh)
 }
 EXPORT_SYMBOL(__lock_buffer);
 
+static void buffer_io_error(struct buffer_head *bh, char *msg)
+{
+    if (!test_bit(BH_Quiet, &bh->b_state))
+        printk_ratelimited(KERN_ERR
+            "Buffer I/O error on dev %pg, logical block %llu%s\n",
+            bh->b_bdev, (unsigned long long)bh->b_blocknr, msg);
+}
+
+void unlock_buffer(struct buffer_head *bh)
+{
+    clear_bit_unlock(BH_Lock, &bh->b_state);
+    smp_mb__after_atomic();
+    wake_up_bit(&bh->b_state, BH_Lock);
+}
+EXPORT_SYMBOL(unlock_buffer);
+
 static void end_buffer_async_read(struct buffer_head *bh, int uptodate)
 {
-    panic("%s: END!\n", __func__);
+    unsigned long flags;
+    struct buffer_head *first;
+    struct buffer_head *tmp;
+    struct page *page;
+    int page_uptodate = 1;
+
+    BUG_ON(!buffer_async_read(bh));
+
+    page = bh->b_page;
+    if (uptodate) {
+        set_buffer_uptodate(bh);
+    } else {
+        clear_buffer_uptodate(bh);
+        buffer_io_error(bh, ", async page read");
+        SetPageError(page);
+    }
+
+    /*
+     * Be _very_ careful from here on. Bad things can happen if
+     * two buffer heads end IO at almost the same time and both
+     * decide that the page is now completely done.
+     */
+    first = page_buffers(page);
+    spin_lock_irqsave(&first->b_uptodate_lock, flags);
+    clear_buffer_async_read(bh);
+    unlock_buffer(bh);
+    tmp = bh;
+    do {
+        if (!buffer_uptodate(tmp))
+            page_uptodate = 0;
+        if (buffer_async_read(tmp)) {
+            BUG_ON(!buffer_locked(tmp));
+            goto still_busy;
+        }
+        tmp = tmp->b_this_page;
+    } while (tmp != bh);
+    spin_unlock_irqrestore(&first->b_uptodate_lock, flags);
+
+    /*
+     * If none of the buffers had errors and they are all
+     * uptodate then we can set the page uptodate.
+     */
+    if (page_uptodate && !PageError(page))
+        SetPageUptodate(page);
+    unlock_page(page);
+    return;
+
+ still_busy:
+    spin_unlock_irqrestore(&first->b_uptodate_lock, flags);
+    return;
 }
 
 /*
