@@ -48,13 +48,13 @@
 #include <linux/mutex_api.h>
 #include <linux/profile.h>
 #include <linux/psi.h>
-#include <linux/ratelimit.h>
 #include <linux/task_work.h>
 
 #include <asm/switch_to.h>
 
 #include <linux/sched/cond_resched.h>
 #endif
+#include <linux/ratelimit.h>
 
 #include "sched.h"
 #if 0

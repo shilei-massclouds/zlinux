@@ -317,4 +317,71 @@ static inline bool mapping_empty(struct address_space *mapping)
     return xa_empty(&mapping->i_pages);
 }
 
+unsigned find_get_pages_range_tag(struct address_space *mapping,
+                                  pgoff_t *index, pgoff_t end, xa_mark_t tag,
+                                  unsigned int nr_pages, struct page **pages);
+
+struct page *pagecache_get_page(struct address_space *mapping, pgoff_t index,
+                                int fgp_flags, gfp_t gfp);
+
+static inline
+struct page *find_get_page_flags(struct address_space *mapping,
+                                 pgoff_t offset, int fgp_flags)
+{
+    return pagecache_get_page(mapping, offset, fgp_flags, 0);
+}
+
+/* Restricts the given gfp_mask to what the mapping allows. */
+static inline gfp_t mapping_gfp_constraint(struct address_space *mapping,
+                                           gfp_t gfp_mask)
+{
+    return mapping_gfp_mask(mapping) & gfp_mask;
+}
+
+/**
+ * find_or_create_page - locate or add a pagecache page
+ * @mapping: the page's address_space
+ * @index: the page's index into the mapping
+ * @gfp_mask: page allocation mode
+ *
+ * Looks up the page cache slot at @mapping & @offset.  If there is a
+ * page cache page, it is returned locked and with an increased
+ * refcount.
+ *
+ * If the page is not present, a new page is allocated using @gfp_mask
+ * and added to the page cache and the VM's LRU list.  The page is
+ * returned locked and with an increased refcount.
+ *
+ * On memory exhaustion, %NULL is returned.
+ *
+ * find_or_create_page() may sleep, even if @gfp_flags specifies an
+ * atomic allocation!
+ */
+static inline
+struct page *find_or_create_page(struct address_space *mapping,
+                                 pgoff_t index, gfp_t gfp_mask)
+{
+    return pagecache_get_page(mapping, index, FGP_LOCK|FGP_ACCESSED|FGP_CREAT,
+                              gfp_mask);
+}
+
+static inline void *detach_page_private(struct page *page)
+{
+    return folio_detach_private(page_folio(page));
+}
+
+void __folio_cancel_dirty(struct folio *folio);
+
+static inline void folio_cancel_dirty(struct folio *folio)
+{
+    /* Avoid atomic ops, locking, etc. when not actually needed. */
+    if (folio_test_dirty(folio))
+        __folio_cancel_dirty(folio);
+}
+
+static inline void cancel_dirty_page(struct page *page)
+{
+    folio_cancel_dirty(page_folio(page));
+}
+
 #endif /* _LINUX_PAGEMAP_H */

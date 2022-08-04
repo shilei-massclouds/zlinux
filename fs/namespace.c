@@ -549,7 +549,6 @@ static int do_new_mount(struct path *path, const char *fstype, int sb_flags,
         err = do_new_mount_fc(fc, path, mnt_flags);
 
     put_fs_context(fc);
-    panic("%s: name(%s) END!\n", __func__, name);
     return err;
 }
 

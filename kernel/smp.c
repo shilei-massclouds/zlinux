@@ -33,6 +33,23 @@
 #include "smpboot.h"
 //#include "sched/smp.h"
 
+/*
+ * Flags to be used as scf_flags argument of smp_call_function_many_cond().
+ *
+ * %SCF_WAIT:       Wait until function execution is completed
+ * %SCF_RUN_LOCAL:  Run also locally if local cpu is set in cpumask
+ */
+#define SCF_WAIT        (1U << 0)
+#define SCF_RUN_LOCAL   (1U << 1)
+
+static void smp_call_function_many_cond(const struct cpumask *mask,
+                                        smp_call_func_t func, void *info,
+                                        unsigned int scf_flags,
+                                        smp_cond_func_t cond_func)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
 /* Setup number of possible processor ids */
 unsigned int nr_cpu_ids __read_mostly = NR_CPUS;
 EXPORT_SYMBOL(nr_cpu_ids);
@@ -115,6 +132,41 @@ EXPORT_SYMBOL_GPL(kick_all_cpus_sync);
 void __init setup_nr_cpu_ids(void)
 {
     nr_cpu_ids = find_last_bit(cpumask_bits(cpu_possible_mask), NR_CPUS) + 1;
+}
+
+/*
+ * on_each_cpu_cond(): Call a function on each processor for which
+ * the supplied function cond_func returns true, optionally waiting
+ * for all the required CPUs to finish. This may include the local
+ * processor.
+ * @cond_func:  A callback function that is passed a cpu id and
+ *      the info parameter. The function is called
+ *      with preemption disabled. The function should
+ *      return a blooean value indicating whether to IPI
+ *      the specified CPU.
+ * @func:   The function to run on all applicable CPUs.
+ *      This must be fast and non-blocking.
+ * @info:   An arbitrary pointer to pass to both functions.
+ * @wait:   If true, wait (atomically) until function has
+ *      completed on other CPUs.
+ *
+ * Preemption is disabled to protect against CPUs going offline but not online.
+ * CPUs going online during the call will not be seen or sent an IPI.
+ *
+ * You must not call this function with disabled interrupts or
+ * from a hardware interrupt handler or from a bottom half handler.
+ */
+void on_each_cpu_cond_mask(smp_cond_func_t cond_func, smp_call_func_t func,
+                           void *info, bool wait, const struct cpumask *mask)
+{
+    unsigned int scf_flags = SCF_RUN_LOCAL;
+
+    if (wait)
+        scf_flags |= SCF_WAIT;
+
+    preempt_disable();
+    smp_call_function_many_cond(mask, func, info, scf_flags, cond_func);
+    preempt_enable();
 }
 
 /* Called by boot processor to activate the rest. */

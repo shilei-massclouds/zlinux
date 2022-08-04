@@ -15,7 +15,7 @@
  * the dcache entry is deleted or garbage collected.
  */
 
-//#include <linux/ratelimit.h>
+#include <linux/ratelimit.h>
 #include <linux/string.h>
 #include <linux/mm.h>
 #include <linux/fs.h>

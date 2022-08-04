@@ -214,3 +214,169 @@ struct ext2_mount_options {
     kuid_t s_resuid;
     kgid_t s_resgid;
 };
+
+/*
+ * Mount flags
+ */
+#define EXT2_MOUNT_OLDALLOC     0x000002  /* Don't use the new Orlov allocator */
+#define EXT2_MOUNT_GRPID        0x000004  /* Create files with directory's group */
+#define EXT2_MOUNT_DEBUG        0x000008  /* Some debugging messages */
+#define EXT2_MOUNT_ERRORS_CONT  0x000010  /* Continue on errors */
+#define EXT2_MOUNT_ERRORS_RO    0x000020  /* Remount fs ro on errors */
+#define EXT2_MOUNT_ERRORS_PANIC 0x000040  /* Panic on errors */
+#define EXT2_MOUNT_MINIX_DF     0x000080  /* Mimics the Minix statfs */
+#define EXT2_MOUNT_NOBH         0x000100  /* No buffer_heads */
+#define EXT2_MOUNT_NO_UID32     0x000200  /* Disable 32-bit UIDs */
+#define EXT2_MOUNT_XATTR_USER   0x004000  /* Extended user attributes */
+#define EXT2_MOUNT_POSIX_ACL    0x008000  /* POSIX Access Control Lists */
+#define EXT2_MOUNT_XIP          0x010000  /* Obsolete, use DAX */
+#define EXT2_MOUNT_USRQUOTA     0x020000  /* user quota */
+#define EXT2_MOUNT_GRPQUOTA     0x040000  /* group quota */
+#define EXT2_MOUNT_RESERVATION  0x080000  /* Preallocation */
+#define EXT2_MOUNT_DAX          0x100000  /* Direct Access */
+
+#define clear_opt(o, opt)   o &= ~EXT2_MOUNT_##opt
+#define set_opt(o, opt)     o |= EXT2_MOUNT_##opt
+#define test_opt(sb, opt)   (EXT2_SB(sb)->s_mount_opt & EXT2_MOUNT_##opt)
+
+/*
+ * Default mount options
+ */
+#define EXT2_DEFM_DEBUG     0x0001
+#define EXT2_DEFM_BSDGROUPS 0x0002
+#define EXT2_DEFM_XATTR_USER    0x0004
+#define EXT2_DEFM_ACL       0x0008
+#define EXT2_DEFM_UID16     0x0010
+
+/*
+ * Behaviour when detecting errors
+ */
+#define EXT2_ERRORS_CONTINUE    1   /* Continue execution */
+#define EXT2_ERRORS_RO          2   /* Remount fs read-only */
+#define EXT2_ERRORS_PANIC       3   /* Panic */
+#define EXT2_ERRORS_DEFAULT     EXT2_ERRORS_CONTINUE
+
+/*
+ * Revision levels
+ */
+#define EXT2_GOOD_OLD_REV   0   /* The good old (original) format */
+#define EXT2_DYNAMIC_REV    1   /* V2 format w/ dynamic inode sizes */
+
+#define EXT2_CURRENT_REV    EXT2_GOOD_OLD_REV
+#define EXT2_MAX_SUPP_REV   EXT2_DYNAMIC_REV
+
+#define EXT2_GOOD_OLD_INODE_SIZE 128
+
+static inline struct ext2_sb_info *EXT2_SB(struct super_block *sb)
+{
+    return sb->s_fs_info;
+}
+
+/*
+ * Feature set definitions
+ */
+
+#define EXT2_HAS_COMPAT_FEATURE(sb,mask)            \
+    ( EXT2_SB(sb)->s_es->s_feature_compat & cpu_to_le32(mask) )
+#define EXT2_HAS_RO_COMPAT_FEATURE(sb,mask)         \
+    ( EXT2_SB(sb)->s_es->s_feature_ro_compat & cpu_to_le32(mask) )
+#define EXT2_HAS_INCOMPAT_FEATURE(sb,mask)          \
+    ( EXT2_SB(sb)->s_es->s_feature_incompat & cpu_to_le32(mask) )
+#define EXT2_SET_COMPAT_FEATURE(sb,mask)            \
+    EXT2_SB(sb)->s_es->s_feature_compat |= cpu_to_le32(mask)
+#define EXT2_SET_RO_COMPAT_FEATURE(sb,mask)         \
+    EXT2_SB(sb)->s_es->s_feature_ro_compat |= cpu_to_le32(mask)
+#define EXT2_SET_INCOMPAT_FEATURE(sb,mask)          \
+    EXT2_SB(sb)->s_es->s_feature_incompat |= cpu_to_le32(mask)
+#define EXT2_CLEAR_COMPAT_FEATURE(sb,mask)          \
+    EXT2_SB(sb)->s_es->s_feature_compat &= ~cpu_to_le32(mask)
+#define EXT2_CLEAR_RO_COMPAT_FEATURE(sb,mask)           \
+    EXT2_SB(sb)->s_es->s_feature_ro_compat &= ~cpu_to_le32(mask)
+#define EXT2_CLEAR_INCOMPAT_FEATURE(sb,mask)            \
+    EXT2_SB(sb)->s_es->s_feature_incompat &= ~cpu_to_le32(mask)
+
+#define EXT2_FEATURE_COMPAT_DIR_PREALLOC    0x0001
+#define EXT2_FEATURE_COMPAT_IMAGIC_INODES   0x0002
+#define EXT3_FEATURE_COMPAT_HAS_JOURNAL     0x0004
+#define EXT2_FEATURE_COMPAT_EXT_ATTR        0x0008
+#define EXT2_FEATURE_COMPAT_RESIZE_INO      0x0010
+#define EXT2_FEATURE_COMPAT_DIR_INDEX       0x0020
+#define EXT2_FEATURE_COMPAT_ANY         0xffffffff
+
+#define EXT2_FEATURE_RO_COMPAT_SPARSE_SUPER 0x0001
+#define EXT2_FEATURE_RO_COMPAT_LARGE_FILE   0x0002
+#define EXT2_FEATURE_RO_COMPAT_BTREE_DIR    0x0004
+#define EXT2_FEATURE_RO_COMPAT_ANY      0xffffffff
+
+#define EXT2_FEATURE_INCOMPAT_COMPRESSION   0x0001
+#define EXT2_FEATURE_INCOMPAT_FILETYPE      0x0002
+#define EXT3_FEATURE_INCOMPAT_RECOVER       0x0004
+#define EXT3_FEATURE_INCOMPAT_JOURNAL_DEV   0x0008
+#define EXT2_FEATURE_INCOMPAT_META_BG       0x0010
+#define EXT2_FEATURE_INCOMPAT_ANY       0xffffffff
+
+#define EXT2_FEATURE_COMPAT_SUPP    EXT2_FEATURE_COMPAT_EXT_ATTR
+#define EXT2_FEATURE_INCOMPAT_SUPP  (EXT2_FEATURE_INCOMPAT_FILETYPE | \
+                                     EXT2_FEATURE_INCOMPAT_META_BG)
+#define EXT2_FEATURE_RO_COMPAT_SUPP (EXT2_FEATURE_RO_COMPAT_SPARSE_SUPER | \
+                                     EXT2_FEATURE_RO_COMPAT_LARGE_FILE| \
+                                     EXT2_FEATURE_RO_COMPAT_BTREE_DIR)
+#define EXT2_FEATURE_RO_COMPAT_UNSUPPORTED  ~EXT2_FEATURE_RO_COMPAT_SUPP
+#define EXT2_FEATURE_INCOMPAT_UNSUPPORTED   ~EXT2_FEATURE_INCOMPAT_SUPP
+
+/*
+ * Constants relative to the data blocks
+ */
+#define EXT2_NDIR_BLOCKS        12
+#define EXT2_IND_BLOCK          EXT2_NDIR_BLOCKS
+#define EXT2_DIND_BLOCK         (EXT2_IND_BLOCK + 1)
+#define EXT2_TIND_BLOCK         (EXT2_DIND_BLOCK + 1)
+#define EXT2_N_BLOCKS           (EXT2_TIND_BLOCK + 1)
+
+/* First non-reserved inode for old ext2 filesystems */
+#define EXT2_GOOD_OLD_FIRST_INO 11
+
+/*
+ * Macro-instructions used to manage fragments
+ */
+#define EXT2_MIN_FRAG_SIZE      1024
+#define EXT2_MAX_FRAG_SIZE      4096
+#define EXT2_MIN_FRAG_LOG_SIZE  10
+#define EXT2_FRAG_SIZE(s)       (EXT2_SB(s)->s_frag_size)
+#define EXT2_FRAGS_PER_BLOCK(s) (EXT2_SB(s)->s_frags_per_block)
+
+/*
+ * Macro-instructions used to manage several block sizes
+ */
+#define EXT2_MIN_BLOCK_SIZE     1024
+#define EXT2_MAX_BLOCK_SIZE     4096
+#define EXT2_MIN_BLOCK_LOG_SIZE 10
+#define EXT2_BLOCK_SIZE(s)      ((s)->s_blocksize)
+#define EXT2_ADDR_PER_BLOCK(s)  (EXT2_BLOCK_SIZE(s) / sizeof (__u32))
+#define EXT2_BLOCK_SIZE_BITS(s) ((s)->s_blocksize_bits)
+#define EXT2_ADDR_PER_BLOCK_BITS(s) (EXT2_SB(s)->s_addr_per_block_bits)
+#define EXT2_INODE_SIZE(s)      (EXT2_SB(s)->s_inode_size)
+#define EXT2_FIRST_INO(s)       (EXT2_SB(s)->s_first_ino)
+
+/*
+ * Structure of a blocks group descriptor
+ */
+struct ext2_group_desc
+{
+    __le32  bg_block_bitmap;        /* Blocks bitmap block */
+    __le32  bg_inode_bitmap;        /* Inodes bitmap block */
+    __le32  bg_inode_table;     /* Inodes table block */
+    __le16  bg_free_blocks_count;   /* Free blocks count */
+    __le16  bg_free_inodes_count;   /* Free inodes count */
+    __le16  bg_used_dirs_count; /* Directories count */
+    __le16  bg_pad;
+    __le32  bg_reserved[3];
+};
+
+/*
+ * Macro-instructions used to manage group descriptors
+ */
+#define EXT2_BLOCKS_PER_GROUP(s)    (EXT2_SB(s)->s_blocks_per_group)
+#define EXT2_DESC_PER_BLOCK(s)      (EXT2_SB(s)->s_desc_per_block)
+#define EXT2_INODES_PER_GROUP(s)    (EXT2_SB(s)->s_inodes_per_group)
+#define EXT2_DESC_PER_BLOCK_BITS(s) (EXT2_SB(s)->s_desc_per_block_bits)

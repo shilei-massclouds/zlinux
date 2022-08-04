@@ -16,6 +16,7 @@
 #include <linux/module.h>
 #include <linux/writeback.h>
 #include <linux/device.h>
+#include <linux/blkdev.h>
 
 struct backing_dev_info noop_backing_dev_info;
 EXPORT_SYMBOL_GPL(noop_backing_dev_info);
@@ -168,7 +169,6 @@ postcore_initcall(bdi_class_init);
 
 struct backing_dev_info *inode_to_bdi(struct inode *inode)
 {
-#if 0
     struct super_block *sb;
 
     if (!inode)
@@ -177,8 +177,33 @@ struct backing_dev_info *inode_to_bdi(struct inode *inode)
     sb = inode->i_sb;
     if (sb_is_blkdev_sb(sb))
         return I_BDEV(inode)->bd_disk->bdi;
+    panic("%s: END!\n", __func__);
     return sb->s_bdi;
+}
+EXPORT_SYMBOL(inode_to_bdi);
+
+void bdi_unregister(struct backing_dev_info *bdi)
+{
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL(bdi_unregister);
+
+static void release_bdi(struct kref *ref)
+{
+#if 0
+    struct backing_dev_info *bdi =
+        container_of(ref, struct backing_dev_info, refcnt);
+
+    WARN_ON_ONCE(test_bit(WB_registered, &bdi->wb.state));
+    WARN_ON_ONCE(bdi->dev);
+    wb_exit(&bdi->wb);
+    kfree(bdi);
 #endif
     panic("%s: END!\n", __func__);
 }
-EXPORT_SYMBOL(inode_to_bdi);
+
+void bdi_put(struct backing_dev_info *bdi)
+{
+    kref_put(&bdi->refcnt, release_bdi);
+}
+EXPORT_SYMBOL(bdi_put);

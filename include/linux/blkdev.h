@@ -746,4 +746,6 @@ static inline unsigned int block_size(struct block_device *bdev)
     return 1 << bdev->bd_inode->i_blkbits;
 }
 
+struct block_device *I_BDEV(struct inode *inode);
+
 #endif /* _LINUX_BLKDEV_H */

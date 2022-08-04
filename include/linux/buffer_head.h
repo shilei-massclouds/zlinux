@@ -181,4 +181,43 @@ static inline void lock_buffer(struct buffer_head *bh)
         __lock_buffer(bh);
 }
 
+void invalidate_bh_lrus(void);
+
+struct buffer_head *__bread_gfp(struct block_device *,
+                                sector_t block, unsigned size, gfp_t gfp);
+
+static inline struct buffer_head *
+sb_bread(struct super_block *sb, sector_t block)
+{
+    return __bread_gfp(sb->s_bdev, block, sb->s_blocksize, __GFP_MOVABLE);
+}
+
+static inline void get_bh(struct buffer_head *bh)
+{
+    atomic_inc(&bh->b_count);
+}
+
+void __brelse(struct buffer_head *);
+
+static inline void brelse(struct buffer_head *bh)
+{
+    if (bh)
+        __brelse(bh);
+}
+
+static inline void put_bh(struct buffer_head *bh)
+{
+    smp_mb__before_atomic();
+    atomic_dec(&bh->b_count);
+}
+
+void __wait_on_buffer(struct buffer_head *);
+
+static inline void wait_on_buffer(struct buffer_head *bh)
+{
+    might_sleep();
+    if (buffer_locked(bh))
+        __wait_on_buffer(bh);
+}
+
 #endif /* _LINUX_BUFFER_HEAD_H */

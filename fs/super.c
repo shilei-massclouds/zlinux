@@ -571,9 +571,42 @@ void kill_litter_super(struct super_block *sb)
 }
 EXPORT_SYMBOL(kill_litter_super);
 
+/**
+ *  generic_shutdown_super  -   common helper for ->kill_sb()
+ *  @sb: superblock to kill
+ *
+ *  generic_shutdown_super() does all fs-independent work on superblock
+ *  shutdown.  Typical ->kill_sb() should pick all fs-specific objects
+ *  that need destruction out of superblock, call generic_shutdown_super()
+ *  and release aforementioned objects.  Note: dentries and inodes _are_
+ *  taken care of and do not need specific handling.
+ *
+ *  Upon calling this function, the filesystem may no longer alter or
+ *  rearrange the set of dentries belonging to this super_block, nor may it
+ *  change the attachments of dentries to inodes.
+ */
+void generic_shutdown_super(struct super_block *sb)
+{
+    const struct super_operations *sop = sb->s_op;
+
+    if (sb->s_root) {
+        panic("%s: s_root!\n", __func__);
+    }
+    spin_lock(&sb_lock);
+    /* should be initialized for __put_super_and_need_restart() */
+    hlist_del_init(&sb->s_instances);
+    spin_unlock(&sb_lock);
+    up_write(&sb->s_umount);
+    if (sb->s_bdi != &noop_backing_dev_info) {
+        if (sb->s_iflags & SB_I_PERSB_BDI)
+            bdi_unregister(sb->s_bdi);
+        bdi_put(sb->s_bdi);
+        sb->s_bdi = &noop_backing_dev_info;
+    }
+}
+
 void kill_block_super(struct super_block *sb)
 {
-#if 0
     struct block_device *bdev = sb->s_bdev;
     fmode_t mode = sb->s_mode;
 
@@ -582,8 +615,6 @@ void kill_block_super(struct super_block *sb)
     sync_blockdev(bdev);
     WARN_ON_ONCE(!(mode & FMODE_EXCL));
     blkdev_put(bdev, mode | FMODE_EXCL);
-#endif
-    panic("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL(kill_block_super);
 

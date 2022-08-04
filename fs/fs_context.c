@@ -43,7 +43,6 @@ struct legacy_fs_context {
  */
 static void legacy_fs_context_free(struct fs_context *fc)
 {
-#if 0
     struct legacy_fs_context *ctx = fc->fs_private;
 
     if (ctx) {
@@ -51,8 +50,6 @@ static void legacy_fs_context_free(struct fs_context *fc)
             kfree(ctx->legacy_data);
         kfree(ctx);
     }
-#endif
-    panic("%s: END!\n", __func__);
 }
 
 /*

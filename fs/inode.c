@@ -22,8 +22,8 @@
 #include <linux/prefetch.h>
 #include <linux/list_lru.h>
 #include <linux/buffer_head.h> /* for inode_has_buffers */
-#if 0
 #include <linux/ratelimit.h>
+#if 0
 #include <linux/iversion.h>
 #endif
 #include "internal.h"

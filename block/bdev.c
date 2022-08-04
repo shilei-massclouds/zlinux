@@ -19,8 +19,8 @@
 #include <linux/module.h>
 #if 0
 #include <linux/blkpg.h>
-#include <linux/buffer_head.h>
 #endif
+#include <linux/buffer_head.h>
 #include <linux/magic.h>
 #include <linux/swap.h>
 #include <linux/writeback.h>
@@ -554,7 +554,7 @@ static void kill_bdev(struct block_device *bdev)
     invalidate_bh_lrus();
     truncate_inode_pages(mapping, 0);
 #endif
-    panic("%s: END!\n", __func__);
+    pr_warn("%s: Still something unfinished!\n", __func__);
 }
 
 int set_blocksize(struct block_device *bdev, int size)

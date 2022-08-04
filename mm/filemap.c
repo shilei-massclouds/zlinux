@@ -32,8 +32,8 @@
 #include <linux/hash.h>
 #include <linux/writeback.h>
 #include <linux/backing-dev.h>
-#if 0
 #include <linux/pagevec.h>
+#if 0
 #include <linux/security.h>
 #include <linux/cpuset.h>
 #include <linux/hugetlb.h>
@@ -178,6 +178,54 @@ int __filemap_fdatawrite_range(struct address_space *mapping, loff_t start,
     return filemap_fdatawrite_wbc(mapping, &wbc);
 }
 
+static void __filemap_fdatawait_range(struct address_space *mapping,
+                                      loff_t start_byte, loff_t end_byte)
+{
+    pgoff_t index = start_byte >> PAGE_SHIFT;
+    pgoff_t end = end_byte >> PAGE_SHIFT;
+    struct pagevec pvec;
+    int nr_pages;
+
+    if (end_byte < start_byte)
+        return;
+
+    pagevec_init(&pvec);
+    while (index <= end) {
+        unsigned i;
+
+        nr_pages = pagevec_lookup_range_tag(&pvec, mapping, &index, end,
+                                            PAGECACHE_TAG_WRITEBACK);
+        if (!nr_pages)
+            break;
+
+        panic("%s: 1!\n", __func__);
+    }
+}
+
+/**
+ * filemap_fdatawait_range - wait for writeback to complete
+ * @mapping:        address space structure to wait for
+ * @start_byte:     offset in bytes where the range starts
+ * @end_byte:       offset in bytes where the range ends (inclusive)
+ *
+ * Walk the list of under-writeback pages of the given address space
+ * in the given range and wait for all of them.  Check error status of
+ * the address space and return it.
+ *
+ * Since the error status of the address space is cleared by this function,
+ * callers are responsible for checking the return value and handling and/or
+ * reporting the error.
+ *
+ * Return: error status of the address space.
+ */
+int filemap_fdatawait_range(struct address_space *mapping, loff_t start_byte,
+                loff_t end_byte)
+{
+    __filemap_fdatawait_range(mapping, start_byte, end_byte);
+    return filemap_check_errors(mapping);
+}
+EXPORT_SYMBOL(filemap_fdatawait_range);
+
 int filemap_write_and_wait_range(struct address_space *mapping,
                                  loff_t lstart, loff_t lend)
 {
@@ -185,8 +233,20 @@ int filemap_write_and_wait_range(struct address_space *mapping,
 
     if (mapping_needs_writeback(mapping)) {
         err = __filemap_fdatawrite_range(mapping, lstart, lend, WB_SYNC_ALL);
-
-        panic("%s: mapping_needs_writeback!\n", __func__);
+        /*
+         * Even if the above returned error, the pages may be
+         * written partially (e.g. -ENOSPC), so we wait for it.
+         * But the -EIO is special case, it may indicate the worst
+         * thing (e.g. bug) happened, so we avoid waiting for it.
+         */
+        if (err != -EIO) {
+            int err2 = filemap_fdatawait_range(mapping, lstart, lend);
+            if (!err)
+                err = err2;
+        } else {
+            /* Clear any previously stored errors */
+            filemap_check_errors(mapping);
+        }
     } else {
         err = filemap_check_errors(mapping);
     }
@@ -733,3 +793,99 @@ void __folio_lock(struct folio *folio)
     folio_wait_bit_common(folio, PG_locked, TASK_UNINTERRUPTIBLE, EXCLUSIVE);
 }
 EXPORT_SYMBOL(__folio_lock);
+
+static inline
+struct folio *find_get_entry(struct xa_state *xas, pgoff_t max, xa_mark_t mark)
+{
+    struct folio *folio;
+
+ retry:
+    if (mark == XA_PRESENT)
+        folio = xas_find(xas, max);
+    else
+        folio = xas_find_marked(xas, max, mark);
+
+    if (xas_retry(xas, folio))
+        goto retry;
+    /*
+     * A shadow entry of a recently evicted page, a swap
+     * entry from shmem/tmpfs or a DAX entry.  Return it
+     * without attempting to raise page count.
+     */
+    if (!folio || xa_is_value(folio))
+        return folio;
+
+    if (!folio_try_get_rcu(folio))
+        goto reset;
+
+    if (unlikely(folio != xas_reload(xas))) {
+        folio_put(folio);
+        goto reset;
+    }
+
+    return folio;
+ reset:
+    xas_reset(xas);
+    goto retry;
+}
+
+/**
+ * find_get_pages_range_tag - Find and return head pages matching @tag.
+ * @mapping:    the address_space to search
+ * @index:  the starting page index
+ * @end:    The final page index (inclusive)
+ * @tag:    the tag index
+ * @nr_pages:   the maximum number of pages
+ * @pages:  where the resulting pages are placed
+ *
+ * Like find_get_pages_range(), except we only return head pages which are
+ * tagged with @tag.  @index is updated to the index immediately after the
+ * last page we return, ready for the next iteration.
+ *
+ * Return: the number of pages which were found.
+ */
+unsigned find_get_pages_range_tag(struct address_space *mapping,
+                                  pgoff_t *index, pgoff_t end, xa_mark_t tag,
+                                  unsigned int nr_pages, struct page **pages)
+{
+    XA_STATE(xas, &mapping->i_pages, *index);
+    struct folio *folio;
+    unsigned ret = 0;
+
+    if (unlikely(!nr_pages))
+        return 0;
+
+    rcu_read_lock();
+    while ((folio = find_get_entry(&xas, end, tag))) {
+        /*
+         * Shadow entries should never be tagged, but this iteration
+         * is lockless so there is a window for page reclaim to evict
+         * a page we saw tagged.  Skip over it.
+         */
+        if (xa_is_value(folio))
+            continue;
+
+        pages[ret] = &folio->page;
+        if (++ret == nr_pages) {
+            *index = folio->index + folio_nr_pages(folio);
+            goto out;
+        }
+    }
+
+    /*
+     * We come here when we got to @end. We take care to not overflow the
+     * index @index as it confuses some of the callers. This breaks the
+     * iteration when there is a page at index -1 but that is already
+     * broken anyway.
+     */
+    if (end == (pgoff_t)-1)
+        *index = (pgoff_t)-1;
+    else
+        *index = end + 1;
+
+ out:
+    rcu_read_unlock();
+
+    return ret;
+}
+EXPORT_SYMBOL(find_get_pages_range_tag);

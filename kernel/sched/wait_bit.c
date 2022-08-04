@@ -50,6 +50,103 @@ void wake_up_bit(void *word, int bit)
 }
 EXPORT_SYMBOL(wake_up_bit);
 
+/*
+ * Note: we use "set_current_state()" _after_ the wait-queue add,
+ * because we need a memory barrier there on SMP, so that any
+ * wake-function that tests for the wait-queue being active
+ * will be guaranteed to see waitqueue addition _or_ subsequent
+ * tests in this thread will see the wakeup having taken place.
+ *
+ * The spin_unlock() itself is semi-permeable and only protects
+ * one way (it only protects stuff inside the critical region and
+ * stops them from bleeding out - it would still allow subsequent
+ * loads to move into the critical region).
+ */
+void
+prepare_to_wait(struct wait_queue_head *wq_head,
+                struct wait_queue_entry *wq_entry, int state)
+{
+    unsigned long flags;
+
+    wq_entry->flags &= ~WQ_FLAG_EXCLUSIVE;
+    spin_lock_irqsave(&wq_head->lock, flags);
+    if (list_empty(&wq_entry->entry))
+        __add_wait_queue(wq_head, wq_entry);
+    set_current_state(state);
+    spin_unlock_irqrestore(&wq_head->lock, flags);
+}
+EXPORT_SYMBOL(prepare_to_wait);
+
+/**
+ * finish_wait - clean up after waiting in a queue
+ * @wq_head: waitqueue waited on
+ * @wq_entry: wait descriptor
+ *
+ * Sets current thread back to running state and removes
+ * the wait descriptor from the given waitqueue if still
+ * queued.
+ */
+void finish_wait(struct wait_queue_head *wq_head,
+                 struct wait_queue_entry *wq_entry)
+{
+    unsigned long flags;
+
+    __set_current_state(TASK_RUNNING);
+    /*
+     * We can check for list emptiness outside the lock
+     * IFF:
+     *  - we use the "careful" check that verifies both
+     *    the next and prev pointers, so that there cannot
+     *    be any half-pending updates in progress on other
+     *    CPU's that we haven't seen yet (and that might
+     *    still change the stack area.
+     * and
+     *  - all other users take the lock (ie we can only
+     *    have _one_ other CPU that looks at or modifies
+     *    the list).
+     */
+    if (!list_empty_careful(&wq_entry->entry)) {
+        spin_lock_irqsave(&wq_head->lock, flags);
+        list_del_init(&wq_entry->entry);
+        spin_unlock_irqrestore(&wq_head->lock, flags);
+    }
+}
+EXPORT_SYMBOL(finish_wait);
+
+/*
+ * To allow interruptible waiting and asynchronous (i.e. nonblocking)
+ * waiting, the actions of __wait_on_bit() and __wait_on_bit_lock() are
+ * permitted return codes. Nonzero return codes halt waiting and return.
+ */
+int __sched
+__wait_on_bit(struct wait_queue_head *wq_head,
+              struct wait_bit_queue_entry *wbq_entry,
+              wait_bit_action_f *action, unsigned mode)
+{
+    int ret = 0;
+
+    do {
+        prepare_to_wait(wq_head, &wbq_entry->wq_entry, mode);
+        if (test_bit(wbq_entry->key.bit_nr, wbq_entry->key.flags))
+            ret = (*action)(&wbq_entry->key, mode);
+    } while (test_bit(wbq_entry->key.bit_nr, wbq_entry->key.flags) && !ret);
+
+    finish_wait(wq_head, &wbq_entry->wq_entry);
+
+    return ret;
+}
+EXPORT_SYMBOL(__wait_on_bit);
+
+int __sched out_of_line_wait_on_bit(void *word, int bit,
+                                    wait_bit_action_f *action, unsigned mode)
+{
+    struct wait_queue_head *wq_head = bit_waitqueue(word, bit);
+    DEFINE_WAIT_BIT(wq_entry, word, bit);
+
+    return __wait_on_bit(wq_head, &wq_entry, action, mode);
+}
+EXPORT_SYMBOL(out_of_line_wait_on_bit);
+
 void __init wait_bit_init(void)
 {
     int i;
@@ -57,3 +154,32 @@ void __init wait_bit_init(void)
     for (i = 0; i < WAIT_TABLE_SIZE; i++)
         init_waitqueue_head(bit_wait_table + i);
 }
+
+int wake_bit_function(struct wait_queue_entry *wq_entry,
+                      unsigned mode, int sync, void *arg)
+{
+    struct wait_bit_key *key = arg;
+    struct wait_bit_queue_entry *wait_bit =
+        container_of(wq_entry, struct wait_bit_queue_entry, wq_entry);
+
+    if (wait_bit->key.flags != key->flags ||
+        wait_bit->key.bit_nr != key->bit_nr ||
+        test_bit(key->bit_nr, key->flags))
+        return 0;
+
+#if 0
+    return autoremove_wake_function(wq_entry, mode, sync, key);
+#endif
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL(wake_bit_function);
+
+__sched int bit_wait_io(struct wait_bit_key *word, int mode)
+{
+    io_schedule();
+    if (signal_pending_state(mode, current))
+        return -EINTR;
+
+    return 0;
+}
+EXPORT_SYMBOL(bit_wait_io);

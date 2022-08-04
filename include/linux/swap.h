@@ -57,5 +57,7 @@ extern struct list_lru shadow_nodes;
 
 void folio_mark_accessed(struct folio *);
 
+void mark_page_accessed(struct page *);
+
 #endif /* __KERNEL__*/
 #endif /* _LINUX_SWAP_H */

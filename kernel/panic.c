@@ -25,7 +25,7 @@
 #include <linux/console.h>
 #include <linux/bug.h>
 #include <linux/reboot.h>
-//#include <linux/ratelimit.h>
+#include <linux/ratelimit.h>
 //#include <linux/debugfs.h>
 #include <asm/sections.h>
 

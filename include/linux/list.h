@@ -437,4 +437,18 @@ static inline void list_del_init_careful(struct list_head *entry)
     for (; !list_entry_is_head(pos, head, member);          \
          pos = list_prev_entry(pos, member))
 
+/**
+ * hlist_del_init - Delete the specified hlist_node from its list and initialize
+ * @n: Node to delete.
+ *
+ * Note that this function leaves the node in unhashed state.
+ */
+static inline void hlist_del_init(struct hlist_node *n)
+{
+    if (!hlist_unhashed(n)) {
+        __hlist_del(n);
+        INIT_HLIST_NODE(n);
+    }
+}
+
 #endif /* _LINUX_LIST_H */

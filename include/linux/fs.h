@@ -37,12 +37,10 @@
 #include <linux/uuid.h>
 #include <linux/percpu-rwsem.h>
 #include <linux/delayed_call.h>
-#if 0
-#include <linux/workqueue.h>
+//#include <linux/workqueue.h>
 #include <linux/ioprio.h>
-#include <linux/fs_types.h>
+//#include <linux/fs_types.h>
 #include <linux/build_bug.h>
-#endif
 #include <linux/errseq.h>
 #include <linux/stddef.h>
 #include <linux/mount.h>
@@ -1331,6 +1329,12 @@ extern int sb_min_blocksize(struct super_block *, int);
 static inline bool mapping_tagged(struct address_space *mapping, xa_mark_t tag)
 {
     return xa_marked(&mapping->i_pages, tag);
+}
+
+extern struct super_block *blockdev_superblock;
+static inline bool sb_is_blkdev_sb(struct super_block *sb)
+{
+    return sb == blockdev_superblock;
 }
 
 #endif /* _LINUX_FS_H */

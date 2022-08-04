@@ -64,4 +64,20 @@ do {                        \
 #define get_cpu()       ({ preempt_disable(); __smp_processor_id(); })
 #define put_cpu()       preempt_enable()
 
+void on_each_cpu_cond_mask(smp_cond_func_t cond_func, smp_call_func_t func,
+                           void *info, bool wait, const struct cpumask *mask);
+
+/*
+ * Call a function on each processor for which the supplied function
+ * cond_func returns a positive value. This may include the local
+ * processor.  May be used during early boot while early_boot_irqs_disabled is
+ * set. Use local_irq_save/restore() instead of local_irq_disable/enable().
+ */
+static inline
+void on_each_cpu_cond(smp_cond_func_t cond_func,
+                      smp_call_func_t func, void *info, bool wait)
+{
+    on_each_cpu_cond_mask(cond_func, func, info, wait, cpu_online_mask);
+}
+
 #endif /* __LINUX_SMP_H */

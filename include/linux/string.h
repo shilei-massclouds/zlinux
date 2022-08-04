@@ -5,7 +5,7 @@
 #include <linux/compiler.h> /* for inline */
 #include <linux/types.h>    /* for size_t */
 #include <linux/stddef.h>   /* for NULL */
-#include <stdarg.h>
+#include <linux/stdarg.h>
 #include <uapi/linux/string.h>
 
 /*

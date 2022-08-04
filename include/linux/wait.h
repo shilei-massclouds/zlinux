@@ -135,4 +135,17 @@ void __wake_up(struct wait_queue_head *wq_head,
 
 #define wake_up(x)  __wake_up(x, TASK_NORMAL, 1, NULL)
 
+static inline void __add_wait_queue(struct wait_queue_head *wq_head, struct wait_queue_entry *wq_entry)
+{
+    struct list_head *head = &wq_head->head;
+    struct wait_queue_entry *wq;
+
+    list_for_each_entry(wq, &wq_head->head, entry) {
+        if (!(wq->flags & WQ_FLAG_PRIORITY))
+            break;
+        head = &wq->entry;
+    }
+    list_add(&wq_entry->entry, head);
+}
+
 #endif /* _LINUX_WAIT_H */

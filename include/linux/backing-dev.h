@@ -58,4 +58,8 @@ static inline bool mapping_can_writeback(struct address_space *mapping)
     return inode_to_bdi(mapping->host)->capabilities & BDI_CAP_WRITEBACK;
 }
 
+void bdi_put(struct backing_dev_info *bdi);
+
+void bdi_unregister(struct backing_dev_info *bdi);
+
 #endif  /* _LINUX_BACKING_DEV_H */
