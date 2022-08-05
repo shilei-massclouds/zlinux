@@ -209,4 +209,6 @@ void logfc(struct fc_log *log, const char *prefix, char level,
 #define invalf(fc, fmt, ...) (errorf(fc, fmt, ## __VA_ARGS__), -EINVAL)
 #define inval_plog(p, fmt, ...) (error_plog(p, fmt, ## __VA_ARGS__), -EINVAL)
 
+extern void fc_drop_locked(struct fs_context *fc);
+
 #endif /* _LINUX_FS_CONTEXT_H */

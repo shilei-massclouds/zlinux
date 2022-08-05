@@ -55,6 +55,22 @@ do {                                    \
     __init_rwsem((sem), #sem, &__key);  \
 } while (0)
 
+#define __RWSEM_OPT_INIT(lockname)
+
+#define RWSEM_UNLOCKED_VALUE        0L
+#define __RWSEM_COUNT_INIT(name) \
+    .count = ATOMIC_LONG_INIT(RWSEM_UNLOCKED_VALUE)
+
+#define __RWSEM_INITIALIZER(name)               \
+    { __RWSEM_COUNT_INIT(name),             \
+      .owner = ATOMIC_LONG_INIT(0),             \
+      __RWSEM_OPT_INIT(name)                \
+      .wait_lock = __RAW_SPIN_LOCK_UNLOCKED(name.wait_lock),\
+      .wait_list = LIST_HEAD_INIT((name).wait_list) }
+
+#define DECLARE_RWSEM(name) \
+    struct rw_semaphore name = __RWSEM_INITIALIZER(name)
+
 /*
  * lock for writing
  */

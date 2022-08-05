@@ -1377,4 +1377,6 @@ extern ssize_t generic_read_dir(struct file *, char __user *, size_t, loff_t *);
 
 extern loff_t generic_file_llseek(struct file *file, loff_t offset, int whence);
 
+void deactivate_locked_super(struct super_block *sb);
+
 #endif /* _LINUX_FS_H */

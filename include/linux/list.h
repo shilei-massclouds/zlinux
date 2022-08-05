@@ -425,6 +425,22 @@ static inline void list_del_init_careful(struct list_head *entry)
 }
 
 /**
+ * list_splice_init - join two lists and reinitialise the emptied list.
+ * @list: the new list to add.
+ * @head: the place to add it in the first list.
+ *
+ * The list at @list is reinitialised
+ */
+static inline void list_splice_init(struct list_head *list,
+                                    struct list_head *head)
+{
+    if (!list_empty(list)) {
+        __list_splice(list, head, head->next);
+        INIT_LIST_HEAD(list);
+    }
+}
+
+/**
  * list_for_each_entry_from_reverse - iterate backwards over list of given type
  *                                    from the current point
  * @pos:    the type * to use as a loop cursor.
@@ -436,6 +452,9 @@ static inline void list_del_init_careful(struct list_head *entry)
 #define list_for_each_entry_from_reverse(pos, head, member)     \
     for (; !list_entry_is_head(pos, head, member);          \
          pos = list_prev_entry(pos, member))
+
+#define HLIST_HEAD_INIT { .first = NULL }
+#define HLIST_HEAD(name) struct hlist_head name = {  .first = NULL }
 
 /**
  * hlist_del_init - Delete the specified hlist_node from its list and initialize
@@ -465,5 +484,57 @@ static inline void hlist_del_init(struct hlist_node *n)
     for (n = list_next_entry(pos, member);                  \
          !list_entry_is_head(pos, head, member);            \
          pos = n, n = list_next_entry(n, member))
+
+/**
+ * hlist_move_list - Move an hlist
+ * @old: hlist_head for old list.
+ * @new: hlist_head for new list.
+ *
+ * Move a list from one list head to another. Fixup the pprev
+ * reference of the first entry if it exists.
+ */
+static inline void hlist_move_list(struct hlist_head *old,
+                                   struct hlist_head *new)
+{
+    new->first = old->first;
+    if (new->first)
+        new->first->pprev = &new->first;
+    old->first = NULL;
+}
+
+/**
+ * hlist_del - Delete the specified hlist_node from its list
+ * @n: Node to delete.
+ *
+ * Note that this function leaves the node in hashed state.  Use
+ * hlist_del_init() or similar instead to unhash @n.
+ */
+static inline void hlist_del(struct hlist_node *n)
+{
+    __hlist_del(n);
+    n->next = LIST_POISON1;
+    n->pprev = LIST_POISON2;
+}
+
+/**
+ * hlist_empty - Is the specified hlist_head structure an empty hlist?
+ * @h: Structure to check.
+ */
+static inline int hlist_empty(const struct hlist_head *h)
+{
+    return !READ_ONCE(h->first);
+}
+
+/**
+ * hlist_for_each_entry_safe - iterate over list of given type safe against removal of list entry
+ * @pos:    the type * to use as a loop cursor.
+ * @n:      a &struct hlist_node to use as temporary storage
+ * @head:   the head for your list.
+ * @member: the name of the hlist_node within the struct.
+ */
+#define hlist_for_each_entry_safe(pos, n, head, member)         \
+    for (pos = hlist_entry_safe((head)->first, typeof(*pos), member);\
+         pos && ({ n = pos->member.next; 1; });         \
+         pos = hlist_entry_safe(n, typeof(*pos), member))
 
 #endif /* _LINUX_LIST_H */

@@ -67,6 +67,9 @@ EXPORT_SYMBOL_GPL(fs_kobj);
 
 static DEFINE_IDA(mnt_id_ida);
 static DEFINE_IDA(mnt_group_ida);
+static DECLARE_RWSEM(namespace_sem);
+static HLIST_HEAD(unmounted);   /* protected by namespace_sem */
+static LIST_HEAD(ex_mountpoints); /* protected by namespace_sem */
 
 /*
  * vfsmount lock may be taken for read to prevent changes to the
@@ -77,6 +80,22 @@ static DEFINE_IDA(mnt_group_ida);
  * tree or hash is modified or when a vfsmount structure is modified.
  */
 __cacheline_aligned_in_smp DEFINE_SEQLOCK(mount_lock);
+
+static inline struct hlist_head *
+m_hash(struct vfsmount *mnt, struct dentry *dentry)
+{
+    unsigned long tmp = ((unsigned long)mnt / L1_CACHE_BYTES);
+    tmp += ((unsigned long)dentry / L1_CACHE_BYTES);
+    tmp = tmp + (tmp >> m_hash_shift);
+    return &mount_hashtable[tmp & m_hash_mask];
+}
+
+static inline struct hlist_head *mp_hash(struct dentry *dentry)
+{
+    unsigned long tmp = ((unsigned long)dentry / L1_CACHE_BYTES);
+    tmp = tmp + (tmp >> mp_hash_shift);
+    return &mountpoint_hashtable[tmp & mp_hash_mask];
+}
 
 static inline void lock_mount_hash(void)
 {
@@ -489,12 +508,176 @@ static int do_move_mount_old(struct path *path, const char *old_name)
 }
 
 /*
+ * find the first mount at @dentry on vfsmount @mnt.
+ * call under rcu_read_lock()
+ */
+struct mount *__lookup_mnt(struct vfsmount *mnt, struct dentry *dentry)
+{
+    struct hlist_head *head = m_hash(mnt, dentry);
+    struct mount *p;
+
+    hlist_for_each_entry_rcu(p, head, mnt_hash)
+        if (&p->mnt_parent->mnt == mnt && p->mnt_mountpoint == dentry)
+            return p;
+    return NULL;
+}
+
+/*
+ * lookup_mnt - Return the first child mount mounted at path
+ *
+ * "First" means first mounted chronologically.  If you create the
+ * following mounts:
+ *
+ * mount /dev/sda1 /mnt
+ * mount /dev/sda2 /mnt
+ * mount /dev/sda3 /mnt
+ *
+ * Then lookup_mnt() on the base /mnt dentry in the root mount will
+ * return successively the root dentry and vfsmount of /dev/sda1, then
+ * /dev/sda2, then /dev/sda3, then NULL.
+ *
+ * lookup_mnt takes a reference to the found vfsmount.
+ */
+struct vfsmount *lookup_mnt(const struct path *path)
+{
+    struct mount *child_mnt;
+    struct vfsmount *m;
+    unsigned seq;
+
+    rcu_read_lock();
+#if 0
+    do {
+        seq = read_seqbegin(&mount_lock);
+        child_mnt = __lookup_mnt(path->mnt, path->dentry);
+        m = child_mnt ? &child_mnt->mnt : NULL;
+    } while (!legitimize_mnt(m, seq));
+#else
+    child_mnt = __lookup_mnt(path->mnt, path->dentry);
+    m = child_mnt ? &child_mnt->mnt : NULL;
+#endif
+    rcu_read_unlock();
+    return m;
+}
+
+static void namespace_unlock(void)
+{
+    struct hlist_head head;
+    struct hlist_node *p;
+    struct mount *m;
+    LIST_HEAD(list);
+
+    hlist_move_list(&unmounted, &head);
+    list_splice_init(&ex_mountpoints, &list);
+
+    up_write(&namespace_sem);
+
+    //shrink_dentry_list(&list);
+
+    if (likely(hlist_empty(&head)))
+        return;
+
+    //synchronize_rcu_expedited();
+
+    hlist_for_each_entry_safe(m, p, &head, mnt_umount) {
+        hlist_del(&m->mnt_umount);
+        mntput(&m->mnt);
+    }
+}
+
+static inline void namespace_lock(void)
+{
+    down_write(&namespace_sem);
+}
+
+static struct mountpoint *get_mountpoint(struct dentry *dentry)
+{
+    struct mountpoint *mp, *new = NULL;
+    int ret;
+
+    if (d_mountpoint(dentry)) {
+#if 0
+        /* might be worth a WARN_ON() */
+        if (d_unlinked(dentry))
+            return ERR_PTR(-ENOENT);
+
+     mountpoint:
+        read_seqlock_excl(&mount_lock);
+        mp = lookup_mountpoint(dentry);
+        read_sequnlock_excl(&mount_lock);
+        if (mp)
+            goto done;
+#endif
+        panic("%s: d_mountpoint!\n", __func__);
+    }
+
+    panic("%s: END!\n", __func__);
+}
+
+static struct mountpoint *lock_mount(struct path *path)
+{
+    struct vfsmount *mnt;
+    struct dentry *dentry = path->dentry;
+ retry:
+    inode_lock(dentry->d_inode);
+    if (unlikely(cant_mount(dentry))) {
+        inode_unlock(dentry->d_inode);
+        return ERR_PTR(-ENOENT);
+    }
+    namespace_lock();
+    mnt = lookup_mnt(path);
+    if (likely(!mnt)) {
+        struct mountpoint *mp = get_mountpoint(dentry);
+#if 0
+        if (IS_ERR(mp)) {
+            namespace_unlock();
+            inode_unlock(dentry->d_inode);
+            return mp;
+        }
+        return mp;
+#endif
+        panic("%s: 1!\n", __func__);
+    }
+    namespace_unlock();
+
+    panic("%s: END!\n", __func__);
+}
+
+/*
  * Create a new mount using a superblock configuration and request it
  * be added to the namespace tree.
  */
 static int do_new_mount_fc(struct fs_context *fc, struct path *mountpoint,
                            unsigned int mnt_flags)
 {
+    struct vfsmount *mnt;
+    struct mountpoint *mp;
+    struct super_block *sb = fc->root->d_sb;
+    int error;
+
+#if 0
+    if (mount_too_revealing(sb, &mnt_flags))
+        error = -EPERM;
+#endif
+
+    if (unlikely(error)) {
+        fc_drop_locked(fc);
+        return error;
+    }
+
+    up_write(&sb->s_umount);
+
+    mnt = vfs_create_mount(fc);
+    if (IS_ERR(mnt))
+        return PTR_ERR(mnt);
+
+    //mnt_warn_timestamp_expiry(mountpoint, mnt);
+
+    mp = lock_mount(mountpoint);
+    if (IS_ERR(mp)) {
+        mntput(mnt);
+        return PTR_ERR(mp);
+    }
+
     panic("%s: END!\n", __func__);
 }
 

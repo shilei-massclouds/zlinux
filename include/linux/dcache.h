@@ -355,4 +355,14 @@ static inline bool d_flags_negative(unsigned flags)
     return (flags & DCACHE_ENTRY_TYPE) == DCACHE_MISS_TYPE;
 }
 
+static inline int cant_mount(const struct dentry *dentry)
+{
+    return (dentry->d_flags & DCACHE_CANT_MOUNT);
+}
+
+static inline bool d_mountpoint(const struct dentry *dentry)
+{
+    return dentry->d_flags & DCACHE_MOUNTED;
+}
+
 #endif  /* __LINUX_DCACHE_H */

@@ -705,7 +705,6 @@ struct dentry *mount_bdev(struct file_system_type *fs_type,
     fmode_t mode = FMODE_READ | FMODE_EXCL;
     int error = 0;
 
-    printk("###### %s: in_interrupt(%d)\n", __func__, in_interrupt());
     if (!(flags & SB_RDONLY))
         mode |= FMODE_WRITE;
 
@@ -741,9 +740,9 @@ struct dentry *mount_bdev(struct file_system_type *fs_type,
             goto error;
         }
 
-        panic("%s: ELSE s_root!\n", __func__);
+        s->s_flags |= SB_ACTIVE;
+        bdev->bd_super = s;
     }
-    panic("%s: dev(%s) END!\n", __func__, dev_name);
     return dget(s->s_root);
 
  error_s:

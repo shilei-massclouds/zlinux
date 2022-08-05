@@ -548,3 +548,11 @@ int parse_monolithic_mount_data(struct fs_context *fc, void *data)
 
     return monolithic_mount_data(fc, data);
 }
+
+void fc_drop_locked(struct fs_context *fc)
+{
+    struct super_block *sb = fc->root->d_sb;
+    dput(fc->root);
+    fc->root = NULL;
+    deactivate_locked_super(sb);
+}
