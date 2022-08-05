@@ -45,6 +45,95 @@
 
 static struct kmem_cache *ext2_inode_cachep;
 
+void ext2_msg(struct super_block *sb, const char *prefix,
+              const char *fmt, ...)
+{
+    struct va_format vaf;
+    va_list args;
+
+    va_start(args, fmt);
+
+    vaf.fmt = fmt;
+    vaf.va = &args;
+
+    printk("%sEXT2-fs (%s): %pV\n", prefix, sb->s_id, &vaf);
+
+    va_end(args);
+}
+
+static void ext2_clear_super_error(struct super_block *sb)
+{
+    struct buffer_head *sbh = EXT2_SB(sb)->s_sbh;
+
+    if (buffer_write_io_error(sbh)) {
+        /*
+         * Oh, dear.  A previous attempt to write the
+         * superblock failed.  This could happen because the
+         * USB device was yanked out.  Or it could happen to
+         * be a transient write error and maybe the block will
+         * be remapped.  Nothing we can do but to retry the
+         * write and hope for the best.
+         */
+        ext2_msg(sb, KERN_ERR,
+                 "previous I/O error to superblock detected");
+        clear_buffer_write_io_error(sbh);
+        set_buffer_uptodate(sbh);
+    }
+}
+
+void ext2_sync_super(struct super_block *sb,
+                     struct ext2_super_block *es, int wait)
+{
+#if 0
+    ext2_clear_super_error(sb);
+    spin_lock(&EXT2_SB(sb)->s_lock);
+    es->s_free_blocks_count = cpu_to_le32(ext2_count_free_blocks(sb));
+    es->s_free_inodes_count = cpu_to_le32(ext2_count_free_inodes(sb));
+    es->s_wtime = cpu_to_le32(ktime_get_real_seconds());
+    /* unlock before we do IO */
+    spin_unlock(&EXT2_SB(sb)->s_lock);
+    mark_buffer_dirty(EXT2_SB(sb)->s_sbh);
+    if (wait)
+        sync_dirty_buffer(EXT2_SB(sb)->s_sbh);
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+void ext2_error(struct super_block *sb, const char *function,
+                const char *fmt, ...)
+{
+    struct va_format vaf;
+    va_list args;
+    struct ext2_sb_info *sbi = EXT2_SB(sb);
+    struct ext2_super_block *es = sbi->s_es;
+
+    if (!sb_rdonly(sb)) {
+        spin_lock(&sbi->s_lock);
+        sbi->s_mount_state |= EXT2_ERROR_FS;
+        es->s_state |= cpu_to_le16(EXT2_ERROR_FS);
+        spin_unlock(&sbi->s_lock);
+        ext2_sync_super(sb, es, 1);
+    }
+
+    va_start(args, fmt);
+
+    vaf.fmt = fmt;
+    vaf.va = &args;
+
+    printk(KERN_CRIT "EXT2-fs (%s): error: %s: %pV\n",
+           sb->s_id, function, &vaf);
+
+    va_end(args);
+
+    if (test_opt(sb, ERRORS_PANIC))
+        panic("EXT2-fs: panic from previous error\n");
+    if (!sb_rdonly(sb) && test_opt(sb, ERRORS_RO)) {
+        ext2_msg(sb, KERN_CRIT,
+                 "error: remounting filesystem read-only");
+        sb->s_flags |= SB_RDONLY;
+    }
+}
+
 static void init_once(void *foo)
 {
     struct ext2_inode_info *ei = (struct ext2_inode_info *) foo;
@@ -88,22 +177,6 @@ static unsigned long get_sb_block(void **data)
         return 1;   /* Default location */
 
     panic("%s: END!\n", __func__);
-}
-
-void ext2_msg(struct super_block *sb, const char *prefix,
-        const char *fmt, ...)
-{
-    struct va_format vaf;
-    va_list args;
-
-    va_start(args, fmt);
-
-    vaf.fmt = fmt;
-    vaf.va = &args;
-
-    printk("%sEXT2-fs (%s): %pV\n", prefix, sb->s_id, &vaf);
-
-    va_end(args);
 }
 
 static int parse_options(char *options, struct super_block *sb,
@@ -182,6 +255,203 @@ static loff_t ext2_max_size(int bits)
         res = MAX_LFS_FILESIZE;
 
     return res;
+}
+
+static unsigned long descriptor_loc(struct super_block *sb,
+                                    unsigned long logic_sb_block,
+                                    int nr)
+{
+    struct ext2_sb_info *sbi = EXT2_SB(sb);
+    unsigned long bg, first_meta_bg;
+
+    first_meta_bg = le32_to_cpu(sbi->s_es->s_first_meta_bg);
+
+    if (!EXT2_HAS_INCOMPAT_FEATURE(sb, EXT2_FEATURE_INCOMPAT_META_BG) ||
+        nr < first_meta_bg)
+        return (logic_sb_block + nr + 1);
+#if 0
+    bg = sbi->s_desc_per_block * nr;
+
+    return ext2_group_first_block_no(sb, bg) + ext2_bg_has_super(sb, bg);
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+static int ext2_check_descriptors(struct super_block *sb)
+{
+    int i;
+    struct ext2_sb_info *sbi = EXT2_SB(sb);
+
+    for (i = 0; i < sbi->s_groups_count; i++) {
+        struct ext2_group_desc *gdp = ext2_get_group_desc(sb, i, NULL);
+        ext2_fsblk_t first_block = ext2_group_first_block_no(sb, i);
+        ext2_fsblk_t last_block = ext2_group_last_block_no(sb, i);
+
+        if (le32_to_cpu(gdp->bg_block_bitmap) < first_block ||
+            le32_to_cpu(gdp->bg_block_bitmap) > last_block) {
+            ext2_error(sb, "ext2_check_descriptors",
+                       "Block bitmap for group %d not in group (block %lu)!",
+                       i, (unsigned long) le32_to_cpu(gdp->bg_block_bitmap));
+            return 0;
+        }
+        if (le32_to_cpu(gdp->bg_inode_bitmap) < first_block ||
+            le32_to_cpu(gdp->bg_inode_bitmap) > last_block) {
+            ext2_error(sb, "ext2_check_descriptors",
+                       "Inode bitmap for group %d not in group (block %lu)!",
+                       i, (unsigned long) le32_to_cpu(gdp->bg_inode_bitmap));
+            return 0;
+        }
+        if (le32_to_cpu(gdp->bg_inode_table) < first_block ||
+            le32_to_cpu(gdp->bg_inode_table) + sbi->s_itb_per_group - 1 >
+            last_block) {
+            ext2_error(sb, "ext2_check_descriptors",
+                       "Inode table for group %d not in group (block %lu)!",
+                       i, (unsigned long) le32_to_cpu(gdp->bg_inode_table));
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static struct inode *ext2_alloc_inode(struct super_block *sb)
+{
+    struct ext2_inode_info *ei;
+    ei = alloc_inode_sb(sb, ext2_inode_cachep, GFP_KERNEL);
+    if (!ei)
+        return NULL;
+    ei->i_block_alloc_info = NULL;
+    //inode_set_iversion(&ei->vfs_inode, 1);
+
+    return &ei->vfs_inode;
+}
+
+static void ext2_free_in_core_inode(struct inode *inode)
+{
+    kmem_cache_free(ext2_inode_cachep, EXT2_I(inode));
+}
+
+static void ext2_put_super(struct super_block *sb)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * In the second extended file system, it is not necessary to
+ * write the super block since we use a mapping of the
+ * disk super block in a buffer.
+ *
+ * However, this function is still used to set the fs valid
+ * flags to 0.  We need to set this flag to 0 since the fs
+ * may have been checked while mounted and e2fsck may have
+ * set s_state to EXT2_VALID_FS after some corrections.
+ */
+static int ext2_sync_fs(struct super_block *sb, int wait)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static int ext2_show_options(struct seq_file *seq, struct dentry *root)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static int ext2_remount(struct super_block * sb, int * flags, char * data)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static int ext2_statfs(struct dentry * dentry, struct kstatfs * buf)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static int ext2_freeze(struct super_block *sb)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static int ext2_unfreeze(struct super_block *sb)
+{
+#if 0
+    /* Just write sb to clear EXT2_VALID_FS flag */
+    ext2_write_super(sb);
+
+    return 0;
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+static const struct super_operations ext2_sops = {
+    .alloc_inode    = ext2_alloc_inode,
+    .free_inode     = ext2_free_in_core_inode,
+    .write_inode    = ext2_write_inode,
+    .evict_inode    = ext2_evict_inode,
+    .put_super      = ext2_put_super,
+    .sync_fs        = ext2_sync_fs,
+    .freeze_fs      = ext2_freeze,
+    .unfreeze_fs    = ext2_unfreeze,
+    .statfs         = ext2_statfs,
+    .remount_fs     = ext2_remount,
+    .show_options   = ext2_show_options,
+};
+
+static int ext2_setup_super(struct super_block *sb,
+                            struct ext2_super_block *es,
+                            int read_only)
+{
+    int res = 0;
+    struct ext2_sb_info *sbi = EXT2_SB(sb);
+
+    if (le32_to_cpu(es->s_rev_level) > EXT2_MAX_SUPP_REV) {
+        ext2_msg(sb, KERN_ERR,
+                 "error: revision level too high, forcing read-only mode");
+        res = SB_RDONLY;
+    }
+    if (read_only)
+        return res;
+    if (!(sbi->s_mount_state & EXT2_VALID_FS))
+        ext2_msg(sb, KERN_WARNING,
+                 "warning: mounting unchecked fs, "
+                 "running e2fsck is recommended");
+    else if ((sbi->s_mount_state & EXT2_ERROR_FS))
+        ext2_msg(sb, KERN_WARNING,
+                 "warning: mounting fs with errors, "
+                 "running e2fsck is recommended");
+    else if ((__s16) le16_to_cpu(es->s_max_mnt_count) >= 0 &&
+             le16_to_cpu(es->s_mnt_count) >=
+             (unsigned short) (__s16) le16_to_cpu(es->s_max_mnt_count))
+        ext2_msg(sb, KERN_WARNING,
+                 "warning: maximal mount count reached, "
+                 "running e2fsck is recommended");
+#if 0
+    else if (le32_to_cpu(es->s_checkinterval) &&
+             (le32_to_cpu(es->s_lastcheck) +
+              le32_to_cpu(es->s_checkinterval) <= ktime_get_real_seconds()))
+        ext2_msg(sb, KERN_WARNING,
+                 "warning: checktime reached, "
+                 "running e2fsck is recommended");
+#endif
+
+    if (!le16_to_cpu(es->s_max_mnt_count))
+        es->s_max_mnt_count = cpu_to_le16(EXT2_DFL_MAX_MNT_COUNT);
+    le16_add_cpu(&es->s_mnt_count, 1);
+    if (test_opt(sb, DEBUG))
+        ext2_msg(sb, KERN_INFO, "%s, %s, bs=%lu, fs=%lu, gc=%lu, "
+                 "bpg=%lu, ipg=%lu, mo=%04lx]",
+                 EXT2FS_VERSION, EXT2FS_DATE, sb->s_blocksize,
+                 sbi->s_frag_size,
+                 sbi->s_groups_count,
+                 EXT2_BLOCKS_PER_GROUP(sb),
+                 EXT2_INODES_PER_GROUP(sb),
+                 sbi->s_mount_opt);
+    panic("%s: END!\n", __func__);
+    return res;
+}
+
+static void ext2_write_super(struct super_block *sb)
+{
+    if (!sb_rdonly(sb))
+        ext2_sync_fs(sb, 1);
 }
 
 static int ext2_fill_super(struct super_block *sb, void *data, int silent)
@@ -410,10 +680,134 @@ static int ext2_fill_super(struct super_block *sb, void *data, int silent)
         goto failed_mount;
     }
 
-    printk("%s: blocksize(%d) magic(%x)\n",
-           __func__, blocksize, sb->s_magic);
-    panic("%s: END!\n", __func__);
+    if (sb->s_blocksize != sbi->s_frag_size) {
+        ext2_msg(sb, KERN_ERR,
+                 "error: fragsize %lu != blocksize %lu (not supported yet)",
+                 sbi->s_frag_size, sb->s_blocksize);
+        goto failed_mount;
+    }
 
+    if (sbi->s_blocks_per_group > sb->s_blocksize * 8) {
+        ext2_msg(sb, KERN_ERR, "error: #blocks per group too big: %lu",
+                 sbi->s_blocks_per_group);
+        goto failed_mount;
+    }
+    if (sbi->s_frags_per_group > sb->s_blocksize * 8) {
+        ext2_msg(sb, KERN_ERR, "error: #fragments per group too big: %lu",
+                 sbi->s_frags_per_group);
+        goto failed_mount;
+    }
+    if (sbi->s_inodes_per_group > sb->s_blocksize * 8) {
+        ext2_msg(sb, KERN_ERR, "error: #inodes per group too big: %lu",
+                 sbi->s_inodes_per_group);
+        goto failed_mount;
+    }
+
+    if (EXT2_BLOCKS_PER_GROUP(sb) == 0)
+        goto cantfind_ext2;
+    sbi->s_groups_count =
+        ((le32_to_cpu(es->s_blocks_count) -
+          le32_to_cpu(es->s_first_data_block) - 1)
+         / EXT2_BLOCKS_PER_GROUP(sb)) + 1;
+    db_count = (sbi->s_groups_count + EXT2_DESC_PER_BLOCK(sb) - 1) /
+        EXT2_DESC_PER_BLOCK(sb);
+
+    sbi->s_group_desc =
+        kmalloc_array(db_count, sizeof(struct buffer_head *), GFP_KERNEL);
+    if (sbi->s_group_desc == NULL) {
+        ret = -ENOMEM;
+        ext2_msg(sb, KERN_ERR, "error: not enough memory");
+        goto failed_mount;
+    }
+    bgl_lock_init(sbi->s_blockgroup_lock);
+    sbi->s_debts = kcalloc(sbi->s_groups_count, sizeof(*sbi->s_debts),
+                           GFP_KERNEL);
+    if (!sbi->s_debts) {
+        ret = -ENOMEM;
+        ext2_msg(sb, KERN_ERR, "error: not enough memory");
+        goto failed_mount_group_desc;
+    }
+    for (i = 0; i < db_count; i++) {
+        block = descriptor_loc(sb, logic_sb_block, i);
+        sbi->s_group_desc[i] = sb_bread(sb, block);
+        if (!sbi->s_group_desc[i]) {
+            for (j = 0; j < i; j++)
+                brelse(sbi->s_group_desc[j]);
+            ext2_msg(sb, KERN_ERR, "error: unable to read group descriptors");
+            goto failed_mount_group_desc;
+        }
+    }
+    if (!ext2_check_descriptors(sb)) {
+        ext2_msg(sb, KERN_ERR, "group descriptors corrupted");
+        goto failed_mount2;
+    }
+    sbi->s_gdb_count = db_count;
+    //get_random_bytes(&sbi->s_next_generation, sizeof(u32));
+    spin_lock_init(&sbi->s_next_gen_lock);
+
+    /* per filesystem reservation list head & lock */
+    spin_lock_init(&sbi->s_rsv_window_lock);
+    sbi->s_rsv_window_root = RB_ROOT;
+    /*
+     * Add a single, static dummy reservation to the start of the
+     * reservation window list --- it gives us a placeholder for
+     * append-at-start-of-list which makes the allocation logic
+     * _much_ simpler.
+     */
+    sbi->s_rsv_window_head.rsv_start = EXT2_RESERVE_WINDOW_NOT_ALLOCATED;
+    sbi->s_rsv_window_head.rsv_end = EXT2_RESERVE_WINDOW_NOT_ALLOCATED;
+    sbi->s_rsv_window_head.rsv_alloc_hit = 0;
+    sbi->s_rsv_window_head.rsv_goal_size = 0;
+    ext2_rsv_window_add(sb, &sbi->s_rsv_window_head);
+
+    err = percpu_counter_init(&sbi->s_freeblocks_counter,
+                              ext2_count_free_blocks(sb), GFP_KERNEL);
+    if (!err) {
+        err = percpu_counter_init(&sbi->s_freeinodes_counter,
+                                  ext2_count_free_inodes(sb), GFP_KERNEL);
+    }
+    if (!err) {
+        err = percpu_counter_init(&sbi->s_dirs_counter,
+                                  ext2_count_dirs(sb), GFP_KERNEL);
+    }
+    if (err) {
+        ret = err;
+        ext2_msg(sb, KERN_ERR, "error: insufficient memory");
+        goto failed_mount3;
+    }
+
+    /*
+     * set up enough so that it can read an inode
+     */
+    sb->s_op = &ext2_sops;
+#if 0
+    sb->s_export_op = &ext2_export_ops;
+    sb->s_xattr = ext2_xattr_handlers;
+#endif
+
+    root = ext2_iget(sb, EXT2_ROOT_INO);
+    if (IS_ERR(root)) {
+        ret = PTR_ERR(root);
+        goto failed_mount3;
+    }
+    if (!S_ISDIR(root->i_mode) || !root->i_blocks || !root->i_size) {
+        iput(root);
+        ext2_msg(sb, KERN_ERR, "error: corrupt root inode, run e2fsck");
+        goto failed_mount3;
+    }
+
+    sb->s_root = d_make_root(root);
+    if (!sb->s_root) {
+        ext2_msg(sb, KERN_ERR, "error: get root inode failed");
+        ret = -ENOMEM;
+        goto failed_mount3;
+    }
+    if (EXT2_HAS_COMPAT_FEATURE(sb, EXT3_FEATURE_COMPAT_HAS_JOURNAL))
+        ext2_msg(sb, KERN_WARNING,
+                 "warning: mounting ext3 filesystem as ext2");
+    if (ext2_setup_super(sb, es, sb_rdonly(sb)))
+        sb->s_flags |= SB_RDONLY;
+    ext2_write_super(sb);
     return 0;
 
  cantfind_ext2:

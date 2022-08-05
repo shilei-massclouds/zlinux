@@ -76,4 +76,14 @@ static inline void wait_on_inode(struct inode *inode)
     panic("%s: NO implementation!\n", __func__);
 }
 
+/**
+ * inode_detach_wb - disassociate an inode from its wb
+ * @inode: inode of interest
+ *
+ * @inode is being freed.  Detach from its wb.
+ */
+static inline void inode_detach_wb(struct inode *inode)
+{
+}
+
 #endif  /* WRITEBACK_H */

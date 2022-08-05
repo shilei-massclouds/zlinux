@@ -372,40 +372,6 @@ void *xas_load(struct xa_state *xas)
 }
 EXPORT_SYMBOL_GPL(xas_load);
 
-/*
- * xas_expand adds nodes to the head of the tree until it has reached
- * sufficient height to be able to contain @xas->xa_index
- */
-static int xas_expand(struct xa_state *xas, void *head)
-{
-    struct xarray *xa = xas->xa;
-    struct xa_node *node = NULL;
-    unsigned int shift = 0;
-    unsigned long max = xas_max(xas);
-
-    if (!head) {
-        if (max == 0)
-            return 0;
-        while ((max >> shift) >= XA_CHUNK_SIZE)
-            shift += XA_CHUNK_SHIFT;
-        return shift + XA_CHUNK_SHIFT;
-    } else if (xa_is_node(head)) {
-        node = xa_to_node(head);
-        shift = node->shift + XA_CHUNK_SHIFT;
-    }
-    xas->xa_node = NULL;
-
-    printk("%s: 3 max(%lx)\n", __func__, max);
-    while (max > max_index(head)) {
-        xa_mark_t mark = 0;
-
-        panic("%s: max(%lu) END!\n", __func__, max);
-    }
-
-    xas->xa_node = node;
-    return shift;
-}
-
 static void xas_update(struct xa_state *xas, struct xa_node *node)
 {
     if (xas->xa_update)
@@ -453,6 +419,77 @@ static void *xas_alloc(struct xa_state *xas, unsigned int shift)
     node->array = xas->xa;
 
     return node;
+}
+
+/*
+ * xas_expand adds nodes to the head of the tree until it has reached
+ * sufficient height to be able to contain @xas->xa_index
+ */
+static int xas_expand(struct xa_state *xas, void *head)
+{
+    struct xarray *xa = xas->xa;
+    struct xa_node *node = NULL;
+    unsigned int shift = 0;
+    unsigned long max = xas_max(xas);
+
+    if (!head) {
+        if (max == 0)
+            return 0;
+        while ((max >> shift) >= XA_CHUNK_SIZE)
+            shift += XA_CHUNK_SHIFT;
+        return shift + XA_CHUNK_SHIFT;
+    } else if (xa_is_node(head)) {
+        node = xa_to_node(head);
+        shift = node->shift + XA_CHUNK_SHIFT;
+    }
+    xas->xa_node = NULL;
+
+    while (max > max_index(head)) {
+        xa_mark_t mark = 0;
+
+        XA_NODE_BUG_ON(node, shift > BITS_PER_LONG);
+        node = xas_alloc(xas, shift);
+        if (!node)
+            return -ENOMEM;
+
+        node->count = 1;
+        if (xa_is_value(head))
+            node->nr_values = 1;
+        RCU_INIT_POINTER(node->slots[0], head);
+
+        /* Propagate the aggregated mark info to the new child */
+        for (;;) {
+            if (xa_track_free(xa) && mark == XA_FREE_MARK) {
+                node_mark_all(node, XA_FREE_MARK);
+                if (!xa_marked(xa, XA_FREE_MARK)) {
+                    node_clear_mark(node, 0, XA_FREE_MARK);
+                    xa_mark_set(xa, XA_FREE_MARK);
+                }
+            } else if (xa_marked(xa, mark)) {
+                node_set_mark(node, 0, mark);
+            }
+            if (mark == XA_MARK_MAX)
+                break;
+            mark_inc(mark);
+        }
+
+        /*
+         * Now that the new node is fully initialised, we can add
+         * it to the tree
+         */
+        if (xa_is_node(head)) {
+            xa_to_node(head)->offset = 0;
+            rcu_assign_pointer(xa_to_node(head)->parent, node);
+        }
+        head = xa_mk_node(node);
+        rcu_assign_pointer(xa->xa_head, head);
+        xas_update(xas, node);
+
+        shift += XA_CHUNK_SHIFT;
+    }
+
+    xas->xa_node = node;
+    return shift;
 }
 
 /*

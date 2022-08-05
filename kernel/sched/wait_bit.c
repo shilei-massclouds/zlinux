@@ -167,10 +167,7 @@ int wake_bit_function(struct wait_queue_entry *wq_entry,
         test_bit(key->bit_nr, key->flags))
         return 0;
 
-#if 0
     return autoremove_wake_function(wq_entry, mode, sync, key);
-#endif
-    panic("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL(wake_bit_function);
 

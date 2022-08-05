@@ -451,4 +451,19 @@ static inline void hlist_del_init(struct hlist_node *n)
     }
 }
 
+/**
+ * list_for_each_entry_safe_from - iterate over list from current point safe against removal
+ * @pos:    the type * to use as a loop cursor.
+ * @n:      another type * to use as temporary storage
+ * @head:   the head for your list.
+ * @member: the name of the list_head within the struct.
+ *
+ * Iterate over list of given type from current point, safe against
+ * removal of list entry.
+ */
+#define list_for_each_entry_safe_from(pos, n, head, member) \
+    for (n = list_next_entry(pos, member);                  \
+         !list_entry_is_head(pos, head, member);            \
+         pos = n, n = list_next_entry(n, member))
+
 #endif /* _LINUX_LIST_H */

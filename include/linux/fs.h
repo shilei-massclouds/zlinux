@@ -706,21 +706,19 @@ struct super_operations {
     void (*destroy_inode)(struct inode *);
     void (*free_inode)(struct inode *);
 
-    void (*dirty_inode) (struct inode *, int flags);
-#if 0
-    int (*write_inode) (struct inode *, struct writeback_control *wbc);
-#endif
-    int (*drop_inode) (struct inode *);
-    void (*evict_inode) (struct inode *);
-    void (*put_super) (struct super_block *);
+    void (*dirty_inode)(struct inode *, int flags);
+    int (*write_inode)(struct inode *, struct writeback_control *wbc);
+    int (*drop_inode)(struct inode *);
+    void (*evict_inode)(struct inode *);
+    void (*put_super)(struct super_block *);
     int (*sync_fs)(struct super_block *sb, int wait);
-    int (*freeze_super) (struct super_block *);
-    int (*freeze_fs) (struct super_block *);
-    int (*thaw_super) (struct super_block *);
-    int (*unfreeze_fs) (struct super_block *);
-    int (*statfs) (struct dentry *, struct kstatfs *);
-    int (*remount_fs) (struct super_block *, int *, char *);
-    void (*umount_begin) (struct super_block *);
+    int (*freeze_super)(struct super_block *);
+    int (*freeze_fs)(struct super_block *);
+    int (*thaw_super)(struct super_block *);
+    int (*unfreeze_fs)(struct super_block *);
+    int (*statfs)(struct dentry *, struct kstatfs *);
+    int (*remount_fs)(struct super_block *, int *, char *);
+    void (*umount_begin)(struct super_block *);
 
     int (*show_options)(struct seq_file *, struct dentry *);
 #if 0
@@ -1339,5 +1337,44 @@ static inline bool sb_is_blkdev_sb(struct super_block *sb)
 
 extern void inode_sb_list_add(struct inode *inode);
 extern void inode_add_lru(struct inode *inode);
+
+extern struct inode *iget_locked(struct super_block *, unsigned long);
+
+extern void unlock_new_inode(struct inode *);
+
+extern void iget_failed(struct inode *);
+
+/* Helper functions so that in most cases filesystems will
+ * not need to deal directly with kuid_t and kgid_t and can
+ * instead deal with the raw numeric values that are stored
+ * in the filesystem.
+ */
+static inline uid_t i_uid_read(const struct inode *inode)
+{
+    //return from_kuid(i_user_ns(inode), inode->i_uid);
+    panic("%s: END!\n", __func__);
+}
+
+static inline gid_t i_gid_read(const struct inode *inode)
+{
+    //return from_kgid(i_user_ns(inode), inode->i_gid);
+    panic("%s: END!\n", __func__);
+}
+
+static inline void i_uid_write(struct inode *inode, uid_t uid)
+{
+    //inode->i_uid = make_kuid(i_user_ns(inode), uid);
+    panic("%s: END!\n", __func__);
+}
+
+static inline void i_gid_write(struct inode *inode, gid_t gid)
+{
+    //inode->i_gid = make_kgid(i_user_ns(inode), gid);
+    panic("%s: END!\n", __func__);
+}
+
+extern ssize_t generic_read_dir(struct file *, char __user *, size_t, loff_t *);
+
+extern loff_t generic_file_llseek(struct file *file, loff_t offset, int whence);
 
 #endif /* _LINUX_FS_H */

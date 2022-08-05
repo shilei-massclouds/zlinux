@@ -598,6 +598,138 @@ void inode_add_lru(struct inode *inode)
     __inode_add_lru(inode, false);
 }
 
+void __destroy_inode(struct inode *inode)
+{
+    BUG_ON(inode_has_buffers(inode));
+    inode_detach_wb(inode);
+#if 0
+    fsnotify_inode_delete(inode);
+    locks_free_lock_context(inode);
+#endif
+    if (!inode->i_nlink) {
+        WARN_ON(atomic_long_read(&inode->i_sb->s_remove_count) == 0);
+        atomic_long_dec(&inode->i_sb->s_remove_count);
+    }
+
+#if 0 
+    if (inode->i_acl && !is_uncached_acl(inode->i_acl))
+        posix_acl_release(inode->i_acl);
+    if (inode->i_default_acl && !is_uncached_acl(inode->i_default_acl))
+        posix_acl_release(inode->i_default_acl);
+#endif
+    this_cpu_dec(nr_inodes);
+}
+EXPORT_SYMBOL(__destroy_inode);
+
+static void destroy_inode(struct inode *inode)
+{
+    const struct super_operations *ops = inode->i_sb->s_op;
+
+    BUG_ON(!list_empty(&inode->i_lru));
+    __destroy_inode(inode);
+    if (ops->destroy_inode) {
+        ops->destroy_inode(inode);
+        if (!ops->free_inode)
+            return;
+    }
+    inode->free_inode = ops->free_inode;
+    call_rcu(&inode->i_rcu, i_callback);
+}
+
+/**
+ * iget_locked - obtain an inode from a mounted file system
+ * @sb:     super block of file system
+ * @ino:    inode number to get
+ *
+ * Search for the inode specified by @ino in the inode cache and if present
+ * return it with an increased reference count. This is for file systems
+ * where the inode number is sufficient for unique identification of an inode.
+ *
+ * If the inode is not in cache, allocate a new inode and return it locked,
+ * hashed, and with the I_NEW flag set.  The file system gets to fill it in
+ * before unlocking it via unlock_new_inode().
+ */
+struct inode *iget_locked(struct super_block *sb, unsigned long ino)
+{
+    struct hlist_head *head = inode_hashtable + hash(sb, ino);
+    struct inode *inode;
+ again:
+    spin_lock(&inode_hash_lock);
+    inode = find_inode_fast(sb, head, ino);
+    spin_unlock(&inode_hash_lock);
+    if (inode) {
+        if (IS_ERR(inode))
+            return NULL;
+        wait_on_inode(inode);
+        if (unlikely(inode_unhashed(inode))) {
+            iput(inode);
+            goto again;
+        }
+        return inode;
+    }
+
+    inode = alloc_inode(sb);
+    if (inode) {
+        struct inode *old;
+
+        spin_lock(&inode_hash_lock);
+        /* We released the lock, so.. */
+        old = find_inode_fast(sb, head, ino);
+        if (!old) {
+            inode->i_ino = ino;
+            spin_lock(&inode->i_lock);
+            inode->i_state = I_NEW;
+            hlist_add_head_rcu(&inode->i_hash, head);
+            spin_unlock(&inode->i_lock);
+            inode_sb_list_add(inode);
+            spin_unlock(&inode_hash_lock);
+
+            /* Return the locked inode with I_NEW set, the
+             * caller is responsible for filling in the contents
+             */
+            return inode;
+        }
+
+        /*
+         * Uhhuh, somebody else created the same inode under
+         * us. Use the old inode instead of the one we just
+         * allocated.
+         */
+        spin_unlock(&inode_hash_lock);
+        destroy_inode(inode);
+        if (IS_ERR(old))
+            return NULL;
+        inode = old;
+        wait_on_inode(inode);
+        if (unlikely(inode_unhashed(inode))) {
+            iput(inode);
+            goto again;
+        }
+
+        panic("%s: 1!\n", __func__);
+    }
+
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * unlock_new_inode - clear the I_NEW state and wake up any waiters
+ * @inode:  new inode to unlock
+ *
+ * Called when the inode is fully initialised to clear the new state of the
+ * inode and wake up anyone waiting for the inode to finish initialisation.
+ */
+void unlock_new_inode(struct inode *inode)
+{
+    spin_lock(&inode->i_lock);
+    WARN_ON(!(inode->i_state & I_NEW));
+    inode->i_state &= ~I_NEW & ~I_CREATING;
+    smp_mb();
+    wake_up_bit(&inode->i_state, __I_NEW);
+    spin_unlock(&inode->i_lock);
+}
+EXPORT_SYMBOL(unlock_new_inode);
+
 /*
  * Initialize the waitqueues and inode hash table.
  */

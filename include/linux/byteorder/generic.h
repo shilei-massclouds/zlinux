@@ -30,4 +30,9 @@
 #define cpu_to_be16p __cpu_to_be16p
 #define be16_to_cpup __be16_to_cpup
 
+static inline void le16_add_cpu(__le16 *var, u16 val)
+{
+    *var = cpu_to_le16(le16_to_cpu(*var) + val);
+}
+
 #endif /* _LINUX_BYTEORDER_GENERIC_H */

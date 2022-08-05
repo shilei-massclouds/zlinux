@@ -1331,3 +1331,27 @@ void __wait_on_buffer(struct buffer_head * bh)
     wait_on_bit_io(&bh->b_state, BH_Lock, TASK_UNINTERRUPTIBLE);
 }
 EXPORT_SYMBOL(__wait_on_buffer);
+
+int inode_has_buffers(struct inode *inode)
+{
+    return !list_empty(&inode->i_data.private_list);
+}
+
+/*
+ * block_is_partially_uptodate checks whether buffers within a folio are
+ * uptodate or not.
+ *
+ * Returns true if all buffers which correspond to the specified part
+ * of the folio are uptodate.
+ */
+bool block_is_partially_uptodate(struct folio *folio, size_t from, size_t count)
+{
+    panic("%s: END!\n", __func__);
+}
+
+int nobh_write_end(struct file *file, struct address_space *mapping,
+                   loff_t pos, unsigned len, unsigned copied,
+                   struct page *page, void *fsdata)
+{
+    panic("%s: END!\n", __func__);
+}

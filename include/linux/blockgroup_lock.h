@@ -20,4 +20,12 @@ struct blockgroup_lock {
     struct bgl_lock locks[NR_BG_LOCKS];
 };
 
+static inline void bgl_lock_init(struct blockgroup_lock *bgl)
+{
+    int i;
+
+    for (i = 0; i < NR_BG_LOCKS; i++)
+        spin_lock_init(&bgl->locks[i].lock);
+}
+
 #endif /* _LINUX_BLOCKGROUP_LOCK_H */

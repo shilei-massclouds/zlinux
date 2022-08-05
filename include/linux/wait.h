@@ -148,4 +148,7 @@ static inline void __add_wait_queue(struct wait_queue_head *wq_head, struct wait
     list_add(&wq_entry->entry, head);
 }
 
+int autoremove_wake_function(struct wait_queue_entry *wq_entry,
+                             unsigned mode, int sync, void *key);
+
 #endif /* _LINUX_WAIT_H */

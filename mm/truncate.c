@@ -259,3 +259,25 @@ void truncate_inode_pages(struct address_space *mapping, loff_t lstart)
     truncate_inode_pages_range(mapping, lstart, (loff_t)-1);
 }
 EXPORT_SYMBOL(truncate_inode_pages);
+
+/*
+ * Used to get rid of pages on hardware memory corruption.
+ */
+int generic_error_remove_page(struct address_space *mapping, struct page *page)
+{
+#if 0
+    VM_BUG_ON_PAGE(PageTail(page), page);
+
+    if (!mapping)
+        return -EINVAL;
+    /*
+     * Only punch for normal data pages for now.
+     * Handling other types like directories would need more auditing.
+     */
+    if (!S_ISREG(mapping->host->i_mode))
+        return -EIO;
+    return truncate_inode_folio(mapping, page_folio(page));
+#endif
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL(generic_error_remove_page);

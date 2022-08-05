@@ -5,6 +5,13 @@
  * (C) 2004 Nadia Yvette Chambers, Oracle
  */
 
+/*
+ * Scan threshold to break wait queue walk.
+ * This allows a waker to take a break from holding the
+ * wait queue lock during the wait queue walk.
+ */
+#define WAITQUEUE_WALK_BREAK_CNT 64
+
 void __init_waitqueue_head(struct wait_queue_head *wq_head,
                            const char *name, struct lock_class_key *key)
 {
@@ -53,7 +60,31 @@ static int __wake_up_common(struct wait_queue_head *wq_head, unsigned int mode,
     } else
         curr = list_first_entry(&wq_head->head, wait_queue_entry_t, entry);
 
-    panic("%s: END!\n", __func__);
+    if (&curr->entry == &wq_head->head)
+        return nr_exclusive;
+
+    list_for_each_entry_safe_from(curr, next, &wq_head->head, entry) {
+        unsigned flags = curr->flags;
+        int ret;
+
+        if (flags & WQ_FLAG_BOOKMARK)
+            continue;
+
+        ret = curr->func(curr, mode, wake_flags, key);
+        if (ret < 0)
+            break;
+        if (ret && (flags & WQ_FLAG_EXCLUSIVE) && !--nr_exclusive)
+            break;
+
+        if (bookmark && (++cnt > WAITQUEUE_WALK_BREAK_CNT) &&
+            (&next->entry != &wq_head->head)) {
+            bookmark->flags = WQ_FLAG_BOOKMARK;
+            list_add_tail(&bookmark->entry, &next->entry);
+            break;
+        }
+    }
+
+    return nr_exclusive;
 }
 
 static void __wake_up_common_lock(struct wait_queue_head *wq_head,

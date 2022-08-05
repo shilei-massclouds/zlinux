@@ -226,4 +226,12 @@ static inline void wait_on_buffer(struct buffer_head *bh)
 
 int try_to_free_buffers(struct page *);
 
+int inode_has_buffers(struct inode *);
+
+int nobh_write_begin(struct address_space *, loff_t, unsigned, unsigned,
+                     struct page **, void **, get_block_t*);
+int nobh_write_end(struct file *, struct address_space *,
+                   loff_t, unsigned, unsigned,
+                   struct page *, void *);
+
 #endif /* _LINUX_BUFFER_HEAD_H */

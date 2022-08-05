@@ -92,6 +92,7 @@ enum node_stat_item {
     NR_ACTIVE_FILE,     /*  "     "     "   "       "         */
     NR_SLAB_RECLAIMABLE_B,
     NR_SLAB_UNRECLAIMABLE_B,
+    WORKINGSET_NODES,
     NR_FILE_PAGES,
     NR_FILE_DIRTY,
     NR_WRITEBACK,

@@ -87,3 +87,18 @@ int buffer_migrate_page_norefs(struct address_space *mapping,
     //return __buffer_migrate_page(mapping, newpage, page, mode, true);
     panic("%s: END!\n", __func__);
 }
+
+/*
+ * Migration function for pages with buffers. This function can only be used
+ * if the underlying filesystem guarantees that no other references to "page"
+ * exist. For example attached buffer heads are accessed only under page lock.
+ */
+int buffer_migrate_page(struct address_space *mapping,
+                        struct page *newpage, struct page *page,
+                        enum migrate_mode mode)
+{
+    panic("%s: END!\n", __func__);
+    //return __buffer_migrate_page(mapping, newpage, page, mode, false);
+}
+EXPORT_SYMBOL(buffer_migrate_page);
+

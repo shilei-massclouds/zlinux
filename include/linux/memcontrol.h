@@ -84,4 +84,30 @@ folio_lruvec_relock_irqsave(struct folio *folio,
     return folio_lruvec_lock_irqsave(folio, flags);
 }
 
+static inline void
+__mod_lruvec_kmem_state(void *p, enum node_stat_item idx, int val)
+{
+    struct page *page = virt_to_head_page(p);
+
+    __mod_node_page_state(page_pgdat(page), idx, val);
+}
+
+static inline void
+mod_lruvec_kmem_state(void *p, enum node_stat_item idx, int val)
+{
+    struct page *page = virt_to_head_page(p);
+
+    mod_node_page_state(page_pgdat(page), idx, val);
+}
+
+static inline void __inc_lruvec_kmem_state(void *p, enum node_stat_item idx)
+{
+    __mod_lruvec_kmem_state(p, idx, 1);
+}
+
+static inline void __dec_lruvec_kmem_state(void *p, enum node_stat_item idx)
+{
+    __mod_lruvec_kmem_state(p, idx, -1);
+}
+
 #endif /* _LINUX_MEMCONTROL_H */

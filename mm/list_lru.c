@@ -54,3 +54,23 @@ bool list_lru_add(struct list_lru *lru, struct list_head *item)
     return false;
 }
 EXPORT_SYMBOL_GPL(list_lru_add);
+
+bool list_lru_del(struct list_lru *lru, struct list_head *item)
+{
+    int nid = page_to_nid(virt_to_page(item));
+    struct list_lru_node *nlru = &lru->node[nid];
+    struct list_lru_one *l;
+
+    spin_lock(&nlru->lock);
+    if (!list_empty(item)) {
+        l = list_lru_from_kmem(lru, nid, item, NULL);
+        list_del_init(item);
+        l->nr_items--;
+        nlru->nr_items--;
+        spin_unlock(&nlru->lock);
+        return true;
+    }
+    spin_unlock(&nlru->lock);
+    return false;
+}
+EXPORT_SYMBOL_GPL(list_lru_del);

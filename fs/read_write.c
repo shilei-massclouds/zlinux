@@ -47,3 +47,26 @@ loff_t noop_llseek(struct file *file, loff_t offset, int whence)
     return file->f_pos;
 }
 EXPORT_SYMBOL(noop_llseek);
+
+/**
+ * generic_file_llseek - generic llseek implementation for regular files
+ * @file:   file structure to seek on
+ * @offset: file offset to seek to
+ * @whence: type of seek
+ *
+ * This is a generic implemenation of ->llseek useable for all normal local
+ * filesystems.  It just updates the file offset to the value specified by
+ * @offset and @whence.
+ */
+loff_t generic_file_llseek(struct file *file, loff_t offset, int whence)
+{
+#if 0
+    struct inode *inode = file->f_mapping->host;
+
+    return generic_file_llseek_size(file, offset, whence,
+                                    inode->i_sb->s_maxbytes,
+                                    i_size_read(inode));
+#endif
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL(generic_file_llseek);

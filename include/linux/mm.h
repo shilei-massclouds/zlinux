@@ -773,4 +773,6 @@ static inline enum zone_type folio_zonenum(const struct folio *folio)
     return page_zonenum(&folio->page);
 }
 
+int generic_error_remove_page(struct address_space *mapping, struct page *page);
+
 #endif /* _LINUX_MM_H */

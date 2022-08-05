@@ -33,7 +33,29 @@ struct list_lru shadow_nodes;
 
 void workingset_update_node(struct xa_node *node)
 {
-    panic("%s: END!\n", __func__);
+    struct address_space *mapping;
+
+    /*
+     * Track non-empty nodes that contain only shadow entries;
+     * unlink those that contain pages or are being freed.
+     *
+     * Avoid acquiring the list_lru lock when the nodes are
+     * already where they should be. The list_empty() test is safe
+     * as node->private_list is protected by the i_pages lock.
+     */
+    mapping = container_of(node->array, struct address_space, i_pages);
+
+    if (node->count && node->count == node->nr_values) {
+        if (list_empty(&node->private_list)) {
+            list_lru_add(&shadow_nodes, &node->private_list);
+            __inc_lruvec_kmem_state(node, WORKINGSET_NODES);
+        }
+    } else {
+        if (!list_empty(&node->private_list)) {
+            list_lru_del(&shadow_nodes, &node->private_list);
+            __dec_lruvec_kmem_state(node, WORKINGSET_NODES);
+        }
+    }
 }
 
 /**

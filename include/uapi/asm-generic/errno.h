@@ -33,6 +33,7 @@
 #define ETIMEDOUT   110 /* Connection timed out */
 #define EALREADY    114 /* Operation already in progress */
 #define ESTALE      116 /* Stale file handle */
+#define EUCLEAN     117 /* Structure needs cleaning */
 #define EREMOTEIO   121 /* Remote I/O error */
 
 #define ENOTRECOVERABLE 131 /* State not recoverable */
