@@ -81,6 +81,14 @@ EXPORT_SYMBOL(high_memory);
 unsigned long highest_memmap_pfn __read_mostly;
 
 /*
+ * Parameter block passed down to zap_pte_range in exceptional cases.
+ */
+struct zap_details {
+    struct folio *single_folio; /* Locked folio to be unmapped */
+    bool even_cows;             /* Zap COWed private pages too? */
+};
+
+/*
  * Allocate p4d page table.
  * We've already handled the fast-path in-line.
  */
@@ -161,4 +169,16 @@ int __pte_alloc_kernel(pmd_t *pmd)
     if (new)
         pte_free_kernel(&init_mm, new);
     return 0;
+}
+
+void unmap_mapping_folio(struct folio *folio)
+{
+    struct address_space *mapping = folio->mapping;
+    struct zap_details details = { };
+    pgoff_t first_index;
+    pgoff_t last_index;
+
+    VM_BUG_ON(!folio_test_locked(folio));
+
+    panic("%s: END!\n", __func__);
 }

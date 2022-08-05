@@ -544,7 +544,37 @@ __filemap_get_folio(struct address_space *mapping, pgoff_t index,
 
  no_page:
     if (!folio && (fgp_flags & FGP_CREAT)) {
-        panic("%s: FGP_CREAT!\n", __func__);
+        int err;
+        if ((fgp_flags & FGP_WRITE) && mapping_can_writeback(mapping))
+            gfp |= __GFP_WRITE;
+        if (fgp_flags & FGP_NOFS)
+            gfp &= ~__GFP_FS;
+
+        folio = filemap_alloc_folio(gfp, 0);
+        if (!folio)
+            return NULL;
+
+        if (WARN_ON_ONCE(!(fgp_flags & (FGP_LOCK | FGP_FOR_MMAP))))
+            fgp_flags |= FGP_LOCK;
+
+        /* Init accessed so avoid atomic mark_page_accessed later */
+        if (fgp_flags & FGP_ACCESSED)
+            __folio_set_referenced(folio);
+
+        err = filemap_add_folio(mapping, folio, index, gfp);
+        if (unlikely(err)) {
+            folio_put(folio);
+            folio = NULL;
+            if (err == -EEXIST)
+                goto repeat;
+        }
+
+        /*
+         * filemap_add_folio locks the page, and for mmap
+         * we expect an unlocked page.
+         */
+        if (folio && (fgp_flags & FGP_FOR_MMAP))
+            folio_unlock(folio);
     }
 
     return folio;
@@ -889,3 +919,258 @@ unsigned find_get_pages_range_tag(struct address_space *mapping,
     return ret;
 }
 EXPORT_SYMBOL(find_get_pages_range_tag);
+
+/**
+ * find_lock_entries - Find a batch of pagecache entries.
+ * @mapping:    The address_space to search.
+ * @start:  The starting page cache index.
+ * @end:    The final page index (inclusive).
+ * @fbatch: Where the resulting entries are placed.
+ * @indices:    The cache indices of the entries in @fbatch.
+ *
+ * find_lock_entries() will return a batch of entries from @mapping.
+ * Swap, shadow and DAX entries are included.  Folios are returned
+ * locked and with an incremented refcount.  Folios which are locked
+ * by somebody else or under writeback are skipped.  Folios which are
+ * partially outside the range are not returned.
+ *
+ * The entries have ascending indexes.  The indices may not be consecutive
+ * due to not-present entries, large folios, folios which could not be
+ * locked or folios under writeback.
+ *
+ * Return: The number of entries which were found.
+ */
+unsigned find_lock_entries(struct address_space *mapping,
+                           pgoff_t start, pgoff_t end,
+                           struct folio_batch *fbatch, pgoff_t *indices)
+{
+    XA_STATE(xas, &mapping->i_pages, start);
+    struct folio *folio;
+
+    rcu_read_lock();
+    while ((folio = find_get_entry(&xas, end, XA_PRESENT))) {
+        if (!xa_is_value(folio)) {
+            if (folio->index < start)
+                goto put;
+            if (folio->index + folio_nr_pages(folio) - 1 > end)
+                goto put;
+            if (!folio_trylock(folio))
+                goto put;
+            if (folio->mapping != mapping ||
+                folio_test_writeback(folio))
+                goto unlock;
+            VM_BUG_ON_FOLIO(!folio_contains(folio, xas.xa_index), folio);
+        }
+        indices[fbatch->nr] = xas.xa_index;
+        if (!folio_batch_add(fbatch, folio))
+            break;
+        continue;
+unlock:
+        folio_unlock(folio);
+put:
+        folio_put(folio);
+    }
+    rcu_read_unlock();
+
+    return folio_batch_count(fbatch);
+}
+
+/**
+ * filemap_release_folio() - Release fs-specific metadata on a folio.
+ * @folio: The folio which the kernel is trying to free.
+ * @gfp: Memory allocation flags (and I/O mode).
+ *
+ * The address_space is trying to release any data attached to a folio
+ * (presumably at folio->private).
+ *
+ * This will also be called if the private_2 flag is set on a page,
+ * indicating that the folio has other metadata associated with it.
+ *
+ * The @gfp argument specifies whether I/O may be performed to release
+ * this page (__GFP_IO), and whether the call may block
+ * (__GFP_RECLAIM & __GFP_FS).
+ *
+ * Return: %true if the release was successful, otherwise %false.
+ */
+bool filemap_release_folio(struct folio *folio, gfp_t gfp)
+{
+    struct address_space * const mapping = folio->mapping;
+
+    BUG_ON(!folio_test_locked(folio));
+    if (folio_test_writeback(folio))
+        return false;
+
+    if (mapping && mapping->a_ops->releasepage)
+        return mapping->a_ops->releasepage(&folio->page, gfp);
+    return try_to_free_buffers(&folio->page);
+}
+EXPORT_SYMBOL(filemap_release_folio);
+
+static void filemap_unaccount_folio(struct address_space *mapping,
+                                    struct folio *folio)
+{
+    long nr;
+
+    VM_BUG_ON_FOLIO(folio_mapped(folio), folio);
+    if (unlikely(folio_mapped(folio))) {
+        panic("%s: folio_mapped!\n", __func__);
+    }
+
+    /* hugetlb folios do not participate in page cache accounting. */
+    if (folio_test_hugetlb(folio))
+        return;
+
+    nr = folio_nr_pages(folio);
+
+    __lruvec_stat_mod_folio(folio, NR_FILE_PAGES, -nr);
+    if (folio_test_swapbacked(folio)) {
+        __lruvec_stat_mod_folio(folio, NR_SHMEM, -nr);
+    }
+
+    /*
+     * At this point folio must be either written or cleaned by
+     * truncate.  Dirty folio here signals a bug and loss of
+     * unwritten data - on ordinary filesystems.
+     *
+     * But it's harmless on in-memory filesystems like tmpfs; and can
+     * occur when a driver which did get_user_pages() sets page dirty
+     * before putting it, while the inode is being finally evicted.
+     *
+     * Below fixes dirty accounting after removing the folio entirely
+     * but leaves the dirty flag set: it has no effect for truncated
+     * folio and anyway will be cleared before returning folio to
+     * buddy allocator.
+     */
+    if (WARN_ON_ONCE(folio_test_dirty(folio) && mapping_can_writeback(mapping)))
+        folio_account_cleaned(folio, inode_to_wb(mapping->host));
+}
+
+/*
+ * page_cache_delete_batch - delete several folios from page cache
+ * @mapping: the mapping to which folios belong
+ * @fbatch: batch of folios to delete
+ *
+ * The function walks over mapping->i_pages and removes folios passed in
+ * @fbatch from the mapping. The function expects @fbatch to be sorted
+ * by page index and is optimised for it to be dense.
+ * It tolerates holes in @fbatch (mapping entries at those indices are not
+ * modified).
+ *
+ * The function expects the i_pages lock to be held.
+ */
+static void page_cache_delete_batch(struct address_space *mapping,
+                                    struct folio_batch *fbatch)
+{
+    XA_STATE(xas, &mapping->i_pages, fbatch->folios[0]->index);
+    long total_pages = 0;
+    int i = 0;
+    struct folio *folio;
+
+    mapping_set_update(&xas, mapping);
+    xas_for_each(&xas, folio, ULONG_MAX) {
+        if (i >= folio_batch_count(fbatch))
+            break;
+
+        /* A swap/dax/shadow entry got inserted? Skip it. */
+        if (xa_is_value(folio))
+            continue;
+        /*
+         * A page got inserted in our range? Skip it. We have our
+         * pages locked so they are protected from being removed.
+         * If we see a page whose index is higher than ours, it
+         * means our page has been removed, which shouldn't be
+         * possible because we're holding the PageLock.
+         */
+        if (folio != fbatch->folios[i]) {
+            VM_BUG_ON_FOLIO(folio->index > fbatch->folios[i]->index, folio);
+            continue;
+        }
+
+        WARN_ON_ONCE(!folio_test_locked(folio));
+
+        folio->mapping = NULL;
+        /* Leave folio->index set: truncation lookup relies on it */
+
+        i++;
+        xas_store(&xas, NULL);
+        total_pages += folio_nr_pages(folio);
+    }
+    mapping->nrpages -= total_pages;
+}
+
+void filemap_free_folio(struct address_space *mapping, struct folio *folio)
+{
+    void (*freepage)(struct page *);
+    int refs = 1;
+
+    freepage = mapping->a_ops->freepage;
+    if (freepage)
+        freepage(&folio->page);
+
+    if (folio_test_large(folio) && !folio_test_hugetlb(folio))
+        refs = folio_nr_pages(folio);
+    folio_put_refs(folio, refs);
+}
+
+void delete_from_page_cache_batch(struct address_space *mapping,
+                                  struct folio_batch *fbatch)
+{
+    int i;
+
+    if (!folio_batch_count(fbatch))
+        return;
+
+    spin_lock(&mapping->host->i_lock);
+    xa_lock_irq(&mapping->i_pages);
+    for (i = 0; i < folio_batch_count(fbatch); i++) {
+        struct folio *folio = fbatch->folios[i];
+
+        filemap_unaccount_folio(mapping, folio);
+    }
+    page_cache_delete_batch(mapping, fbatch);
+    xa_unlock_irq(&mapping->i_pages);
+    if (mapping_shrinkable(mapping))
+        inode_add_lru(mapping->host);
+    spin_unlock(&mapping->host->i_lock);
+
+    for (i = 0; i < folio_batch_count(fbatch); i++)
+        filemap_free_folio(mapping, fbatch->folios[i]);
+}
+
+/**
+ * find_get_entries - gang pagecache lookup
+ * @mapping:    The address_space to search
+ * @start:  The starting page cache index
+ * @end:    The final page index (inclusive).
+ * @fbatch: Where the resulting entries are placed.
+ * @indices:    The cache indices corresponding to the entries in @entries
+ *
+ * find_get_entries() will search for and return a batch of entries in
+ * the mapping.  The entries are placed in @fbatch.  find_get_entries()
+ * takes a reference on any actual folios it returns.
+ *
+ * The entries have ascending indexes.  The indices may not be consecutive
+ * due to not-present entries or large folios.
+ *
+ * Any shadow entries of evicted folios, or swap entries from
+ * shmem/tmpfs, are included in the returned array.
+ *
+ * Return: The number of entries which were found.
+ */
+unsigned find_get_entries(struct address_space *mapping,
+                          pgoff_t start, pgoff_t end,
+                          struct folio_batch *fbatch, pgoff_t *indices)
+{
+    XA_STATE(xas, &mapping->i_pages, start);
+    struct folio *folio;
+
+    rcu_read_lock();
+    while ((folio = find_get_entry(&xas, end, XA_PRESENT)) != NULL) {
+        indices[fbatch->nr] = xas.xa_index;
+        if (!folio_batch_add(fbatch, folio))
+            break;
+    }
+    rcu_read_unlock();
+
+    return folio_batch_count(fbatch);
+}

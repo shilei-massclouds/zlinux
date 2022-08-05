@@ -25,3 +25,32 @@ void list_lru_destroy(struct list_lru *lru)
     lru->node = NULL;
 }
 EXPORT_SYMBOL_GPL(list_lru_destroy);
+
+static inline struct list_lru_one *
+list_lru_from_kmem(struct list_lru *lru, int nid, void *ptr,
+                   struct mem_cgroup **memcg_ptr)
+{
+    if (memcg_ptr)
+        *memcg_ptr = NULL;
+    return &lru->node[nid].lru;
+}
+
+bool list_lru_add(struct list_lru *lru, struct list_head *item)
+{
+    int nid = page_to_nid(virt_to_page(item));
+    struct list_lru_node *nlru = &lru->node[nid];
+    struct mem_cgroup *memcg;
+    struct list_lru_one *l;
+
+    spin_lock(&nlru->lock);
+    if (list_empty(item)) {
+        l = list_lru_from_kmem(lru, nid, item, &memcg);
+        list_add_tail(item, &l->list);
+        nlru->nr_items++;
+        spin_unlock(&nlru->lock);
+        return true;
+    }
+    spin_unlock(&nlru->lock);
+    return false;
+}
+EXPORT_SYMBOL_GPL(list_lru_add);

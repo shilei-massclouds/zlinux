@@ -62,4 +62,9 @@ void bdi_put(struct backing_dev_info *bdi);
 
 void bdi_unregister(struct backing_dev_info *bdi);
 
+static inline struct bdi_writeback *inode_to_wb(struct inode *inode)
+{
+    return &inode_to_bdi(inode)->wb;
+}
+
 #endif  /* _LINUX_BACKING_DEV_H */

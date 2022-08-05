@@ -35,4 +35,22 @@ struct list_lru {
 
 void list_lru_destroy(struct list_lru *lru);
 
+/**
+ * list_lru_add: add an element to the lru list's tail
+ * @list_lru: the lru pointer
+ * @item: the item to be added.
+ *
+ * If the element is already part of a list, this function returns doing
+ * nothing. Therefore the caller does not need to keep state about whether or
+ * not the element already belongs in the list and is allowed to lazy update
+ * it. Note however that this is valid for *a* list, not *this* list. If
+ * the caller organize itself in a way that elements can be in more than
+ * one type of list, it is up to the caller to fully remove the item from
+ * the previous list (with list_lru_del() for instance) before moving it
+ * to @list_lru
+ *
+ * Return value: true if the list was updated, false otherwise
+ */
+bool list_lru_add(struct list_lru *lru, struct list_head *item);
+
 #endif /* _LRU_LIST_H */

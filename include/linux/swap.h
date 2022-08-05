@@ -59,5 +59,8 @@ void folio_mark_accessed(struct folio *);
 
 void mark_page_accessed(struct page *);
 
+#define SWAP_CLUSTER_MAX 32UL
+#define COMPACT_CLUSTER_MAX SWAP_CLUSTER_MAX
+
 #endif /* __KERNEL__*/
 #endif /* _LINUX_SWAP_H */

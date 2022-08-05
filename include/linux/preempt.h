@@ -158,6 +158,8 @@ do { \
  */
 #define in_nmi()        (nmi_count())
 #define in_hardirq()    (hardirq_count())
+#define in_serving_softirq()    (softirq_count() & SOFTIRQ_OFFSET)
+#define in_task()       (!(in_nmi() | in_hardirq() | in_serving_softirq()))
 
 /*
  * The following macros are deprecated and should not be used in new code:

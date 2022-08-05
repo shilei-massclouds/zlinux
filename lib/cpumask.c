@@ -52,3 +52,23 @@ int cpumask_any_and_distribute(const struct cpumask *src1p,
     panic("%s: NOT-implemented!\n", __func__);
 }
 EXPORT_SYMBOL(cpumask_any_and_distribute);
+
+/**
+ * cpumask_next_and - get the next cpu in *src1p & *src2p
+ * @n: the cpu prior to the place to search (ie. return will be > @n)
+ * @src1p: the first cpumask pointer
+ * @src2p: the second cpumask pointer
+ *
+ * Returns >= nr_cpu_ids if no further cpus set in both.
+ */
+int cpumask_next_and(int n,
+                     const struct cpumask *src1p,
+                     const struct cpumask *src2p)
+{
+    /* -1 is a legal arg here. */
+    if (n != -1)
+        cpumask_check(n);
+    return find_next_and_bit(cpumask_bits(src1p), cpumask_bits(src2p),
+                             nr_cpumask_bits, n + 1);
+}
+EXPORT_SYMBOL(cpumask_next_and);

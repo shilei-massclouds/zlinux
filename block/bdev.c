@@ -550,11 +550,8 @@ static void kill_bdev(struct block_device *bdev)
     if (mapping_empty(mapping))
         return;
 
-#if 0
     invalidate_bh_lrus();
     truncate_inode_pages(mapping, 0);
-#endif
-    pr_warn("%s: Still something unfinished!\n", __func__);
 }
 
 int set_blocksize(struct block_device *bdev, int size)
@@ -579,6 +576,7 @@ EXPORT_SYMBOL(set_blocksize);
 
 int sb_set_blocksize(struct super_block *sb, int size)
 {
+    printk("############ %s: size(%d)\n", __func__, size);
     if (set_blocksize(sb->s_bdev, size))
         return 0;
     /* If we get here, we know size is power of two

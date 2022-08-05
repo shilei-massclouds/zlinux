@@ -1337,4 +1337,7 @@ static inline bool sb_is_blkdev_sb(struct super_block *sb)
     return sb == blockdev_superblock;
 }
 
+extern void inode_sb_list_add(struct inode *inode);
+extern void inode_add_lru(struct inode *inode);
+
 #endif /* _LINUX_FS_H */

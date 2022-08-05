@@ -64,6 +64,12 @@
     for (entry = xas_find(xas, max); entry; \
          entry = xas_next_entry(xas, max))
 
+/* True if the pointer is something other than a node */
+static inline bool xas_not_node(struct xa_node *node)
+{
+    return ((unsigned long)node & 3) || !node;
+}
+
 /**
  * xa_mk_value() - Create an XArray entry from an integer.
  * @v: Value to store in XArray.
@@ -827,12 +833,6 @@ static inline bool xas_retry(struct xa_state *xas, const void *entry)
     return true;
 }
 
-/* True if the pointer is something other than a node */
-static inline bool xas_not_node(struct xa_node *node)
-{
-    return ((unsigned long)node & 3) || !node;
-}
-
 /* Private */
 static inline struct xa_node *
 xa_parent(const struct xarray *xa, const struct xa_node *node)
@@ -920,6 +920,41 @@ void xa_destroy(struct xarray *);
 static inline bool xa_empty(const struct xarray *xa)
 {
     return xa->xa_head == NULL;
+}
+
+/**
+ * xas_next_entry() - Advance iterator to next present entry.
+ * @xas: XArray operation state.
+ * @max: Highest index to return.
+ *
+ * xas_next_entry() is an inline function to optimise xarray traversal for
+ * speed.  It is equivalent to calling xas_find(), and will call xas_find()
+ * for all the hard cases.
+ *
+ * Return: The next present entry after the one currently referred to by @xas.
+ */
+static inline void *xas_next_entry(struct xa_state *xas, unsigned long max)
+{
+    struct xa_node *node = xas->xa_node;
+    void *entry;
+
+    if (unlikely(xas_not_node(node) || node->shift ||
+                 xas->xa_offset != (xas->xa_index & XA_CHUNK_MASK)))
+        return xas_find(xas, max);
+
+    do {
+        if (unlikely(xas->xa_index >= max))
+            return xas_find(xas, max);
+        if (unlikely(xas->xa_offset == XA_CHUNK_MASK))
+            return xas_find(xas, max);
+        entry = xa_entry(xas->xa, node, xas->xa_offset + 1);
+        if (unlikely(xa_is_internal(entry)))
+            return xas_find(xas, max);
+        xas->xa_offset++;
+        xas->xa_index++;
+    } while (!entry);
+
+    return entry;
 }
 
 #endif /* _LINUX_XARRAY_H */

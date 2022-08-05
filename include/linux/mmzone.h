@@ -95,6 +95,7 @@ enum node_stat_item {
     NR_FILE_PAGES,
     NR_FILE_DIRTY,
     NR_WRITEBACK,
+    NR_SHMEM,           /* shmem pages (included tmpfs/GEM pages) */
     NR_KERNEL_STACK_KB, /* measured in KiB */
     NR_PAGETABLE,       /* used for pagetables */
     NR_VM_NODE_STAT_ITEMS

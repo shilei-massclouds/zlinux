@@ -751,4 +751,26 @@ extern void __init pagecache_init(void);
 #define nth_page(page,n)            ((page) + (n))
 #define folio_page_idx(folio, p)    ((p) - &(folio)->page)
 
+extern void truncate_inode_pages(struct address_space *, loff_t);
+
+bool folio_mapped(struct folio *folio);
+
+/**
+ * folio_size - The number of bytes in a folio.
+ * @folio: The folio.
+ *
+ * Context: The caller should have a reference on the folio to prevent
+ * it from being split.  It is not necessary for the folio to be locked.
+ * Return: The number of bytes in this folio.
+ */
+static inline size_t folio_size(struct folio *folio)
+{
+    return PAGE_SIZE << folio_order(folio);
+}
+
+static inline enum zone_type folio_zonenum(const struct folio *folio)
+{
+    return page_zonenum(&folio->page);
+}
+
 #endif /* _LINUX_MM_H */

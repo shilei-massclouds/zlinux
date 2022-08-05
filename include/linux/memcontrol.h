@@ -33,6 +33,15 @@
 struct obj_cgroup {
 };
 
+/*
+ * The memory controller data structure. The memory controller controls both
+ * page cache and RSS per cgroup. We would eventually like to provide
+ * statistics based on the statistics developed by Rik Van Riel for clock-pro,
+ * to help the administrator determine what knobs to tune.
+ */
+struct mem_cgroup {
+};
+
 static inline struct lruvec *
 folio_lruvec_lock_irqsave(struct folio *folio, unsigned long *flagsp)
 {

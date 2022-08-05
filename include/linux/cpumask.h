@@ -453,4 +453,8 @@ static inline bool cpumask_equal(const struct cpumask *src1p,
 int cpumask_any_and_distribute(const struct cpumask *src1p,
                                const struct cpumask *src2p);
 
+int __pure cpumask_next_and(int n,
+                            const struct cpumask *,
+                            const struct cpumask *);
+
 #endif /* __LINUX_CPUMASK_H */

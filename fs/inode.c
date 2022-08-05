@@ -37,6 +37,7 @@ static __cacheline_aligned_in_smp DEFINE_SPINLOCK(inode_hash_lock);
 static struct hlist_head *inode_hashtable __read_mostly;
 
 static DEFINE_PER_CPU(unsigned long, nr_inodes);
+static DEFINE_PER_CPU(unsigned long, nr_unused);
 
 static unsigned long hash(struct super_block *sb, unsigned long hashval)
 {
@@ -569,6 +570,33 @@ void __remove_inode_hash(struct inode *inode)
     spin_unlock(&inode_hash_lock);
 }
 EXPORT_SYMBOL(__remove_inode_hash);
+
+static void __inode_add_lru(struct inode *inode, bool rotate)
+{
+    if (inode->i_state & (I_DIRTY_ALL | I_SYNC | I_FREEING | I_WILL_FREE))
+        return;
+    if (atomic_read(&inode->i_count))
+        return;
+    if (!(inode->i_sb->s_flags & SB_ACTIVE))
+        return;
+    if (!mapping_shrinkable(&inode->i_data))
+        return;
+
+    if (list_lru_add(&inode->i_sb->s_inode_lru, &inode->i_lru))
+        this_cpu_inc(nr_unused);
+    else if (rotate)
+        inode->i_state |= I_REFERENCED;
+}
+
+/*
+ * Add inode to LRU if needed (inode is unused and clean).
+ *
+ * Needs inode->i_lock held.
+ */
+void inode_add_lru(struct inode *inode)
+{
+    __inode_add_lru(inode, false);
+}
 
 /*
  * Initialize the waitqueues and inode hash table.

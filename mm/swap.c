@@ -22,7 +22,7 @@
 #include <linux/pagevec.h>
 #include <linux/init.h>
 #include <linux/export.h>
-//#include <linux/mm_inline.h>
+#include <linux/mm_inline.h>
 #include <linux/percpu_counter.h>
 //#include <linux/memremap.h>
 #include <linux/percpu.h>
@@ -108,7 +108,72 @@ static void __pagevec_lru_add_fn(struct folio *folio, struct lruvec *lruvec)
  */
 void release_pages(struct page **pages, int nr)
 {
-    panic("%s: END!\n", __func__);
+    int i;
+    LIST_HEAD(pages_to_free);
+    struct lruvec *lruvec = NULL;
+    unsigned long flags = 0;
+    unsigned int lock_batch;
+
+    for (i = 0; i < nr; i++) {
+        struct page *page = pages[i];
+        struct folio *folio = page_folio(page);
+
+        /*
+         * Make sure the IRQ-safe lock-holding time does not get
+         * excessive with a continuous string of pages from the
+         * same lruvec. The lock is held only if lruvec != NULL.
+         */
+        if (lruvec && ++lock_batch == SWAP_CLUSTER_MAX) {
+            unlock_page_lruvec_irqrestore(lruvec, flags);
+            lruvec = NULL;
+        }
+
+        page = &folio->page;
+
+        if (!put_page_testzero(page))
+            continue;
+
+        if (PageCompound(page)) {
+            if (lruvec) {
+                unlock_page_lruvec_irqrestore(lruvec, flags);
+                lruvec = NULL;
+            }
+            __put_compound_page(page);
+            continue;
+        }
+
+        if (PageLRU(page)) {
+            struct lruvec *prev_lruvec = lruvec;
+
+            lruvec = folio_lruvec_relock_irqsave(folio, lruvec, &flags);
+            if (prev_lruvec != lruvec)
+                lock_batch = 0;
+
+            del_page_from_lru_list(page, lruvec);
+            __clear_page_lru_flags(page);
+        }
+
+        /*
+         * In rare cases, when truncation or holepunching raced with
+         * munlock after VM_LOCKED was cleared, Mlocked may still be
+         * found set here.  This does not indicate a problem, unless
+         * "unevictable_pgs_cleared" appears worryingly large.
+         */
+        if (unlikely(PageMlocked(page))) {
+#if 0
+            __ClearPageMlocked(page);
+            dec_zone_page_state(page, NR_MLOCK);
+            count_vm_event(UNEVICTABLE_PGCLEARED);
+#endif
+            panic("%s: PageMlocked!\n", __func__);
+        }
+
+        list_add(&page->lru, &pages_to_free);
+    }
+    if (lruvec)
+        unlock_page_lruvec_irqrestore(lruvec, flags);
+
+    free_unref_page_list(&pages_to_free);
 }
 
 /*
@@ -268,3 +333,35 @@ unsigned pagevec_lookup_range_tag(struct pagevec *pvec,
     return pagevec_count(pvec);
 }
 EXPORT_SYMBOL(pagevec_lookup_range_tag);
+
+void lru_add_drain(void)
+{
+#if 0
+    local_lock(&lru_pvecs.lock);
+    lru_add_drain_cpu(smp_processor_id());
+    local_unlock(&lru_pvecs.lock);
+    mlock_page_drain_local();
+#endif
+    pr_warn("%s: NO implementation!\n", __func__);
+}
+
+/*
+ * The pages which we're about to release may be in the deferred lru-addition
+ * queues.  That would prevent them from really being freed right now.  That's
+ * OK from a correctness point of view but is inefficient - those pages may be
+ * cache-warm and we want to give them back to the page allocator ASAP.
+ *
+ * So __pagevec_release() will drain those queues here.  __pagevec_lru_add()
+ * and __pagevec_lru_add_active() call release_pages() directly to avoid
+ * mutual recursion.
+ */
+void __pagevec_release(struct pagevec *pvec)
+{
+    if (!pvec->percpu_pvec_drained) {
+        lru_add_drain();
+        pvec->percpu_pvec_drained = true;
+    }
+    release_pages(pvec->pages, pagevec_count(pvec));
+    pagevec_reinit(pvec);
+}
+EXPORT_SYMBOL(__pagevec_release);

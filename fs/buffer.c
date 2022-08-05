@@ -54,6 +54,11 @@
 
 #define BH_LRU_SIZE 16
 
+/* Bits that are cleared during an invalidate */
+#define BUFFER_FLAGS_DISCARD \
+    (1 << BH_Mapped | 1 << BH_New | 1 << BH_Req | \
+     1 << BH_Delay | 1 << BH_Unwritten)
+
 struct bh_lru {
     struct buffer_head *bhs[BH_LRU_SIZE];
 };
@@ -121,6 +126,24 @@ bool block_dirty_folio(struct address_space *mapping, struct folio *folio)
 }
 EXPORT_SYMBOL(block_dirty_folio);
 
+static void discard_buffer(struct buffer_head * bh)
+{
+    unsigned long b_state, b_state_old;
+
+    lock_buffer(bh);
+    clear_buffer_dirty(bh);
+    bh->b_bdev = NULL;
+    b_state = bh->b_state;
+    for (;;) {
+        b_state_old = cmpxchg(&bh->b_state, b_state,
+                              (b_state & ~BUFFER_FLAGS_DISCARD));
+        if (b_state_old == b_state)
+            break;
+        b_state = b_state_old;
+    }
+    unlock_buffer(bh);
+}
+
 /**
  * block_invalidate_folio - Invalidate part or all of a buffer-backed folio.
  * @folio: The folio which is affected.
@@ -138,7 +161,50 @@ EXPORT_SYMBOL(block_dirty_folio);
  */
 void block_invalidate_folio(struct folio *folio, size_t offset, size_t length)
 {
-    panic("%s: END!\n", __func__);
+    struct buffer_head *head, *bh, *next;
+    size_t curr_off = 0;
+    size_t stop = length + offset;
+
+    BUG_ON(!folio_test_locked(folio));
+
+    /*
+     * Check for overflow
+     */
+    BUG_ON(stop > folio_size(folio) || stop < length);
+
+    head = folio_buffers(folio);
+    if (!head)
+        return;
+
+    bh = head;
+    do {
+        size_t next_off = curr_off + bh->b_size;
+        next = bh->b_this_page;
+
+        /*
+         * Are we still fully in range ?
+         */
+        if (next_off > stop)
+            goto out;
+
+        /*
+         * is this block fully invalidated?
+         */
+        if (offset <= curr_off)
+            discard_buffer(bh);
+        curr_off = next_off;
+        bh = next;
+    } while (bh != head);
+
+    /*
+     * We release buffers only if the entire folio is being invalidated.
+     * The get_block cached value has been unconditionally invalidated,
+     * so real IO is not possible anymore.
+     */
+    if (length == folio_size(folio))
+        filemap_release_folio(folio, 0);
+ out:
+    return;
 }
 EXPORT_SYMBOL(block_invalidate_folio);
 
@@ -150,6 +216,30 @@ EXPORT_SYMBOL(block_invalidate_folio);
 void buffer_check_dirty_writeback(struct page *page,
                                   bool *dirty, bool *writeback)
 {
+    struct buffer_head *head, *bh;
+    *dirty = false;
+    *writeback = false;
+
+    BUG_ON(!PageLocked(page));
+
+    if (!page_has_buffers(page))
+        return;
+
+    if (PageWriteback(page))
+        *writeback = true;
+
+    head = page_buffers(page);
+    bh = head;
+    do {
+        if (buffer_locked(bh))
+            *writeback = true;
+
+        if (buffer_dirty(bh))
+            *dirty = true;
+
+        bh = bh->b_this_page;
+    } while (bh != head);
+
     panic("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL(buffer_check_dirty_writeback);
@@ -596,6 +686,16 @@ static int buffer_exit_cpu_dead(unsigned int cpu)
     return 0;
 }
 
+static void __invalidate_bh_lrus(struct bh_lru *b)
+{
+    int i;
+
+    for (i = 0; i < BH_LRU_SIZE; i++) {
+        brelse(b->bhs[i]);
+        b->bhs[i] = NULL;
+    }
+}
+
 /*
  * invalidate_bh_lrus() is called rarely - but not only at unmount.
  * This doesn't race because it runs in each cpu either in irq
@@ -603,13 +703,10 @@ static int buffer_exit_cpu_dead(unsigned int cpu)
  */
 static void invalidate_bh_lru(void *arg)
 {
-#if 0
     struct bh_lru *b = &get_cpu_var(bh_lrus);
 
     __invalidate_bh_lrus(b);
     put_cpu_var(bh_lrus);
-#endif
-    panic("%s: END!\n", __func__);
 }
 
 bool has_bh_in_lru(int cpu, void *dummy)

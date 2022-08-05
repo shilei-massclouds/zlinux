@@ -238,3 +238,21 @@ void __folio_cancel_dirty(struct folio *folio)
 {
     panic("%s: END!\n", __func__);
 }
+
+/*
+ * Helper function for deaccounting dirty page without writeback.
+ *
+ * Caller must hold lock_page_memcg().
+ */
+void folio_account_cleaned(struct folio *folio, struct bdi_writeback *wb)
+{
+#if 0
+    long nr = folio_nr_pages(folio);
+
+    lruvec_stat_mod_folio(folio, NR_FILE_DIRTY, -nr);
+    zone_stat_mod_folio(folio, NR_ZONE_WRITE_PENDING, -nr);
+    wb_stat_mod(wb, WB_RECLAIMABLE, -nr);
+    task_io_account_cancelled_write(nr * PAGE_SIZE);
+#endif
+    panic("%s: END!\n", __func__);
+}

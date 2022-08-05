@@ -360,4 +360,10 @@ static inline void *folio_get_private(struct folio *folio)
     return folio->private;
 }
 
+static inline atomic_t *folio_mapcount_ptr(struct folio *folio)
+{
+    struct page *tail = &folio->page + 1;
+    return &tail->compound_mapcount;
+}
+
 #endif /* _LINUX_MM_TYPES_H */

@@ -7,9 +7,9 @@
 #ifndef __MM_INTERNAL_H
 #define __MM_INTERNAL_H
 
-//#include <linux/fs.h>
+#include <linux/fs.h>
 #include <linux/mm.h>
-//#include <linux/pagemap.h>
+#include <linux/pagemap.h>
 
 /*
  * The set of flags that only affect watermark checking and reclaim
@@ -149,5 +149,17 @@ int vmap_pages_range_noflush(unsigned long addr, unsigned long end,
                              unsigned int page_shift);
 
 void vunmap_range_noflush(unsigned long start, unsigned long end);
+
+unsigned find_lock_entries(struct address_space *mapping,
+                           pgoff_t start, pgoff_t end,
+                           struct folio_batch *fbatch, pgoff_t *indices);
+
+void unmap_mapping_folio(struct folio *folio);
+
+extern void free_unref_page_list(struct list_head *list);
+
+unsigned find_get_entries(struct address_space *mapping,
+                          pgoff_t start, pgoff_t end,
+                          struct folio_batch *fbatch, pgoff_t *indices);
 
 #endif  /* __MM_INTERNAL_H */

@@ -47,7 +47,47 @@ static void smp_call_function_many_cond(const struct cpumask *mask,
                                         unsigned int scf_flags,
                                         smp_cond_func_t cond_func)
 {
-    panic("%s: NO implementation!\n", __func__);
+    int cpu, last_cpu, this_cpu = smp_processor_id();
+    struct call_function_data *cfd;
+    bool wait = scf_flags & SCF_WAIT;
+    bool run_remote = false;
+    bool run_local = false;
+    int nr_cpus = 0;
+
+    /*
+     * When @wait we can deadlock when we interrupt between llist_add() and
+     * arch_send_call_function_ipi*(); when !@wait we can deadlock due to
+     * csd_lock() on because the interrupt context uses the same csd
+     * storage.
+     */
+    WARN_ON_ONCE(!in_task());
+
+    /* Check if we need local execution. */
+    if ((scf_flags & SCF_RUN_LOCAL) && cpumask_test_cpu(this_cpu, mask))
+        run_local = true;
+
+    /* Check if we need remote execution, i.e., any CPU excluding this one. */
+    cpu = cpumask_first_and(mask, cpu_online_mask);
+    if (cpu == this_cpu)
+        cpu = cpumask_next_and(cpu, mask, cpu_online_mask);
+    if (cpu < nr_cpu_ids)
+        run_remote = true;
+
+    if (run_remote) {
+        panic("%s: run_remote!\n", __func__);
+    }
+
+    if (run_local && (!cond_func || cond_func(this_cpu, info))) {
+        unsigned long flags;
+
+        local_irq_save(flags);
+        func(info);
+        local_irq_restore(flags);
+    }
+
+    if (run_remote && wait) {
+        panic("%s: run_remote && wait!\n", __func__);
+    }
 }
 
 /* Setup number of possible processor ids */

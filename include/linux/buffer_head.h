@@ -142,6 +142,8 @@ void buffer_check_dirty_writeback(struct page *page,
                                   bool *dirty, bool *writeback);
 
 BUFFER_FNS(Uptodate, uptodate)
+BUFFER_FNS(Dirty, dirty)
+TAS_BUFFER_FNS(Dirty, dirty)
 BUFFER_FNS(Lock, locked)
 BUFFER_FNS(Req, req)
 TAS_BUFFER_FNS(Req, req)
@@ -219,5 +221,9 @@ static inline void wait_on_buffer(struct buffer_head *bh)
     if (buffer_locked(bh))
         __wait_on_buffer(bh);
 }
+
+#define folio_buffers(folio)    folio_get_private(folio)
+
+int try_to_free_buffers(struct page *);
 
 #endif /* _LINUX_BUFFER_HEAD_H */

@@ -327,6 +327,10 @@ PAGEFLAG(Unevictable, unevictable, PF_HEAD)
     __CLEARPAGEFLAG(Unevictable, unevictable, PF_HEAD)
     TESTCLEARFLAG(Unevictable, unevictable, PF_HEAD)
 
+PAGEFLAG(Mlocked, mlocked, PF_NO_TAIL)
+    __CLEARPAGEFLAG(Mlocked, mlocked, PF_NO_TAIL)
+    TESTSCFLAG(Mlocked, mlocked, PF_NO_TAIL)
+
 #define PAGE_TYPE_BASE  0xf0000000
 /* Reserve      0x0000007f to catch underflows of page_mapcount */
 #define PAGE_MAPCOUNT_RESERVE   -128
@@ -517,6 +521,37 @@ static __always_inline bool folio_test_swapcache(struct folio *folio)
 {
     return folio_test_swapbacked(folio) &&
         test_bit(PG_swapcache, folio_flags(folio, 0));
+}
+
+/**
+ * folio_test_large() - Does this folio contain more than one page?
+ * @folio: The folio to test.
+ *
+ * Return: True if the folio is larger than one page.
+ */
+static inline bool folio_test_large(struct folio *folio)
+{
+    return folio_test_head(folio);
+}
+
+#define PAGE_FLAGS_PRIVATE \
+    (1UL << PG_private | 1UL << PG_private_2)
+
+/**
+ * page_has_private - Determine if page has private stuff
+ * @page: The page to be checked
+ *
+ * Determine if a page has private stuff, indicating that release routines
+ * should be invoked upon it.
+ */
+static inline int page_has_private(struct page *page)
+{
+    return !!(page->flags & PAGE_FLAGS_PRIVATE);
+}
+
+static inline bool folio_has_private(struct folio *folio)
+{
+    return page_has_private(&folio->page);
 }
 
 #undef PF_ANY
