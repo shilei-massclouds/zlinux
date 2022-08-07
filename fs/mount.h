@@ -26,6 +26,13 @@ struct mnt_namespace {
     unsigned int        pending_mounts;
 } __randomize_layout;
 
+struct mountpoint {
+    struct hlist_node m_hash;
+    struct dentry *m_dentry;
+    struct hlist_head m_list;
+    int m_count;
+};
+
 struct mount {
     struct hlist_node mnt_hash;
     struct mount *mnt_parent;
@@ -84,4 +91,17 @@ static inline void get_mnt_ns(struct mnt_namespace *ns)
 static inline int mnt_has_parent(struct mount *mnt)
 {
     return mnt != mnt->mnt_parent;
+}
+
+static inline int is_mounted(struct vfsmount *mnt)
+{
+    /* neither detached nor internal? */
+    return !IS_ERR_OR_NULL(real_mount(mnt)->mnt_ns);
+}
+
+extern struct mount *__lookup_mnt(struct vfsmount *, struct dentry *);
+
+static inline bool is_anon_ns(struct mnt_namespace *ns)
+{
+    return ns->seq == 0;
 }

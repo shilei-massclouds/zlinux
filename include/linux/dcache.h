@@ -365,4 +365,14 @@ static inline bool d_mountpoint(const struct dentry *dentry)
     return dentry->d_flags & DCACHE_MOUNTED;
 }
 
+static inline bool d_is_autodir(const struct dentry *dentry)
+{
+    return __d_entry_type(dentry) == DCACHE_AUTODIR_TYPE;
+}
+
+static inline bool d_is_dir(const struct dentry *dentry)
+{
+    return d_can_lookup(dentry) || d_is_autodir(dentry);
+}
+
 #endif  /* __LINUX_DCACHE_H */

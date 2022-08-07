@@ -302,7 +302,41 @@ static const char *path_init(struct nameidata *nd, unsigned flags)
         return s;
     }
 
-    panic("%s: [%s] END!\n", __func__, s);
+    /* Relative pathname -- get the starting-point it is relative to. */
+    if (nd->dfd == AT_FDCWD) {
+        if (flags & LOOKUP_RCU) {
+            struct fs_struct *fs = current->fs;
+            unsigned seq;
+
+#if 0
+            do {
+                seq = read_seqcount_begin(&fs->seq);
+                nd->path = fs->pwd;
+                nd->inode = nd->path.dentry->d_inode;
+                nd->seq = __read_seqcount_begin(&nd->path.dentry->d_seq);
+            } while (read_seqcount_retry(&fs->seq, seq));
+#else
+            nd->path = fs->pwd;
+            nd->inode = nd->path.dentry->d_inode;
+#endif
+        } else {
+            panic("%s: NOT LOOKUP_RCU!\n", __func__);
+        }
+    } else {
+        panic("%s: NOT AT_FDCWD!\n", __func__);
+    }
+
+    /* For scoped-lookups we need to set the root to the dirfd as well. */
+    if (flags & LOOKUP_IS_SCOPED) {
+        nd->root = nd->path;
+        if (flags & LOOKUP_RCU) {
+            nd->root_seq = nd->seq;
+        } else {
+            path_get(&nd->root);
+            nd->state |= ND_ROOT_GRABBED;
+        }
+    }
+    return s;
 }
 
 /* Return the hash of a string of known length */
@@ -352,7 +386,10 @@ static inline u64 hash_name(const void *salt, const char *name)
 
 static const char *handle_dots(struct nameidata *nd, int type)
 {
-    panic("%s: [%s] END!\n", __func__, nd->name->name);
+    if (type == LAST_DOTDOT) {
+        panic("%s: LAST_DOTDOT!\n", __func__);
+    }
+    return NULL;
 }
 
 static inline void put_link(struct nameidata *nd)
@@ -484,7 +521,42 @@ static bool __follow_mount_rcu(struct nameidata *nd, struct path *path,
     if (unlikely(nd->flags & LOOKUP_NO_XDEV))
         return false;
 
-    panic("%s: [%s] END!\n", __func__, nd->name->name);
+    for (;;) {
+        /*
+         * Don't forget we might have a non-mountpoint managed dentry
+         * that wants to block transit.
+         */
+        if (unlikely(flags & DCACHE_MANAGE_TRANSIT)) {
+            int res = dentry->d_op->d_manage(path, true);
+            if (res)
+                return res == -EISDIR;
+            flags = dentry->d_flags;
+        }
+
+        if (flags & DCACHE_MOUNTED) {
+            struct mount *mounted = __lookup_mnt(path->mnt, dentry);
+            if (mounted) {
+                path->mnt = &mounted->mnt;
+                dentry = path->dentry = mounted->mnt.mnt_root;
+                nd->state |= ND_JUMPED;
+                //*seqp = read_seqcount_begin(&dentry->d_seq);
+                *inode = dentry->d_inode;
+                /*
+                 * We don't need to re-check ->d_seq after this
+                 * ->d_inode read - there will be an RCU delay
+                 * between mount hash removal and ->mnt_root
+                 * becoming unpinned.
+                 */
+                flags = dentry->d_flags;
+                continue;
+            }
+#if 0
+            if (read_seqretry(&mount_lock, nd->m_seq))
+                return false;
+#endif
+        }
+        return !(flags & DCACHE_NEED_AUTOMOUNT);
+    }
 }
 
 /*
@@ -1281,7 +1353,7 @@ EXPORT_SYMBOL(kern_path);
 int inode_permission(struct user_namespace *mnt_userns,
                      struct inode *inode, int mask)
 {
-    panic("%s: inode(%lx) END!\n", __func__, inode);
+    pr_warn("%s: NO implementation! inode(%lx) END!\n", __func__, inode);
 }
 EXPORT_SYMBOL(inode_permission);
 

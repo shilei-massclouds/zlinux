@@ -46,3 +46,14 @@ int do_linkat(int olddfd, struct filename *old, int newdfd,
 int path_mount(const char *dev_name, struct path *path,
                const char *type_page, unsigned long flags, void *data_page);
 int path_umount(struct path *path, int flags);
+
+/*
+ * dcache.c
+ */
+extern int d_set_mounted(struct dentry *dentry);
+extern long prune_dcache_sb(struct super_block *sb, struct shrink_control *sc);
+extern struct dentry *d_alloc_cursor(struct dentry *);
+extern struct dentry *d_alloc_pseudo(struct super_block *, const struct qstr *);
+extern char *simple_dname(struct dentry *, char *, int);
+extern void dput_to_list(struct dentry *, struct list_head *);
+extern void shrink_dentry_list(struct list_head *);

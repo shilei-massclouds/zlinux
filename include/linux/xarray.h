@@ -20,6 +20,8 @@
 #include <linux/types.h>
 #include <linux/err.h>
 
+struct xa_node;
+
 #define XA_BUG_ON(xa, x)        do { } while (0)
 #define XA_NODE_BUG_ON(node, x) do { } while (0)
 

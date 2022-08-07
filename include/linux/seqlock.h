@@ -387,4 +387,34 @@ static inline void do_write_seqcount_invalidate(seqcount_t *s)
     s->sequence+=2;
 }
 
+/**
+ * read_seqlock_excl() - begin a seqlock_t locking reader section
+ * @sl: Pointer to seqlock_t
+ *
+ * read_seqlock_excl opens a seqlock_t locking reader critical section.  A
+ * locking reader exclusively locks out *both* other writers *and* other
+ * locking readers, but it does not update the embedded sequence number.
+ *
+ * Locking readers act like a normal spin_lock()/spin_unlock().
+ *
+ * Context: if the seqlock_t write section, *or other read sections*, can
+ * be invoked from hardirq or softirq contexts, use the _irqsave or _bh
+ * variant of this function instead.
+ *
+ * The opened read section must be closed with read_sequnlock_excl().
+ */
+static inline void read_seqlock_excl(seqlock_t *sl)
+{
+    spin_lock(&sl->lock);
+}
+
+/**
+ * read_sequnlock_excl() - end a seqlock_t locking reader critical section
+ * @sl: Pointer to seqlock_t
+ */
+static inline void read_sequnlock_excl(seqlock_t *sl)
+{
+    spin_unlock(&sl->lock);
+}
+
 #endif /* __LINUX_SEQLOCK_H */

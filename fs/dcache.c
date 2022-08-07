@@ -45,6 +45,9 @@
 struct kmem_cache *names_cachep __read_mostly;
 EXPORT_SYMBOL(names_cachep);
 
+__cacheline_aligned_in_smp DEFINE_SEQLOCK(rename_lock);
+EXPORT_SYMBOL(rename_lock);
+
 static struct kmem_cache *dentry_cache __read_mostly;
 
 const struct qstr slash_name = QSTR_INIT("/", 1);
@@ -359,7 +362,6 @@ EXPORT_SYMBOL(d_make_root);
  */
 static inline bool fast_dput(struct dentry *dentry)
 {
-#if 0
     int ret;
     unsigned int d_flags;
 
@@ -397,6 +399,7 @@ static inline bool fast_dput(struct dentry *dentry)
     if (ret)
         return true;
 
+#if 0
     /*
      * Careful, careful. The reference count went down
      * to zero, but we don't hold the dentry lock, so
@@ -1231,6 +1234,85 @@ void __d_lookup_done(struct dentry *dentry)
     INIT_LIST_HEAD(&dentry->d_lru);
 }
 EXPORT_SYMBOL(__d_lookup_done);
+
+/*
+ * Called by mount code to set a mountpoint and check if the mountpoint is
+ * reachable (e.g. NFS can unhash a directory dentry and then the complete
+ * subtree can become unreachable).
+ *
+ * Only one of d_invalidate() and d_set_mounted() must succeed.  For
+ * this reason take rename_lock and d_lock on dentry and ancestors.
+ */
+int d_set_mounted(struct dentry *dentry)
+{
+    struct dentry *p;
+    int ret = -ENOENT;
+    write_seqlock(&rename_lock);
+    for (p = dentry->d_parent; !IS_ROOT(p); p = p->d_parent) {
+        /* Need exclusion wrt. d_invalidate() */
+        spin_lock(&p->d_lock);
+        if (unlikely(d_unhashed(p))) {
+            spin_unlock(&p->d_lock);
+            goto out;
+        }
+        spin_unlock(&p->d_lock);
+    }
+    spin_lock(&dentry->d_lock);
+    if (!d_unlinked(dentry)) {
+        ret = -EBUSY;
+        if (!d_mountpoint(dentry)) {
+            dentry->d_flags |= DCACHE_MOUNTED;
+            ret = 0;
+        }
+    }
+    spin_unlock(&dentry->d_lock);
+ out:
+    write_sequnlock(&rename_lock);
+    return ret;
+}
+
+static void d_shrink_del(struct dentry *dentry)
+{
+    D_FLAG_VERIFY(dentry, DCACHE_SHRINK_LIST | DCACHE_LRU_LIST);
+    list_del_init(&dentry->d_lru);
+    dentry->d_flags &= ~(DCACHE_SHRINK_LIST | DCACHE_LRU_LIST);
+    this_cpu_dec(nr_dentry_unused);
+}
+
+static void d_shrink_add(struct dentry *dentry, struct list_head *list)
+{
+    D_FLAG_VERIFY(dentry, 0);
+    list_add(&dentry->d_lru, list);
+    dentry->d_flags |= DCACHE_SHRINK_LIST | DCACHE_LRU_LIST;
+    this_cpu_inc(nr_dentry_unused);
+}
+
+static void __dput_to_list(struct dentry *dentry, struct list_head *list)
+    __must_hold(&dentry->d_lock)
+{
+    if (dentry->d_flags & DCACHE_SHRINK_LIST) {
+        /* let the owner of the list it's on deal with it */
+        --dentry->d_lockref.count;
+    } else {
+        if (dentry->d_flags & DCACHE_LRU_LIST)
+            d_lru_del(dentry);
+        if (!--dentry->d_lockref.count)
+            d_shrink_add(dentry, list);
+    }
+}
+
+void dput_to_list(struct dentry *dentry, struct list_head *list)
+{
+    rcu_read_lock();
+    if (likely(fast_dput(dentry))) {
+        rcu_read_unlock();
+        return;
+    }
+    rcu_read_unlock();
+    if (!retain_dentry(dentry))
+        __dput_to_list(dentry, list);
+    spin_unlock(&dentry->d_lock);
+}
 
 void __init vfs_caches_init_early(void)
 {

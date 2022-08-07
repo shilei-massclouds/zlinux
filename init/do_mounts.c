@@ -16,8 +16,8 @@
 #if 0
 #include <linux/initrd.h>
 #include <linux/async.h>
-#include <linux/fs_struct.h>
 #endif
+#include <linux/fs_struct.h>
 #include <linux/slab.h>
 #include <linux/ramfs.h>
 #include <linux/shmem_fs.h>
@@ -224,7 +224,14 @@ static int __init do_mount_root(const char *name, const char *fs,
     if (ret)
         goto out;
 
-    panic("%s: END!\n", __func__);
+    init_chdir("/root");
+    s = current->fs->pwd.dentry->d_sb;
+    ROOT_DEV = s->s_dev;
+    printk(KERN_INFO
+           "VFS: Mounted root (%s filesystem)%s on device %u:%u.\n",
+           s->s_type->name,
+           sb_rdonly(s) ? " readonly" : "",
+           MAJOR(ROOT_DEV), MINOR(ROOT_DEV));
 
  out:
     if (p)
@@ -310,7 +317,6 @@ void __init mount_root(void)
             pr_emerg("Failed to create /dev/root: %d\n", err);
 
         mount_block_root("/dev/root", root_mountflags);
-        panic("%s: END!\n", __func__);
     }
 }
 
@@ -363,13 +369,10 @@ void __init prepare_namespace(void)
     }
 
     mount_root();
-    panic("%s: root_device_name(%s)(%x) END!\n",
-          __func__, root_device_name, ROOT_DEV);
  out:
 #if 0
     devtmpfs_mount();
+#endif
     init_mount(".", "/", NULL, MS_MOVE, NULL);
     init_chroot(".");
-#endif
-    panic("%s: 2 root_device_name(%s) END!\n", __func__, root_device_name);
 }

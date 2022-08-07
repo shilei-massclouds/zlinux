@@ -84,3 +84,40 @@ int __init init_mount(const char *dev_name, const char *dir_name,
     path_put(&path);
     return ret;
 }
+
+int __init init_chdir(const char *filename)
+{
+    struct path path;
+    int error;
+
+    error = kern_path(filename, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &path);
+    if (error)
+        return error;
+    error = path_permission(&path, MAY_EXEC | MAY_CHDIR);
+    if (!error)
+        set_fs_pwd(current->fs, &path);
+    path_put(&path);
+    return error;
+}
+
+int __init init_chroot(const char *filename)
+{
+    struct path path;
+    int error;
+
+    error = kern_path(filename, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &path);
+    if (error)
+        return error;
+#if 0
+    error = path_permission(&path, MAY_EXEC | MAY_CHDIR);
+    if (error)
+        goto dput_and_out;
+    error = -EPERM;
+    if (!ns_capable(current_user_ns(), CAP_SYS_CHROOT))
+        goto dput_and_out;
+#endif
+    set_fs_root(current->fs, &path);
+ dput_and_out:
+    path_put(&path);
+    return error;
+}
