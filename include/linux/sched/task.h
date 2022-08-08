@@ -59,4 +59,6 @@ extern asmlinkage void schedule_tail(struct task_struct *prev);
 
 void put_task_struct_rcu_user(struct task_struct *task);
 
+extern void proc_caches_init(void);
+
 #endif /* _LINUX_SCHED_TASK_H */

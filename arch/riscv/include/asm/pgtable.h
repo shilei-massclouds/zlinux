@@ -215,6 +215,9 @@ static inline unsigned long pte_pfn(pte_t pte)
 
 #define pte_page(x)     pfn_to_page(pte_pfn(x))
 
+/* Number of PGD entries that a user-mode program can use */
+#define USER_PTRS_PER_PGD   (TASK_SIZE / PGDIR_SIZE)
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* _ASM_RISCV_PGTABLE_H */

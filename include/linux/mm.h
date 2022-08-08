@@ -11,16 +11,16 @@
 #include <linux/atomic.h>
 //#include <linux/debug_locks.h>
 #include <linux/mm_types.h>
-//#include <linux/mmap_lock.h>
+#include <linux/mmap_lock.h>
 //#include <linux/range.h>
 #include <linux/pfn.h>
 #if 0
 /#include <linux/percpu-refcount.h>
 /#include <linux/bit_spinlock.h>
 #include <linux/shrinker.h>
-#include <linux/resource.h>
 #include <linux/page_ext.h>
 #endif
+#include <linux/resource.h>
 #include <linux/err.h>
 #include <linux/page-flags.h>
 #include <linux/page_ref.h>
@@ -65,6 +65,14 @@
 #endif
 
 #define VM_NORESERVE    0x00200000  /* should the VM suppress accounting */
+
+#define VM_MIXEDMAP     0x10000000  /* Can contain "struct page" and pure PFN pages */
+#define VM_HUGEPAGE     0x20000000  /* MADV_HUGEPAGE marked this vma */
+#define VM_NOHUGEPAGE   0x40000000  /* MADV_NOHUGEPAGE marked this vma */
+#define VM_MERGEABLE    0x80000000  /* KSM may merge identical pages */
+
+/* This mask defines which mm->def_flags a process can inherit its parent */
+#define VM_INIT_DEF_MASK    VM_NOHUGEPAGE
 
 typedef unsigned long vm_flags_t;
 
@@ -774,5 +782,10 @@ static inline enum zone_type folio_zonenum(const struct folio *folio)
 }
 
 int generic_error_remove_page(struct address_space *mapping, struct page *page);
+
+static inline void mm_pgtables_bytes_init(struct mm_struct *mm)
+{
+    atomic_long_set(&mm->pgtables_bytes, 0);
+}
 
 #endif /* _LINUX_MM_H */

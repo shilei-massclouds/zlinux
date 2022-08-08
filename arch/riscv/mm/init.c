@@ -236,7 +236,7 @@ static uintptr_t __init best_map_size(phys_addr_t base, phys_addr_t size)
     return PMD_SIZE;
 }
 
-static void __init
+void __init
 create_pgd_mapping(pgd_t *pgdp, uintptr_t va, phys_addr_t pa,
                    phys_addr_t sz, pgprot_t prot)
 {

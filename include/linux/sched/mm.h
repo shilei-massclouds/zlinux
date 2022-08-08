@@ -137,4 +137,6 @@ static inline void mmdrop_sched(struct mm_struct *mm)
     mmdrop(mm);
 }
 
+extern struct mm_struct *mm_alloc(void);
+
 #endif /* _LINUX_SCHED_MM_H */

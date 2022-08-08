@@ -93,4 +93,11 @@ static inline void __pud_free(struct mm_struct *mm, pud_t *pud)
     free_page((unsigned long)pud);
 }
 
+#ifndef __HAVE_ARCH_PGD_FREE
+static inline void pgd_free(struct mm_struct *mm, pgd_t *pgd)
+{
+    free_page((unsigned long)pgd);
+}
+#endif
+
 #endif /* __ASM_GENERIC_PGALLOC_H */

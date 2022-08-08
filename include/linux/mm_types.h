@@ -4,7 +4,7 @@
 
 #include <linux/mm_types_task.h>
 
-//#include <linux/auxvec.h>
+#include <linux/auxvec.h>
 #include <linux/kref.h>
 #include <linux/list.h>
 #include <linux/spinlock.h>
@@ -18,9 +18,11 @@
 //#include <linux/workqueue.h>
 #include <linux/seqlock.h>
 
-//#include <asm/mmu.h>
+#include <asm/mmu.h>
 
 #define _struct_page_alignment
+
+#define AT_VECTOR_SIZE (2*(AT_VECTOR_SIZE_ARCH + AT_VECTOR_SIZE_BASE + 1))
 
 struct page {
     unsigned long flags;    /* Atomic flags, some possibly updated asynchronously */
@@ -168,15 +170,42 @@ struct folio {
 
 struct mm_struct {
     struct {
+        struct vm_area_struct *mmap;    /* list of VMAs */
+        struct rb_root mm_rb;
+        u64 vmacache_seqnum;            /* per-thread vmacache */
+        unsigned long (*get_unmapped_area)(struct file *filp,
+                                           unsigned long addr,
+                                           unsigned long len,
+                                           unsigned long pgoff,
+                                           unsigned long flags);
+        unsigned long mmap_base;        /* base of mmap area */
+        unsigned long mmap_legacy_base; /* base of mmap area
+                                           in bottom-up allocations */
+        /* Base addresses for compatible mmap() */
+        unsigned long mmap_compat_base;
+        unsigned long mmap_compat_legacy_base;
+        unsigned long task_size;        /* size of task vm space */
+        unsigned long highest_vm_end;   /* highest vma end address */
         pgd_t *pgd;
 
-        atomic_long_t pgtables_bytes;   /* PTE page table pages */
+        /**
+         * @membarrier_state: Flags controlling membarrier behavior.
+         *
+         * This field is close to @pgd to hopefully fit in the same
+         * cache-line, which needs to be touched by switch_mm().
+         */
+        atomic_t membarrier_state;
 
-        /* Protects page tables and some counters */
-        spinlock_t page_table_lock;
-
-        unsigned long start_code, end_code, start_data, end_data;
-        unsigned long start_brk, brk, start_stack;
+        /**
+         * @mm_users: The number of users including userspace.
+         *
+         * Use mmget()/mmget_not_zero()/mmput() to modify. When this
+         * drops to 0 (i.e. when the task exits and there are no other
+         * temporary reference holders), we also release a reference on
+         * @mm_count (which may then free the &struct mm_struct if
+         * @mm_count also drops to 0).
+         */
+        atomic_t mm_users;
 
         /**
          * @mm_count: The number of references to &struct mm_struct
@@ -186,6 +215,95 @@ struct mm_struct {
          * &struct mm_struct is freed.
          */
         atomic_t mm_count;
+
+        atomic_long_t pgtables_bytes;   /* PTE page table pages */
+
+        int map_count;          /* number of VMAs */
+
+        spinlock_t page_table_lock; /* Protects page tables and some counters */
+        /*
+         * With some kernel config, the current mmap_lock's offset
+         * inside 'mm_struct' is at 0x120, which is very optimal, as
+         * its two hot fields 'count' and 'owner' sit in 2 different
+         * cachelines,  and when mmap_lock is highly contended, both
+         * of the 2 fields will be accessed frequently, current layout
+         * will help to reduce cache bouncing.
+         *
+         * So please be careful with adding new fields before
+         * mmap_lock, which can easily push the 2 fields into one
+         * cacheline.
+         */
+        struct rw_semaphore mmap_lock;
+
+        struct list_head mmlist; /* List of maybe swapped mm's. These
+                                  * are globally strung together off
+                                  * init_mm.mmlist, and are protected
+                                  * by mmlist_lock */
+
+        unsigned long hiwater_rss; /* High-watermark of RSS usage */
+        unsigned long hiwater_vm;  /* High-water virtual memory usage */
+
+        unsigned long total_vm;    /* Total pages mapped */
+        unsigned long locked_vm;   /* Pages that have PG_mlocked set */
+        atomic64_t    pinned_vm;   /* Refcount permanently increased */
+        unsigned long data_vm;     /* VM_WRITE & ~VM_SHARED & ~VM_STACK */
+        unsigned long exec_vm;     /* VM_EXEC & ~VM_WRITE & ~VM_STACK */
+        unsigned long stack_vm;    /* VM_STACK */
+        unsigned long def_flags;
+
+        /**
+         * @write_protect_seq: Locked when any thread is write
+         * protecting pages mapped by this mm to enforce a later COW,
+         * for instance during page table copying for fork().
+         */
+        seqcount_t write_protect_seq;
+
+        spinlock_t arg_lock; /* protect the below fields */
+
+        unsigned long start_code, end_code, start_data, end_data;
+        unsigned long start_brk, brk, start_stack;
+        unsigned long arg_start, arg_end, env_start, env_end;
+
+        unsigned long saved_auxv[AT_VECTOR_SIZE]; /* for /proc/PID/auxv */
+
+#if 0
+        /*
+         * Special counters, in some configurations protected by the
+         * page_table_lock, in other configurations by being atomic.
+         */
+        struct mm_rss_stat rss_stat;
+#endif
+
+        struct linux_binfmt *binfmt;
+
+        /* Architecture-specific MM context */
+        mm_context_t context;
+
+        unsigned long flags; /* Must use atomic bitops to access */
+
+        spinlock_t  ioctx_lock;
+        struct kioctx_table __rcu   *ioctx_table;
+
+        struct user_namespace *user_ns;
+
+        /* store ref to file /proc/<pid>/exe symlink points to */
+        struct file __rcu *exe_file;
+
+#if 0
+        struct mmu_notifier_subscriptions *notifier_subscriptions;
+#endif
+        /*
+         * An operation with batched TLB flushing is going on. Anything
+         * that can move process memory needs to flush the TLB when
+         * moving a PROT_NONE or PROT_NUMA mapped page.
+         */
+        atomic_t tlb_flush_pending;
+
+        atomic_long_t hugetlb_usage;
+
+#if 0
+        struct work_struct async_put_work;
+#endif
     } __randomize_layout;
 
     /*
@@ -364,6 +482,15 @@ static inline atomic_t *folio_mapcount_ptr(struct folio *folio)
 {
     struct page *tail = &folio->page + 1;
     return &tail->compound_mapcount;
+}
+
+/* Pointer magic because the dynamic array size confuses some compilers. */
+static inline void mm_init_cpumask(struct mm_struct *mm)
+{
+    unsigned long cpu_bitmap = (unsigned long)mm;
+
+    cpu_bitmap += offsetof(struct mm_struct, cpu_bitmap);
+    cpumask_clear((struct cpumask *)cpu_bitmap);
 }
 
 #endif /* _LINUX_MM_TYPES_H */

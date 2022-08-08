@@ -25,4 +25,9 @@ static inline pte_t arch_make_huge_pte(pte_t entry, unsigned int shift,
 }
 #endif
 
+static inline void hugetlb_count_init(struct mm_struct *mm)
+{
+    atomic_long_set(&mm->hugetlb_usage, 0);
+}
+
 #endif /* _LINUX_HUGETLB_H */

@@ -11,6 +11,7 @@
 #include <linux/string.h>
 #include <linux/moduleparam.h>
 #include <linux/cpu.h>
+#include <linux/binfmts.h>
 #include <linux/percpu.h>
 #include <linux/pid_namespace.h>
 #include <linux/sched.h>
@@ -304,7 +305,35 @@ static noinline void __init kernel_init_freeable(void)
      * and default modules
      */
 
-    panic("%s: END!\n", __func__);
+}
+
+static int run_init_process(const char *init_filename)
+{
+    const char *const *p;
+
+    argv_init[0] = init_filename;
+    pr_info("Run %s as init process\n", init_filename);
+    pr_debug("  with arguments:\n");
+    for (p = argv_init; *p; p++)
+        pr_debug("    %s\n", *p);
+    pr_debug("  with environment:\n");
+    for (p = envp_init; *p; p++)
+        pr_debug("    %s\n", *p);
+    return kernel_execve(init_filename, argv_init, envp_init);
+}
+
+static int try_to_run_init_process(const char *init_filename)
+{
+    int ret;
+
+    ret = run_init_process(init_filename);
+
+    if (ret && ret != -ENOENT) {
+        pr_err("Starting init: %s exists but couldn't execute it (error %d)\n",
+               init_filename, ret);
+    }
+
+    return ret;
 }
 
 static int __ref kernel_init(void *unused)
@@ -333,7 +362,14 @@ static int __ref kernel_init(void *unused)
 
     z_tests();
 
-    panic("%s: END!\n", __func__);
+    if (!try_to_run_init_process("/sbin/init") ||
+        !try_to_run_init_process("/etc/init") ||
+        !try_to_run_init_process("/bin/init") ||
+        !try_to_run_init_process("/bin/sh"))
+        return 0;
+
+    panic("No working init found.  Try passing init= option to kernel. "
+          "See Linux Documentation/admin-guide/init.rst for guidance.");
 }
 
 noinline void __ref rest_init(void)
@@ -742,6 +778,7 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
     printk("############## %s: step3\n", __func__);
 
     fork_init();
+    proc_caches_init();
 
     vfs_caches_init();
     pagecache_init();

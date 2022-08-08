@@ -13,10 +13,10 @@
  */
 
 #include <linux/sched/mm.h>
+#include <linux/sched/coredump.h>
 /*
 #include <linux/anon_inodes.h>
 #include <linux/sched/autogroup.h>
-#include <linux/sched/coredump.h>
 #include <linux/sched/user.h>
 #include <linux/sched/numa_balancing.h>
 #include <linux/sched/stat.h>
@@ -56,7 +56,6 @@
 #include <linux/capability.h>
 #include <linux/cgroup.h>
 #include <linux/security.h>
-#include <linux/hugetlb.h>
 #include <linux/seccomp.h>
 #include <linux/syscalls.h>
 #include <linux/futex.h>
@@ -99,12 +98,13 @@
 #include <linux/kasan.h>
 #include <linux/scs.h>
 
-#include <asm/pgalloc.h>
 #include <linux/uaccess.h>
-#include <asm/mmu_context.h>
 #include <asm/cacheflush.h>
 #include <asm/tlbflush.h>
 */
+#include <asm/pgalloc.h>
+#include <asm/mmu_context.h>
+#include <linux/hugetlb.h>
 #include <linux/memcontrol.h>
 #include <linux/kthread.h>
 #include <linux/kernel.h>
@@ -113,6 +113,8 @@
 #include <linux/sched/signal.h>
 #include <linux/math64.h>
 #include <linux/pid_namespace.h>
+#include <linux/user_namespace.h>
+#include <linux/mm_inline.h>
 #include <uapi/linux/futex.h>
 
 /*
@@ -124,6 +126,10 @@
  * Maximum number of threads
  */
 #define MAX_THREADS FUTEX_TID_MASK
+
+#ifndef ARCH_MIN_MMSTRUCT_ALIGN
+#define ARCH_MIN_MMSTRUCT_ALIGN 0
+#endif
 
 struct vm_stack {
     struct rcu_head rcu;
@@ -139,6 +145,12 @@ static DEFINE_PER_CPU(struct vm_struct *, cached_stacks[NR_CACHED_STACKS]);
 
 static struct kmem_cache *task_struct_cachep;
 
+/* SLAB cache for vm_area_struct structures */
+static struct kmem_cache *vm_area_cachep;
+
+/* SLAB cache for mm_struct structures (tsk->mm) */
+static struct kmem_cache *mm_cachep;
+
 /*
  * Protected counters by write_lock_irq(&tasklist_lock)
  */
@@ -147,10 +159,15 @@ int nr_threads;             /* The idle threads do not count.. */
 
 static int max_threads;     /* tunable limit on nr_threads */
 
+static unsigned long default_dump_filter = MMF_DUMP_FILTER_DEFAULT;
+
 static inline struct task_struct *alloc_task_struct_node(int node)
 {
     return kmem_cache_alloc_node(task_struct_cachep, GFP_KERNEL, node);
 }
+
+#define allocate_mm()   (kmem_cache_alloc(mm_cachep, GFP_KERNEL))
+#define free_mm(mm)     (kmem_cache_free(mm_cachep, (mm)))
 
 static inline void free_task_struct(struct task_struct *tsk)
 {
@@ -943,6 +960,114 @@ static void set_max_threads(unsigned int max_threads_suggested)
         threads = max_threads_suggested;
 
     max_threads = clamp_t(u64, threads, MIN_THREADS, MAX_THREADS);
+}
+
+static void mm_init_aio(struct mm_struct *mm)
+{
+    spin_lock_init(&mm->ioctx_lock);
+    mm->ioctx_table = NULL;
+}
+
+static inline int mm_alloc_pgd(struct mm_struct *mm)
+{
+    mm->pgd = pgd_alloc(mm);
+    if (unlikely(!mm->pgd))
+        return -ENOMEM;
+    return 0;
+}
+
+static inline void mm_free_pgd(struct mm_struct *mm)
+{
+    pgd_free(mm, mm->pgd);
+}
+
+static struct mm_struct *
+mm_init(struct mm_struct *mm, struct task_struct *p,
+        struct user_namespace *user_ns)
+{
+    mm->mmap = NULL;
+    mm->mm_rb = RB_ROOT;
+    mm->vmacache_seqnum = 0;
+    atomic_set(&mm->mm_users, 1);
+    atomic_set(&mm->mm_count, 1);
+    seqcount_init(&mm->write_protect_seq);
+    mmap_init_lock(mm);
+    INIT_LIST_HEAD(&mm->mmlist);
+    mm_pgtables_bytes_init(mm);
+    mm->map_count = 0;
+    mm->locked_vm = 0;
+    atomic64_set(&mm->pinned_vm, 0);
+#if 0
+    memset(&mm->rss_stat, 0, sizeof(mm->rss_stat));
+#endif
+    spin_lock_init(&mm->page_table_lock);
+    spin_lock_init(&mm->arg_lock);
+    mm_init_cpumask(mm);
+    mm_init_aio(mm);
+    RCU_INIT_POINTER(mm->exe_file, NULL);
+#if 0
+    mmu_notifier_subscriptions_init(mm);
+#endif
+    init_tlb_flush_pending(mm);
+    hugetlb_count_init(mm);
+
+    if (current->mm) {
+        mm->flags = current->mm->flags & MMF_INIT_MASK;
+        mm->def_flags = current->mm->def_flags & VM_INIT_DEF_MASK;
+    } else {
+        mm->flags = default_dump_filter;
+        mm->def_flags = 0;
+    }
+
+    if (mm_alloc_pgd(mm))
+        goto fail_nopgd;
+
+    if (init_new_context(p, mm))
+        goto fail_nocontext;
+
+    mm->user_ns = get_user_ns(user_ns);
+    return mm;
+
+fail_nocontext:
+    mm_free_pgd(mm);
+fail_nopgd:
+    free_mm(mm);
+    return NULL;
+}
+
+/*
+ * Allocate and initialize an mm_struct.
+ */
+struct mm_struct *mm_alloc(void)
+{
+    struct mm_struct *mm;
+
+    mm = allocate_mm();
+    if (!mm)
+        return NULL;
+
+    memset(mm, 0, sizeof(*mm));
+    return mm_init(mm, current, current_user_ns());
+}
+
+void __init proc_caches_init(void)
+{
+    unsigned int mm_size;
+
+    /*
+     * The mm_cpumask is located at the end of mm_struct, and is
+     * dynamically sized based on the maximum CPU number this system
+     * can have, taking hotplug into account (nr_cpu_ids).
+     */
+    mm_size = sizeof(struct mm_struct) + cpumask_size();
+
+    mm_cachep = kmem_cache_create_usercopy("mm_struct",
+            mm_size, ARCH_MIN_MMSTRUCT_ALIGN,
+            SLAB_HWCACHE_ALIGN|SLAB_PANIC|SLAB_ACCOUNT,
+            offsetof(struct mm_struct, saved_auxv),
+            sizeof_field(struct mm_struct, saved_auxv),
+            NULL);
+    vm_area_cachep = KMEM_CACHE(vm_area_struct, SLAB_PANIC|SLAB_ACCOUNT);
 }
 
 void __init fork_init(void)

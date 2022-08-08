@@ -97,4 +97,19 @@ static inline void pud_free(struct mm_struct *mm, pud_t *pud)
         __pud_free(mm, pud);
 }
 
+static inline pgd_t *pgd_alloc(struct mm_struct *mm)
+{
+    pgd_t *pgd;
+
+    pgd = (pgd_t *)__get_free_page(GFP_KERNEL);
+    if (likely(pgd != NULL)) {
+        memset(pgd, 0, USER_PTRS_PER_PGD * sizeof(pgd_t));
+        /* Copy kernel mappings */
+        memcpy(pgd + USER_PTRS_PER_PGD,
+               init_mm.pgd + USER_PTRS_PER_PGD,
+               (PTRS_PER_PGD - USER_PTRS_PER_PGD) * sizeof(pgd_t));
+    }
+    return pgd;
+}
+
 #endif /* _ASM_RISCV_PGALLOC_H */

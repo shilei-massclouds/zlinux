@@ -1112,6 +1112,8 @@ extern struct kmem_cache *names_cachep;
 #define __getname()         kmem_cache_alloc(names_cachep, GFP_KERNEL)
 #define __putname(name)     kmem_cache_free(names_cachep, (void *)(name))
 
+extern void putname(struct filename *name);
+
 /* fs/dcache.c -- generic fs support functions */
 extern bool is_subdir(struct dentry *, struct dentry *);
 extern bool path_is_under(const struct path *, const struct path *);

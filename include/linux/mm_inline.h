@@ -101,4 +101,9 @@ static __always_inline void __clear_page_lru_flags(struct page *page)
     __folio_clear_lru_flags(page_folio(page));
 }
 
+static inline void init_tlb_flush_pending(struct mm_struct *mm)
+{
+    atomic_set(&mm->tlb_flush_pending, 0);
+}
+
 #endif /* LINUX_MM_INLINE_H */
