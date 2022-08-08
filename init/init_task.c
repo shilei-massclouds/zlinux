@@ -2,6 +2,7 @@
 
 #include <linux/init_task.h>
 #include <linux/export.h>
+#include <linux/mqueue.h>
 #include <linux/sched.h>
 #include <linux/sched/rt.h>
 #include <linux/sched/task.h>
@@ -9,13 +10,13 @@
 #include <linux/sched/autogroup.h>
 #include <linux/init.h>
 #include <linux/mm.h>
+#include <linux/fs.h>
 
 #include <asm/cache.h>
 #include <linux/uaccess.h>
 
 static struct signal_struct init_signals = {
-#if 0
-    .nr_threads = 1,
+    .nr_threads     = 1,
     .thread_head    = LIST_HEAD_INIT(init_task.thread_node),
     .wait_chldexit  = __WAIT_QUEUE_HEAD_INITIALIZER(init_signals.wait_chldexit),
     .shared_pending = {
@@ -23,9 +24,10 @@ static struct signal_struct init_signals = {
         .signal =  {{0}}
     },
     .multiprocess   = HLIST_HEAD_INIT,
-    .rlim       = INIT_RLIMITS,
+    .rlim           = INIT_RLIMITS,
     .cred_guard_mutex = __MUTEX_INITIALIZER(init_signals.cred_guard_mutex),
     .exec_update_lock = __RWSEM_INITIALIZER(init_signals.exec_update_lock),
+#if 0
     .posix_timers = LIST_HEAD_INIT(init_signals.posix_timers),
     .cputimer   = {
         .cputime_atomic = INIT_CPUTIME_ATOMIC,
@@ -55,12 +57,17 @@ struct task_struct init_task __aligned(L1_CACHE_BYTES) = {
     .usage          = REFCOUNT_INIT(2),
     .flags          = PF_KTHREAD,
     .thread_pid     = &init_struct_pid,
+    .thread_node    = LIST_HEAD_INIT(init_signals.thread_head),
     .cpus_ptr       = &init_task.cpus_mask,
     .user_cpus_ptr  = NULL,
     .cpus_mask      = CPU_MASK_ALL,
     .nr_cpus_allowed= NR_CPUS,
     .mm             = NULL,
     .active_mm      = &init_mm,
+    .parent         = &init_task,
+    .children       = LIST_HEAD_INIT(init_task.children),
+    .sibling        = LIST_HEAD_INIT(init_task.sibling),
+    .group_leader   = &init_task,
     RCU_POINTER_INITIALIZER(real_cred, &init_cred),
     RCU_POINTER_INITIALIZER(cred, &init_cred),
     .comm           = INIT_TASK_COMM,

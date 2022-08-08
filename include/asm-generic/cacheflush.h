@@ -7,4 +7,12 @@ struct vm_area_struct;
 struct page;
 struct address_space;
 
+#ifndef flush_cache_page
+static inline void flush_cache_page(struct vm_area_struct *vma,
+                    unsigned long vmaddr,
+                    unsigned long pfn)
+{
+}
+#endif
+
 #endif /* _ASM_GENERIC_CACHEFLUSH_H */

@@ -368,3 +368,23 @@ void up_read(struct rw_semaphore *sem)
     __up_read(sem);
 }
 EXPORT_SYMBOL(up_read);
+
+static inline int __down_write_killable(struct rw_semaphore *sem)
+{
+    return __down_write_common(sem, TASK_KILLABLE);
+}
+
+/*
+ * lock for writing
+ */
+int __sched down_write_killable(struct rw_semaphore *sem)
+{
+    might_sleep();
+
+    if (__down_write_killable(sem)) {
+        return -EINTR;
+    }
+
+    return 0;
+}
+EXPORT_SYMBOL(down_write_killable);

@@ -162,4 +162,13 @@ unsigned find_get_entries(struct address_space *mapping,
                           pgoff_t start, pgoff_t end,
                           struct folio_batch *fbatch, pgoff_t *indices);
 
+/* mm/util.c */
+void __vma_link_list(struct mm_struct *mm, struct vm_area_struct *vma,
+                     struct vm_area_struct *prev);
+void __vma_unlink_list(struct mm_struct *mm, struct vm_area_struct *vma);
+
+extern long populate_vma_page_range(struct vm_area_struct *vma,
+                                    unsigned long start, unsigned long end,
+                                    int *locked);
+
 #endif  /* __MM_INTERNAL_H */

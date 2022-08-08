@@ -263,6 +263,8 @@ struct task_struct {
     struct pid *thread_pid;
     struct hlist_node pid_links[PIDTYPE_MAX];
 
+    struct list_head    thread_node;
+
     unsigned int __state;
 
     struct mm_struct    *mm;

@@ -60,6 +60,26 @@
 /* Number of entries in the page table */
 #define PTRS_PER_PTE    (PAGE_SIZE / sizeof(pte_t))
 
+/* Number of PGD entries that a user-mode program can use */
+#define USER_PTRS_PER_PGD   (TASK_SIZE / PGDIR_SIZE)
+
+/* Page protection bits */
+#define _PAGE_BASE  (_PAGE_PRESENT | _PAGE_ACCESSED | _PAGE_USER)
+
+#define PAGE_NONE       __pgprot(_PAGE_PROT_NONE | _PAGE_READ)
+#define PAGE_READ       __pgprot(_PAGE_BASE | _PAGE_READ)
+#define PAGE_WRITE      __pgprot(_PAGE_BASE | _PAGE_READ | _PAGE_WRITE)
+#define PAGE_EXEC       __pgprot(_PAGE_BASE | _PAGE_EXEC)
+#define PAGE_READ_EXEC  __pgprot(_PAGE_BASE | _PAGE_READ | _PAGE_EXEC)
+#define PAGE_WRITE_EXEC __pgprot(_PAGE_BASE | _PAGE_READ | \
+                                 _PAGE_EXEC | _PAGE_WRITE)
+
+#define PAGE_COPY           PAGE_READ
+#define PAGE_COPY_EXEC      PAGE_EXEC
+#define PAGE_COPY_READ_EXEC PAGE_READ_EXEC
+#define PAGE_SHARED         PAGE_WRITE
+#define PAGE_SHARED_EXEC    PAGE_WRITE_EXEC
+
 #define _PAGE_KERNEL    (_PAGE_READ | _PAGE_WRITE | _PAGE_PRESENT | \
                          _PAGE_ACCESSED | _PAGE_DIRTY)
 
@@ -76,6 +96,26 @@
  * change the properties of memory regions.
  */
 #define _PAGE_IOREMAP   _PAGE_KERNEL
+
+/* MAP_PRIVATE permissions: xwr (copy-on-write) */
+#define __P000  PAGE_NONE
+#define __P001  PAGE_READ
+#define __P010  PAGE_COPY
+#define __P011  PAGE_COPY
+#define __P100  PAGE_EXEC
+#define __P101  PAGE_READ_EXEC
+#define __P110  PAGE_COPY_EXEC
+#define __P111  PAGE_COPY_READ_EXEC
+
+/* MAP_SHARED permissions: xwr */
+#define __S000  PAGE_NONE
+#define __S001  PAGE_READ
+#define __S010  PAGE_SHARED
+#define __S011  PAGE_SHARED
+#define __S100  PAGE_EXEC
+#define __S101  PAGE_READ_EXEC
+#define __S110  PAGE_SHARED_EXEC
+#define __S111  PAGE_SHARED_EXEC
 
 #define TASK_SIZE       (PGDIR_SIZE * PTRS_PER_PGD / 2)
 #define TASK_SIZE_MIN   (PGDIR_SIZE_L3 * PTRS_PER_PGD / 2)
@@ -214,9 +254,6 @@ static inline unsigned long pte_pfn(pte_t pte)
 }
 
 #define pte_page(x)     pfn_to_page(pte_pfn(x))
-
-/* Number of PGD entries that a user-mode program can use */
-#define USER_PTRS_PER_PGD   (TASK_SIZE / PGDIR_SIZE)
 
 #endif /* !__ASSEMBLY__ */
 

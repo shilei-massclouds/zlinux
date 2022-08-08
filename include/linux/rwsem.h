@@ -102,4 +102,10 @@ extern void down_read(struct rw_semaphore *sem);
 # define down_read_non_owner(sem)       down_read(sem)
 # define up_read_non_owner(sem)         up_read(sem)
 
+/* In all implementations count != 0 means locked */
+static inline int rwsem_is_locked(struct rw_semaphore *sem)
+{
+    return atomic_long_read(&sem->count) != 0;
+}
+
 #endif /* _LINUX_RWSEM_H */

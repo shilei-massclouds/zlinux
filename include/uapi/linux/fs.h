@@ -22,6 +22,21 @@
 #include <linux/mount.h>
 #endif
 
+/*
+ * It's silly to have NR_OPEN bigger than NR_FILE, but you can change
+ * the file limit at runtime and only root can increase the per-process
+ * nr_file rlimit, so it's safe to set up a ridiculously high absolute
+ * upper limit on files-per-process.
+ *
+ * Some programs (notably those using select()) may have to be
+ * recompiled to take full advantage of the new limits..
+ */
+
+/* Fixed constants first: */
+#undef NR_OPEN
+#define INR_OPEN_CUR 1024   /* Initial setting for nfile rlimits */
+#define INR_OPEN_MAX 4096   /* Hard limit for nfile rlimits */
+
 #define BLOCK_SIZE_BITS 10
 #define BLOCK_SIZE (1<<BLOCK_SIZE_BITS)
 

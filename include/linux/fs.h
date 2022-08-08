@@ -1381,4 +1381,19 @@ extern loff_t generic_file_llseek(struct file *file, loff_t offset, int whence);
 
 void deactivate_locked_super(struct super_block *sb);
 
+static inline void i_mmap_lock_write(struct address_space *mapping)
+{
+    down_write(&mapping->i_mmap_rwsem);
+}
+
+static inline int i_mmap_trylock_write(struct address_space *mapping)
+{
+    return down_write_trylock(&mapping->i_mmap_rwsem);
+}
+
+static inline void i_mmap_unlock_write(struct address_space *mapping)
+{
+    up_write(&mapping->i_mmap_rwsem);
+}
+
 #endif /* _LINUX_FS_H */

@@ -1050,6 +1050,21 @@ struct mm_struct *mm_alloc(void)
     return mm_init(mm, current, current_user_ns());
 }
 
+struct vm_area_struct *vm_area_alloc(struct mm_struct *mm)
+{
+    struct vm_area_struct *vma;
+
+    vma = kmem_cache_alloc(vm_area_cachep, GFP_KERNEL);
+    if (vma)
+        vma_init(vma, mm);
+    return vma;
+}
+
+void vm_area_free(struct vm_area_struct *vma)
+{
+    kmem_cache_free(vm_area_cachep, vma);
+}
+
 void __init proc_caches_init(void)
 {
     unsigned int mm_size;
@@ -1088,10 +1103,8 @@ void __init fork_init(void)
 
     set_max_threads(MAX_THREADS);
 
-#if 0
     init_task.signal->rlim[RLIMIT_NPROC].rlim_cur = max_threads/2;
     init_task.signal->rlim[RLIMIT_NPROC].rlim_max = max_threads/2;
     init_task.signal->rlim[RLIMIT_SIGPENDING] =
         init_task.signal->rlim[RLIMIT_NPROC];
-#endif
 }

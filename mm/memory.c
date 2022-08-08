@@ -182,3 +182,8 @@ void unmap_mapping_folio(struct folio *folio)
 
     panic("%s: END!\n", __func__);
 }
+
+void mm_trace_rss_stat(struct mm_struct *mm, int member, long count)
+{
+    //trace_rss_stat(mm, member, count);
+}

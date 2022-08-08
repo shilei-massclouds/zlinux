@@ -64,15 +64,75 @@
 #define lm_alias(x) __va(__pa_symbol(x))
 #endif
 
-#define VM_NORESERVE    0x00200000  /* should the VM suppress accounting */
+/*
+ * vm_flags in vm_area_struct, see mm_types.h.
+ * When changing, update also include/trace/events/mmflags.h
+ */
+#define VM_NONE     0x00000000
 
-#define VM_MIXEDMAP     0x10000000  /* Can contain "struct page" and pure PFN pages */
+#define VM_READ     0x00000001  /* currently active flags */
+#define VM_WRITE    0x00000002
+#define VM_EXEC     0x00000004
+#define VM_SHARED   0x00000008
+
+/* mprotect() hardcodes VM_MAYREAD >> 4 == VM_READ, and so for r/w/x bits. */
+#define VM_MAYREAD  0x00000010  /* limits for mprotect() etc */
+#define VM_MAYWRITE 0x00000020
+#define VM_MAYEXEC  0x00000040
+#define VM_MAYSHARE 0x00000080
+
+#define VM_GROWSDOWN    0x00000100  /* general info on the segment */
+#define VM_UFFD_MISSING 0x00000200  /* missing pages tracking */
+#define VM_PFNMAP       0x00000400  /* Page-ranges managed
+                                       without "struct page", just pure PFN */
+#define VM_UFFD_WP      0x00001000  /* wrprotect pages tracking */
+
+#define VM_LOCKED       0x00002000
+#define VM_IO           0x00004000  /* Memory mapped I/O or similar */
+
+                                    /* Used by sys_madvise() */
+#define VM_SEQ_READ     0x00008000  /* App will access data sequentially */
+#define VM_RAND_READ    0x00010000  /* App will not benefit
+                                       from clustered reads */
+#define VM_DONTCOPY     0x00020000  /* Do not copy this vma on fork */
+#define VM_DONTEXPAND   0x00040000  /* Cannot expand with mremap() */
+#define VM_LOCKONFAULT  0x00080000  /* Lock the pages covered when they are faulted in */
+#define VM_ACCOUNT      0x00100000  /* Is a VM accounted object */
+#define VM_NORESERVE    0x00200000  /* should the VM suppress accounting */
+#define VM_HUGETLB      0x00400000  /* Huge TLB Page VM */
+#define VM_SYNC         0x00800000  /* Synchronous page faults */
+#define VM_ARCH_1       0x01000000  /* Architecture-specific flag */
+#define VM_WIPEONFORK   0x02000000  /* Wipe VMA contents in child. */
+#define VM_DONTDUMP     0x04000000  /* Do not include in the core dump */
+
+#define VM_SOFTDIRTY    0
+
+#define VM_MIXEDMAP     0x10000000  /* Can contain "struct page"
+                                       and pure PFN pages */
 #define VM_HUGEPAGE     0x20000000  /* MADV_HUGEPAGE marked this vma */
 #define VM_NOHUGEPAGE   0x40000000  /* MADV_NOHUGEPAGE marked this vma */
 #define VM_MERGEABLE    0x80000000  /* KSM may merge identical pages */
 
+#define VM_GROWSUP VM_NONE
+
 /* This mask defines which mm->def_flags a process can inherit its parent */
 #define VM_INIT_DEF_MASK    VM_NOHUGEPAGE
+
+/* Common data flag combinations */
+#define VM_DATA_FLAGS_TSK_EXEC \
+    (VM_READ | VM_WRITE | TASK_EXEC | VM_MAYREAD | VM_MAYWRITE | VM_MAYEXEC)
+#define VM_DATA_FLAGS_NON_EXEC \
+    (VM_READ | VM_WRITE | VM_MAYREAD | VM_MAYWRITE | VM_MAYEXEC)
+#define VM_DATA_FLAGS_EXEC \
+    (VM_READ | VM_WRITE | VM_EXEC | VM_MAYREAD | VM_MAYWRITE | VM_MAYEXEC)
+
+#define VM_STACK_DEFAULT_FLAGS VM_DATA_DEFAULT_FLAGS
+
+#define VM_STACK        VM_GROWSDOWN
+#define VM_STACK_FLAGS  (VM_STACK | VM_STACK_DEFAULT_FLAGS | VM_ACCOUNT)
+
+/* Bits set in the VMA until the stack is in its final location */
+#define VM_STACK_INCOMPLETE_SETUP   (VM_RAND_READ | VM_SEQ_READ)
 
 typedef unsigned long vm_flags_t;
 
@@ -787,5 +847,130 @@ static inline void mm_pgtables_bytes_init(struct mm_struct *mm)
 {
     atomic_long_set(&mm->pgtables_bytes, 0);
 }
+
+static inline void vma_init(struct vm_area_struct *vma, struct mm_struct *mm)
+{
+    static const struct vm_operations_struct dummy_vm_ops = {};
+
+    memset(vma, 0, sizeof(*vma));
+    vma->vm_mm = mm;
+    vma->vm_ops = &dummy_vm_ops;
+    INIT_LIST_HEAD(&vma->anon_vma_chain);
+}
+
+static inline void vma_set_anonymous(struct vm_area_struct *vma)
+{
+    vma->vm_ops = NULL;
+}
+
+static inline bool vma_is_anonymous(struct vm_area_struct *vma)
+{
+    return !vma->vm_ops;
+}
+
+/*
+ * Linux kernel virtual memory manager primitives.
+ * The idea being to have a "virtual" mm in the same way
+ * we have a virtual fs - giving a cleaner interface to the
+ * mm details, and allowing different kinds of memory mappings
+ * (from shared memory to executable loading to arbitrary
+ * mmap() functions).
+ */
+
+struct vm_area_struct *vm_area_alloc(struct mm_struct *);
+struct vm_area_struct *vm_area_dup(struct vm_area_struct *);
+void vm_area_free(struct vm_area_struct *);
+
+pgprot_t vm_get_page_prot(unsigned long vm_flags);
+void vma_set_page_prot(struct vm_area_struct *vma);
+
+extern int insert_vm_struct(struct mm_struct *, struct vm_area_struct *);
+extern void __vma_link_rb(struct mm_struct *, struct vm_area_struct *,
+                          struct rb_node **, struct rb_node *);
+extern void unlink_file_vma(struct vm_area_struct *);
+extern struct vm_area_struct *
+copy_vma(struct vm_area_struct **, unsigned long addr, unsigned long len,
+         pgoff_t pgoff, bool *need_rmap_locks);
+extern void exit_mmap(struct mm_struct *);
+
+extern unsigned long stack_guard_gap;
+
+static inline unsigned long vm_start_gap(struct vm_area_struct *vma)
+{
+    unsigned long vm_start = vma->vm_start;
+
+    if (vma->vm_flags & VM_GROWSDOWN) {
+        vm_start -= stack_guard_gap;
+        if (vm_start > vma->vm_start)
+            vm_start = 0;
+    }
+    return vm_start;
+}
+
+static inline unsigned long vm_end_gap(struct vm_area_struct *vma)
+{
+    unsigned long vm_end = vma->vm_end;
+
+    if (vma->vm_flags & VM_GROWSUP) {
+        vm_end += stack_guard_gap;
+        if (vm_end < vma->vm_end)
+            vm_end = -PAGE_SIZE;
+    }
+    return vm_end;
+}
+
+#define FOLL_WRITE  0x01    /* check pte is writable */
+#define FOLL_TOUCH  0x02    /* mark page accessed */
+#define FOLL_GET    0x04    /* do get_page on page */
+#define FOLL_DUMP   0x08    /* give error on hole if it would be zero */
+#define FOLL_FORCE  0x10    /* get_user_pages read/write w/o permission */
+#define FOLL_NOWAIT 0x20    /* if a disk transfer is needed, start the IO
+                             * and return without waiting upon it */
+#define FOLL_NOFAULT    0x80    /* do not fault in pages */
+#define FOLL_HWPOISON   0x100   /* check page is hwpoisoned */
+#define FOLL_NUMA       0x200   /* force NUMA hinting page fault */
+#define FOLL_MIGRATION  0x400   /* wait for page to replace migration entry */
+#define FOLL_TRIED      0x800   /* a retry, previous pass started an IO */
+#define FOLL_REMOTE     0x2000  /* we are working on non-current tsk/mm */
+#define FOLL_COW        0x4000  /* internal GUP flag */
+#define FOLL_ANON       0x8000  /* don't do file mappings */
+#define FOLL_LONGTERM   0x10000 /* mapping lifetime is indefinite: see below */
+#define FOLL_SPLIT_PMD  0x20000 /* split huge pmd before returning */
+#define FOLL_PIN        0x40000 /* pages must be released via unpin_user_page */
+#define FOLL_FAST_ONLY  0x80000 /* gup_fast: prevent fall-back to slow gup */
+
+static inline unsigned long vma_pages(struct vm_area_struct *vma)
+{
+    return (vma->vm_end - vma->vm_start) >> PAGE_SHIFT;
+}
+
+void mm_trace_rss_stat(struct mm_struct *mm, int member, long count);
+
+static inline void add_mm_counter(struct mm_struct *mm, int member, long value)
+{
+#if 0
+    long count = atomic_long_add_return(value, &mm->rss_stat.count[member]);
+
+    mm_trace_rss_stat(mm, member, count);
+#endif
+}
+
+long get_user_pages_remote(struct mm_struct *mm,
+                           unsigned long start, unsigned long nr_pages,
+                           unsigned int gup_flags, struct page **pages,
+                           struct vm_area_struct **vmas, int *locked);
+
+/*
+ * Architectures that support memory tagging (assigning tags to memory regions,
+ * embedding these tags into addresses that point to these memory regions, and
+ * checking that the memory and the pointer tags match on memory accesses)
+ * redefine this macro to strip tags from pointers.
+ * It's defined as noop for architectures that don't support memory tagging.
+ */
+#ifndef untagged_addr
+#define untagged_addr(addr) (addr)
+#endif
+
+struct vm_area_struct *find_extend_vma(struct mm_struct *, unsigned long addr);
 
 #endif /* _LINUX_MM_H */
