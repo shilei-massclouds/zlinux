@@ -7,6 +7,9 @@
 
 #ifndef __ASSEMBLY__
 
+#define pte_offset_map(dir, address) pte_offset_kernel((dir), (address))
+#define pte_unmap(pte) ((void)(pte)) /* NOP */
+
 static inline unsigned long pte_index(unsigned long address)
 {
     return (address >> PAGE_SHIFT) & (PTRS_PER_PTE - 1);
@@ -226,6 +229,64 @@ static inline int pud_free_pmd_page(pud_t *pud, unsigned long addr)
 static inline int pmd_free_pte_page(pmd_t *pmd, unsigned long addr)
 {
     return 0;
+}
+
+/*
+ * On some architectures hardware does not set page access bit when accessing
+ * memory page, it is responsibility of software setting this bit. It brings
+ * out extra page fault penalty to track page access bit. For optimization page
+ * access bit can be set during all page fault flow on these arches.
+ * To be differentiate with macro pte_mkyoung, this macro is used on platforms
+ * where software maintains page access bit.
+ */
+#ifndef pte_sw_mkyoung
+static inline pte_t pte_sw_mkyoung(pte_t pte)
+{
+    return pte;
+}
+#define pte_sw_mkyoung  pte_sw_mkyoung
+#endif
+
+static inline int pmd_trans_huge(pmd_t pmd)
+{
+    return 0;
+}
+#ifndef pmd_write
+static inline int pmd_write(pmd_t pmd)
+{
+    BUG();
+    return 0;
+}
+#endif /* pmd_write */
+
+/*
+ * Technically a PTE can be PROTNONE even when not doing NUMA balancing but
+ * the only case the kernel cares is for NUMA balancing and is only ever set
+ * when the VMA is accessible. For PROT_NONE VMAs, the PTEs are not marked
+ * _PAGE_PROTNONE so by default, implement the helper as "always no". It
+ * is the responsibility of the caller to distinguish between PROT_NONE
+ * protections and NUMA hinting fault protections.
+ */
+static inline int pte_protnone(pte_t pte)
+{
+    return 0;
+}
+
+static inline int pmd_protnone(pmd_t pmd)
+{
+    return 0;
+}
+
+static inline int is_zero_pfn(unsigned long pfn)
+{
+    extern unsigned long zero_pfn;
+    return pfn == zero_pfn;
+}
+
+static inline unsigned long my_zero_pfn(unsigned long addr)
+{
+    extern unsigned long zero_pfn;
+    return zero_pfn;
 }
 
 #endif /* !__ASSEMBLY__ */

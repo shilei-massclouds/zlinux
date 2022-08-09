@@ -270,6 +270,9 @@ struct task_struct {
     struct mm_struct    *mm;
     struct mm_struct    *active_mm;
 
+    /* Per-thread vma caching: */
+    struct vmacache     vmacache;
+
     int exit_state;
     int exit_code;
     int exit_signal;
@@ -451,6 +454,11 @@ struct task_struct {
      */
     u64 timer_slack_ns;
     u64 default_timer_slack_ns;
+
+    /* MM fault and swap info:
+     * this can arguably be seen as either mm-specific or thread-specific: */
+    unsigned long           min_flt;
+    unsigned long           maj_flt;
 
     struct task_group *sched_task_group;
 

@@ -33,3 +33,15 @@ struct page *pagecache_get_page(struct address_space *mapping, pgoff_t index,
     return folio_file_page(folio, index);
 }
 EXPORT_SYMBOL(pagecache_get_page);
+
+void lru_cache_add(struct page *page)
+{
+    folio_add_lru(page_folio(page));
+}
+EXPORT_SYMBOL(lru_cache_add);
+
+bool set_page_dirty(struct page *page)
+{
+    return folio_mark_dirty(page_folio(page));
+}
+EXPORT_SYMBOL(set_page_dirty);

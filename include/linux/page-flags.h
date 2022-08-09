@@ -259,10 +259,24 @@ static __always_inline int TestClearPage##uname(struct page *page)  \
 #define CLEARPAGEFLAG_NOOP(uname, lname) \
     static inline void ClearPage##uname(struct page *page) {  }
 
+#define TESTSETFLAG_FALSE(uname, lname) \
+static inline bool folio_test_set_##lname(struct folio *folio) \
+{ return 0; } \
+static inline int TestSetPage##uname(struct page *page) { return 0; }
+
+#define TESTCLEARFLAG_FALSE(uname, lname) \
+static inline bool folio_test_clear_##lname(struct folio *folio) \
+{ return 0; } \
+static inline int TestClearPage##uname(struct page *page) { return 0; }
+
 #define PAGEFLAG_FALSE(uname, lname)    \
     TESTPAGEFLAG_FALSE(uname, lname)    \
     SETPAGEFLAG_NOOP(uname, lname)      \
     CLEARPAGEFLAG_NOOP(uname, lname)
+
+#define TESTSCFLAG_FALSE(uname, lname) \
+    TESTSETFLAG_FALSE(uname, lname) \
+    TESTCLEARFLAG_FALSE(uname, lname)
 
 __PAGEFLAG(Locked, locked, PF_NO_TAIL)
 PAGEFLAG(Waiters, waiters, PF_ONLY_HEAD)
@@ -505,6 +519,17 @@ static __always_inline void folio_mark_uptodate(struct folio *folio)
     set_bit(PG_uptodate, folio_flags(folio, 0));
 }
 
+static __always_inline void __folio_mark_uptodate(struct folio *folio)
+{
+    smp_wmb();
+    __set_bit(PG_uptodate, folio_flags(folio, 0));
+}
+
+static __always_inline void __SetPageUptodate(struct page *page)
+{
+    __folio_mark_uptodate((struct folio *)page);
+}
+
 static __always_inline void SetPageUptodate(struct page *page)
 {
     folio_mark_uptodate((struct folio *)page);
@@ -553,6 +578,23 @@ static inline bool folio_has_private(struct folio *folio)
 {
     return page_has_private(&folio->page);
 }
+
+static __always_inline bool folio_test_anon(struct folio *folio)
+{
+    return ((unsigned long)folio->mapping & PAGE_MAPPING_ANON) != 0;
+}
+
+static __always_inline bool PageAnon(struct page *page)
+{
+    return folio_test_anon(page_folio(page));
+}
+
+TESTPAGEFLAG_FALSE(TransHuge, transhuge)
+TESTPAGEFLAG_FALSE(TransCompound, transcompound)
+TESTPAGEFLAG_FALSE(TransCompoundMap, transcompoundmap)
+TESTPAGEFLAG_FALSE(TransTail, transtail)
+PAGEFLAG_FALSE(DoubleMap, double_map)
+TESTSCFLAG_FALSE(DoubleMap, double_map)
 
 #undef PF_ANY
 #undef PF_HEAD

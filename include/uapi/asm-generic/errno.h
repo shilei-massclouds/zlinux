@@ -38,4 +38,6 @@
 
 #define ENOTRECOVERABLE 131 /* State not recoverable */
 
+#define EHWPOISON   133 /* Memory page has hardware error */
+
 #endif /* _ASM_GENERIC_ERRNO_H */

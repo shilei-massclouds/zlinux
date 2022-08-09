@@ -31,6 +31,7 @@
 #include <linux/fs.h>
 #include <linux/init_syscalls.h>
 #include <linux/kthread.h>
+#include <linux/rmap.h>
 
 #include <asm/setup.h>
 #include "z_tests.h"
@@ -774,6 +775,7 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
     kmem_cache_init_late();
 
     pid_idr_init();
+    anon_vma_init();
 
     printk("############## %s: step3\n", __func__);
 

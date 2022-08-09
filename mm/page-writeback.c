@@ -256,3 +256,41 @@ void folio_account_cleaned(struct folio *folio, struct bdi_writeback *wb)
 #endif
     panic("%s: END!\n", __func__);
 }
+
+/**
+ * folio_mark_dirty - Mark a folio as being modified.
+ * @folio: The folio.
+ *
+ * For folios with a mapping this should be done with the folio lock held
+ * for the benefit of asynchronous memory errors who prefer a consistent
+ * dirty state. This rule can be broken in some special cases,
+ * but should be better not to.
+ *
+ * Return: True if the folio was newly dirtied, false if it was already dirty.
+ */
+bool folio_mark_dirty(struct folio *folio)
+{
+#if 0
+    struct address_space *mapping = folio_mapping(folio);
+
+    if (likely(mapping)) {
+        /*
+         * readahead/lru_deactivate_page could remain
+         * PG_readahead/PG_reclaim due to race with folio_end_writeback
+         * About readahead, if the folio is written, the flags would be
+         * reset. So no problem.
+         * About lru_deactivate_page, if the folio is redirtied,
+         * the flag will be reset. So no problem. but if the
+         * folio is used by readahead it will confuse readahead
+         * and make it restart the size rampup process. But it's
+         * a trivial problem.
+         */
+        if (folio_test_reclaim(folio))
+            folio_clear_reclaim(folio);
+        return mapping->a_ops->dirty_folio(mapping, folio);
+    }
+
+    return noop_dirty_folio(mapping, folio);
+#endif
+    panic("%s: END!\n", __func__);
+}

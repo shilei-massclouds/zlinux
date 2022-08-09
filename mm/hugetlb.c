@@ -68,3 +68,46 @@ int PageHeadHuge(struct page *page_head)
     return page_head[1].compound_dtor == HUGETLB_PAGE_DTOR;
 }
 EXPORT_SYMBOL_GPL(PageHeadHuge);
+
+/*
+ * These functions are overwritable if your architecture needs its own
+ * behavior.
+ */
+struct page * __weak
+follow_huge_addr(struct mm_struct *mm, unsigned long address,
+                  int write)
+{
+    return ERR_PTR(-EINVAL);
+}
+
+vm_fault_t
+hugetlb_fault(struct mm_struct *mm, struct vm_area_struct *vma,
+              unsigned long address, unsigned int flags)
+{
+    panic("%s: END!\n", __func__);
+}
+
+struct page * __weak
+follow_huge_pud(struct mm_struct *mm, unsigned long address,
+                pud_t *pud, int flags)
+{
+    if (flags & (FOLL_GET | FOLL_PIN))
+        return NULL;
+
+    return pte_page(*(pte_t *)pud) + ((address & ~PUD_MASK) >> PAGE_SHIFT);
+}
+
+struct page * __weak
+follow_huge_pmd(struct mm_struct *mm, unsigned long address,
+                pmd_t *pmd, int flags)
+{
+    struct page *page = NULL;
+    spinlock_t *ptl;
+    pte_t pte;
+
+    /* FOLL_GET and FOLL_PIN are mutually exclusive. */
+    if (WARN_ON_ONCE((flags & (FOLL_PIN | FOLL_GET)) == (FOLL_PIN | FOLL_GET)))
+        return NULL;
+
+    panic("%s: END!\n", __func__);
+}

@@ -93,10 +93,12 @@ enum node_stat_item {
     NR_SLAB_RECLAIMABLE_B,
     NR_SLAB_UNRECLAIMABLE_B,
     WORKINGSET_NODES,
+    NR_ANON_MAPPED,     /* Mapped anonymous pages */
     NR_FILE_PAGES,
     NR_FILE_DIRTY,
     NR_WRITEBACK,
     NR_SHMEM,           /* shmem pages (included tmpfs/GEM pages) */
+    NR_ANON_THPS,
     NR_KERNEL_STACK_KB, /* measured in KiB */
     NR_PAGETABLE,       /* used for pagetables */
     NR_VM_NODE_STAT_ITEMS

@@ -1396,4 +1396,9 @@ static inline void i_mmap_unlock_write(struct address_space *mapping)
     up_write(&mapping->i_mmap_rwsem);
 }
 
+static inline bool vma_is_fsdax(struct vm_area_struct *vma)
+{
+    return false;
+}
+
 #endif /* _LINUX_FS_H */

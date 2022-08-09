@@ -364,4 +364,10 @@ static inline struct folio *folio_alloc(gfp_t gfp, unsigned int order)
 
 void page_alloc_init_late(void);
 
+#define alloc_pages_vma(gfp_mask, order, vma, addr, hugepage) \
+    alloc_pages(gfp_mask, order)
+
+#define alloc_page_vma(gfp_mask, vma, addr) \
+    alloc_pages_vma(gfp_mask, 0, vma, addr, false)
+
 #endif /* __LINUX_GFP_H */

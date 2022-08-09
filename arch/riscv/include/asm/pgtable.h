@@ -51,6 +51,7 @@
 #ifndef __ASSEMBLY__
 
 #include <asm/page.h>
+#include <asm/tlbflush.h>
 #include <linux/mm_types.h>
 
 #include <asm/pgtable-64.h>
@@ -254,6 +255,91 @@ static inline unsigned long pte_pfn(pte_t pte)
 }
 
 #define pte_page(x)     pfn_to_page(pte_pfn(x))
+
+/* Commit new configuration to MMU hardware */
+static inline void update_mmu_cache(struct vm_area_struct *vma,
+                                    unsigned long address, pte_t *ptep)
+{
+    /*
+     * The kernel assumes that TLBs don't cache invalid entries, but
+     * in RISC-V, SFENCE.VMA specifies an ordering constraint, not a
+     * cache flush; it is necessary even after writing invalid entries.
+     * Relying on flush_tlb_fix_spurious_fault would suffice, but
+     * the extra traps reduce performance.  So, eagerly SFENCE.VMA.
+     */
+    local_flush_tlb_page(address);
+}
+
+/* static inline pte_t pte_mkread(pte_t pte) */
+
+static inline pte_t pte_mkwrite(pte_t pte)
+{
+    return __pte(pte_val(pte) | _PAGE_WRITE);
+}
+
+/* static inline pte_t pte_mkexec(pte_t pte) */
+
+static inline pte_t pte_mkdirty(pte_t pte)
+{
+    return __pte(pte_val(pte) | _PAGE_DIRTY);
+}
+
+static inline pte_t pte_mkclean(pte_t pte)
+{
+    return __pte(pte_val(pte) & ~(_PAGE_DIRTY));
+}
+
+static inline pte_t pte_mkyoung(pte_t pte)
+{
+    return __pte(pte_val(pte) | _PAGE_ACCESSED);
+}
+
+static inline pte_t pte_mkold(pte_t pte)
+{
+    return __pte(pte_val(pte) & ~(_PAGE_ACCESSED));
+}
+
+static inline pte_t pte_mkspecial(pte_t pte)
+{
+    return __pte(pte_val(pte) | _PAGE_SPECIAL);
+}
+
+static inline struct page *pmd_page(pmd_t pmd)
+{
+    return pfn_to_page(pmd_val(pmd) >> _PAGE_PFN_SHIFT);
+}
+
+static inline int pte_dirty(pte_t pte)
+{
+    return pte_val(pte) & _PAGE_DIRTY;
+}
+
+#define pmd_leaf    pmd_leaf
+static inline int pmd_leaf(pmd_t pmd)
+{
+    return pmd_present(pmd) && (pmd_val(pmd) & _PAGE_LEAF);
+}
+
+static inline int pte_huge(pte_t pte)
+{
+    return pte_present(pte) && (pte_val(pte) & _PAGE_LEAF);
+}
+
+static inline int pte_young(pte_t pte)
+{
+    return pte_val(pte) & _PAGE_ACCESSED;
+}
+
+static inline int pte_special(pte_t pte)
+{
+    return pte_val(pte) & _PAGE_SPECIAL;
+}
+
+#define __HAVE_ARCH_PTE_SAME
+static inline int pte_same(pte_t pte_a, pte_t pte_b)
+{
+    return pte_val(pte_a) == pte_val(pte_b);
+}
 
 #endif /* !__ASSEMBLY__ */
 

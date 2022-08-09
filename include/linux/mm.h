@@ -12,11 +12,11 @@
 //#include <linux/debug_locks.h>
 #include <linux/mm_types.h>
 #include <linux/mmap_lock.h>
-//#include <linux/range.h>
+#include <linux/range.h>
 #include <linux/pfn.h>
+#include <linux/percpu-refcount.h>
 #if 0
-/#include <linux/percpu-refcount.h>
-/#include <linux/bit_spinlock.h>
+#include <linux/bit_spinlock.h>
 #include <linux/shrinker.h>
 #include <linux/page_ext.h>
 #endif
@@ -32,6 +32,12 @@
 #include <linux/jump_label.h>
 
 #include <asm/page.h>
+
+struct mempolicy;
+struct anon_vma;
+struct anon_vma_chain;
+struct user_struct;
+struct pt_regs;
 
 /* to align the pointer to the (next) page boundary */
 #define PAGE_ALIGN(addr) ALIGN(addr, PAGE_SIZE)
@@ -130,6 +136,14 @@
 
 #define VM_STACK        VM_GROWSDOWN
 #define VM_STACK_FLAGS  (VM_STACK | VM_STACK_DEFAULT_FLAGS | VM_ACCOUNT)
+
+/*
+ * Special vmas that are non-mergable, non-mlock()able.
+ */
+#define VM_SPECIAL (VM_IO | VM_DONTEXPAND | VM_PFNMAP | VM_MIXEDMAP)
+
+/* VMA basic access permission flags */
+#define VM_ACCESS_FLAGS (VM_READ | VM_WRITE | VM_EXEC)
 
 /* Bits set in the VMA until the stack is in its final location */
 #define VM_STACK_INCOMPLETE_SETUP   (VM_RAND_READ | VM_SEQ_READ)
@@ -493,6 +507,7 @@ int __p4d_alloc(struct mm_struct *mm, pgd_t *pgd, unsigned long address);
 int __pud_alloc(struct mm_struct *mm, p4d_t *p4d, unsigned long address);
 int __pmd_alloc(struct mm_struct *mm, pud_t *pud, unsigned long address);
 
+int __pte_alloc(struct mm_struct *mm, pmd_t *pmd);
 int __pte_alloc_kernel(pmd_t *pmd);
 
 static inline void pgtable_pmd_page_dtor(struct page *page)
@@ -971,6 +986,222 @@ long get_user_pages_remote(struct mm_struct *mm,
 #define untagged_addr(addr) (addr)
 #endif
 
-struct vm_area_struct *find_extend_vma(struct mm_struct *, unsigned long addr);
+struct vm_area_struct *
+find_extend_vma(struct mm_struct *, unsigned long addr);
+
+static inline bool is_cow_mapping(vm_flags_t flags)
+{
+    return (flags & (VM_SHARED | VM_MAYWRITE)) == VM_MAYWRITE;
+}
+
+extern vm_fault_t
+handle_mm_fault(struct vm_area_struct *vma,
+                unsigned long address, unsigned int flags,
+                struct pt_regs *regs);
+
+/*
+ * FOLL_PIN and FOLL_LONGTERM may be used in various combinations with each
+ * other. Here is what they mean, and how to use them:
+ *
+ * FOLL_LONGTERM indicates that the page will be held for an indefinite time
+ * period _often_ under userspace control.  This is in contrast to
+ * iov_iter_get_pages(), whose usages are transient.
+ *
+ * FIXME: For pages which are part of a filesystem, mappings are subject to the
+ * lifetime enforced by the filesystem and we need guarantees that longterm
+ * users like RDMA and V4L2 only establish mappings which coordinate usage with
+ * the filesystem.  Ideas for this coordination include revoking the longterm
+ * pin, delaying writeback, bounce buffer page writeback, etc.  As FS DAX was
+ * added after the problem with filesystems was found FS DAX VMAs are
+ * specifically failed.  Filesystem pages are still subject to bugs and use of
+ * FOLL_LONGTERM should be avoided on those pages.
+ *
+ * FIXME: Also NOTE that FOLL_LONGTERM is not supported in every GUP call.
+ * Currently only get_user_pages() and get_user_pages_fast() support this flag
+ * and calls to get_user_pages_[un]locked are specifically not allowed.  This
+ * is due to an incompatibility with the FS DAX check and
+ * FAULT_FLAG_ALLOW_RETRY.
+ *
+ * In the CMA case: long term pins in a CMA region would unnecessarily fragment
+ * that region.  And so, CMA attempts to migrate the page before pinning, when
+ * FOLL_LONGTERM is specified.
+ *
+ * FOLL_PIN indicates that a special kind of tracking (not just page->_refcount,
+ * but an additional pin counting system) will be invoked. This is intended for
+ * anything that gets a page reference and then touches page data (for example,
+ * Direct IO). This lets the filesystem know that some non-file-system entity is
+ * potentially changing the pages' data. In contrast to FOLL_GET (whose pages
+ * are released via put_page()), FOLL_PIN pages must be released, ultimately, by
+ * a call to unpin_user_page().
+ *
+ * FOLL_PIN is similar to FOLL_GET: both of these pin pages. They use different
+ * and separate refcounting mechanisms, however, and that means that each has
+ * its own acquire and release mechanisms:
+ *
+ *     FOLL_GET: get_user_pages*() to acquire, and put_page() to release.
+ *
+ *     FOLL_PIN: pin_user_pages*() to acquire, and unpin_user_pages to release.
+ *
+ * FOLL_PIN and FOLL_GET are mutually exclusive for a given function call.
+ * (The underlying pages may experience both FOLL_GET-based and FOLL_PIN-based
+ * calls applied to them, and that's perfectly OK. This is a constraint on the
+ * callers, not on the pages.)
+ *
+ * FOLL_PIN should be set internally by the pin_user_pages*() APIs, never
+ * directly by the caller. That's in order to help avoid mismatches when
+ * releasing pages: get_user_pages*() pages must be released via put_page(),
+ * while pin_user_pages*() pages must be released via unpin_user_page().
+ *
+ * Please see Documentation/core-api/pin_user_pages.rst for more information.
+ */
+static inline int vm_fault_to_errno(vm_fault_t vm_fault, int foll_flags)
+{
+    if (vm_fault & VM_FAULT_OOM)
+        return -ENOMEM;
+    if (vm_fault & (VM_FAULT_HWPOISON | VM_FAULT_HWPOISON_LARGE))
+        return (foll_flags & FOLL_HWPOISON) ? -EHWPOISON : -EFAULT;
+    if (vm_fault & (VM_FAULT_SIGBUS | VM_FAULT_SIGSEGV))
+        return -EFAULT;
+    return 0;
+}
+
+static inline p4d_t *
+p4d_alloc(struct mm_struct *mm, pgd_t *pgd, unsigned long address)
+{
+    return (unlikely(pgd_none(*pgd)) && __p4d_alloc(mm, pgd, address)) ?
+        NULL : p4d_offset(pgd, address);
+}
+
+static inline pud_t *
+pud_alloc(struct mm_struct *mm, p4d_t *p4d, unsigned long address)
+{
+    return (unlikely(p4d_none(*p4d)) && __pud_alloc(mm, p4d, address)) ?
+        NULL : pud_offset(p4d, address);
+}
+
+static inline pmd_t *
+pmd_alloc(struct mm_struct *mm, pud_t *pud, unsigned long address)
+{
+    return (unlikely(pud_none(*pud)) && __pmd_alloc(mm, pud, address))?
+        NULL: pmd_offset(pud, address);
+}
+
+#define pte_alloc(mm, pmd) \
+    (unlikely(pmd_none(*(pmd))) && __pte_alloc(mm, pmd))
+
+static inline spinlock_t *pmd_lock(struct mm_struct *mm, pmd_t *pmd)
+{
+    spinlock_t *ptl = pmd_lockptr(mm, pmd);
+    spin_lock(ptl);
+    return ptl;
+}
+
+static inline void pgtable_pte_page_dtor(struct page *page)
+{
+    ptlock_free(page);
+    __ClearPageTable(page);
+    dec_lruvec_page_state(page, NR_PAGETABLE);
+}
+
+#define pte_unmap_unlock(pte, ptl)  do {        \
+    spin_unlock(ptl);               \
+    pte_unmap(pte);                 \
+} while (0)
+
+extern struct anon_vma *find_mergeable_anon_vma(struct vm_area_struct *);
+
+void anon_vma_interval_tree_insert(struct anon_vma_chain *node,
+                                   struct rb_root_cached *root);
+void anon_vma_interval_tree_remove(struct anon_vma_chain *node,
+                                   struct rb_root_cached *root);
+struct anon_vma_chain *
+anon_vma_interval_tree_iter_first(struct rb_root_cached *root,
+                                  unsigned long start, unsigned long last);
+struct anon_vma_chain *
+anon_vma_interval_tree_iter_next(struct anon_vma_chain *node,
+                                 unsigned long start, unsigned long last);
+
+static inline spinlock_t *pte_lockptr(struct mm_struct *mm, pmd_t *pmd)
+{
+    return ptlock_ptr(pmd_page(*pmd));
+}
+
+#define pte_offset_map_lock(mm, pmd, address, ptlp) \
+({                          \
+    spinlock_t *__ptl = pte_lockptr(mm, pmd);   \
+    pte_t *__pte = pte_offset_map(pmd, address);    \
+    *(ptlp) = __ptl;                \
+    spin_lock(__ptl);               \
+    __pte;                      \
+})
+
+/**
+ * thp_nr_pages - The number of regular pages in this huge page.
+ * @page: The head page of a huge page.
+ */
+static inline int thp_nr_pages(struct page *page)
+{
+    VM_BUG_ON_PGFLAGS(PageTail(page), page);
+    return compound_nr(page);
+}
+
+struct page *
+vm_normal_page(struct vm_area_struct *vma,
+               unsigned long addr, pte_t pte);
+
+/**
+ * folio_pfn - Return the Page Frame Number of a folio.
+ * @folio: The folio.
+ *
+ * A folio may contain multiple pages.  The pages have consecutive
+ * Page Frame Numbers.
+ *
+ * Return: The Page Frame Number of the first page in the folio.
+ */
+static inline unsigned long folio_pfn(struct folio *folio)
+{
+    return page_to_pfn(&folio->page);
+}
+
+static inline atomic_t *folio_pincount_ptr(struct folio *folio)
+{
+    return &folio_page(folio, 1)->compound_pincount;
+}
+
+/*
+ * GUP_PIN_COUNTING_BIAS, and the associated functions that use it, overload
+ * the page's refcount so that two separate items are tracked: the original page
+ * reference count, and also a new count of how many pin_user_pages() calls were
+ * made against the page. ("gup-pinned" is another term for the latter).
+ *
+ * With this scheme, pin_user_pages() becomes special: such pages are marked as
+ * distinct from normal pages. As such, the unpin_user_page() call (and its
+ * variants) must be used in order to release gup-pinned pages.
+ *
+ * Choice of value:
+ *
+ * By making GUP_PIN_COUNTING_BIAS a power of two, debugging of page reference
+ * counts with respect to pin_user_pages() and unpin_user_page() becomes
+ * simpler, due to the fact that adding an even power of two to the page
+ * refcount has the effect of using only the upper N bits, for the code that
+ * counts up using the bias value. This means that the lower bits are left for
+ * the exclusive use of the original code that increments and decrements by one
+ * (or at least, by much smaller values than the bias value).
+ *
+ * Of course, once the lower bits overflow into the upper bits (and this is
+ * OK, because subtraction recovers the original values), then visual inspection
+ * no longer suffices to directly view the separate counts. However, for normal
+ * applications that don't have huge page reference counts, this won't be an
+ * issue.
+ *
+ * Locking: the lockless algorithm described in folio_try_get_rcu()
+ * provides safe operation for get_user_pages(), page_mkclean() and
+ * other calls that race to set up page table entries.
+ */
+#define GUP_PIN_COUNTING_BIAS (1U << 10)
+
+bool folio_mark_dirty(struct folio *folio);
+bool set_page_dirty(struct page *page);
+int set_page_dirty_lock(struct page *page);
 
 #endif /* _LINUX_MM_H */

@@ -171,4 +171,6 @@ extern long populate_vma_page_range(struct vm_area_struct *vma,
                                     unsigned long start, unsigned long end,
                                     int *locked);
 
+void mlock_new_page(struct page *page);
+
 #endif  /* __MM_INTERNAL_H */

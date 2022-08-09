@@ -14,9 +14,7 @@
 #include <linux/gfp.h>
 #include <linux/bitops.h>
 #include <linux/hardirq.h> /* for in_interrupt() */
-#if 0
 #include <linux/hugetlb_inline.h>
-#endif
 
 struct folio_batch;
 
@@ -431,6 +429,19 @@ static inline bool mapping_shrinkable(struct address_space *mapping)
         return true;
 
     return false;
+}
+
+static inline pgoff_t linear_page_index(struct vm_area_struct *vma,
+                                        unsigned long address)
+{
+    pgoff_t pgoff;
+    if (unlikely(is_vm_hugetlb_page(vma))) {
+        //return linear_hugepage_index(vma, address);
+        panic("%s: END!\n", __func__);
+    }
+    pgoff = (address - vma->vm_start) >> PAGE_SHIFT;
+    pgoff += vma->vm_pgoff;
+    return pgoff;
 }
 
 #endif /* _LINUX_PAGEMAP_H */

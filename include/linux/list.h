@@ -537,4 +537,13 @@ static inline int hlist_empty(const struct hlist_head *h)
          pos && ({ n = pos->member.next; 1; });         \
          pos = hlist_entry_safe(n, typeof(*pos), member))
 
+/**
+ * list_is_singular - tests whether a list has just one entry.
+ * @head: the list to test.
+ */
+static inline int list_is_singular(const struct list_head *head)
+{
+    return !list_empty(head) && (head->next == head->prev);
+}
+
 #endif /* _LINUX_LIST_H */

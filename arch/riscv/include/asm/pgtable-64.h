@@ -241,4 +241,10 @@ static inline void pud_clear(pud_t *pudp)
 #define p4d_ERROR(e) \
     pr_err("%s:%d: bad p4d %016lx.\n", __FILE__, __LINE__, p4d_val(e))
 
+#define pud_leaf    pud_leaf
+static inline int pud_leaf(pud_t pud)
+{
+    return pud_present(pud) && (pud_val(pud) & _PAGE_LEAF);
+}
+
 #endif /* _ASM_RISCV_PGTABLE_64_H */

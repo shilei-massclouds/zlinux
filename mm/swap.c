@@ -365,3 +365,22 @@ void __pagevec_release(struct pagevec *pvec)
     pagevec_reinit(pvec);
 }
 EXPORT_SYMBOL(__pagevec_release);
+
+/**
+ * lru_cache_add_inactive_or_unevictable
+ * @page:  the page to be added to LRU
+ * @vma:   vma in which page is mapped for determining reclaimability
+ *
+ * Place @page on the inactive or unevictable LRU list, depending on its
+ * evictability.
+ */
+void lru_cache_add_inactive_or_unevictable(struct page *page,
+                                           struct vm_area_struct *vma)
+{
+    VM_BUG_ON_PAGE(PageLRU(page), page);
+
+    if (unlikely((vma->vm_flags & (VM_LOCKED | VM_SPECIAL)) == VM_LOCKED))
+        mlock_new_page(page);
+    else
+        lru_cache_add(page);
+}

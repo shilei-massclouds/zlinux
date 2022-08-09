@@ -14,8 +14,8 @@
 #include <linux/backing-dev.h>
 #include <linux/mm.h>
 #include <linux/mm_inline.h>
-#if 0
 #include <linux/vmacache.h>
+#if 0
 #include <linux/shm.h>
 #endif
 #include <linux/mman.h>
@@ -315,7 +315,34 @@ int expand_stack(struct vm_area_struct *vma, unsigned long address)
 /* Look up the first VMA which satisfies  addr < vm_end,  NULL if none. */
 struct vm_area_struct *find_vma(struct mm_struct *mm, unsigned long addr)
 {
-    panic("%s: END!\n", __func__);
+    struct rb_node *rb_node;
+    struct vm_area_struct *vma;
+
+    mmap_assert_locked(mm);
+    /* Check the cache first. */
+    vma = vmacache_find(mm, addr);
+    if (likely(vma))
+        return vma;
+
+    rb_node = mm->mm_rb.rb_node;
+
+    while (rb_node) {
+        struct vm_area_struct *tmp;
+
+        tmp = rb_entry(rb_node, struct vm_area_struct, vm_rb);
+
+        if (tmp->vm_end > addr) {
+            vma = tmp;
+            if (tmp->vm_start <= addr)
+                break;
+            rb_node = rb_node->rb_left;
+        } else
+            rb_node = rb_node->rb_right;
+    }
+
+    if (vma)
+        vmacache_update(addr, vma);
+    return vma;
 }
 
 struct vm_area_struct *
@@ -338,4 +365,96 @@ find_extend_vma(struct mm_struct *mm, unsigned long addr)
     if (vma->vm_flags & VM_LOCKED)
         populate_vma_page_range(vma, addr, start, NULL);
     return vma;
+}
+
+/*
+ * Rough compatibility check to quickly see if it's even worth looking
+ * at sharing an anon_vma.
+ *
+ * They need to have the same vm_file, and the flags can only differ
+ * in things that mprotect may change.
+ *
+ * NOTE! The fact that we share an anon_vma doesn't _have_ to mean that
+ * we can merge the two vma's. For example, we refuse to merge a vma if
+ * there is a vm_ops->close() function, because that indicates that the
+ * driver is doing some kind of reference counting. But that doesn't
+ * really matter for the anon_vma sharing case.
+ */
+static int
+anon_vma_compatible(struct vm_area_struct *a, struct vm_area_struct *b)
+{
+    return a->vm_end == b->vm_start && a->vm_file == b->vm_file &&
+        !((a->vm_flags ^ b->vm_flags) & ~(VM_ACCESS_FLAGS | VM_SOFTDIRTY)) &&
+        b->vm_pgoff == a->vm_pgoff + ((b->vm_start - a->vm_start) >> PAGE_SHIFT);
+}
+
+/*
+ * Do some basic sanity checking to see if we can re-use the anon_vma
+ * from 'old'. The 'a'/'b' vma's are in VM order - one of them will be
+ * the same as 'old', the other will be the new one that is trying
+ * to share the anon_vma.
+ *
+ * NOTE! This runs with mm_sem held for reading, so it is possible that
+ * the anon_vma of 'old' is concurrently in the process of being set up
+ * by another page fault trying to merge _that_. But that's ok: if it
+ * is being set up, that automatically means that it will be a singleton
+ * acceptable for merging, so we can do all of this optimistically. But
+ * we do that READ_ONCE() to make sure that we never re-load the pointer.
+ *
+ * IOW: that the "list_is_singular()" test on the anon_vma_chain only
+ * matters for the 'stable anon_vma' case (ie the thing we want to avoid
+ * is to return an anon_vma that is "complex" due to having gone through
+ * a fork).
+ *
+ * We also make sure that the two vma's are compatible (adjacent,
+ * and with the same memory policies). That's all stable, even with just
+ * a read lock on the mm_sem.
+ */
+static struct anon_vma *
+reusable_anon_vma(struct vm_area_struct *old,
+                  struct vm_area_struct *a, struct vm_area_struct *b)
+{
+    if (anon_vma_compatible(a, b)) {
+        struct anon_vma *anon_vma = READ_ONCE(old->anon_vma);
+
+        if (anon_vma && list_is_singular(&old->anon_vma_chain))
+            return anon_vma;
+    }
+    return NULL;
+}
+
+/*
+ * find_mergeable_anon_vma is used by anon_vma_prepare, to check
+ * neighbouring vmas for a suitable anon_vma, before it goes off
+ * to allocate a new anon_vma.  It checks because a repetitive
+ * sequence of mprotects and faults may otherwise lead to distinct
+ * anon_vmas being allocated, preventing vma merge in subsequent
+ * mprotect.
+ */
+struct anon_vma *find_mergeable_anon_vma(struct vm_area_struct *vma)
+{
+    struct anon_vma *anon_vma = NULL;
+
+    /* Try next first. */
+    if (vma->vm_next) {
+        anon_vma = reusable_anon_vma(vma->vm_next, vma, vma->vm_next);
+        if (anon_vma)
+            return anon_vma;
+    }
+
+    /* Try prev next. */
+    if (vma->vm_prev)
+        anon_vma = reusable_anon_vma(vma->vm_prev, vma->vm_prev, vma);
+
+    /*
+     * We might reach here with anon_vma == NULL if we can't find
+     * any reusable anon_vma.
+     * There's no absolute need to look only at touching neighbours:
+     * we could search further afield for "compatible" anon_vmas.
+     * But it would probably just be a waste of time searching,
+     * or lead to too many vmas hanging off the same anon_vma.
+     * We're trying to allow mprotect remerging later on,
+     * not trying to minimize memory used for anon_vmas.
+     */
+    return anon_vma;
 }

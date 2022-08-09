@@ -62,5 +62,11 @@ void mark_page_accessed(struct page *);
 #define SWAP_CLUSTER_MAX 32UL
 #define COMPACT_CLUSTER_MAX SWAP_CLUSTER_MAX
 
+extern void
+lru_cache_add_inactive_or_unevictable(struct page *page,
+                                      struct vm_area_struct *vma);
+
+extern void lru_cache_add(struct page *);
+
 #endif /* __KERNEL__*/
 #endif /* _LINUX_SWAP_H */
