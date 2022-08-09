@@ -2,8 +2,8 @@
 #ifndef _UAPI_LINUX_FCNTL_H
 #define _UAPI_LINUX_FCNTL_H
 
-#if 0
 #include <asm/fcntl.h>
+#if 0
 #include <linux/openat2.h>
 #endif
 

@@ -57,3 +57,16 @@ extern struct dentry *d_alloc_pseudo(struct super_block *, const struct qstr *);
 extern char *simple_dname(struct dentry *, char *, int);
 extern void dput_to_list(struct dentry *, struct list_head *);
 extern void shrink_dentry_list(struct list_head *);
+
+/*
+ * open.c
+ */
+struct open_flags {
+    int open_flag;
+    umode_t mode;
+    int acc_mode;
+    int intent;
+    int lookup_flags;
+};
+extern struct file *do_filp_open(int dfd, struct filename *pathname,
+                                 const struct open_flags *op);

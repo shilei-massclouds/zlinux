@@ -697,6 +697,39 @@ __get_user_pages_locked(struct mm_struct *mm,
     lock_dropped = false;
     for (;;) {
         ret = __get_user_pages(mm, start, nr_pages, flags, pages, vmas, locked);
+        if (!locked)
+            /* VM_FAULT_RETRY couldn't trigger, bypass */
+            return ret;
+
+        /* VM_FAULT_RETRY cannot return errors */
+        if (!*locked) {
+            BUG_ON(ret < 0);
+            BUG_ON(ret >= nr_pages);
+        }
+
+        if (ret > 0) {
+            nr_pages -= ret;
+            pages_done += ret;
+            if (!nr_pages)
+                break;
+        }
+        if (*locked) {
+            /*
+             * VM_FAULT_RETRY didn't trigger or it was a
+             * FOLL_NOWAIT.
+             */
+            if (!pages_done)
+                pages_done = ret;
+            break;
+        }
+        /*
+         * VM_FAULT_RETRY triggered, so seek to the faulting offset.
+         * For the prefault case (!pages) we only update counts.
+         */
+        if (likely(pages))
+            pages += ret;
+        start += ret << PAGE_SHIFT;
+        lock_dropped = true;
 
         panic("%s: 1!\n", __func__);
     }

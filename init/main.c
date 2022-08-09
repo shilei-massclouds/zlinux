@@ -779,6 +779,7 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 
     printk("############## %s: step3\n", __func__);
 
+    cred_init();
     fork_init();
     proc_caches_init();
 

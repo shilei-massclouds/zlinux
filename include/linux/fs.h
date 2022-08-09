@@ -1401,4 +1401,7 @@ static inline bool vma_is_fsdax(struct vm_area_struct *vma)
     return false;
 }
 
+#define __FMODE_EXEC        ((__force int) FMODE_EXEC)
+#define __FMODE_NONOTIFY    ((__force int) FMODE_NONOTIFY)
+
 #endif /* _LINUX_FS_H */

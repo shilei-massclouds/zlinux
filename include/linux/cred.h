@@ -44,20 +44,44 @@ struct cred {
     struct key  *process_keyring;   /* keyring private to this process */
     struct key  *thread_keyring;    /* keyring private to this thread */
     struct key  *request_key_auth;  /* assumed request_key authority */
-    struct user_struct *user;       /* real user ID subscription */
 #endif
+    struct user_struct *user;       /* real user ID subscription */
     struct user_namespace *user_ns; /* user_ns the caps and keyrings are
                                        relative to. */
 #if 0
     struct ucounts *ucounts;
-    struct group_info *group_info;  /* supplementary groups for euid/fsgid */
 #endif
+    struct group_info *group_info;  /* supplementary groups for euid/fsgid */
     /* RCU deletion */
     union {
         int non_rcu;            /* Can we skip RCU deletion? */
         struct rcu_head rcu;        /* RCU deletion hook */
     };
 } __randomize_layout;
+
+/*
+ * COW Supplementary groups list
+ */
+struct group_info {
+    atomic_t    usage;
+    int         ngroups;
+    kgid_t      gid[];
+} __randomize_layout;
+
+/**
+ * get_group_info - Get a reference to a group info structure
+ * @group_info: The group info to reference
+ *
+ * This gets a reference to a set of supplementary groups.
+ *
+ * If the caller is accessing a task's credentials, they must hold the RCU read
+ * lock when reading.
+ */
+static inline struct group_info *get_group_info(struct group_info *gi)
+{
+    atomic_inc(&gi->usage);
+    return gi;
+}
 
 /**
  * current_cred - Access the current task's subjective credentials
@@ -131,5 +155,33 @@ static inline const struct cred *get_cred(const struct cred *cred)
 #define current_ucounts()   (current_cred_xxx(ucounts))
 
 #define current_user_ns()   (current_cred_xxx(user_ns))
+
+extern struct cred *prepare_creds(void);
+extern struct cred *prepare_exec_creds(void);
+
+extern void __init cred_init(void);
+
+extern void __put_cred(struct cred *);
+
+/**
+ * put_cred - Release a reference to a set of credentials
+ * @cred: The credentials to release
+ *
+ * Release a reference to a set of credentials, deleting them when the last ref
+ * is released.  If %NULL is passed, nothing is done.
+ *
+ * This takes a const pointer to a set of credentials because the credentials
+ * on task_struct are attached by const pointers to prevent accidental
+ * alteration of otherwise immutable credential sets.
+ */
+static inline void put_cred(const struct cred *_cred)
+{
+    struct cred *cred = (struct cred *) _cred;
+
+    if (cred) {
+        if (atomic_dec_and_test(&(cred)->usage))
+            __put_cred(cred);
+    }
+}
 
 #endif /* _LINUX_CRED_H */

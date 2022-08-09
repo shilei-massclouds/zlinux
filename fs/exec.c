@@ -25,12 +25,10 @@
 
 //#include <linux/kernel_read_file.h>
 #include <linux/slab.h>
-#if 0
 #include <linux/file.h>
-#include <linux/fdtable.h>
-#endif
+//#include <linux/fdtable.h>
 #include <linux/mm.h>
-//#include <linux/vmacache.h>
+#include <linux/vmacache.h>
 #include <linux/stat.h>
 #include <linux/fcntl.h>
 #include <linux/swap.h>
@@ -365,8 +363,118 @@ int copy_string_kernel(const char *arg, struct linux_binprm *bprm)
         put_arg_page(page);
     }
 
-    panic("%s: END!\n", __func__);
     return 0;
+}
+
+static int copy_strings_kernel(int argc, const char *const *argv,
+                               struct linux_binprm *bprm)
+{
+    while (argc-- > 0) {
+        int ret = copy_string_kernel(argv[argc], bprm);
+        if (ret < 0)
+            return ret;
+#if 0
+        if (fatal_signal_pending(current))
+            return -ERESTARTNOHAND;
+#endif
+        cond_resched();
+    }
+    return 0;
+}
+
+/*
+ * Prepare credentials and lock ->cred_guard_mutex.
+ * setup_new_exec() commits the new creds and drops the lock.
+ * Or, if exec fails before, free_bprm() should release ->cred
+ * and unlock.
+ */
+static int prepare_bprm_creds(struct linux_binprm *bprm)
+{
+    if (mutex_lock_interruptible(&current->signal->cred_guard_mutex))
+        return -ERESTARTNOINTR;
+
+    bprm->cred = prepare_exec_creds();
+    if (likely(bprm->cred))
+        return 0;
+
+    mutex_unlock(&current->signal->cred_guard_mutex);
+    return -ENOMEM;
+}
+
+static struct file *do_open_execat(int fd, struct filename *name, int flags)
+{
+    struct file *file;
+    int err;
+    struct open_flags open_exec_flags = {
+        .open_flag = O_LARGEFILE | O_RDONLY | __FMODE_EXEC,
+        .acc_mode = MAY_EXEC,
+        .intent = LOOKUP_OPEN,
+        .lookup_flags = LOOKUP_FOLLOW,
+    };
+
+    if ((flags & ~(AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH)) != 0)
+        return ERR_PTR(-EINVAL);
+    if (flags & AT_SYMLINK_NOFOLLOW)
+        open_exec_flags.lookup_flags &= ~LOOKUP_FOLLOW;
+    if (flags & AT_EMPTY_PATH)
+        open_exec_flags.lookup_flags |= LOOKUP_EMPTY;
+
+    file = do_filp_open(fd, name, &open_exec_flags);
+    if (IS_ERR(file))
+        goto out;
+
+    panic("%s: END!\n", __func__);
+
+ out:
+    return file;
+
+ exit:
+    fput(file);
+    return ERR_PTR(err);
+
+}
+
+/*
+ * sys_execve() executes a new program.
+ */
+static int bprm_execve(struct linux_binprm *bprm,
+                       int fd, struct filename *filename, int flags)
+{
+    struct file *file;
+    int retval;
+
+    retval = prepare_bprm_creds(bprm);
+    if (retval)
+        return retval;
+
+    //check_unsafe_exec(bprm);
+    current->in_execve = 1;
+
+    file = do_open_execat(fd, filename, flags);
+    retval = PTR_ERR(file);
+    if (IS_ERR(file))
+        goto out_unmark;
+
+    panic("%s: END!\n", __func__);
+    return retval;
+
+ out:
+    /*
+     * If past the point of no return ensure the code never
+     * returns to the userspace process.  Use an existing fatal
+     * signal if present otherwise terminate the process with
+     * SIGSEGV.
+     */
+#if 0
+    if (bprm->point_of_no_return && !fatal_signal_pending(current))
+        force_fatal_sig(SIGSEGV);
+#endif
+
+ out_unmark:
+    current->fs->in_exec = 0;
+    current->in_execve = 0;
+
+    return retval;
 }
 
 int kernel_execve(const char *kernel_filename,
@@ -408,8 +516,15 @@ int kernel_execve(const char *kernel_filename,
         goto out_free;
     bprm->exec = bprm->p;
 
-    panic("%s: (%s) END!\n", __func__, kernel_filename);
+    retval = copy_strings_kernel(bprm->envc, envp, bprm);
+    if (retval < 0)
+        goto out_free;
 
+    retval = copy_strings_kernel(bprm->argc, argv, bprm);
+    if (retval < 0)
+        goto out_free;
+
+    retval = bprm_execve(bprm, fd, filename, 0);
  out_free:
     free_bprm(bprm);
  out_ret:

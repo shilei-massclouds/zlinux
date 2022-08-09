@@ -15,8 +15,8 @@
 #include <linux/bitops.h>
 #if 0
 #include <linux/key.h>
-#include <linux/sched/user.h>
 #endif
+#include <linux/sched/user.h>
 #include <linux/interrupt.h>
 #include <linux/export.h>
 #include <linux/user_namespace.h>
@@ -29,3 +29,10 @@
 struct user_namespace init_user_ns = {
 };
 EXPORT_SYMBOL_GPL(init_user_ns);
+
+/* root_user.__count is 1, for init task cred */
+struct user_struct root_user = {
+    .__count    = REFCOUNT_INIT(1),
+    .uid        = GLOBAL_ROOT_UID,
+    .ratelimit  = RATELIMIT_STATE_INIT(root_user.ratelimit, 0, 0),
+};
