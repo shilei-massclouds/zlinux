@@ -1404,4 +1404,11 @@ static inline bool vma_is_fsdax(struct vm_area_struct *vma)
 #define __FMODE_EXEC        ((__force int) FMODE_EXEC)
 #define __FMODE_NONOTIFY    ((__force int) FMODE_NONOTIFY)
 
+#define ACC_MODE(x) ("\004\002\006\006"[(x)&O_ACCMODE])
+#define OPEN_FMODE(flag) \
+    ((__force fmode_t)(((flag + 1) & O_ACCMODE) | (flag & __FMODE_NONOTIFY)))
+
+extern void __init files_init(void);
+extern void __init files_maxfiles_init(void);
+
 #endif /* _LINUX_FS_H */

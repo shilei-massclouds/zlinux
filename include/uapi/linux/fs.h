@@ -40,6 +40,8 @@
 #define BLOCK_SIZE_BITS 10
 #define BLOCK_SIZE (1<<BLOCK_SIZE_BITS)
 
+#define NR_FILE  8192   /* this can well be larger on a larger system */
+
 /*
  * Inode flags (FS_IOC_GETFLAGS / FS_IOC_SETFLAGS)
  *
@@ -93,5 +95,11 @@
 #define FS_CASEFOLD_FL          0x40000000 /* Folder is case insensitive */
 #define FS_RESERVED_FL          0x80000000 /* reserved for ext2 lib */
 
+/* And dynamically-tunable limits and defaults: */
+struct files_stat_struct {
+    unsigned long nr_files;         /* read only */
+    unsigned long nr_free_files;    /* read only */
+    unsigned long max_files;        /* tunable */
+};
 
 #endif /* _UAPI_LINUX_FS_H */

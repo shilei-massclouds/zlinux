@@ -1334,10 +1334,8 @@ void __init vfs_caches_init(void)
 
     dcache_init();
     inode_init();
-#if 0
     files_init();
     files_maxfiles_init();
-#endif
     mnt_init();
     bdev_cache_init();
 #if 0

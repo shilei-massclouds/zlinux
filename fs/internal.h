@@ -68,5 +68,12 @@ struct open_flags {
     int intent;
     int lookup_flags;
 };
+
 extern struct file *do_filp_open(int dfd, struct filename *pathname,
                                  const struct open_flags *op);
+
+/*
+ * file_table.c
+ */
+extern struct file *alloc_empty_file(int, const struct cred *);
+extern struct file *alloc_empty_file_noaccount(int, const struct cred *);

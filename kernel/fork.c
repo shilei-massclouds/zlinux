@@ -1065,6 +1065,23 @@ void vm_area_free(struct vm_area_struct *vma)
     kmem_cache_free(vm_area_cachep, vma);
 }
 
+static inline void __mmput(struct mm_struct *mm)
+{
+    panic("%s: ERROR!\n", __func__);
+}
+
+/*
+ * Decrement the use count and release all resources for an mm.
+ */
+void mmput(struct mm_struct *mm)
+{
+    might_sleep();
+
+    if (atomic_dec_and_test(&mm->mm_users))
+        __mmput(mm);
+}
+EXPORT_SYMBOL_GPL(mmput);
+
 void __init proc_caches_init(void)
 {
     unsigned int mm_size;

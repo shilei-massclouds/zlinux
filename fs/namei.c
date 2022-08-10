@@ -33,8 +33,8 @@
 #if 0
 #include <linux/audit.h>
 #include <linux/capability.h>
-#include <linux/file.h>
 #endif
+#include <linux/file.h>
 #include <linux/fcntl.h>
 //#include <linux/device_cgroup.h>
 #include <linux/fs_struct.h>
@@ -1374,13 +1374,78 @@ bool may_open_dev(const struct path *path)
         !(path->mnt->mnt_sb->s_iflags & SB_I_NODEV);
 }
 
+static const char *
+open_last_lookups(struct nameidata *nd,
+                  struct file *file,
+                  const struct open_flags *op)
+{
+    struct dentry *dir = nd->path.dentry;
+    int open_flag = op->open_flag;
+    bool got_write = false;
+    unsigned seq;
+    struct inode *inode;
+    struct dentry *dentry;
+    const char *res;
+
+    nd->flags |= op->intent;
+
+    if (nd->last_type != LAST_NORM) {
+        if (nd->depth)
+            put_link(nd);
+        return handle_dots(nd, nd->last_type);
+    }
+
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * Handle the last step of open()
+ */
+static int do_open(struct nameidata *nd,
+                   struct file *file, const struct open_flags *op)
+{
+    panic("%s: END!\n", __func__);
+}
+
 static struct file *path_openat(struct nameidata *nd,
                                 const struct open_flags *op, unsigned flags)
 {
     struct file *file;
     int error;
 
-    panic("%s: END!\n", __func__);
+    file = alloc_empty_file(op->open_flag, current_cred());
+    if (IS_ERR(file))
+        return file;
+
+    if (unlikely(file->f_flags & __O_TMPFILE)) {
+        //error = do_tmpfile(nd, flags, op, file);
+        panic("%s: __O_TMPFILE!\n", __func__);
+    } else if (unlikely(file->f_flags & O_PATH)) {
+        //error = do_o_path(nd, flags, file);
+        panic("%s: O_PATH!\n", __func__);
+    } else {
+        const char *s = path_init(nd, flags);
+        while (!(error = link_path_walk(s, nd)) &&
+               (s = open_last_lookups(nd, file, op)) != NULL)
+            ;
+        if (!error)
+            error = do_open(nd, file, op);
+        terminate_walk(nd);
+    }
+    if (likely(!error)) {
+        if (likely(file->f_mode & FMODE_OPENED))
+            return file;
+        WARN_ON(1);
+        error = -EINVAL;
+    }
+    fput(file);
+    if (error == -EOPENSTALE) {
+        if (flags & LOOKUP_RCU)
+            error = -ECHILD;
+        else
+            error = -ESTALE;
+    }
+    return ERR_PTR(error);
 }
 
 struct file *do_filp_open(int dfd, struct filename *pathname,
@@ -1392,13 +1457,10 @@ struct file *do_filp_open(int dfd, struct filename *pathname,
 
     set_nameidata(&nd, dfd, pathname, NULL);
     filp = path_openat(&nd, op, flags | LOOKUP_RCU);
-#if 0
     if (unlikely(filp == ERR_PTR(-ECHILD)))
         filp = path_openat(&nd, op, flags);
     if (unlikely(filp == ERR_PTR(-ESTALE)))
         filp = path_openat(&nd, op, flags | LOOKUP_REVAL);
     restore_nameidata();
     return filp;
-#endif
-    panic("%s: END!\n", __func__);
 }

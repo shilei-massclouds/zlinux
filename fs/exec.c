@@ -79,8 +79,53 @@
 
 #include "internal.h"
 
+static void free_arg_pages(struct linux_binprm *bprm)
+{
+}
+
+/*
+ * The nascent bprm->mm is not visible until exec_mmap() but it can
+ * use a lot of memory, account these pages in current->mm temporary
+ * for oom_badness()->get_mm_rss(). Once exec succeeds or fails, we
+ * change the counter back via acct_arg_size(0).
+ */
+static void acct_arg_size(struct linux_binprm *bprm, unsigned long pages)
+{
+    struct mm_struct *mm = current->mm;
+    long diff = (long)(pages - bprm->vma_pages);
+
+    if (!mm || !diff)
+        return;
+
+    bprm->vma_pages = pages;
+    add_mm_counter(mm, MM_ANONPAGES, diff);
+}
+
 static void free_bprm(struct linux_binprm *bprm)
 {
+    if (bprm->mm) {
+        acct_arg_size(bprm, 0);
+        mmput(bprm->mm);
+    }
+    free_arg_pages(bprm);
+#if 0
+    if (bprm->cred) {
+        mutex_unlock(&current->signal->cred_guard_mutex);
+        abort_creds(bprm->cred);
+    }
+    if (bprm->file) {
+        allow_write_access(bprm->file);
+        fput(bprm->file);
+    }
+    if (bprm->executable)
+        fput(bprm->executable);
+    /* If a binfmt changed the interp, free it. */
+    if (bprm->interp != bprm->filename)
+        kfree(bprm->interp);
+    kfree(bprm->fdpath);
+    kfree(bprm);
+#endif
+
     panic("%s: END!\n", __func__);
 }
 
@@ -263,24 +308,6 @@ static bool valid_arg_len(struct linux_binprm *bprm, long len)
     return len <= MAX_ARG_STRLEN;
 }
 
-/*
- * The nascent bprm->mm is not visible until exec_mmap() but it can
- * use a lot of memory, account these pages in current->mm temporary
- * for oom_badness()->get_mm_rss(). Once exec succeeds or fails, we
- * change the counter back via acct_arg_size(0).
- */
-static void acct_arg_size(struct linux_binprm *bprm, unsigned long pages)
-{
-    struct mm_struct *mm = current->mm;
-    long diff = (long)(pages - bprm->vma_pages);
-
-    if (!mm || !diff)
-        return;
-
-    bprm->vma_pages = pages;
-    add_mm_counter(mm, MM_ANONPAGES, diff);
-}
-
 static struct page *
 get_arg_page(struct linux_binprm *bprm, unsigned long pos, int write)
 {
@@ -310,10 +337,6 @@ get_arg_page(struct linux_binprm *bprm, unsigned long pos, int write)
 static void put_arg_page(struct page *page)
 {
     put_page(page);
-}
-
-static void free_arg_pages(struct linux_binprm *bprm)
-{
 }
 
 static void flush_arg_page(struct linux_binprm *bprm, unsigned long pos,
