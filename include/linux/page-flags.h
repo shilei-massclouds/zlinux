@@ -335,6 +335,7 @@ static inline void page_init_poison(struct page *page, size_t size)
 }
 
 __PAGEFLAG(Slab, slab, PF_NO_TAIL)
+PAGEFLAG(Checked, checked, PF_NO_COMPOUND)  /* Used by some filesystems */
 __PAGEFLAG(Head, head, PF_ANY) CLEARPAGEFLAG(Head, head, PF_ANY)
 
 PAGEFLAG(Unevictable, unevictable, PF_HEAD)

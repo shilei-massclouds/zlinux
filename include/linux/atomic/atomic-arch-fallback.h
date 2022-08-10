@@ -315,4 +315,49 @@ arch_atomic_read_acquire(const atomic_t *v)
 #define arch_atomic_read_acquire arch_atomic_read_acquire
 #endif
 
+#ifndef arch_atomic_try_cmpxchg
+static __always_inline bool
+arch_atomic_try_cmpxchg(atomic_t *v, int *old, int new)
+{
+    int r, o = *old;
+    r = arch_atomic_cmpxchg(v, o, new);
+    if (unlikely(r != o))
+        *old = r;
+    return likely(r == o);
+}
+#define arch_atomic_try_cmpxchg arch_atomic_try_cmpxchg
+#endif
+
+#ifndef arch_atomic_inc_unless_negative
+static __always_inline bool
+arch_atomic_inc_unless_negative(atomic_t *v)
+{
+    int c = arch_atomic_read(v);
+
+    do {
+        if (unlikely(c < 0))
+            return false;
+    } while (!arch_atomic_try_cmpxchg(v, &c, c + 1));
+
+    return true;
+}
+#define arch_atomic_inc_unless_negative arch_atomic_inc_unless_negative
+#endif
+
+#ifndef arch_atomic_dec_unless_positive
+static __always_inline bool
+arch_atomic_dec_unless_positive(atomic_t *v)
+{
+    int c = arch_atomic_read(v);
+
+    do {
+        if (unlikely(c > 0))
+            return false;
+    } while (!arch_atomic_try_cmpxchg(v, &c, c - 1));
+
+    return true;
+}
+#define arch_atomic_dec_unless_positive arch_atomic_dec_unless_positive
+#endif
+
 #endif /* _LINUX_ATOMIC_FALLBACK_H */

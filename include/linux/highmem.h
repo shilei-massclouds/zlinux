@@ -80,4 +80,10 @@ alloc_zeroed_user_highpage_movable(struct vm_area_struct *vma,
     return page;
 }
 
+static inline void zero_user_segment(struct page *page,
+                                     unsigned start, unsigned end)
+{
+    zero_user_segments(page, start, end, 0, 0);
+}
+
 #endif /* _LINUX_HIGHMEM_H */

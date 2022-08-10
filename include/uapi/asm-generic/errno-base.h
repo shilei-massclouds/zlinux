@@ -23,6 +23,7 @@
 #define EINVAL      22  /* Invalid argument */
 #define ENFILE      23  /* File table overflow */
 #define EMFILE      24  /* Too many open files */
+#define ETXTBSY     26  /* Text file busy */
 #define ENOSPC      28  /* No space left on device */
 #define EROFS       30  /* Read-only file system */
 #define EMLINK      31  /* Too many links */

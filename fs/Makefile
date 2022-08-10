@@ -6,7 +6,8 @@
 # Rewritten to use lists instead of if-statements.
 #
 
-obj-y := read_write.o inode.o super.o filesystems.o libfs.o dcache.o namespace.o
+obj-y := open.o read_write.o inode.o super.o filesystems.o libfs.o dcache.o
+obj-y += namespace.o
 obj-y += fs_context.o fs_parser.o fs_struct.o namei.o init.o exec.o
 obj-y += char_dev.o splice.o buffer.o bad_inode.o mpage.o file_table.o
 

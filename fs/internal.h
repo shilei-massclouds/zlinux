@@ -77,3 +77,8 @@ extern struct file *do_filp_open(int dfd, struct filename *pathname,
  */
 extern struct file *alloc_empty_file(int, const struct cred *);
 extern struct file *alloc_empty_file_noaccount(int, const struct cred *);
+
+extern int __mnt_want_write_file(struct file *);
+extern void __mnt_drop_write_file(struct file *);
+
+extern int vfs_open(const struct path *, struct file *);

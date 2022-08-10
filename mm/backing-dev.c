@@ -177,7 +177,6 @@ struct backing_dev_info *inode_to_bdi(struct inode *inode)
     sb = inode->i_sb;
     if (sb_is_blkdev_sb(sb))
         return I_BDEV(inode)->bd_disk->bdi;
-    panic("%s: END!\n", __func__);
     return sb->s_bdi;
 }
 EXPORT_SYMBOL(inode_to_bdi);

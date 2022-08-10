@@ -45,3 +45,15 @@ bool set_page_dirty(struct page *page)
     return folio_mark_dirty(page_folio(page));
 }
 EXPORT_SYMBOL(set_page_dirty);
+
+void end_page_writeback(struct page *page)
+{
+    return folio_end_writeback(page_folio(page));
+}
+EXPORT_SYMBOL(end_page_writeback);
+
+struct address_space *page_mapping(struct page *page)
+{
+    return folio_mapping(page_folio(page));
+}
+EXPORT_SYMBOL(page_mapping);

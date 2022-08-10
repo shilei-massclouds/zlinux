@@ -81,15 +81,20 @@ struct vfsmount {
 
 extern struct vfsmount *vfs_create_mount(struct fs_context *fc);
 
-extern struct vfsmount *mntget(struct vfsmount *mnt);
-extern void mntput(struct vfsmount *mnt);
-
-extern void mnt_drop_write(struct vfsmount *mnt);
-
 static inline struct user_namespace *mnt_user_ns(const struct vfsmount *mnt)
 {
     /* Pairs with smp_store_release() in do_idmap_mount(). */
     return smp_load_acquire(&mnt->mnt_userns);
 }
+
+extern int mnt_want_write(struct vfsmount *mnt);
+extern int mnt_want_write_file(struct file *file);
+extern void mnt_drop_write(struct vfsmount *mnt);
+extern void mnt_drop_write_file(struct file *file);
+extern void mntput(struct vfsmount *mnt);
+extern struct vfsmount *mntget(struct vfsmount *mnt);
+extern struct vfsmount *mnt_clone_internal(const struct path *path);
+extern bool __mnt_is_readonly(struct vfsmount *mnt);
+extern bool mnt_may_suid(struct vfsmount *mnt);
 
 #endif /* _LINUX_MOUNT_H */

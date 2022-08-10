@@ -270,4 +270,26 @@ static inline void bio_advance_iter(const struct bio *bio,
 
 extern void bio_endio(struct bio *);
 
+static inline unsigned int bio_max_segs(unsigned int nr_segs)
+{
+    return min(nr_segs, BIO_MAX_VECS);
+}
+
+static inline bool bio_next_segment(const struct bio *bio,
+                                    struct bvec_iter_all *iter)
+{
+    if (iter->idx >= bio->bi_vcnt)
+        return false;
+
+    bvec_advance(&bio->bi_io_vec[iter->idx], iter);
+    return true;
+}
+
+/*
+ * drivers should _never_ use the all version - the bio may have been split
+ * before it got to the driver and the driver won't own all of it
+ */
+#define bio_for_each_segment_all(bvl, bio, iter) \
+    for (bvl = bvec_init_iter_all(&iter); bio_next_segment((bio), &iter); )
+
 #endif /* __LINUX_BIO_H */

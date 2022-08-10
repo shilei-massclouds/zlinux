@@ -802,10 +802,62 @@ folio_wait_bit_common(struct folio *folio, int bit_nr,
             io_schedule();
             continue;
         }
-        panic("%s: 1!\n", __func__);
+
+        /* If we were non-exclusive, we're done */
+        if (behavior != EXCLUSIVE)
+            break;
+
+        /* If the waker got the lock for us, we're done */
+        if (flags & WQ_FLAG_DONE)
+            break;
+
+        /*
+         * Otherwise, if we're getting the lock, we need to
+         * try to get it ourselves.
+         *
+         * And if that fails, we'll have to retry this all.
+         */
+        if (unlikely(test_and_set_bit(bit_nr, folio_flags(folio, 0))))
+            goto repeat;
+
+        wait->flags |= WQ_FLAG_DONE;
+        break;
     }
 
-    panic("%s: END!\n", __func__);
+    /*
+     * If a signal happened, this 'finish_wait()' may remove the last
+     * waiter from the wait-queues, but the folio waiters bit will remain
+     * set. That's ok. The next wakeup will take care of it, and trying
+     * to do it here would be difficult and prone to races.
+     */
+    finish_wait(q, wait);
+
+    if (thrashing) {
+#if 0
+        if (delayacct)
+            delayacct_thrashing_end();
+        psi_memstall_leave(&pflags);
+#endif
+        panic("%s: thrashing!\n", __func__);
+    }
+
+    /*
+     * NOTE! The wait->flags weren't stable until we've done the
+     * 'finish_wait()', and we could have exited the loop above due
+     * to a signal, and had a wakeup event happen after the signal
+     * test but before the 'finish_wait()'.
+     *
+     * So only after the finish_wait() can we reliably determine
+     * if we got woken up or not, so we can now figure out the final
+     * return value based on that state without races.
+     *
+     * Also note that WQ_FLAG_WOKEN is sufficient for a non-exclusive
+     * waiter, but an exclusive one requires WQ_FLAG_DONE.
+     */
+    if (behavior == EXCLUSIVE)
+        return wait->flags & WQ_FLAG_DONE ? 0 : -EINTR;
+
+    return wait->flags & WQ_FLAG_WOKEN ? 0 : -EINTR;
 }
 
 void folio_wait_bit(struct folio *folio, int bit_nr)
@@ -1173,4 +1225,86 @@ unsigned find_get_entries(struct address_space *mapping,
     rcu_read_unlock();
 
     return folio_batch_count(fbatch);
+}
+
+/*
+ * After completing I/O on a page, call this routine to update the page
+ * flags appropriately
+ */
+void page_endio(struct page *page, bool is_write, int err)
+{
+    if (!is_write) {
+        if (!err) {
+            SetPageUptodate(page);
+        } else {
+            ClearPageUptodate(page);
+            SetPageError(page);
+        }
+        unlock_page(page);
+    } else {
+        if (err) {
+            struct address_space *mapping;
+
+            SetPageError(page);
+            mapping = page_mapping(page);
+            if (mapping)
+                mapping_set_error(mapping, err);
+        }
+        end_page_writeback(page);
+    }
+}
+EXPORT_SYMBOL_GPL(page_endio);
+
+/**
+ * folio_end_writeback - End writeback against a folio.
+ * @folio: The folio.
+ */
+void folio_end_writeback(struct folio *folio)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * generic_file_read_iter - generic filesystem read routine
+ * @iocb:   kernel I/O control block
+ * @iter:   destination for the data read
+ *
+ * This is the "read_iter()" routine for all filesystems
+ * that can use the page cache directly.
+ *
+ * The IOCB_NOWAIT flag in iocb->ki_flags indicates that -EAGAIN shall
+ * be returned when no data can be read without waiting for I/O requests
+ * to complete; it doesn't prevent readahead.
+ *
+ * The IOCB_NOIO flag in iocb->ki_flags indicates that no new I/O
+ * requests shall be made for the read or for readahead.  When no data
+ * can be read, -EAGAIN shall be returned.  When readahead would be
+ * triggered, a partial, possibly empty read shall be returned.
+ *
+ * Return:
+ * * number of bytes copied, even for partial reads
+ * * negative error code (or 0 if IOCB_NOIO) if nothing was read
+ */
+ssize_t
+generic_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * generic_file_write_iter - write data to a file
+ * @iocb:   IO state structure
+ * @from:   iov_iter with data to write
+ *
+ * This is a wrapper around __generic_file_write_iter() to be used by most
+ * filesystems. It takes care of syncing the file in case of O_SYNC file
+ * and acquires i_rwsem as needed.
+ * Return:
+ * * negative error code if no data has been written at all of
+ *   vfs_fsync_range() failed for a synchronous write
+ * * number of bytes written, even for truncated writes
+ */
+ssize_t generic_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
+{
+    panic("%s: END!\n", __func__);
 }

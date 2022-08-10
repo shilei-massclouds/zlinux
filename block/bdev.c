@@ -595,3 +595,40 @@ int sb_min_blocksize(struct super_block *sb, int size)
     return sb_set_blocksize(sb, size);
 }
 EXPORT_SYMBOL(sb_min_blocksize);
+
+/**
+ * bdev_read_page() - Start reading a page from a block device
+ * @bdev: The device to read the page from
+ * @sector: The offset on the device to read the page to (need not be aligned)
+ * @page: The page to read
+ *
+ * On entry, the page should be locked.  It will be unlocked when the page
+ * has been read.  If the block driver implements rw_page synchronously,
+ * that will be true on exit from this function, but it need not be.
+ *
+ * Errors returned by this function are usually "soft", eg out of memory, or
+ * queue full; callers should try a different route to read this page rather
+ * than propagate an error back up the stack.
+ *
+ * Return: negative errno if an error occurs, 0 if submission was successful.
+ */
+int bdev_read_page(struct block_device *bdev, sector_t sector,
+                   struct page *page)
+{
+    const struct block_device_operations *ops = bdev->bd_disk->fops;
+    int result = -EOPNOTSUPP;
+
+    if (!ops->rw_page)
+        return result;
+
+    result = blk_queue_enter(bdev_get_queue(bdev), 0);
+    if (result)
+        return result;
+#if 0
+    result = ops->rw_page(bdev,
+                          sector + get_start_sect(bdev), page, REQ_OP_READ);
+    blk_queue_exit(bdev_get_queue(bdev));
+#endif
+    panic("%s: END!\n", __func__);
+    return result;
+}

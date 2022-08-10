@@ -103,9 +103,30 @@ static int ext2_rename(struct user_namespace *mnt_userns,
 }
 
 static struct dentry *
-ext2_lookup(struct inode * dir, struct dentry *dentry, unsigned int flags)
+ext2_lookup(struct inode *dir, struct dentry *dentry, unsigned int flags)
 {
-    panic("%s: END!\n", __func__);
+    struct inode * inode;
+    ino_t ino;
+    int res;
+
+    if (dentry->d_name.len > EXT2_NAME_LEN)
+        return ERR_PTR(-ENAMETOOLONG);
+
+    res = ext2_inode_by_name(dir, &dentry->d_name, &ino);
+    if (res) {
+        if (res != -ENOENT)
+            return ERR_PTR(res);
+        inode = NULL;
+    } else {
+        inode = ext2_iget(dir->i_sb, ino);
+        if (inode == ERR_PTR(-ESTALE)) {
+            ext2_error(dir->i_sb, __func__,
+                       "deleted inode referenced: %lu",
+                       (unsigned long) ino);
+            return ERR_PTR(-EIO);
+        }
+    }
+    return d_splice_alias(inode, dentry);
 }
 
 const struct inode_operations ext2_dir_inode_operations = {

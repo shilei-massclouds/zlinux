@@ -444,4 +444,37 @@ static inline pgoff_t linear_page_index(struct vm_area_struct *vma,
     return pgoff;
 }
 
+static inline unsigned long dir_pages(struct inode *inode)
+{
+    return (unsigned long)(inode->i_size + PAGE_SIZE - 1) >> PAGE_SHIFT;
+}
+
+void end_page_writeback(struct page *page);
+
+/**
+ * mapping_set_error - record a writeback error in the address_space
+ * @mapping: the mapping in which an error should be set
+ * @error: the error to set in the mapping
+ *
+ * When writeback fails in some way, we must record that error so that
+ * userspace can be informed when fsync and the like are called.  We endeavor
+ * to report errors on any file that was open at the time of the error.  Some
+ * internal callers also need to know when writeback errors have occurred.
+ *
+ * When a writeback error occurs, most filesystems will want to call
+ * mapping_set_error to record the error in the mapping so that it can be
+ * reported when the application calls fsync(2).
+ */
+static inline void mapping_set_error(struct address_space *mapping, int error)
+{
+    panic("%s: END!\n", __func__);
+}
+
+struct address_space *folio_mapping(struct folio *);
+struct address_space *page_mapping(struct page *);
+
+void folio_end_writeback(struct folio *folio);
+
+void page_endio(struct page *page, bool is_write, int err);
+
 #endif /* _LINUX_PAGEMAP_H */

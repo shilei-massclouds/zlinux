@@ -375,4 +375,20 @@ static inline bool d_is_dir(const struct dentry *dentry)
     return d_can_lookup(dentry) || d_is_autodir(dentry);
 }
 
+static inline bool d_is_reg(const struct dentry *dentry)
+{
+    return __d_entry_type(dentry) == DCACHE_REGULAR_TYPE;
+}
+
+/* allocate/de-allocate */
+extern struct dentry *d_splice_alias(struct inode *, struct dentry *);
+extern struct dentry *d_add_ci(struct dentry *, struct inode *, struct qstr *);
+extern struct dentry *d_exact_alias(struct dentry *, struct inode *);
+extern struct dentry *d_find_any_alias(struct inode *inode);
+extern struct dentry *d_obtain_alias(struct inode *);
+extern struct dentry *d_obtain_root(struct inode *);
+extern void shrink_dcache_sb(struct super_block *);
+extern void shrink_dcache_parent(struct dentry *);
+extern void shrink_dcache_for_umount(struct super_block *);
+
 #endif  /* __LINUX_DCACHE_H */

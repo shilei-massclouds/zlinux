@@ -633,6 +633,50 @@ inline const char *blk_op_str(unsigned int op)
 }
 EXPORT_SYMBOL_GPL(blk_op_str);
 
+/**
+ * blk_queue_enter() - try to increase q->q_usage_counter
+ * @q: request queue pointer
+ * @flags: BLK_MQ_REQ_NOWAIT and/or BLK_MQ_REQ_PM
+ */
+int blk_queue_enter(struct request_queue *q, blk_mq_req_flags_t flags)
+{
+    const bool pm = flags & BLK_MQ_REQ_PM;
+
+    while (!blk_try_enter_queue(q, pm)) {
+        if (flags & BLK_MQ_REQ_NOWAIT)
+            return -EBUSY;
+
+        /*
+         * read pair of barrier in blk_freeze_queue_start(), we need to
+         * order reading __PERCPU_REF_DEAD flag of .q_usage_counter and
+         * reading .mq_freeze_depth or queue dying flag, otherwise the
+         * following wait may never return if the two reads are
+         * reordered.
+         */
+        smp_rmb();
+#if 0
+        wait_event(q->mq_freeze_wq,
+                   (!q->mq_freeze_depth && blk_pm_resume_queue(pm, q)) ||
+                   blk_queue_dying(q));
+        if (blk_queue_dying(q))
+            return -ENODEV;
+#endif
+        panic("%s: !blk_try_enter_queue\n", __func__);
+    }
+
+    return 0;
+}
+
+int blk_status_to_errno(blk_status_t status)
+{
+    int idx = (__force int)status;
+
+    if (WARN_ON_ONCE(idx >= ARRAY_SIZE(blk_errors)))
+        return -EIO;
+    return blk_errors[idx].errno;
+}
+EXPORT_SYMBOL_GPL(blk_status_to_errno);
+
 int __init blk_dev_init(void)
 {
     BUILD_BUG_ON(REQ_OP_LAST >= (1 << REQ_OP_BITS));

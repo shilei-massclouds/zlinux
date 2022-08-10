@@ -748,4 +748,8 @@ static inline unsigned int block_size(struct block_device *bdev)
 
 struct block_device *I_BDEV(struct inode *inode);
 
+extern int bdev_read_page(struct block_device *, sector_t, struct page *);
+
+int blk_status_to_errno(blk_status_t status);
+
 #endif /* _LINUX_BLKDEV_H */

@@ -919,15 +919,14 @@ static inline void __d_add(struct dentry *dentry, struct inode *inode)
         __d_lookup_done(dentry);
     }
     if (inode) {
-#if 0
         unsigned add_flags = d_flags_for_inode(inode);
         hlist_add_head(&dentry->d_u.d_alias, &inode->i_dentry);
         raw_write_seqcount_begin(&dentry->d_seq);
         __d_set_inode_and_type(dentry, inode, add_flags);
         raw_write_seqcount_end(&dentry->d_seq);
+#if 0
         fsnotify_update_flags(dentry);
 #endif
-        panic("%s: has inode!\n", __func__);
     }
     __d_rehash(dentry);
     if (dir)
@@ -1312,6 +1311,67 @@ void dput_to_list(struct dentry *dentry, struct list_head *list)
     if (!retain_dentry(dentry))
         __dput_to_list(dentry, list);
     spin_unlock(&dentry->d_lock);
+}
+
+static inline void __dget(struct dentry *dentry)
+{
+    lockref_get(&dentry->d_lockref);
+}
+
+static struct dentry *__d_find_any_alias(struct inode *inode)
+{
+    struct dentry *alias;
+
+    if (hlist_empty(&inode->i_dentry))
+        return NULL;
+    alias = hlist_entry(inode->i_dentry.first, struct dentry, d_u.d_alias);
+    __dget(alias);
+    return alias;
+}
+
+/**
+ * d_splice_alias - splice a disconnected dentry into the tree if one exists
+ * @inode:  the inode which may have a disconnected dentry
+ * @dentry: a negative dentry which we want to point to the inode.
+ *
+ * If inode is a directory and has an IS_ROOT alias, then d_move that in
+ * place of the given dentry and return it, else simply d_add the inode
+ * to the dentry and return NULL.
+ *
+ * If a non-IS_ROOT directory is found, the filesystem is corrupt, and
+ * we should error out: directories can't have multiple aliases.
+ *
+ * This is needed in the lookup routine of any filesystem that is exportable
+ * (via knfsd) so that we can build dcache paths to directories effectively.
+ *
+ * If a dentry was found and moved, then it is returned.  Otherwise NULL
+ * is returned.  This matches the expected return value of ->lookup.
+ *
+ * Cluster filesystems may call this function with a negative, hashed dentry.
+ * In that case, we know that the inode will be a regular file, and also this
+ * will only occur during atomic_open. So we need to check for the dentry
+ * being already hashed only in the final case.
+ */
+struct dentry *d_splice_alias(struct inode *inode, struct dentry *dentry)
+{
+    if (IS_ERR(inode))
+        return ERR_CAST(inode);
+
+    BUG_ON(!d_unhashed(dentry));
+
+    if (!inode)
+        goto out;
+
+    spin_lock(&inode->i_lock);
+    if (S_ISDIR(inode->i_mode)) {
+        struct dentry *new = __d_find_any_alias(inode);
+        if (unlikely(new)) {
+            panic("%s: S_ISDIR new!\n", __func__);
+        }
+    }
+ out:
+    __d_add(dentry, inode);
+    return NULL;
 }
 
 void __init vfs_caches_init_early(void)

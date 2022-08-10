@@ -446,7 +446,24 @@ static struct file *do_open_execat(int fd, struct filename *name, int flags)
     if (IS_ERR(file))
         goto out;
 
-    panic("%s: END!\n", __func__);
+    /*
+     * may_open() has already checked for this, so it should be
+     * impossible to trip now. But we need to be extra cautious
+     * and check again at the very end too.
+     */
+    err = -EACCES;
+    if (WARN_ON_ONCE(!S_ISREG(file_inode(file)->i_mode) ||
+                     path_noexec(&file->f_path)))
+        goto exit;
+
+    err = deny_write_access(file);
+    if (err)
+        goto exit;
+
+#if 0
+    if (name->name[0] != '\0')
+        fsnotify_open(file);
+#endif
 
  out:
     return file;
@@ -454,7 +471,6 @@ static struct file *do_open_execat(int fd, struct filename *name, int flags)
  exit:
     fput(file);
     return ERR_PTR(err);
-
 }
 
 /*
@@ -553,4 +569,10 @@ int kernel_execve(const char *kernel_filename,
  out_ret:
     putname(filename);
     return retval;
+}
+
+bool path_noexec(const struct path *path)
+{
+    return (path->mnt->mnt_flags & MNT_NOEXEC) ||
+           (path->mnt->mnt_sb->s_iflags & SB_I_NOEXEC);
 }

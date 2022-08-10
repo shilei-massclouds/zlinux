@@ -30,6 +30,32 @@
 /* data type for filesystem-wide blocks number */
 typedef unsigned long ext2_fsblk_t;
 
+/*
+ * The new version of the directory entry.  Since EXT2 structures are
+ * stored in intel byte order, and the name_len field could never be
+ * bigger than 255 chars, it's safe to reclaim the extra byte for the
+ * file_type field.
+ */
+struct ext2_dir_entry_2 {
+    __le32  inode;          /* Inode number */
+    __le16  rec_len;        /* Directory entry length */
+    __u8    name_len;       /* Name length */
+    __u8    file_type;
+    char    name[];         /* File name, up to EXT2_NAME_LEN */
+};
+
+/*
+ * EXT2_DIR_PAD defines the directory entries boundaries
+ *
+ * NOTE: It must be a multiple of 4
+ */
+#define EXT2_DIR_PAD                4
+#define EXT2_DIR_ROUND              (EXT2_DIR_PAD - 1)
+#define EXT2_DIR_REC_LEN(name_len)  \
+    (((name_len) + 8 + EXT2_DIR_ROUND) & ~EXT2_DIR_ROUND)
+
+#define EXT2_MAX_REC_LEN            ((1<<16)-1)
+
 struct ext2_reserve_window {
     ext2_fsblk_t        _rsv_start; /* First byte reserved */
     ext2_fsblk_t        _rsv_end;   /* Last byte reserved or 0 */
@@ -525,8 +551,9 @@ extern int ext2_setattr(struct user_namespace *, struct dentry *,
 extern int ext2_getattr(struct user_namespace *, const struct path *,
                         struct kstat *, u32, unsigned int);
 
-extern int ext2_write_inode (struct inode *, struct writeback_control *);
-extern void ext2_evict_inode(struct inode *);
+extern void ext2_set_inode_flags(struct inode *inode);
+extern int ext2_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
+                       u64 start, u64 len);
 
 /*
  * Ok, these declarations are also in <linux/kernel.h> but none of the
@@ -536,8 +563,6 @@ static inline struct ext2_inode_info *EXT2_I(struct inode *inode)
 {
     return container_of(inode, struct ext2_inode_info, vfs_inode);
 }
-
-void ext2_error(struct super_block *, const char *, const char *, ...);
 
 /*
  * Inode flags (GETFLAGS/SETFLAGS)
@@ -578,12 +603,44 @@ extern int ext2_fileattr_set(struct user_namespace *mnt_userns,
 
 extern long ext2_ioctl(struct file *, unsigned int, unsigned long);
 
-/* file.c */
-extern int ext2_fsync(struct file *file, loff_t start, loff_t end,
-                      int datasync);
-
 /*
  * Maximal mount counts between two filesystem checks
  */
 #define EXT2_DFL_MAX_MNT_COUNT      20  /* Allow 20 mounts */
 #define EXT2_DFL_CHECKINTERVAL      0   /* Don't use interval check */
+
+/* dir.c */
+extern int ext2_add_link(struct dentry *, struct inode *);
+extern int ext2_inode_by_name(struct inode *dir,
+                              const struct qstr *child, ino_t *ino);
+extern int ext2_make_empty(struct inode *, struct inode *);
+extern struct ext2_dir_entry_2 *
+ext2_find_entry(struct inode *, const struct qstr *,
+                struct page **, void **res_page_addr);
+extern int
+ext2_delete_entry(struct ext2_dir_entry_2 *dir, struct page *page, char *kaddr);
+extern int ext2_empty_dir(struct inode *);
+extern struct ext2_dir_entry_2 *
+ext2_dotdot(struct inode *dir, struct page **p, void **pa);
+extern void ext2_set_link(struct inode *, struct ext2_dir_entry_2 *,
+                          struct page *, void *, struct inode *, int);
+static inline void ext2_put_page(struct page *page, void *page_addr)
+{
+    kunmap_local(page_addr);
+    put_page(page);
+}
+
+/* super.c */
+extern __printf(3, 4)
+void ext2_error(struct super_block *, const char *, const char *, ...);
+extern __printf(3, 4)
+void ext2_msg(struct super_block *, const char *, const char *, ...);
+extern void ext2_update_dynamic_rev(struct super_block *sb);
+extern void ext2_sync_super(struct super_block *sb, struct ext2_super_block *es,
+                            int wait);
+
+/* file.c */
+extern int ext2_fsync(struct file *file, loff_t start, loff_t end,
+                      int datasync);
+extern const struct inode_operations ext2_file_inode_operations;
+extern const struct file_operations ext2_file_operations;

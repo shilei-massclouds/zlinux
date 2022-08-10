@@ -3,7 +3,7 @@
 #define LINUX_MM_INLINE_H
 
 #include <linux/atomic.h>
-//#include <linux/huge_mm.h>
+#include <linux/huge_mm.h>
 #include <linux/swap.h>
 #include <linux/string.h>
 

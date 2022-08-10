@@ -539,9 +539,7 @@ struct inode {
     atomic_t        i_count;
     atomic_t        i_dio_count;
     atomic_t        i_writecount;
-#if 0
     atomic_t        i_readcount; /* struct files open RO */
-#endif
     union {
         const struct file_operations    *i_fop; /* former ->i_op->default_file_ops */
         void (*free_inode)(struct inode *);
@@ -1192,8 +1190,6 @@ extern unsigned int get_next_ino(void);
 
 extern const struct address_space_operations ram_aops;
 
-extern void inode_nohighmem(struct inode *inode);
-
 extern void ihold(struct inode * inode);
 
 extern int simple_statfs(struct dentry *, struct kstatfs *);
@@ -1310,7 +1306,7 @@ static inline void remove_inode_hash(struct inode *inode)
 }
 
 typedef int (get_block_t)(struct inode *inode, sector_t iblock,
-            struct buffer_head *bh_result, int create);
+                          struct buffer_head *bh_result, int create);
 
 extern int buffer_migrate_page(struct address_space *,
                                struct page *, struct page *,
@@ -1375,6 +1371,8 @@ static inline void i_gid_write(struct inode *inode, gid_t gid)
     panic("%s: END!\n", __func__);
 }
 
+extern int generic_file_open(struct inode *inode, struct file *filp);
+
 extern ssize_t generic_read_dir(struct file *, char __user *, size_t, loff_t *);
 
 extern loff_t generic_file_llseek(struct file *file, loff_t offset, int whence);
@@ -1410,5 +1408,98 @@ static inline bool vma_is_fsdax(struct vm_area_struct *vma)
 
 extern void __init files_init(void);
 extern void __init files_maxfiles_init(void);
+
+static inline unsigned int i_blocksize(const struct inode *node)
+{
+    return (1 << node->i_blkbits);
+}
+
+extern ssize_t generic_file_read_iter(struct kiocb *, struct iov_iter *);
+extern ssize_t __generic_file_write_iter(struct kiocb *, struct iov_iter *);
+extern ssize_t generic_file_write_iter(struct kiocb *, struct iov_iter *);
+
+extern bool path_noexec(const struct path *path);
+extern void inode_nohighmem(struct inode *inode);
+
+#define special_file(m) (S_ISCHR(m)||S_ISBLK(m)||S_ISFIFO(m)||S_ISSOCK(m))
+
+/* Alas, no aliases. Too much hassle with bringing module.h everywhere */
+#define fops_get(fops) \
+    (((fops) && try_module_get((fops)->owner) ? (fops) : NULL))
+#define fops_put(fops) \
+    do { if (fops) module_put((fops)->owner); } while(0)
+
+static inline void i_readcount_dec(struct inode *inode)
+{
+    BUG_ON(!atomic_read(&inode->i_readcount));
+    atomic_dec(&inode->i_readcount);
+}
+static inline void i_readcount_inc(struct inode *inode)
+{
+    atomic_inc(&inode->i_readcount);
+}
+
+extern void
+file_ra_state_init(struct file_ra_state *ra, struct address_space *mapping);
+
+extern loff_t vfs_setpos(struct file *file, loff_t offset, loff_t maxsize);
+extern loff_t generic_file_llseek_size(struct file *file, loff_t offset,
+        int whence, loff_t maxsize, loff_t eof);
+extern loff_t fixed_size_llseek(struct file *file, loff_t offset,
+        int whence, loff_t size);
+extern loff_t no_seek_end_llseek_size(struct file *, loff_t, int, loff_t);
+extern loff_t no_seek_end_llseek(struct file *, loff_t, int);
+int rw_verify_area(int, struct file *, const loff_t *, size_t);
+extern int nonseekable_open(struct inode * inode, struct file * filp);
+extern int stream_open(struct inode * inode, struct file * filp);
+
+static inline struct inode *file_inode(const struct file *f)
+{
+    return f->f_inode;
+}
+
+/*
+ * This is used for regular files where some users -- especially the
+ * currently executed binary in a process, previously handled via
+ * VM_DENYWRITE -- cannot handle concurrent write (and maybe mmap
+ * read-write shared) accesses.
+ *
+ * get_write_access() gets write permission for a file.
+ * put_write_access() releases this write permission.
+ * deny_write_access() denies write access to a file.
+ * allow_write_access() re-enables write access to a file.
+ *
+ * The i_writecount field of an inode can have the following values:
+ * 0: no write access, no denied write access
+ * < 0: (-i_writecount) users that denied write access to the file.
+ * > 0: (i_writecount) users that have write access to the file.
+ *
+ * Normally we operate on that counter with atomic_{inc,dec} and it's safe
+ * except for the cases where we don't hold i_writecount yet. Then we need to
+ * use {get,deny}_write_access() - these functions check the sign and refuse
+ * to do the change if sign is wrong.
+ */
+static inline int get_write_access(struct inode *inode)
+{
+    return atomic_inc_unless_negative(&inode->i_writecount) ? 0 : -ETXTBSY;
+}
+static inline int deny_write_access(struct file *file)
+{
+    struct inode *inode = file_inode(file);
+    return atomic_dec_unless_positive(&inode->i_writecount) ? 0 : -ETXTBSY;
+}
+static inline void put_write_access(struct inode * inode)
+{
+    atomic_dec(&inode->i_writecount);
+}
+static inline void allow_write_access(struct file *file)
+{
+    if (file)
+        atomic_inc(&file_inode(file)->i_writecount);
+}
+static inline bool inode_is_open_for_write(const struct inode *inode)
+{
+    return atomic_read(&inode->i_writecount) > 0;
+}
 
 #endif /* _LINUX_FS_H */

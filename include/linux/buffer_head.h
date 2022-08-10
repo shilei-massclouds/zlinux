@@ -148,8 +148,10 @@ BUFFER_FNS(Lock, locked)
 BUFFER_FNS(Req, req)
 TAS_BUFFER_FNS(Req, req)
 BUFFER_FNS(Mapped, mapped)
+BUFFER_FNS(New, new)
 BUFFER_FNS(Async_Read, async_read)
 BUFFER_FNS(Delay, delay)
+BUFFER_FNS(Boundary, boundary)
 BUFFER_FNS(Write_EIO, write_io_error)
 BUFFER_FNS(Unwritten, unwritten)
 BUFFER_FNS(Meta, meta)
@@ -233,5 +235,19 @@ int nobh_write_begin(struct address_space *, loff_t, unsigned, unsigned,
 int nobh_write_end(struct file *, struct address_space *,
                    loff_t, unsigned, unsigned,
                    struct page *, void *);
+
+static inline void
+map_bh(struct buffer_head *bh, struct super_block *sb, sector_t block)
+{
+    set_buffer_mapped(bh);
+    bh->b_bdev = sb->s_bdev;
+    bh->b_blocknr = block;
+    bh->b_size = sb->s_blocksize;
+}
+
+struct buffer_head *
+alloc_page_buffers(struct page *page, unsigned long size, bool retry);
+
+void create_empty_buffers(struct page *, unsigned long, unsigned long b_state);
 
 #endif /* _LINUX_BUFFER_HEAD_H */

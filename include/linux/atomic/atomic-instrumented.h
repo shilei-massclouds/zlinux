@@ -276,4 +276,16 @@ atomic_read_acquire(const atomic_t *v)
     return arch_atomic_read_acquire(v);
 }
 
+static __always_inline bool
+atomic_inc_unless_negative(atomic_t *v)
+{
+    return arch_atomic_inc_unless_negative(v);
+}
+
+static __always_inline bool
+atomic_dec_unless_positive(atomic_t *v)
+{
+    return arch_atomic_dec_unless_positive(v);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */
