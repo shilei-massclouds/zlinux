@@ -24,6 +24,7 @@
 #define ENFILE      23  /* File table overflow */
 #define EMFILE      24  /* Too many open files */
 #define ENOSPC      28  /* No space left on device */
+#define EROFS       30  /* Read-only file system */
 #define EMLINK      31  /* Too many links */
 #define ERANGE      34  /* Math result not representable */
 

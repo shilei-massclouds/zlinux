@@ -1339,6 +1339,81 @@ int kern_path(const char *name, unsigned int flags, struct path *path)
 EXPORT_SYMBOL(kern_path);
 
 /**
+ * sb_permission - Check superblock-level permissions
+ * @sb: Superblock of inode to check permission on
+ * @inode: Inode to check permission on
+ * @mask: Right to check for (%MAY_READ, %MAY_WRITE, %MAY_EXEC)
+ *
+ * Separate out file-system wide checks from inode-specific permission checks.
+ */
+static int sb_permission(struct super_block *sb, struct inode *inode, int mask)
+{
+    if (unlikely(mask & MAY_WRITE)) {
+        umode_t mode = inode->i_mode;
+
+        /* Nobody gets write access to a read-only fs. */
+        if (sb_rdonly(sb) && (S_ISREG(mode) || S_ISDIR(mode) || S_ISLNK(mode)))
+            return -EROFS;
+    }
+    return 0;
+}
+
+/**
+ * generic_permission -  check for access rights on a Posix-like filesystem
+ * @mnt_userns: user namespace of the mount the inode was found from
+ * @inode:  inode to check access rights for
+ * @mask:   right to check for (%MAY_READ, %MAY_WRITE, %MAY_EXEC,
+ *      %MAY_NOT_BLOCK ...)
+ *
+ * Used to check for read/write/execute permissions on a file.
+ * We use "fsuid" for this, letting us set arbitrary permissions
+ * for filesystem access without changing the "normal" uids which
+ * are used for other things.
+ *
+ * generic_permission is rcu-walk aware. It returns -ECHILD in case an rcu-walk
+ * request cannot be satisfied (eg. requires blocking or too much complexity).
+ * It would then be called again in ref-walk mode.
+ *
+ * If the inode has been found through an idmapped mount the user namespace of
+ * the vfsmount must be passed through @mnt_userns. This function will then take
+ * care to map the inode according to @mnt_userns before checking permissions.
+ * On non-idmapped mounts or if permission checking is to be performed on the
+ * raw inode simply passs init_user_ns.
+ */
+int generic_permission(struct user_namespace *mnt_userns, struct inode *inode,
+                       int mask)
+{
+    pr_warn("%s: no implementation!\n", __func__);
+    return 0;
+}
+
+/**
+ * do_inode_permission - UNIX permission checking
+ * @mnt_userns: user namespace of the mount the inode was found from
+ * @inode:  inode to check permissions on
+ * @mask:   right to check for (%MAY_READ, %MAY_WRITE, %MAY_EXEC ...)
+ *
+ * We _really_ want to just do "generic_permission()" without
+ * even looking at the inode->i_op values. So we keep a cache
+ * flag in inode->i_opflags, that says "this has not special
+ * permission function, use the fast case".
+ */
+static inline int do_inode_permission(struct user_namespace *mnt_userns,
+                                      struct inode *inode, int mask)
+{
+    if (unlikely(!(inode->i_opflags & IOP_FASTPERM))) {
+        if (likely(inode->i_op->permission))
+            return inode->i_op->permission(mnt_userns, inode, mask);
+
+        /* This gets set once for the inode lifetime */
+        spin_lock(&inode->i_lock);
+        inode->i_opflags |= IOP_FASTPERM;
+        spin_unlock(&inode->i_lock);
+    }
+    return generic_permission(mnt_userns, inode, mask);
+}
+
+/**
  * inode_permission - Check for access rights to a given inode
  * @mnt_userns: User namespace of the mount the inode was found from
  * @inode:  Inode to check permission on
@@ -1353,7 +1428,27 @@ EXPORT_SYMBOL(kern_path);
 int inode_permission(struct user_namespace *mnt_userns,
                      struct inode *inode, int mask)
 {
-    pr_warn("%s: NO implementation! inode(%lx) END!\n", __func__, inode);
+    int retval;
+
+    retval = sb_permission(inode->i_sb, inode, mask);
+    if (retval)
+        return retval;
+
+    if (unlikely(mask & MAY_WRITE)) {
+        panic("%s: MAY_WRITE!\n", __func__);
+    }
+
+    retval = do_inode_permission(mnt_userns, inode, mask);
+    if (retval)
+        return retval;
+
+#if 0
+    retval = devcgroup_inode_permission(inode, mask);
+    if (retval)
+        return retval;
+#endif
+
+    return 0;
 }
 EXPORT_SYMBOL(inode_permission);
 

@@ -519,6 +519,25 @@ static inline int check_mnt(struct mount *mnt)
 
 static void mntput_no_expire(struct mount *mnt)
 {
+    LIST_HEAD(list);
+    int count;
+
+    rcu_read_lock();
+    if (likely(READ_ONCE(mnt->mnt_ns))) {
+        /*
+         * Since we don't do lock_mount_hash() here,
+         * ->mnt_ns can change under us.  However, if it's
+         * non-NULL, then there's a reference that won't
+         * be dropped until after an RCU delay done after
+         * turning ->mnt_ns NULL.  So if we observe it
+         * non-NULL under rcu_read_lock(), the reference
+         * we are dropping is not the final one.
+         */
+        mnt_add_count(mnt, -1);
+        rcu_read_unlock();
+        return;
+    }
+
     panic("%s: END!\n", __func__);
 }
 
@@ -534,80 +553,78 @@ static void free_mnt_ns(struct mnt_namespace *ns)
     panic("%s: END!\n", __func__);
 }
 
-static int do_move_mount(struct path *old_path, struct path *new_path)
+static struct mount *next_mnt(struct mount *p, struct mount *root)
 {
-    struct mnt_namespace *ns;
-    struct mount *p;
-    struct mount *old;
-    struct mount *parent;
-    struct mountpoint *mp, *old_mp;
-    int err;
-    bool attached;
-
-    mp = lock_mount(new_path);
-    if (IS_ERR(mp))
-        return PTR_ERR(mp);
-
-    old = real_mount(old_path->mnt);
-    p = real_mount(new_path->mnt);
-    parent = old->mnt_parent;
-    attached = mnt_has_parent(old);
-    old_mp = old->mnt_mp;
-    ns = old->mnt_ns;
-
-    err = -EINVAL;
-    /* The mountpoint must be in our namespace. */
-    if (!check_mnt(p))
-        goto out;
-
-    /* The thing moved must be mounted... */
-    if (!is_mounted(&old->mnt))
-        goto out;
-
-#if 0
-    /* ... and either ours or the root of anon namespace */
-    if (!(attached ? check_mnt(old) : is_anon_ns(ns)))
-        goto out;
-#endif
-
-    if (old->mnt.mnt_flags & MNT_LOCKED)
-        goto out;
-
-    if (old_path->dentry != old_path->mnt->mnt_root)
-        goto out;
-
-    if (d_is_dir(new_path->dentry) !=
-        d_is_dir(old_path->dentry))
-        goto out;
-
-    panic("%s: END!\n", __func__);
-
- out:
-    unlock_mount(mp);
-    if (!err) {
-        if (attached)
-            mntput_no_expire(parent);
-        else
-            free_mnt_ns(ns);
+    struct list_head *next = p->mnt_mounts.next;
+    if (next == &p->mnt_mounts) {
+        while (1) {
+            if (p == root)
+                return NULL;
+            next = p->mnt_child.next;
+            if (next != &p->mnt_parent->mnt_mounts)
+                break;
+            p = p->mnt_parent;
+        }
     }
-    return err;
+    return list_entry(next, struct mount, mnt_child);
 }
 
-static int do_move_mount_old(struct path *path, const char *old_name)
+static inline int tree_contains_unbindable(struct mount *mnt)
 {
-    struct path old_path;
-    int err;
+    struct mount *p;
+    for (p = mnt; p; p = next_mnt(p, mnt)) {
+        if (IS_MNT_UNBINDABLE(p))
+            return 1;
+    }
+    return 0;
+}
 
-    if (!old_name || !*old_name)
-        return -EINVAL;
+static bool is_mnt_ns_file(struct dentry *dentry)
+{
+#if 0
+    /* Is this a proxy for a mount namespace? */
+    return dentry->d_op == &ns_dentry_operations &&
+           dentry->d_fsdata == &mntns_operations;
+#endif
+    panic("%s: END!\n", __func__);
+}
 
-    err = kern_path(old_name, LOOKUP_FOLLOW, &old_path);
-    if (err)
-        return err;
+static bool mnt_ns_loop(struct dentry *dentry)
+{
+#if 0
+    /* Could bind mounting the mount namespace inode cause a
+     * mount namespace loop?
+     */
+    struct mnt_namespace *mnt_ns;
+    if (!is_mnt_ns_file(dentry))
+        return false;
 
-    err = do_move_mount(&old_path, path);
-    path_put(&old_path);
-    return err;
+    mnt_ns = to_mnt_ns(get_proc_ns(dentry->d_inode));
+    return current->nsproxy->mnt_ns->seq >= mnt_ns->seq;
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * Check that there aren't references to earlier/same mount namespaces in the
+ * specified subtree.  Such references can act as pins for mount namespaces
+ * that aren't checked by the mount-cycle checking code, thereby allowing
+ * cycles to be made.
+ */
+static bool check_for_nsfs_mounts(struct mount *subtree)
+{
+    struct mount *p;
+    bool ret = false;
+
+    lock_mount_hash();
+    for (p = subtree; p; p = next_mnt(p, subtree))
+        if (mnt_ns_loop(p->mnt.mnt_root))
+            goto out;
+
+    ret = true;
+out:
+    unlock_mount_hash();
+    return ret;
 }
 
 /*
@@ -817,22 +834,6 @@ static void umount_tree(struct mount *mnt, enum umount_tree_flags how)
     panic("%s: END!\n", __func__);
 }
 
-static struct mount *next_mnt(struct mount *p, struct mount *root)
-{
-    struct list_head *next = p->mnt_mounts.next;
-    if (next == &p->mnt_mounts) {
-        while (1) {
-            if (p == root)
-                return NULL;
-            next = p->mnt_child.next;
-            if (next != &p->mnt_parent->mnt_mounts)
-                break;
-            p = p->mnt_parent;
-        }
-    }
-    return list_entry(next, struct mount, mnt_child);
-}
-
 static void cleanup_group_ids(struct mount *mnt, struct mount *end)
 {
     struct mount *p;
@@ -931,6 +932,33 @@ static void commit_tree(struct mount *mnt)
 
     __attach_mnt(mnt, parent);
     touch_mnt_namespace(n);
+}
+
+/*
+ * vfsmount lock must be held for write
+ */
+static struct mountpoint *unhash_mnt(struct mount *mnt)
+{
+    struct mountpoint *mp;
+    mnt->mnt_parent = mnt;
+    mnt->mnt_mountpoint = mnt->mnt.mnt_root;
+    list_del_init(&mnt->mnt_child);
+    hlist_del_init_rcu(&mnt->mnt_hash);
+    hlist_del_init(&mnt->mnt_mp_list);
+    mp = mnt->mnt_mp;
+    mnt->mnt_mp = NULL;
+    return mp;
+}
+
+/*
+ * vfsmount lock must be held for write
+ */
+static void attach_mnt(struct mount *mnt,
+                       struct mount *parent,
+                       struct mountpoint *mp)
+{
+    mnt_set_mountpoint(parent, mp, mnt);
+    __attach_mnt(mnt, parent);
 }
 
 /*
@@ -1040,12 +1068,9 @@ static int attach_recursive_mnt(struct mount *source_mnt,
         lock_mount_hash();
     }
     if (moving) {
-#if 0
         unhash_mnt(source_mnt);
         attach_mnt(source_mnt, dest_mnt, dest_mp);
         touch_mnt_namespace(source_mnt->mnt_ns);
-#endif
-        panic("%s: moving!\n", __func__);
     } else {
         if (source_mnt->mnt_ns) {
             /* move from anon - the caller will destroy */
@@ -1216,6 +1241,109 @@ static int do_new_mount(struct path *path, const char *fstype, int sb_flags,
         err = do_new_mount_fc(fc, path, mnt_flags);
 
     put_fs_context(fc);
+    return err;
+}
+
+static int do_move_mount(struct path *old_path, struct path *new_path)
+{
+    struct mnt_namespace *ns;
+    struct mount *p;
+    struct mount *old;
+    struct mount *parent;
+    struct mountpoint *mp, *old_mp;
+    int err;
+    bool attached;
+
+    mp = lock_mount(new_path);
+    if (IS_ERR(mp))
+        return PTR_ERR(mp);
+
+    old = real_mount(old_path->mnt);
+    p = real_mount(new_path->mnt);
+    parent = old->mnt_parent;
+    attached = mnt_has_parent(old);
+    old_mp = old->mnt_mp;
+    ns = old->mnt_ns;
+
+    err = -EINVAL;
+    /* The mountpoint must be in our namespace. */
+    if (!check_mnt(p))
+        goto out;
+
+    /* The thing moved must be mounted... */
+    if (!is_mounted(&old->mnt))
+        goto out;
+
+#if 0
+    /* ... and either ours or the root of anon namespace */
+    if (!(attached ? check_mnt(old) : is_anon_ns(ns)))
+        goto out;
+#endif
+
+    if (old->mnt.mnt_flags & MNT_LOCKED)
+        goto out;
+
+    if (old_path->dentry != old_path->mnt->mnt_root)
+        goto out;
+
+    if (d_is_dir(new_path->dentry) !=
+        d_is_dir(old_path->dentry))
+        goto out;
+    /*
+     * Don't move a mount residing in a shared parent.
+     */
+    if (attached && IS_MNT_SHARED(parent))
+        goto out;
+    /*
+     * Don't move a mount tree containing unbindable mounts to a destination
+     * mount which is shared.
+     */
+    if (IS_MNT_SHARED(p) && tree_contains_unbindable(old))
+        goto out;
+    err = -ELOOP;
+#if 0
+    if (!check_for_nsfs_mounts(old))
+        goto out;
+#endif
+    for (; mnt_has_parent(p); p = p->mnt_parent)
+        if (p == old)
+            goto out;
+
+    err = attach_recursive_mnt(old, real_mount(new_path->mnt), mp, attached);
+    if (err)
+        goto out;
+
+    /* if the mount is moved, it should no longer be expire
+     * automatically */
+    list_del_init(&old->mnt_expire);
+    if (attached)
+        put_mountpoint(old_mp);
+
+ out:
+    unlock_mount(mp);
+    if (!err) {
+        if (attached)
+            mntput_no_expire(parent);
+        else
+            free_mnt_ns(ns);
+    }
+    return err;
+}
+
+static int do_move_mount_old(struct path *path, const char *old_name)
+{
+    struct path old_path;
+    int err;
+
+    if (!old_name || !*old_name)
+        return -EINVAL;
+
+    err = kern_path(old_name, LOOKUP_FOLLOW, &old_path);
+    if (err)
+        return err;
+
+    err = do_move_mount(&old_path, path);
+    path_put(&old_path);
     return err;
 }
 
