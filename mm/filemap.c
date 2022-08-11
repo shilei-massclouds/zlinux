@@ -1329,6 +1329,71 @@ filemap_readahead(struct kiocb *iocb, struct file *file,
     return 0;
 }
 
+/**
+ * folio_put_wait_locked - Drop a reference and wait for it to be unlocked
+ * @folio: The folio to wait for.
+ * @state: The sleep state (TASK_KILLABLE, TASK_UNINTERRUPTIBLE, etc).
+ *
+ * The caller should hold a reference on @folio.  They expect the page to
+ * become unlocked relatively soon, but do not wish to hold up migration
+ * (for example) by holding the reference while waiting for the folio to
+ * come unlocked.  After this function returns, the caller should not
+ * dereference @folio.
+ *
+ * Return: 0 if the folio was unlocked or -EINTR if interrupted by a signal.
+ */
+int folio_put_wait_locked(struct folio *folio, int state)
+{
+    return folio_wait_bit_common(folio, PG_locked, state, DROP);
+}
+
+static int __folio_lock_async(struct folio *folio, struct wait_page_queue *wait)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static int filemap_update_page(struct kiocb *iocb,
+                               struct address_space *mapping,
+                               struct iov_iter *iter,
+                               struct folio *folio)
+{
+    int error;
+
+    if (iocb->ki_flags & IOCB_NOWAIT) {
+        if (!filemap_invalidate_trylock_shared(mapping))
+            return -EAGAIN;
+    } else {
+        filemap_invalidate_lock_shared(mapping);
+    }
+
+    if (!folio_trylock(folio)) {
+        error = -EAGAIN;
+        if (iocb->ki_flags & (IOCB_NOWAIT | IOCB_NOIO))
+            goto unlock_mapping;
+        if (!(iocb->ki_flags & IOCB_WAITQ)) {
+            filemap_invalidate_unlock_shared(mapping);
+            /*
+             * This is where we usually end up waiting for a
+             * previously submitted readahead to finish.
+             */
+            folio_put_wait_locked(folio, TASK_KILLABLE);
+            return AOP_TRUNCATED_PAGE;
+        }
+        error = __folio_lock_async(folio, iocb->ki_waitq);
+        if (error)
+            goto unlock_mapping;
+    }
+
+    panic("%s: END!\n", __func__);
+ unlock:
+    folio_unlock(folio);
+ unlock_mapping:
+    filemap_invalidate_unlock_shared(mapping);
+    if (error == AOP_TRUNCATED_PAGE)
+        folio_put(folio);
+    return error;
+}
+
 static int filemap_get_pages(struct kiocb *iocb, struct iov_iter *iter,
                              struct folio_batch *fbatch)
 {
@@ -1370,8 +1435,14 @@ static int filemap_get_pages(struct kiocb *iocb, struct iov_iter *iter,
         if (err)
             goto err;
     }
+    if (!folio_test_uptodate(folio)) {
+        if ((iocb->ki_flags & IOCB_WAITQ) && folio_batch_count(fbatch) > 1)
+            iocb->ki_flags |= IOCB_NOWAIT;
+        err = filemap_update_page(iocb, mapping, iter, folio);
+        if (err)
+            goto err;
+    }
 
-    panic("%s: END!\n", __func__);
     return 0;
  err:
     if (err < 0)
@@ -1434,8 +1505,61 @@ ssize_t filemap_read(struct kiocb *iocb, struct iov_iter *iter,
         if (error < 0)
             break;
 
+        /*
+         * i_size must be checked after we know the pages are Uptodate.
+         *
+         * Checking i_size after the check allows us to calculate
+         * the correct value for "nr", which means the zero-filled
+         * part of the page is not copied back to userspace (unless
+         * another truncate extends the file - this is desired though).
+         */
+        isize = i_size_read(inode);
+        if (unlikely(iocb->ki_pos >= isize))
+            goto put_folios;
+        end_offset = min_t(loff_t, isize, iocb->ki_pos + iter->count);
 
+        /*
+         * Once we start copying data, we don't want to be touching any
+         * cachelines that might be contended:
+         */
+        writably_mapped = mapping_writably_mapped(mapping);
+
+        /*
+         * When a sequential read accesses a page several times, only
+         * mark it as accessed the first time.
+         */
+        if (iocb->ki_pos >> PAGE_SHIFT != ra->prev_pos >> PAGE_SHIFT)
+            folio_mark_accessed(fbatch.folios[0]);
+
+        for (i = 0; i < folio_batch_count(&fbatch); i++) {
+            struct folio *folio = fbatch.folios[i];
+            size_t fsize = folio_size(folio);
+            size_t offset = iocb->ki_pos & (fsize - 1);
+            size_t bytes = min_t(loff_t, end_offset - iocb->ki_pos,
+                                 fsize - offset);
+            size_t copied;
+
+            if (end_offset < folio_pos(folio))
+                break;
+            if (i > 0)
+                folio_mark_accessed(folio);
+            /*
+             * If users can be writing to this folio using arbitrary
+             * virtual addresses, take care of potential aliasing
+             * before reading the folio on the kernel side.
+             */
+            if (writably_mapped)
+                flush_dcache_folio(folio);
+
+            copied = copy_folio_to_iter(folio, offset, bytes, iter);
+            panic("%s: 0 [%d]!\n", __func__, i);
+        }
         panic("%s: 1!\n", __func__);
+
+     put_folios:
+        for (i = 0; i < folio_batch_count(&fbatch); i++)
+            folio_put(fbatch.folios[i]);
+        folio_batch_init(&fbatch);
     } while (iov_iter_count(iter) && iocb->ki_pos < isize && !error);
 
     panic("%s: END!\n", __func__);

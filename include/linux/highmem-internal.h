@@ -7,6 +7,11 @@ static inline void *kmap_local_page(struct page *page)
     return page_address(page);
 }
 
+static inline void *kmap_local_folio(struct folio *folio, size_t offset)
+{
+    return page_address(&folio->page) + offset;
+}
+
 static inline void __kunmap_local(void *addr)
 {
 }

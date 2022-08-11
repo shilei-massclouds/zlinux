@@ -108,4 +108,6 @@ static inline int rwsem_is_locked(struct rw_semaphore *sem)
     return atomic_long_read(&sem->count) != 0;
 }
 
+extern int down_read_trylock(struct rw_semaphore *sem);
+
 #endif /* _LINUX_RWSEM_H */

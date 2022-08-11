@@ -1608,4 +1608,24 @@ static inline void filemap_invalidate_unlock_shared(
     up_read(&mapping->invalidate_lock);
 }
 
+static inline int
+filemap_invalidate_trylock_shared(struct address_space *mapping)
+{
+    return down_read_trylock(&mapping->invalidate_lock);
+}
+
+/*
+ * Might pages of this file have been modified in userspace?
+ * Note that i_mmap_writable counts all VM_SHARED vmas: do_mmap
+ * marks vma as VM_SHARED if it is shared, and the file was opened for
+ * writing i.e. vma may be mprotected writable even if now readonly.
+ *
+ * If i_mmap_writable is negative, no new writable mappings are allowed. You
+ * can only deny writable mappings, if none exists right now.
+ */
+static inline int mapping_writably_mapped(struct address_space *mapping)
+{
+    return atomic_read(&mapping->i_mmap_writable) > 0;
+}
+
 #endif /* _LINUX_FS_H */

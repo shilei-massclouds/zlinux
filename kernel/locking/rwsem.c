@@ -388,3 +388,28 @@ int __sched down_write_killable(struct rw_semaphore *sem)
     return 0;
 }
 EXPORT_SYMBOL(down_write_killable);
+
+static inline int __down_read_trylock(struct rw_semaphore *sem)
+{
+    long tmp;
+
+    tmp = atomic_long_read(&sem->count);
+    while (!(tmp & RWSEM_READ_FAILED_MASK)) {
+        if (atomic_long_try_cmpxchg_acquire(&sem->count, &tmp,
+                                            tmp + RWSEM_READER_BIAS)) {
+            rwsem_set_reader_owned(sem);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/*
+ * trylock for reading -- returns 1 if successful, 0 if contention
+ */
+int down_read_trylock(struct rw_semaphore *sem)
+{
+    int ret = __down_read_trylock(sem);
+    return ret;
+}
+EXPORT_SYMBOL(down_read_trylock);

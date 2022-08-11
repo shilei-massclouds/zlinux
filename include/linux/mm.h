@@ -401,6 +401,8 @@ void setup_initial_init_mm(void *start_code, void *end_code,
 #include <linux/vmstat.h>
 
 #define offset_in_page(p)       ((unsigned long)(p) & ~PAGE_MASK)
+#define offset_in_thp(page, p)  ((unsigned long)(p) & (thp_size(page) - 1))
+#define offset_in_folio(folio, p) ((unsigned long)(p) & (folio_size(folio) - 1))
 
 #if USE_SPLIT_PTE_PTLOCKS
 #if ALLOC_SPLIT_PTLOCKS
@@ -1203,5 +1205,26 @@ static inline atomic_t *folio_pincount_ptr(struct folio *folio)
 bool folio_mark_dirty(struct folio *folio);
 bool set_page_dirty(struct page *page);
 int set_page_dirty_lock(struct page *page);
+
+/**
+ * thp_order - Order of a transparent huge page.
+ * @page: Head page of a transparent huge page.
+ */
+static inline unsigned int thp_order(struct page *page)
+{
+    VM_BUG_ON_PGFLAGS(PageTail(page), page);
+    return compound_order(page);
+}
+
+/**
+ * thp_size - Size of a transparent huge page.
+ * @page: Head page of a transparent huge page.
+ *
+ * Return: Number of bytes in this page.
+ */
+static inline unsigned long thp_size(struct page *page)
+{
+    return PAGE_SIZE << thp_order(page);
+}
 
 #endif /* _LINUX_MM_H */

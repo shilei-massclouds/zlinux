@@ -118,6 +118,47 @@ void bio_init(struct bio *bio, struct block_device *bdev, struct bio_vec *table,
 }
 EXPORT_SYMBOL(bio_init);
 
+/*
+ * Make the first allocation restricted and don't dump info on allocation
+ * failures, since we'll fall back to the mempool in case of failure.
+ */
+static inline gfp_t bvec_alloc_gfp(gfp_t gfp)
+{
+    return (gfp & ~(__GFP_DIRECT_RECLAIM | __GFP_IO)) |
+        __GFP_NOMEMALLOC | __GFP_NORETRY | __GFP_NOWARN;
+}
+
+struct bio_vec *bvec_alloc(mempool_t *pool, unsigned short *nr_vecs,
+                           gfp_t gfp_mask)
+{
+    struct biovec_slab *bvs = biovec_slab(*nr_vecs);
+
+    if (WARN_ON_ONCE(!bvs))
+        return NULL;
+
+    /*
+     * Upgrade the nr_vecs request to take full advantage of the allocation.
+     * We also rely on this in the bvec_free path.
+     */
+    *nr_vecs = bvs->nr_vecs;
+
+    /*
+     * Try a slab allocation first for all smaller allocations.  If that
+     * fails and __GFP_DIRECT_RECLAIM is set retry with the mempool.
+     * The mempool is sized to handle up to BIO_MAX_VECS entries.
+     */
+    if (*nr_vecs < BIO_MAX_VECS) {
+        struct bio_vec *bvl;
+
+        bvl = kmem_cache_alloc(bvs->slab, bvec_alloc_gfp(gfp_mask));
+        if (likely(bvl) || !(gfp_mask & __GFP_DIRECT_RECLAIM))
+            return bvl;
+        *nr_vecs = BIO_MAX_VECS;
+    }
+
+    return mempool_alloc(pool, gfp_mask);
+}
+
 /**
  * bio_alloc_bioset - allocate a bio for I/O
  * @bdev:   block device to allocate the bio for (can be %NULL)
@@ -207,7 +248,18 @@ bio_alloc_bioset(struct block_device *bdev, unsigned short nr_vecs,
 
     bio = p + bs->front_pad;
     if (nr_vecs > BIO_INLINE_VECS) {
-        panic("%s: > BIO_INLINE_VECS!\n", __func__);
+        struct bio_vec *bvl = NULL;
+
+        bvl = bvec_alloc(&bs->bvec_pool, &nr_vecs, gfp_mask);
+        if (!bvl && gfp_mask != saved_gfp) {
+            punt_bios_to_rescuer(bs);
+            gfp_mask = saved_gfp;
+            bvl = bvec_alloc(&bs->bvec_pool, &nr_vecs, gfp_mask);
+        }
+        if (unlikely(!bvl))
+            goto err_free;
+
+        bio_init(bio, bdev, bvl, nr_vecs, opf);
     } else if (nr_vecs) {
         bio_init(bio, bdev, bio->bi_inline_vecs, BIO_INLINE_VECS, opf);
     } else {

@@ -285,3 +285,14 @@ struct address_space *folio_mapping(struct folio *folio)
     return (void *)((unsigned long)mapping & ~PAGE_MAPPING_FLAGS);
 }
 EXPORT_SYMBOL(folio_mapping);
+
+#ifndef ARCH_IMPLEMENTS_FLUSH_DCACHE_FOLIO
+void flush_dcache_folio(struct folio *folio)
+{
+    long i, nr = folio_nr_pages(folio);
+
+    for (i = 0; i < nr; i++)
+        flush_dcache_page(folio_page(folio, i));
+}
+EXPORT_SYMBOL(flush_dcache_folio);
+#endif

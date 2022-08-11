@@ -625,4 +625,21 @@ static inline bool mapping_unevictable(struct address_space *mapping)
     return mapping && test_bit(AS_UNEVICTABLE, &mapping->flags);
 }
 
+/*
+ * Return byte-offset into filesystem object for page.
+ */
+static inline loff_t page_offset(struct page *page)
+{
+    return ((loff_t)page->index) << PAGE_SHIFT;
+}
+
+/**
+ * folio_pos - Returns the byte position of this folio in its file.
+ * @folio: The folio.
+ */
+static inline loff_t folio_pos(struct folio *folio)
+{
+    return page_offset(&folio->page);
+}
+
 #endif /* _LINUX_PAGEMAP_H */
