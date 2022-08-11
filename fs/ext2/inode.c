@@ -60,8 +60,7 @@ static int ext2_readpage(struct file *file, struct page *page)
 
 static void ext2_readahead(struct readahead_control *rac)
 {
-    panic("%s: END!\n", __func__);
-    //mpage_readahead(rac, ext2_get_block);
+    mpage_readahead(rac, ext2_get_block);
 }
 
 static int ext2_writepage(struct page *page, struct writeback_control *wbc)
@@ -582,7 +581,25 @@ static int ext2_get_blocks(struct inode *inode,
         count++;
         /*map more blocks*/
         while (count < maxblocks && count <= blocks_to_boundary) {
-            panic("%s: 1\n", __func__);
+            ext2_fsblk_t blk;
+
+            if (!verify_chain(chain, chain + depth - 1)) {
+                /*
+                 * Indirect block might be removed by
+                 * truncate while we were reading it.
+                 * Handling of that case: forget what we've
+                 * got now, go to reread.
+                 */
+                err = -EAGAIN;
+                count = 0;
+                partial = chain + depth - 1;
+                break;
+            }
+            blk = le32_to_cpu(*(chain[depth-1].p + count));
+            if (blk == first_block + count)
+                count++;
+            else
+                break;
         }
         if (err != -EAGAIN)
             goto got_it;

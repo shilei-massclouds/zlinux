@@ -477,4 +477,152 @@ void folio_end_writeback(struct folio *folio);
 
 void page_endio(struct page *page, bool is_write, int err);
 
+/**
+ * struct readahead_control - Describes a readahead request.
+ *
+ * A readahead request is for consecutive pages.  Filesystems which
+ * implement the ->readahead method should call readahead_page() or
+ * readahead_page_batch() in a loop and attempt to start I/O against
+ * each page in the request.
+ *
+ * Most of the fields in this struct are private and should be accessed
+ * by the functions below.
+ *
+ * @file: The file, used primarily by network filesystems for authentication.
+ *    May be NULL if invoked internally by the filesystem.
+ * @mapping: Readahead this filesystem object.
+ * @ra: File readahead state.  May be NULL.
+ */
+struct readahead_control {
+    struct file *file;
+    struct address_space *mapping;
+    struct file_ra_state *ra;
+/* private: use the readahead_* accessors instead */
+    pgoff_t _index;
+    unsigned int _nr_pages;
+    unsigned int _batch_count;
+};
+
+#define DEFINE_READAHEAD(ractl, f, r, m, i) \
+    struct readahead_control ractl = {      \
+        .file = f,                          \
+        .mapping = m,                       \
+        .ra = r,                            \
+        ._index = i,                        \
+    }
+
+void page_cache_ra_unbounded(struct readahead_control *,
+                             unsigned long nr_to_read,
+                             unsigned long lookahead_count);
+void page_cache_sync_ra(struct readahead_control *, unsigned long req_count);
+void page_cache_async_ra(struct readahead_control *, struct folio *,
+                         unsigned long req_count);
+void readahead_expand(struct readahead_control *ractl,
+                      loff_t new_start, size_t new_len);
+
+/**
+ * page_cache_sync_readahead - generic file readahead
+ * @mapping: address_space which holds the pagecache and I/O vectors
+ * @ra: file_ra_state which holds the readahead state
+ * @file: Used by the filesystem for authentication.
+ * @index: Index of first page to be read.
+ * @req_count: Total number of pages being read by the caller.
+ *
+ * page_cache_sync_readahead() should be called when a cache miss happened:
+ * it will submit the read.  The readahead logic may decide to piggyback more
+ * pages onto the read request if access patterns suggest it will improve
+ * performance.
+ */
+static inline
+void page_cache_sync_readahead(struct address_space *mapping,
+                               struct file_ra_state *ra, struct file *file,
+                               pgoff_t index, unsigned long req_count)
+{
+    DEFINE_READAHEAD(ractl, file, ra, mapping, index);
+    page_cache_sync_ra(&ractl, req_count);
+}
+
+/**
+ * readahead_index - The index of the first page in this readahead request.
+ * @rac: The readahead request.
+ */
+static inline pgoff_t readahead_index(struct readahead_control *rac)
+{
+    return rac->_index;
+}
+
+static inline gfp_t readahead_gfp_mask(struct address_space *x)
+{
+    return mapping_gfp_mask(x) | __GFP_NORETRY | __GFP_NOWARN;
+}
+
+/*
+ * Large folio support currently depends on THP.  These dependencies are
+ * being worked on but are not yet fixed.
+ */
+static inline bool mapping_large_folio_support(struct address_space *mapping)
+{
+    return false;
+}
+
+int add_to_page_cache_locked(struct page *page, struct address_space *mapping,
+                             pgoff_t index, gfp_t gfp);
+int add_to_page_cache_lru(struct page *page, struct address_space *mapping,
+                          pgoff_t index, gfp_t gfp);
+int filemap_add_folio(struct address_space *mapping, struct folio *folio,
+                      pgoff_t index, gfp_t gfp);
+void filemap_remove_folio(struct folio *folio);
+void delete_from_page_cache(struct page *page);
+void __filemap_remove_folio(struct folio *folio, void *shadow);
+
+/**
+ * readahead_count - The number of pages in this readahead request.
+ * @rac: The readahead request.
+ */
+static inline unsigned int readahead_count(struct readahead_control *rac)
+{
+    return rac->_nr_pages;
+}
+
+static inline struct folio *__readahead_folio(struct readahead_control *ractl)
+{
+    struct folio *folio;
+
+    BUG_ON(ractl->_batch_count > ractl->_nr_pages);
+    ractl->_nr_pages -= ractl->_batch_count;
+    ractl->_index += ractl->_batch_count;
+
+    if (!ractl->_nr_pages) {
+        ractl->_batch_count = 0;
+        return NULL;
+    }
+
+    folio = xa_load(&ractl->mapping->i_pages, ractl->_index);
+    VM_BUG_ON_FOLIO(!folio_test_locked(folio), folio);
+    ractl->_batch_count = folio_nr_pages(folio);
+
+    return folio;
+}
+
+/**
+ * readahead_page - Get the next page to read.
+ * @ractl: The current readahead request.
+ *
+ * Context: The page is locked and has an elevated refcount.  The caller
+ * should decreases the refcount once the page has been submitted for I/O
+ * and unlock the page once all I/O to that page has completed.
+ * Return: A pointer to the next page, or %NULL if we are done.
+ */
+static inline struct page *readahead_page(struct readahead_control *ractl)
+{
+    struct folio *folio = __readahead_folio(ractl);
+
+    return &folio->page;
+}
+
+static inline bool mapping_unevictable(struct address_space *mapping)
+{
+    return mapping && test_bit(AS_UNEVICTABLE, &mapping->flags);
+}
+
 #endif /* _LINUX_PAGEMAP_H */

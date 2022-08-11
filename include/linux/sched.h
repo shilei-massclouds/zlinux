@@ -299,7 +299,6 @@ struct task_struct {
 
     unsigned int policy;
 
-
     int             prio;
     int             static_prio;
     int             normal_prio;
@@ -345,6 +344,8 @@ struct task_struct {
     const cpumask_t *cpus_ptr;
     cpumask_t *user_cpus_ptr;
     cpumask_t cpus_mask;
+
+    struct io_context   *io_context;
 
     union {
         refcount_t      rcu_users;
@@ -393,6 +394,14 @@ struct task_struct {
 
     pid_t               pid;
     pid_t               tgid;
+
+    struct rseq __user *rseq;
+    u32 rseq_sig;
+    /*
+     * RmW on rseq_event_mask must be performed atomically
+     * with respect to preemption.
+     */
+    unsigned long rseq_event_mask;
 
     /* Process credentials: */
 
@@ -549,6 +558,33 @@ current_restore_flags(unsigned long orig_flags, unsigned long flags)
 {
     current->flags &= ~flags;
     current->flags |= orig_flags & flags;
+}
+
+static inline void rseq_execve(struct task_struct *t)
+{
+    t->rseq = NULL;
+    t->rseq_sig = 0;
+    t->rseq_event_mask = 0;
+}
+
+/*
+ * the helpers to get the task's different pids as they are seen
+ * from various namespaces
+ *
+ * task_xid_nr()     : global id, i.e. the id seen from the init namespace;
+ * task_xid_vnr()    : virtual id, i.e. the id seen from the pid namespace of
+ *                     current.
+ * task_xid_nr_ns()  : id seen from the ns specified;
+ *
+ * see also pid_nr() etc in include/linux/pid.h
+ */
+pid_t __task_pid_nr_ns(struct task_struct *task, enum pid_type type,
+                       struct pid_namespace *ns);
+
+static inline pid_t
+task_pid_nr_ns(struct task_struct *tsk, struct pid_namespace *ns)
+{
+    return __task_pid_nr_ns(tsk, PIDTYPE_PID, ns);
 }
 
 #endif /* _LINUX_SCHED_H */

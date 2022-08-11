@@ -81,4 +81,6 @@ static inline void task_unlock(struct task_struct *p)
     spin_unlock(&p->alloc_lock);
 }
 
+extern void sched_exec(void);
+
 #endif /* _LINUX_SCHED_TASK_H */

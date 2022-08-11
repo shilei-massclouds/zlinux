@@ -26,9 +26,9 @@
 #include <linux/swapops.h>
 #include <linux/mman.h>
 #include <linux/file.h>
-#include <linux/uio.h>
 #include <linux/error-injection.h>
 #endif
+#include <linux/uio.h>
 #include <linux/hash.h>
 #include <linux/writeback.h>
 #include <linux/backing-dev.h>
@@ -328,9 +328,9 @@ int filemap_add_folio(struct address_space *mapping, struct folio *folio,
 
     __folio_set_locked(folio);
     ret = __filemap_add_folio(mapping, folio, index, gfp, &shadow);
-    if (unlikely(ret))
+    if (unlikely(ret)) {
         __folio_clear_locked(folio);
-    else {
+    } else {
         /*
          * The folio might have been evicted from cache only
          * recently, in which case it should be activated like
@@ -1246,6 +1246,7 @@ void page_endio(struct page *page, bool is_write, int err)
             struct address_space *mapping;
 
             SetPageError(page);
+            printk("%s: before page_mapping ...\n", __func__);
             mapping = page_mapping(page);
             if (mapping)
                 mapping_set_error(mapping, err);
@@ -1261,6 +1262,182 @@ EXPORT_SYMBOL_GPL(page_endio);
  */
 void folio_end_writeback(struct folio *folio)
 {
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * filemap_get_read_batch - Get a batch of folios for read
+ *
+ * Get a batch of folios which represent a contiguous range of bytes in
+ * the file.  No exceptional entries will be returned.  If @index is in
+ * the middle of a folio, the entire folio will be returned.  The last
+ * folio in the batch may have the readahead flag set or the uptodate flag
+ * clear so that the caller can take the appropriate action.
+ */
+static void filemap_get_read_batch(struct address_space *mapping,
+                                   pgoff_t index, pgoff_t max,
+                                   struct folio_batch *fbatch)
+{
+    XA_STATE(xas, &mapping->i_pages, index);
+    struct folio *folio;
+
+    rcu_read_lock();
+    for (folio = xas_load(&xas); folio; folio = xas_next(&xas)) {
+        if (xas_retry(&xas, folio))
+            continue;
+        if (xas.xa_index > max || xa_is_value(folio))
+            break;
+        if (!folio_try_get_rcu(folio))
+            goto retry;
+
+        if (unlikely(folio != xas_reload(&xas)))
+            goto put_folio;
+
+        if (!folio_batch_add(fbatch, folio))
+            break;
+        if (!folio_test_uptodate(folio))
+            break;
+        if (folio_test_readahead(folio))
+            break;
+        xas_advance(&xas, folio->index + folio_nr_pages(folio) - 1);
+        continue;
+put_folio:
+        folio_put(folio);
+retry:
+        xas_reset(&xas);
+    }
+    rcu_read_unlock();
+}
+
+static int filemap_create_folio(struct file *file,
+                                struct address_space *mapping, pgoff_t index,
+                                struct folio_batch *fbatch)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static int
+filemap_readahead(struct kiocb *iocb, struct file *file,
+                  struct address_space *mapping, struct folio *folio,
+                  pgoff_t last_index)
+{
+    DEFINE_READAHEAD(ractl, file, &file->f_ra, mapping, folio->index);
+
+    if (iocb->ki_flags & IOCB_NOIO)
+        return -EAGAIN;
+    page_cache_async_ra(&ractl, folio, last_index - folio->index);
+    return 0;
+}
+
+static int filemap_get_pages(struct kiocb *iocb, struct iov_iter *iter,
+                             struct folio_batch *fbatch)
+{
+    struct file *filp = iocb->ki_filp;
+    struct address_space *mapping = filp->f_mapping;
+    struct file_ra_state *ra = &filp->f_ra;
+    pgoff_t index = iocb->ki_pos >> PAGE_SHIFT;
+    pgoff_t last_index;
+    struct folio *folio;
+    int err = 0;
+
+    last_index = DIV_ROUND_UP(iocb->ki_pos + iter->count, PAGE_SIZE);
+ retry:
+#if 0
+    if (fatal_signal_pending(current))
+        return -EINTR;
+#endif
+    filemap_get_read_batch(mapping, index, last_index, fbatch);
+    if (!folio_batch_count(fbatch)) {
+        if (iocb->ki_flags & IOCB_NOIO)
+            return -EAGAIN;
+        page_cache_sync_readahead(mapping, ra, filp, index,
+                                  last_index - index);
+        filemap_get_read_batch(mapping, index, last_index, fbatch);
+    }
+    if (!folio_batch_count(fbatch)) {
+        if (iocb->ki_flags & (IOCB_NOWAIT | IOCB_WAITQ))
+            return -EAGAIN;
+        err = filemap_create_folio(filp, mapping,
+                                   iocb->ki_pos >> PAGE_SHIFT, fbatch);
+        if (err == AOP_TRUNCATED_PAGE)
+            goto retry;
+        return err;
+    }
+
+    folio = fbatch->folios[folio_batch_count(fbatch) - 1];
+    if (folio_test_readahead(folio)) {
+        err = filemap_readahead(iocb, filp, mapping, folio, last_index);
+        if (err)
+            goto err;
+    }
+
+    panic("%s: END!\n", __func__);
+    return 0;
+ err:
+    if (err < 0)
+        folio_put(folio);
+    if (likely(--fbatch->nr))
+        return 0;
+    if (err == AOP_TRUNCATED_PAGE)
+        goto retry;
+    return err;
+}
+
+/**
+ * filemap_read - Read data from the page cache.
+ * @iocb: The iocb to read.
+ * @iter: Destination for the data.
+ * @already_read: Number of bytes already read by the caller.
+ *
+ * Copies data from the page cache.  If the data is not currently present,
+ * uses the readahead and readpage address_space operations to fetch it.
+ *
+ * Return: Total number of bytes copied, including those already read by
+ * the caller.  If an error happens before any bytes are copied, returns
+ * a negative error number.
+ */
+ssize_t filemap_read(struct kiocb *iocb, struct iov_iter *iter,
+                     ssize_t already_read)
+{
+    struct file *filp = iocb->ki_filp;
+    struct file_ra_state *ra = &filp->f_ra;
+    struct address_space *mapping = filp->f_mapping;
+    struct inode *inode = mapping->host;
+    struct folio_batch fbatch;
+    int i, error = 0;
+    bool writably_mapped;
+    loff_t isize, end_offset;
+
+    if (unlikely(iocb->ki_pos >= inode->i_sb->s_maxbytes))
+        return 0;
+    if (unlikely(!iov_iter_count(iter)))
+        return 0;
+
+    iov_iter_truncate(iter, inode->i_sb->s_maxbytes);
+    folio_batch_init(&fbatch);
+
+    do {
+        cond_resched();
+
+        /*
+         * If we've already successfully copied some data, then we
+         * can no longer safely return -EIOCBQUEUED. Hence mark
+         * an async read NOWAIT at that point.
+         */
+        if ((iocb->ki_flags & IOCB_WAITQ) && already_read)
+            iocb->ki_flags |= IOCB_NOWAIT;
+
+        if (unlikely(iocb->ki_pos >= i_size_read(inode)))
+            break;
+
+        error = filemap_get_pages(iocb, iter, &fbatch);
+        if (error < 0)
+            break;
+
+
+        panic("%s: 1!\n", __func__);
+    } while (iov_iter_count(iter) && iocb->ki_pos < isize && !error);
+
     panic("%s: END!\n", __func__);
 }
 
@@ -1288,8 +1465,18 @@ void folio_end_writeback(struct folio *folio)
 ssize_t
 generic_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 {
-    panic("%s: END!\n", __func__);
+    size_t count = iov_iter_count(iter);
+    ssize_t retval = 0;
+
+    if (!count)
+        return 0; /* skip atime */
+
+    if (iocb->ki_flags & IOCB_DIRECT) {
+        panic("%s: IOCB_DIRECT!\n", __func__);
+    }
+    return filemap_read(iocb, iter, retval);
 }
+EXPORT_SYMBOL(generic_file_read_iter);
 
 /**
  * generic_file_write_iter - write data to a file
@@ -1306,5 +1493,32 @@ generic_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
  */
 ssize_t generic_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * filemap_remove_folio - Remove folio from page cache.
+ * @folio: The folio.
+ *
+ * This must be called only on folios that are locked and have been
+ * verified to be in the page cache.  It will never put the folio into
+ * the free list because the caller has a reference on the page.
+ */
+void filemap_remove_folio(struct folio *folio)
+{
+#if 0
+    struct address_space *mapping = folio->mapping;
+
+    BUG_ON(!folio_test_locked(folio));
+    spin_lock(&mapping->host->i_lock);
+    xa_lock_irq(&mapping->i_pages);
+    __filemap_remove_folio(folio, NULL);
+    xa_unlock_irq(&mapping->i_pages);
+    if (mapping_shrinkable(mapping))
+        inode_add_lru(mapping->host);
+    spin_unlock(&mapping->host->i_lock);
+
+    filemap_free_folio(mapping, folio);
+#endif
     panic("%s: END!\n", __func__);
 }

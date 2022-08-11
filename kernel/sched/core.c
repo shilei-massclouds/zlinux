@@ -93,6 +93,24 @@
 #endif
 #include "../smpboot.h"
 
+struct migration_arg {
+    struct task_struct      *task;
+    int                     dest_cpu;
+    struct set_affinity_pending *pending;
+};
+
+/*
+ * @refs: number of wait_for_completion()
+ * @stop_pending: is @stop_work in use
+ */
+struct set_affinity_pending {
+    refcount_t              refs;
+    unsigned int            stop_pending;
+    struct completion       done;
+    struct cpu_stop_work    stop_work;
+    struct migration_arg    arg;
+};
+
 DEFINE_PER_CPU(struct kernel_stat, kstat);
 DEFINE_PER_CPU(struct kernel_cpustat, kernel_cpustat);
 
@@ -1632,4 +1650,40 @@ bool cpus_share_cache(int this_cpu, int that_cpu)
 
     //return per_cpu(sd_llc_id, this_cpu) == per_cpu(sd_llc_id, that_cpu);
     panic("%s: NO implementation!\n", __func__);
+}
+
+/*
+ * migration_cpu_stop - this will be executed by a highprio stopper thread
+ * and performs thread migration by bumping thread off CPU then
+ * 'pushing' onto another runqueue.
+ */
+static int migration_cpu_stop(void *data)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
+/*
+ * sched_exec - execve() is a valuable balancing opportunity, because at
+ * this point the task has the smallest effective memory and cache footprint.
+ */
+void sched_exec(void)
+{
+    struct task_struct *p = current;
+    unsigned long flags;
+    int dest_cpu;
+
+    raw_spin_lock_irqsave(&p->pi_lock, flags);
+    dest_cpu = p->sched_class->select_task_rq(p, task_cpu(p), WF_EXEC);
+    if (dest_cpu == smp_processor_id())
+        goto unlock;
+
+    if (likely(cpu_active(dest_cpu))) {
+        struct migration_arg arg = { p, dest_cpu };
+
+        raw_spin_unlock_irqrestore(&p->pi_lock, flags);
+        stop_one_cpu(task_cpu(p), migration_cpu_stop, &arg);
+        return;
+    }
+unlock:
+    raw_spin_unlock_irqrestore(&p->pi_lock, flags);
 }

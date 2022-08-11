@@ -11,8 +11,8 @@
 #include <linux/sched/task_stack.h>
 //#include <linux/security.h>
 #include <linux/swap.h>
-#if 0
 #include <linux/swapops.h>
+#if 0
 #include <linux/mman.h>
 #include <linux/hugetlb.h>
 #include <linux/userfaultfd_k.h>
@@ -269,7 +269,6 @@ void __vma_unlink_list(struct mm_struct *mm, struct vm_area_struct *vma)
  */
 struct address_space *folio_mapping(struct folio *folio)
 {
-#if 0
     struct address_space *mapping;
 
     /* This happens if someone calls flush_dcache_page on slab page */
@@ -284,7 +283,5 @@ struct address_space *folio_mapping(struct folio *folio)
         return NULL;
 
     return (void *)((unsigned long)mapping & ~PAGE_MAPPING_FLAGS);
-#endif
-    panic("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL(folio_mapping);

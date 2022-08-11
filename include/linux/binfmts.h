@@ -63,6 +63,32 @@ struct linux_binprm {
     char buf[BINPRM_BUF_SIZE];
 } __randomize_layout;
 
+#define BINPRM_FLAGS_ENFORCE_NONDUMP_BIT 0
+#define BINPRM_FLAGS_ENFORCE_NONDUMP (1 << BINPRM_FLAGS_ENFORCE_NONDUMP_BIT)
+
+/* filename of the binary will be inaccessible after exec */
+#define BINPRM_FLAGS_PATH_INACCESSIBLE_BIT 2
+#define BINPRM_FLAGS_PATH_INACCESSIBLE (1 << BINPRM_FLAGS_PATH_INACCESSIBLE_BIT)
+
+/* preserve argv0 for the interpreter  */
+#define BINPRM_FLAGS_PRESERVE_ARGV0_BIT 3
+#define BINPRM_FLAGS_PRESERVE_ARGV0 (1 << BINPRM_FLAGS_PRESERVE_ARGV0_BIT)
+
+/*
+ * This structure defines the functions that are used to load the binary formats that
+ * linux accepts.
+ */
+struct linux_binfmt {
+    struct list_head lh;
+    struct module *module;
+    int (*load_binary)(struct linux_binprm *);
+    int (*load_shlib)(struct file *);
+#if 0
+    int (*core_dump)(struct coredump_params *cprm);
+    unsigned long min_coredump; /* minimal dump size */
+#endif
+} __randomize_layout;
+
 int kernel_execve(const char *filename,
                   const char *const *argv, const char *const *envp);
 

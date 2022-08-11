@@ -106,4 +106,14 @@ static inline void init_tlb_flush_pending(struct mm_struct *mm)
     atomic_set(&mm->tlb_flush_pending, 0);
 }
 
+static __always_inline
+void lruvec_add_folio(struct lruvec *lruvec, struct folio *folio)
+{
+    enum lru_list lru = folio_lru_list(folio);
+
+    update_lru_size(lruvec, lru, folio_zonenum(folio), folio_nr_pages(folio));
+    if (lru != LRU_UNEVICTABLE)
+        list_add(&folio->lru, &lruvec->lists[lru]);
+}
+
 #endif /* LINUX_MM_INLINE_H */

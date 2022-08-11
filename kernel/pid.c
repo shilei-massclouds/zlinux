@@ -370,6 +370,21 @@ void attach_pid(struct task_struct *task, enum pid_type type)
     hlist_add_head_rcu(&task->pid_links[type], &pid->tasks[type]);
 }
 
+pid_t __task_pid_nr_ns(struct task_struct *task, enum pid_type type,
+                       struct pid_namespace *ns)
+{
+    pid_t nr = 0;
+
+    rcu_read_lock();
+    if (!ns)
+        ns = task_active_pid_ns(current);
+    nr = pid_nr_ns(rcu_dereference(*task_pid_ptr(task, type)), ns);
+    rcu_read_unlock();
+
+    return nr;
+}
+EXPORT_SYMBOL(__task_pid_nr_ns);
+
 void __init pid_idr_init(void)
 {
     /* Verify no one has done anything silly: */

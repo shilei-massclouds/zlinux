@@ -192,4 +192,24 @@ static inline bool req_ref_put_and_test(struct request *req)
     return atomic_dec_and_test(&req->ref);
 }
 
+static inline bool
+__bvec_gap_to_prev(struct request_queue *q,
+                   struct bio_vec *bprv, unsigned int offset)
+{
+    return (offset & queue_virt_boundary(q)) ||
+        ((bprv->bv_offset + bprv->bv_len) & queue_virt_boundary(q));
+}
+
+/*
+ * Check if adding a bio_vec after bprv with offset would create a gap in
+ * the SG list. Most drivers don't care about this, but some do.
+ */
+static inline bool bvec_gap_to_prev(struct request_queue *q,
+                                    struct bio_vec *bprv, unsigned int offset)
+{
+    if (!queue_virt_boundary(q))
+        return false;
+    return __bvec_gap_to_prev(q, bprv, offset);
+}
+
 #endif /* BLK_INTERNAL_H */

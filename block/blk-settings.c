@@ -329,3 +329,38 @@ void blk_queue_max_write_zeroes_sectors(struct request_queue *q,
     q->limits.max_write_zeroes_sectors = max_write_zeroes_sectors;
 }
 EXPORT_SYMBOL(blk_queue_max_write_zeroes_sectors);
+
+/**
+ * blk_set_default_limits - reset limits to default values
+ * @lim:  the queue_limits structure to reset
+ *
+ * Description:
+ *   Returns a queue_limit struct to its default state.
+ */
+void blk_set_default_limits(struct queue_limits *lim)
+{
+    lim->max_segments = BLK_MAX_SEGMENTS;
+    lim->max_discard_segments = 1;
+    lim->max_integrity_segments = 0;
+    lim->seg_boundary_mask = BLK_SEG_BOUNDARY_MASK;
+    lim->virt_boundary_mask = 0;
+    lim->max_segment_size = BLK_MAX_SEGMENT_SIZE;
+    lim->max_sectors = lim->max_hw_sectors = BLK_SAFE_MAX_SECTORS;
+    lim->max_dev_sectors = 0;
+    lim->chunk_sectors = 0;
+    lim->max_write_zeroes_sectors = 0;
+    lim->max_zone_append_sectors = 0;
+    lim->max_discard_sectors = 0;
+    lim->max_hw_discard_sectors = 0;
+    lim->discard_granularity = 0;
+    lim->discard_alignment = 0;
+    lim->discard_misaligned = 0;
+    lim->logical_block_size = lim->physical_block_size = lim->io_min = 512;
+    lim->bounce = BLK_BOUNCE_NONE;
+    lim->alignment_offset = 0;
+    lim->io_opt = 0;
+    lim->misaligned = 0;
+    lim->zoned = BLK_ZONED_NONE;
+    lim->zone_write_granularity = 0;
+}
+EXPORT_SYMBOL(blk_set_default_limits);

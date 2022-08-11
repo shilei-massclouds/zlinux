@@ -59,7 +59,6 @@
 #include <linux/seqlock.h>
 #include <linux/softirq.h>
 #include <linux/static_key.h>
-#include <linux/stop_machine.h>
 #include <linux/syscalls_api.h>
 #include <linux/syscalls.h>
 #include <linux/tick.h>
@@ -67,6 +66,7 @@
 #include <linux/uaccess.h>
 #include <linux/workqueue_api.h>
 #endif
+#include <linux/stop_machine.h>
 #include <linux/plist.h>
 #include <linux/ktime_api.h>
 #include <linux/wait_api.h>

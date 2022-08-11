@@ -152,7 +152,13 @@ struct folio {
         struct {
     /* public: */
             unsigned long flags;
-            struct list_head lru;
+            union {
+                struct list_head lru;
+                struct {
+                    void *__filler;
+                    unsigned int mlock_count;
+                };
+            };
             struct address_space *mapping;
             pgoff_t index;
             void *private;
@@ -163,6 +169,14 @@ struct folio {
         struct page page;
     };
 };
+
+ /*
+  * A swap entry has to fit into a "unsigned long", as the entry is hidden
+  * in the "index" field of the swapper address space.
+  */
+typedef struct {
+    unsigned long val;
+} swp_entry_t;
 
 /*
  * Used for sizing the vmemmap region on some architectures

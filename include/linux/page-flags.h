@@ -309,6 +309,10 @@ PAGEFLAG(SwapBacked, swapbacked, PF_NO_TAIL)
     __CLEARPAGEFLAG(SwapBacked, swapbacked, PF_NO_TAIL)
     __SETPAGEFLAG(SwapBacked, swapbacked, PF_NO_TAIL)
 
+PAGEFLAG(Unevictable, unevictable, PF_HEAD)
+    __CLEARPAGEFLAG(Unevictable, unevictable, PF_HEAD)
+    TESTCLEARFLAG(Unevictable, unevictable, PF_HEAD)
+
 /*
  * Private page markings that may be used by the filesystem that owns the page
  * for its own purposes.
@@ -325,6 +329,9 @@ TESTPAGEFLAG(Writeback, writeback, PF_NO_TAIL)
 
 PAGEFLAG(MappedToDisk, mappedtodisk, PF_NO_TAIL)
 
+PAGEFLAG(Readahead, readahead, PF_NO_COMPOUND)
+    TESTCLEARFLAG(Readahead, readahead, PF_NO_COMPOUND)
+
 PAGEFLAG_FALSE(HighMem, highmem)
 
 PAGEFLAG_FALSE(HWPoison, hwpoison)
@@ -337,10 +344,6 @@ static inline void page_init_poison(struct page *page, size_t size)
 __PAGEFLAG(Slab, slab, PF_NO_TAIL)
 PAGEFLAG(Checked, checked, PF_NO_COMPOUND)  /* Used by some filesystems */
 __PAGEFLAG(Head, head, PF_ANY) CLEARPAGEFLAG(Head, head, PF_ANY)
-
-PAGEFLAG(Unevictable, unevictable, PF_HEAD)
-    __CLEARPAGEFLAG(Unevictable, unevictable, PF_HEAD)
-    TESTCLEARFLAG(Unevictable, unevictable, PF_HEAD)
 
 PAGEFLAG(Mlocked, mlocked, PF_NO_TAIL)
     __CLEARPAGEFLAG(Mlocked, mlocked, PF_NO_TAIL)

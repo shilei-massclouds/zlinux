@@ -11,5 +11,31 @@
 
 #define IOPRIO_PRIO_CLASS(ioprio) \
     (((ioprio) >> IOPRIO_CLASS_SHIFT) & IOPRIO_CLASS_MASK)
+#define IOPRIO_PRIO_DATA(ioprio)    ((ioprio) & IOPRIO_PRIO_MASK)
+#define IOPRIO_PRIO_VALUE(class, data)  \
+    ((((class) & IOPRIO_CLASS_MASK) << IOPRIO_CLASS_SHIFT) | \
+     ((data) & IOPRIO_PRIO_MASK))
+
+
+/*
+ * These are the io priority groups as implemented by the BFQ and mq-deadline
+ * schedulers. RT is the realtime class, it always gets premium service. For
+ * ATA disks supporting NCQ IO priority, RT class IOs will be processed using
+ * high priority NCQ commands. BE is the best-effort scheduling class, the
+ * default for any process. IDLE is the idle scheduling class, it is only
+ * served when no one else is using the disk.
+ */
+enum {
+    IOPRIO_CLASS_NONE,
+    IOPRIO_CLASS_RT,
+    IOPRIO_CLASS_BE,
+    IOPRIO_CLASS_IDLE,
+};
+
+/*
+ * Fallback BE priority level.
+ */
+#define IOPRIO_NORM 4
+#define IOPRIO_BE_NORM  IOPRIO_NORM
 
 #endif /* _UAPI_LINUX_IOPRIO_H */

@@ -292,4 +292,26 @@ static inline bool bio_next_segment(const struct bio *bio,
 #define bio_for_each_segment_all(bvl, bio, iter) \
     for (bvl = bvec_init_iter_all(&iter); bio_next_segment((bio), &iter); )
 
+void bio_trim(struct bio *bio, sector_t offset, sector_t size);
+extern struct bio *bio_split(struct bio *bio, int sectors,
+                             gfp_t gfp, struct bio_set *bs);
+
+/*
+ * Increment chain count for the bio. Make sure the CHAIN flag update
+ * is visible before the raised count.
+ */
+static inline void bio_inc_remaining(struct bio *bio)
+{
+    bio_set_flag(bio, BIO_CHAIN);
+    smp_mb__before_atomic();
+    atomic_inc(&bio->__bi_remaining);
+}
+
+extern int submit_bio_wait(struct bio *bio);
+void bio_init(struct bio *bio, struct block_device *bdev, struct bio_vec *table,
+              unsigned short max_vecs, unsigned int opf);
+extern void bio_uninit(struct bio *);
+void bio_reset(struct bio *bio, struct block_device *bdev, unsigned int opf);
+void bio_chain(struct bio *, struct bio *);
+
 #endif /* __LINUX_BIO_H */

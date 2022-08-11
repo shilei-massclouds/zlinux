@@ -79,8 +79,16 @@
 
 #include "internal.h"
 
+static LIST_HEAD(formats);
+static DEFINE_RWLOCK(binfmt_lock);
+
 static void free_arg_pages(struct linux_binprm *bprm)
 {
+}
+
+static inline void put_binfmt(struct linux_binfmt * fmt)
+{
+    module_put(fmt->module);
 }
 
 /*
@@ -474,6 +482,96 @@ static struct file *do_open_execat(int fd, struct filename *name, int flags)
 }
 
 /*
+ * Fill the binprm structure from the inode.
+ * Read the first BINPRM_BUF_SIZE bytes
+ *
+ * This may be called multiple times for binary chains (scripts for example).
+ */
+static int prepare_binprm(struct linux_binprm *bprm)
+{
+    loff_t pos = 0;
+
+    memset(bprm->buf, 0, BINPRM_BUF_SIZE);
+    return kernel_read(bprm->file, bprm->buf, BINPRM_BUF_SIZE, &pos);
+}
+
+/*
+ * cycle the list of binary formats handler, until one recognizes the image
+ */
+static int search_binary_handler(struct linux_binprm *bprm)
+{
+    bool need_retry = true;
+    struct linux_binfmt *fmt;
+    int retval;
+
+    retval = prepare_binprm(bprm);
+    if (retval < 0)
+        return retval;
+
+    retval = -ENOENT;
+ retry:
+    read_lock(&binfmt_lock);
+    list_for_each_entry(fmt, &formats, lh) {
+        if (!try_module_get(fmt->module))
+            continue;
+        read_unlock(&binfmt_lock);
+
+        retval = fmt->load_binary(bprm);
+
+        read_lock(&binfmt_lock);
+        put_binfmt(fmt);
+        if (bprm->point_of_no_return || (retval != -ENOEXEC)) {
+            read_unlock(&binfmt_lock);
+            return retval;
+        }
+    }
+    read_unlock(&binfmt_lock);
+
+    panic("%s: END!\n", __func__);
+}
+
+static int exec_binprm(struct linux_binprm *bprm)
+{
+    pid_t old_pid, old_vpid;
+    int ret, depth;
+
+    /* Need to fetch pid before load_binary changes it */
+    old_pid = current->pid;
+    rcu_read_lock();
+    old_vpid = task_pid_nr_ns(current, task_active_pid_ns(current->parent));
+    rcu_read_unlock();
+
+    /* This allows 4 levels of binfmt rewrites before failing hard. */
+    for (depth = 0;; depth++) {
+        struct file *exec;
+        if (depth > 5)
+            return -ELOOP;
+
+        ret = search_binary_handler(bprm);
+        if (ret < 0)
+            return ret;
+        if (!bprm->interpreter)
+            break;
+
+        exec = bprm->file;
+        bprm->file = bprm->interpreter;
+        bprm->interpreter = NULL;
+
+        allow_write_access(exec);
+        if (unlikely(bprm->have_execfd)) {
+            if (bprm->executable) {
+                fput(exec);
+                return -ENOEXEC;
+            }
+            bprm->executable = exec;
+        } else
+            fput(exec);
+    }
+
+    panic("%s: END!\n", __func__);
+}
+
+/*
  * sys_execve() executes a new program.
  */
 static int bprm_execve(struct linux_binprm *bprm,
@@ -493,6 +591,30 @@ static int bprm_execve(struct linux_binprm *bprm,
     retval = PTR_ERR(file);
     if (IS_ERR(file))
         goto out_unmark;
+
+    sched_exec();
+
+    bprm->file = file;
+    /*
+     * Record that a name derived from an O_CLOEXEC fd will be
+     * inaccessible after exec.  This allows the code in exec to
+     * choose to fail when the executable is not mmaped into the
+     * interpreter and an open file descriptor is not passed to
+     * the interpreter.  This makes for a better user experience
+     * than having the interpreter start and then immediately fail
+     * when it finds the executable is inaccessible.
+     */
+    if (bprm->fdpath && get_close_on_exec(fd))
+        bprm->interp_flags |= BINPRM_FLAGS_PATH_INACCESSIBLE;
+
+    retval = exec_binprm(bprm);
+    if (retval < 0)
+        goto out;
+
+    /* execve succeeded */
+    current->fs->in_exec = 0;
+    current->in_execve = 0;
+    rseq_execve(current);
 
     panic("%s: END!\n", __func__);
     return retval;

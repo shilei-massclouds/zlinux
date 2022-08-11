@@ -31,11 +31,8 @@ bool blk_mq_sched_bio_merge(struct request_queue *q, struct bio *bio,
     }
 
     ctx = blk_mq_get_ctx(q);
-    printk("%s: step1\n", __func__);
     hctx = blk_mq_map_queue(q, bio->bi_opf, ctx);
-    printk("%s: step2\n", __func__);
     type = hctx->type;
-    printk("%s: step3\n", __func__);
     if (!(hctx->flags & BLK_MQ_F_SHOULD_MERGE) ||
         list_empty_careful(&ctx->rq_lists[type]))
         goto out_put;

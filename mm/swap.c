@@ -95,7 +95,46 @@ EXPORT_SYMBOL(__put_page);
 
 static void __pagevec_lru_add_fn(struct folio *folio, struct lruvec *lruvec)
 {
-    panic("%s: END!\n", __func__);
+    int was_unevictable = folio_test_clear_unevictable(folio);
+    long nr_pages = folio_nr_pages(folio);
+
+    VM_BUG_ON_FOLIO(folio_test_lru(folio), folio);
+
+    folio_set_lru(folio);
+    /*
+     * Is an smp_mb__after_atomic() still required here, before
+     * folio_evictable() tests PageMlocked, to rule out the possibility
+     * of stranding an evictable folio on an unevictable LRU?  I think
+     * not, because __munlock_page() only clears PageMlocked while the LRU
+     * lock is held.
+     *
+     * (That is not true of __page_cache_release(), and not necessarily
+     * true of release_pages(): but those only clear PageMlocked after
+     * put_page_testzero() has excluded any other users of the page.)
+     */
+    if (folio_evictable(folio)) {
+#if 0
+        if (was_unevictable)
+            __count_vm_events(UNEVICTABLE_PGRESCUED, nr_pages);
+#endif
+    } else {
+        folio_clear_active(folio);
+        folio_set_unevictable(folio);
+        /*
+         * folio->mlock_count = !!folio_test_mlocked(folio)?
+         * But that leaves __mlock_page() in doubt whether another
+         * actor has already counted the mlock or not.  Err on the
+         * safe side, underestimate, let page reclaim fix it, rather
+         * than leaving a page on the unevictable LRU indefinitely.
+         */
+        folio->mlock_count = 0;
+#if 0
+        if (!was_unevictable)
+            __count_vm_events(UNEVICTABLE_PGCULLED, nr_pages);
+#endif
+    }
+
+    lruvec_add_folio(lruvec, folio);
 }
 
 /**

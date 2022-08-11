@@ -90,4 +90,6 @@
 #define DIV_ROUND_UP_ULL(ll, d) \
     DIV_ROUND_DOWN_ULL((unsigned long long)(ll) + (d) - 1, (d))
 
+#define sector_div(a, b) do_div(a, b)
+
 #endif  /* _LINUX_MATH_H */

@@ -47,10 +47,10 @@
 #include <linux/vmalloc.h>
 #include <linux/vmstat.h>
 #include <linux/mempolicy.h>
-#include <linux/stop_machine.h>
 #include <linux/random.h>
 #include <linux/sort.h>
 */
+#include <linux/stop_machine.h>
 #include <linux/memremap.h>
 #include <linux/nodemask.h>
 #include <linux/pfn.h>
@@ -437,8 +437,24 @@ static void __init alloc_node_mem_map(struct pglist_data *pgdat)
     }
 }
 
+static void pgdat_init_kcompactd(struct pglist_data *pgdat)
+{
+    //init_waitqueue_head(&pgdat->kcompactd_wait);
+}
+
 static void __meminit pgdat_init_internals(struct pglist_data *pgdat)
 {
+    int i;
+
+    pgdat_init_kcompactd(pgdat);
+
+    init_waitqueue_head(&pgdat->kswapd_wait);
+    init_waitqueue_head(&pgdat->pfmemalloc_wait);
+
+    for (i = 0; i < NR_VMSCAN_THROTTLE; i++)
+        init_waitqueue_head(&pgdat->reclaim_wait[i]);
+
+    lruvec_init(&pgdat->__lruvec);
 }
 
 static unsigned long __init

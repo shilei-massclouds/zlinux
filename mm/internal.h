@@ -173,4 +173,38 @@ extern long populate_vma_page_range(struct vm_area_struct *vma,
 
 void mlock_new_page(struct page *page);
 
+/**
+ * folio_evictable - Test whether a folio is evictable.
+ * @folio: The folio to test.
+ *
+ * Test whether @folio is evictable -- i.e., should be placed on
+ * active/inactive lists vs unevictable list.
+ *
+ * Reasons folio might not be evictable:
+ * 1. folio's mapping marked unevictable
+ * 2. One of the pages in the folio is part of an mlocked VMA
+ */
+static inline bool folio_evictable(struct folio *folio)
+{
+    bool ret;
+
+    /* Prevent address_space of inode and swap cache from being freed */
+    rcu_read_lock();
+    ret = !mapping_unevictable(folio_mapping(folio)) &&
+        !folio_test_mlocked(folio);
+    rcu_read_unlock();
+    return ret;
+}
+
+static inline bool page_evictable(struct page *page)
+{
+    bool ret;
+
+    /* Prevent address_space of inode and swap cache from being freed */
+    rcu_read_lock();
+    ret = !mapping_unevictable(page_mapping(page)) && !PageMlocked(page);
+    rcu_read_unlock();
+    return ret;
+}
+
 #endif  /* __MM_INTERNAL_H */

@@ -659,6 +659,57 @@ void __bio_advance(struct bio *bio, unsigned bytes)
 }
 EXPORT_SYMBOL(__bio_advance);
 
+/**
+ * bio_split - split a bio
+ * @bio:    bio to split
+ * @sectors:    number of sectors to split from the front of @bio
+ * @gfp:    gfp mask
+ * @bs:     bio set to allocate from
+ *
+ * Allocates and returns a new bio which represents @sectors from the start of
+ * @bio, and updates @bio to represent the remaining sectors.
+ *
+ * Unless this is a discard request the newly allocated bio will point
+ * to @bio's bi_io_vec. It is the caller's responsibility to ensure that
+ * neither @bio nor @bs are freed before the split bio.
+ */
+struct bio *bio_split(struct bio *bio, int sectors,
+                      gfp_t gfp, struct bio_set *bs)
+{
+    struct bio *split;
+
+    printk("%s: sectors(%d)\n", __func__, sectors);
+    BUG_ON(sectors <= 0);
+    BUG_ON(sectors >= bio_sectors(bio));
+
+    /* Zone append commands cannot be split */
+    if (WARN_ON_ONCE(bio_op(bio) == REQ_OP_ZONE_APPEND))
+        return NULL;
+
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * bio_chain - chain bio completions
+ * @bio: the target bio
+ * @parent: the parent bio of @bio
+ *
+ * The caller won't have a bi_end_io called when @bio completes - instead,
+ * @parent's bi_end_io won't be called until both @parent and @bio have
+ * completed; the chained bio will also be freed when it completes.
+ *
+ * The caller must not set bi_private or bi_end_io in @bio.
+ */
+void bio_chain(struct bio *bio, struct bio *parent)
+{
+    BUG_ON(bio->bi_private || bio->bi_end_io);
+
+    bio->bi_private = parent;
+    bio->bi_end_io  = bio_chain_endio;
+    bio_inc_remaining(parent);
+}
+EXPORT_SYMBOL(bio_chain);
+
 /*
  * create memory pools for biovec's in a bio_set.
  * use the global biovec slabs created for general use.

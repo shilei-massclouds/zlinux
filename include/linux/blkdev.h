@@ -752,4 +752,53 @@ extern int bdev_read_page(struct block_device *, sector_t, struct page *);
 
 int blk_status_to_errno(blk_status_t status);
 
+/*
+ * Return maximum size of a request at given offset. Only valid for
+ * file system requests.
+ */
+static inline unsigned int blk_max_size_offset(struct request_queue *q,
+                                               sector_t offset,
+                                               unsigned int chunk_sectors)
+{
+    if (!chunk_sectors) {
+        if (q->limits.chunk_sectors)
+            chunk_sectors = q->limits.chunk_sectors;
+        else
+            return q->limits.max_sectors;
+    }
+
+    if (likely(is_power_of_2(chunk_sectors)))
+        chunk_sectors -= offset & (chunk_sectors - 1);
+    else
+        chunk_sectors -= sector_div(offset, chunk_sectors);
+
+    return min(q->limits.max_sectors, chunk_sectors);
+}
+
+static inline unsigned int
+queue_physical_block_size(const struct request_queue *q)
+{
+    return q->limits.physical_block_size;
+}
+
+static inline unsigned int bdev_physical_block_size(struct block_device *bdev)
+{
+    return queue_physical_block_size(bdev_get_queue(bdev));
+}
+
+extern void blk_queue_max_segments(struct request_queue *, unsigned short);
+
+static inline unsigned short queue_max_segments(const struct request_queue *q)
+{
+    return q->limits.max_segments;
+}
+
+static inline unsigned long queue_virt_boundary(const struct request_queue *q)
+{
+    return q->limits.virt_boundary_mask;
+}
+
+extern void blk_set_default_limits(struct queue_limits *lim);
+extern void blk_set_stacking_limits(struct queue_limits *lim);
+
 #endif /* _LINUX_BLKDEV_H */

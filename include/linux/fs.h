@@ -54,6 +54,40 @@
 #include <asm/byteorder.h>
 #include <uapi/linux/fs.h>
 
+/**
+ * enum positive_aop_returns - aop return codes with specific semantics
+ *
+ * @AOP_WRITEPAGE_ACTIVATE: Informs the caller that page writeback has
+ *              completed, that the page is still locked, and
+ *              should be considered active.  The VM uses this hint
+ *              to return the page to the active list -- it won't
+ *              be a candidate for writeback again in the near
+ *              future.  Other callers must be careful to unlock
+ *              the page if they get this return.  Returned by
+ *              writepage();
+ *
+ * @AOP_TRUNCATED_PAGE: The AOP method that was handed a locked page has
+ *              unlocked it and the page might have been truncated.
+ *              The caller should back up to acquiring a new page and
+ *              trying again.  The aop will be taking reasonable
+ *              precautions not to livelock.  If the caller held a page
+ *              reference, it should drop it before retrying.  Returned
+ *              by readpage().
+ *
+ * address_space_operation functions return these large constants to indicate
+ * special semantics to the caller.  These are much larger than the bytes in a
+ * page to allow for functions that return the number of bytes operated on in a
+ * given page.
+ */
+enum positive_aop_returns {
+    AOP_WRITEPAGE_ACTIVATE  = 0x80000,
+    AOP_TRUNCATED_PAGE      = 0x80001,
+};
+
+#define AOP_FLAG_NOFS       0x0002 /* used by filesystem to direct
+                                    * helper code (eg buffer layer)
+                                    * to clear GFP_FS from alloc */
+
 /* XArray tags, for tagging dirty and writeback pages in the pagecache. */
 #define PAGECACHE_TAG_DIRTY     XA_MARK_0
 #define PAGECACHE_TAG_WRITEBACK XA_MARK_1
@@ -1500,6 +1534,78 @@ static inline void allow_write_access(struct file *file)
 static inline bool inode_is_open_for_write(const struct inode *inode)
 {
     return atomic_read(&inode->i_writecount) > 0;
+}
+
+extern ssize_t kernel_read(struct file *, void *, size_t, loff_t *);
+ssize_t __kernel_read(struct file *file, void *buf, size_t count, loff_t *pos);
+extern ssize_t kernel_write(struct file *, const void *, size_t, loff_t *);
+extern ssize_t __kernel_write(struct file *, const void *, size_t, loff_t *);
+extern struct file *open_exec(const char *);
+
+#define MAX_RW_COUNT (INT_MAX & PAGE_MASK)
+
+/* Match RWF_* bits to IOCB bits */
+#define IOCB_HIPRI      (__force int) RWF_HIPRI
+#define IOCB_DSYNC      (__force int) RWF_DSYNC
+#define IOCB_SYNC       (__force int) RWF_SYNC
+#define IOCB_NOWAIT     (__force int) RWF_NOWAIT
+#define IOCB_APPEND     (__force int) RWF_APPEND
+
+/* non-RWF related bits - start at 16 */
+#define IOCB_EVENTFD        (1 << 16)
+#define IOCB_DIRECT         (1 << 17)
+#define IOCB_WRITE          (1 << 18)
+/* iocb->ki_waitq is valid */
+#define IOCB_WAITQ          (1 << 19)
+#define IOCB_NOIO           (1 << 20)
+/* can use bio alloc cache */
+#define IOCB_ALLOC_CACHE    (1 << 21)
+
+struct kiocb {
+    struct file     *ki_filp;
+
+    /* The 'ki_filp' pointer is shared in a union for aio */
+
+    loff_t          ki_pos;
+    void (*ki_complete)(struct kiocb *iocb, long ret);
+    void            *private;
+    int             ki_flags;
+    u16             ki_ioprio; /* See linux/ioprio.h */
+    struct wait_page_queue  *ki_waitq; /* for async buffered IO */
+};
+
+static inline int iocb_flags(struct file *file)
+{
+    int res = 0;
+    if (file->f_flags & O_APPEND)
+        res |= IOCB_APPEND;
+    if (file->f_flags & O_DIRECT)
+        res |= IOCB_DIRECT;
+    if ((file->f_flags & O_DSYNC) || IS_SYNC(file->f_mapping->host))
+        res |= IOCB_DSYNC;
+    if (file->f_flags & __O_SYNC)
+        res |= IOCB_SYNC;
+    return res;
+}
+
+static inline void init_sync_kiocb(struct kiocb *kiocb, struct file *filp)
+{
+    *kiocb = (struct kiocb) {
+        .ki_filp = filp,
+        .ki_flags = iocb_flags(filp),
+        .ki_ioprio = get_current_ioprio(),
+    };
+}
+
+static inline void filemap_invalidate_lock_shared(struct address_space *mapping)
+{
+    down_read(&mapping->invalidate_lock);
+}
+
+static inline void filemap_invalidate_unlock_shared(
+                    struct address_space *mapping)
+{
+    up_read(&mapping->invalidate_lock);
 }
 
 #endif /* _LINUX_FS_H */

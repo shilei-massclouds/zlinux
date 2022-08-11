@@ -57,3 +57,8 @@ struct address_space *page_mapping(struct page *page)
     return folio_mapping(page_folio(page));
 }
 EXPORT_SYMBOL(page_mapping);
+
+void delete_from_page_cache(struct page *page)
+{
+    return filemap_remove_folio(page_folio(page));
+}

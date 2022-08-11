@@ -357,6 +357,14 @@ struct zonelist {
     struct zoneref _zonerefs[MAX_ZONES_PER_ZONELIST + 1];
 };
 
+enum vmscan_throttle_state {
+    VMSCAN_THROTTLE_WRITEBACK,
+    VMSCAN_THROTTLE_ISOLATED,
+    VMSCAN_THROTTLE_NOPROGRESS,
+    VMSCAN_THROTTLE_CONGESTED,
+    NR_VMSCAN_THROTTLE,
+};
+
 /*
  * On NUMA machines, each NUMA node would have a pg_data_t to describe
  * it's memory layout. On UMA machines there is a single pglist_data which
@@ -389,8 +397,21 @@ typedef struct pglist_data {
     unsigned long node_spanned_pages; /* total size of physical page range, including holes */
 
     int node_id;
+    wait_queue_head_t kswapd_wait;
+    wait_queue_head_t pfmemalloc_wait;
+
+    /* workqueues for throttling reclaim for different reasons. */
+    wait_queue_head_t reclaim_wait[NR_VMSCAN_THROTTLE];
 
     enum zone_type kswapd_highest_zoneidx;
+
+#if 0
+    int kcompactd_max_order;
+    enum zone_type kcompactd_highest_zoneidx;
+    wait_queue_head_t kcompactd_wait;
+    struct task_struct *kcompactd;
+    bool proactive_compact_trigger;
+#endif
 
     /*
      * This is a per-node reserve of pages that are not available
@@ -651,6 +672,10 @@ static inline struct pglist_data *lruvec_pgdat(struct lruvec *lruvec)
 {
     return container_of(lruvec, struct pglist_data, __lruvec);
 }
+
+extern void lruvec_init(struct lruvec *lruvec);
+
+#define for_each_lru(lru) for (lru = 0; lru < NR_LRU_LISTS; lru++)
 
 #endif /* !__GENERATING_BOUNDS_H */
 #endif /* !__ASSEMBLY__ */

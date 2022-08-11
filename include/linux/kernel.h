@@ -20,6 +20,10 @@
 #include <asm/div64.h>
 #include <uapi/linux/kernel.h>
 
+/* generic data direction definitions */
+#define READ    0
+#define WRITE   1
+
 /* This cannot be an enum because some may be used in assembly source. */
 #define TAINT_WARN          9
 

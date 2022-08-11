@@ -959,4 +959,71 @@ static inline void *xas_next_entry(struct xa_state *xas, unsigned long max)
     return entry;
 }
 
+void *__xas_next(struct xa_state *);
+void *__xas_prev(struct xa_state *);
+
+/**
+ * xas_next() - Move state to next index.
+ * @xas: XArray operation state.
+ *
+ * If the @xas was in an error state, it will remain in an error state
+ * and this function will return %NULL.  If the @xas has never been walked,
+ * it will have the effect of calling xas_load().  Otherwise one will be
+ * added to the index and the state will be walked to the correct
+ * location in the array for the next operation.
+ *
+ * If the iterator was referencing index %ULONG_MAX, this function wraps
+ * around to 0.
+ *
+ * Return: The entry at the new index.  This may be %NULL or an internal
+ * entry.
+ */
+static inline void *xas_next(struct xa_state *xas)
+{
+    struct xa_node *node = xas->xa_node;
+
+    if (unlikely(xas_not_node(node) || node->shift ||
+                 xas->xa_offset == XA_CHUNK_MASK))
+        return __xas_next(xas);
+
+    xas->xa_index++;
+    xas->xa_offset++;
+    return xa_entry(xas->xa, node, xas->xa_offset);
+}
+
+/* True if the node represents RESTART or an error */
+static inline bool xas_frozen(struct xa_node *node)
+{
+    return (unsigned long)node & 2;
+}
+
+/**
+ * xas_is_node() - Does the xas point to a node?
+ * @xas: XArray operation state.
+ *
+ * Return: %true if the xas currently references a node.
+ */
+static inline bool xas_is_node(const struct xa_state *xas)
+{
+    return xas_valid(xas) && xas->xa_node;
+}
+
+/**
+ * xas_advance() - Skip over sibling entries.
+ * @xas: XArray operation state.
+ * @index: Index of last sibling entry.
+ *
+ * Move the operation state to refer to the last sibling entry.
+ * This is useful for loops that normally want to see sibling
+ * entries but sometimes want to skip them.  Use xas_set() if you
+ * want to move to an index which is not part of this entry.
+ */
+static inline void xas_advance(struct xa_state *xas, unsigned long index)
+{
+    unsigned char shift = xas_is_node(xas) ? xas->xa_node->shift : 0;
+
+    xas->xa_index = index;
+    xas->xa_offset = (index >> shift) & XA_CHUNK_MASK;
+}
+
 #endif /* _LINUX_XARRAY_H */
