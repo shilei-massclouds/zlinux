@@ -41,4 +41,20 @@ struct nsproxy {
 };
 extern struct nsproxy init_nsproxy;
 
+int copy_namespaces(unsigned long flags, struct task_struct *tsk);
+void exit_task_namespaces(struct task_struct *tsk);
+void free_nsproxy(struct nsproxy *ns);
+
+static inline void put_nsproxy(struct nsproxy *ns)
+{
+    if (atomic_dec_and_test(&ns->count)) {
+        free_nsproxy(ns);
+    }
+}
+
+static inline void get_nsproxy(struct nsproxy *ns)
+{
+    atomic_inc(&ns->count);
+}
+
 #endif /* _LINUX_NSPROXY_H */

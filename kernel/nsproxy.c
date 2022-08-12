@@ -28,6 +28,50 @@
 #include <linux/cgroup.h>
 #include <linux/perf_event.h>
 #endif
+#include <linux/cred.h>
+
+/*
+ * called from clone.  This now handles copy for nsproxy and all
+ * namespaces therein.
+ */
+int copy_namespaces(unsigned long flags, struct task_struct *tsk)
+{
+    struct nsproxy *old_ns = tsk->nsproxy;
+    struct user_namespace *user_ns = task_cred_xxx(tsk, user_ns);
+    struct nsproxy *new_ns;
+
+    if (likely(!(flags & (CLONE_NEWNS | CLONE_NEWUTS | CLONE_NEWIPC |
+                          CLONE_NEWPID | CLONE_NEWNET |
+                          CLONE_NEWCGROUP | CLONE_NEWTIME)))) {
+        if (likely(old_ns->time_ns_for_children == old_ns->time_ns)) {
+            get_nsproxy(old_ns);
+            return 0;
+        }
+    }
+
+    /*
+     * CLONE_NEWIPC must detach from the undolist: after switching
+     * to a new ipc namespace, the semaphore arrays from the old
+     * namespace are unreachable.  In clone parlance, CLONE_SYSVSEM
+     * means share undolist with parent, so we must forbid using
+     * it along with CLONE_NEWIPC.
+     */
+    if ((flags & (CLONE_NEWIPC | CLONE_SYSVSEM)) ==
+        (CLONE_NEWIPC | CLONE_SYSVSEM))
+        return -EINVAL;
+
+#if 0
+    new_ns = create_new_namespaces(flags, tsk, user_ns, tsk->fs);
+    if (IS_ERR(new_ns))
+        return  PTR_ERR(new_ns);
+
+    timens_on_fork(new_ns, tsk);
+
+    tsk->nsproxy = new_ns;
+#endif
+    panic("%s: END!\n", __func__);
+    return 0;
+}
 
 struct nsproxy init_nsproxy = {
     .count          = ATOMIC_INIT(1),

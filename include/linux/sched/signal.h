@@ -218,4 +218,7 @@ static inline int thread_group_empty(struct task_struct *p)
     return list_empty(&p->thread_group);
 }
 
+extern void flush_signal_handlers(struct task_struct *,
+                                  int force_default);
+
 #endif /* _LINUX_SCHED_SIGNAL_H */

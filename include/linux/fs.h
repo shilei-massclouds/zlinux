@@ -1636,4 +1636,10 @@ static inline void file_accessed(struct file *file)
 #endif
 }
 
+static inline struct file *get_file(struct file *f)
+{
+    atomic_long_inc(&f->f_count);
+    return f;
+}
+
 #endif /* _LINUX_FS_H */

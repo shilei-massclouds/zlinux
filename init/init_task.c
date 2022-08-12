@@ -45,6 +45,14 @@ static struct signal_struct init_signals = {
 #endif
 };
 
+static struct sighand_struct init_sighand = {
+    .count      = REFCOUNT_INIT(1),
+    .action     = { { { .sa_handler = SIG_DFL, } }, },
+    .siglock    = __SPIN_LOCK_UNLOCKED(init_sighand.siglock),
+    .signalfd_wqh =
+        __WAIT_QUEUE_HEAD_INITIALIZER(init_sighand.signalfd_wqh),
+};
+
 struct task_struct init_task __aligned(L1_CACHE_BYTES) = {
     .thread_info    = INIT_THREAD_INFO(init_task),
     .stack_refcount = REFCOUNT_INIT(1),
@@ -73,7 +81,9 @@ struct task_struct init_task __aligned(L1_CACHE_BYTES) = {
     RCU_POINTER_INITIALIZER(cred, &init_cred),
     .comm           = INIT_TASK_COMM,
     .fs             = &init_fs,
+    .files          = &init_files,
     .signal         = &init_signals,
+    .sighand        = &init_sighand,
     .pi_lock        = __RAW_SPIN_LOCK_UNLOCKED(init_task.pi_lock),
     .nsproxy        = &init_nsproxy,
     .se             = {

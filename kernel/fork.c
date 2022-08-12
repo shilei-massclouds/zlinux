@@ -38,21 +38,19 @@
 #include <linux/jiffies.h>
 #include <linux/rcupdate.h>
 #include <linux/nsproxy.h>
+#include <linux/sem.h>
+#include <linux/fs.h>
+#include <linux/file.h>
 /*
 #include <linux/unistd.h>
 #include <linux/mempolicy.h>
 #include <linux/completion.h>
 #include <linux/personality.h>
-#include <linux/sem.h>
-#include <linux/file.h>
-#include <linux/fdtable.h>
 #include <linux/iocontext.h>
 #include <linux/key.h>
 #include <linux/binfmts.h>
 #include <linux/mman.h>
 #include <linux/mmu_notifier.h>
-#include <linux/fs.h>
-#include <linux/vmacache.h>
 #include <linux/capability.h>
 #include <linux/cgroup.h>
 #include <linux/security.h>
@@ -61,8 +59,6 @@
 #include <linux/futex.h>
 #include <linux/compat.h>
 #include <linux/task_io_accounting_ops.h>
-#include <linux/ptrace.h>
-#include <linux/mount.h>
 #include <linux/audit.h>
 #include <linux/ftrace.h>
 #include <linux/proc_fs.h>
@@ -78,18 +74,13 @@
 #include <linux/taskstats_kern.h>
 #include <linux/random.h>
 #include <linux/tty.h>
-#include <linux/blkdev.h>
-#include <linux/fs_struct.h>
-#include <linux/magic.h>
 #include <linux/perf_event.h>
 #include <linux/posix-timers.h>
 #include <linux/user-return-notifier.h>
-#include <linux/oom.h>
 #include <linux/khugepaged.h>
 #include <linux/signalfd.h>
 #include <linux/uprobes.h>
 #include <linux/aio.h>
-#include <linux/compiler.h>
 #include <linux/sysctl.h>
 #include <linux/kcov.h>
 #include <linux/livepatch.h>
@@ -97,8 +88,17 @@
 #include <linux/stackleak.h>
 #include <linux/kasan.h>
 #include <linux/scs.h>
+#include <linux/ptrace.h>
 */
 
+#include <linux/oom.h>
+#include <linux/compiler.h>
+#include <linux/vmacache.h>
+#include <linux/mount.h>
+#include <linux/blkdev.h>
+#include <linux/fs_struct.h>
+#include <linux/magic.h>
+#include <linux/fdtable.h>
 #include <linux/uaccess.h>
 #include <asm/cacheflush.h>
 #include <asm/tlbflush.h>
@@ -153,6 +153,18 @@ static struct kmem_cache *vm_area_cachep;
 /* SLAB cache for mm_struct structures (tsk->mm) */
 static struct kmem_cache *mm_cachep;
 
+/* SLAB cache for signal_struct structures (tsk->signal) */
+static struct kmem_cache *signal_cachep;
+
+/* SLAB cache for sighand_struct structures (tsk->sighand) */
+struct kmem_cache *sighand_cachep;
+
+/* SLAB cache for files_struct structures (tsk->files) */
+struct kmem_cache *files_cachep;
+
+/* SLAB cache for fs_struct structures (tsk->fs) */
+struct kmem_cache *fs_cachep;
+
 /*
  * Protected counters by write_lock_irq(&tasklist_lock)
  */
@@ -170,6 +182,14 @@ static inline struct task_struct *alloc_task_struct_node(int node)
 
 #define allocate_mm()   (kmem_cache_alloc(mm_cachep, GFP_KERNEL))
 #define free_mm(mm)     (kmem_cache_free(mm_cachep, (mm)))
+
+static struct mm_struct *
+mm_init(struct mm_struct *mm, struct task_struct *p,
+        struct user_namespace *user_ns);
+
+static void mm_init_owner(struct mm_struct *mm, struct task_struct *p)
+{
+}
 
 static inline void free_task_struct(struct task_struct *tsk)
 {
@@ -372,6 +392,172 @@ static void rt_mutex_init_task(struct task_struct *p)
     p->pi_waiters = RB_ROOT_CACHED;
     p->pi_top_task = NULL;
     p->pi_blocked_on = NULL;
+}
+
+static int copy_sighand(unsigned long clone_flags,
+                        struct task_struct *tsk)
+{
+    struct sighand_struct *sig;
+
+    if (clone_flags & CLONE_SIGHAND) {
+        refcount_inc(&current->sighand->count);
+        return 0;
+    }
+    sig = kmem_cache_alloc(sighand_cachep, GFP_KERNEL);
+    RCU_INIT_POINTER(tsk->sighand, sig);
+    if (!sig)
+        return -ENOMEM;
+
+    refcount_set(&sig->count, 1);
+    spin_lock_irq(&current->sighand->siglock);
+    memcpy(sig->action, current->sighand->action, sizeof(sig->action));
+    spin_unlock_irq(&current->sighand->siglock);
+
+    /* Reset all signal handler not set to SIG_IGN to SIG_DFL. */
+    if (clone_flags & CLONE_CLEAR_SIGHAND)
+        flush_signal_handlers(tsk, 0);
+
+    return 0;
+}
+
+static int copy_fs(unsigned long clone_flags, struct task_struct *tsk)
+{
+    struct fs_struct *fs = current->fs;
+    if (clone_flags & CLONE_FS) {
+        /* tsk->fs is already what we want */
+        spin_lock(&fs->lock);
+        if (fs->in_exec) {
+            spin_unlock(&fs->lock);
+            return -EAGAIN;
+        }
+        fs->users++;
+        spin_unlock(&fs->lock);
+        return 0;
+    }
+    tsk->fs = copy_fs_struct(fs);
+    if (!tsk->fs)
+        return -ENOMEM;
+    return 0;
+}
+
+static int copy_files(unsigned long clone_flags,
+                      struct task_struct *tsk)
+{
+    struct files_struct *oldf, *newf;
+    int error = 0;
+
+    /*
+     * A background process may not have any files ...
+     */
+    oldf = current->files;
+    if (!oldf)
+        goto out;
+
+    if (clone_flags & CLONE_FILES) {
+        atomic_inc(&oldf->count);
+        goto out;
+    }
+
+    newf = dup_fd(oldf, NR_OPEN_MAX, &error);
+    if (!newf)
+        goto out;
+
+    tsk->files = newf;
+    error = 0;
+out:
+    return error;
+}
+
+static __latent_entropy int dup_mmap(struct mm_struct *mm,
+                                     struct mm_struct *oldmm)
+{
+    struct vm_area_struct *mpnt, *tmp, *prev, **pprev;
+    struct rb_node **rb_link, *rb_parent;
+    int retval;
+    unsigned long charge;
+    LIST_HEAD(uf);
+
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * dup_mm() - duplicates an existing mm structure
+ * @tsk: the task_struct with which the new mm will be associated.
+ * @oldmm: the mm to duplicate.
+ *
+ * Allocates a new mm structure and duplicates the provided @oldmm structure
+ * content into it.
+ *
+ * Return: the duplicated mm or NULL on failure.
+ */
+static struct mm_struct *dup_mm(struct task_struct *tsk,
+                                struct mm_struct *oldmm)
+{
+    struct mm_struct *mm;
+    int err;
+
+    mm = allocate_mm();
+    if (!mm)
+        goto fail_nomem;
+
+    memcpy(mm, oldmm, sizeof(*mm));
+
+    if (!mm_init(mm, tsk, mm->user_ns))
+        goto fail_nomem;
+
+    err = dup_mmap(mm, oldmm);
+    if (err)
+        goto free_pt;
+
+    panic("%s: ERROR!\n", __func__);
+    return mm;
+
+ free_pt:
+    /* don't put binfmt in mmput, we haven't got module yet */
+    mm->binfmt = NULL;
+    mm_init_owner(mm, NULL);
+    mmput(mm);
+
+ fail_nomem:
+    return NULL;
+}
+
+static int copy_mm(unsigned long clone_flags, struct task_struct *tsk)
+{
+    struct mm_struct *mm, *oldmm;
+
+    tsk->min_flt = tsk->maj_flt = 0;
+    tsk->nvcsw = tsk->nivcsw = 0;
+    tsk->last_switch_count = tsk->nvcsw + tsk->nivcsw;
+    tsk->last_switch_time = 0;
+
+    tsk->mm = NULL;
+    tsk->active_mm = NULL;
+
+    /*
+     * Are we cloning a kernel thread?
+     *
+     * We need to steal a active VM for that..
+     */
+    oldmm = current->mm;
+    if (!oldmm)
+        return 0;
+
+    /* initialize the new vmacache entries */
+    vmacache_flush(tsk);
+
+    if (clone_flags & CLONE_VM) {
+        mmget(oldmm);
+        mm = oldmm;
+    } else {
+        mm = dup_mm(tsk, current->mm);
+        if (!mm)
+            return -ENOMEM;
+    }
+
+    tsk->mm = mm;
+    tsk->active_mm = mm;
+    return 0;
 }
 
 /*
@@ -578,17 +764,14 @@ copy_process(struct pid *pid, int trace, int node,
     retval = perf_event_init_task(p, clone_flags);
     if (retval)
         goto bad_fork_cleanup_policy;
-    retval = audit_alloc(p);
-    if (retval)
-        goto bad_fork_cleanup_perf;
+#endif
     /* copy all the process information */
     shm_init_task(p);
-    retval = security_task_alloc(p, clone_flags);
-    if (retval)
-        goto bad_fork_cleanup_audit;
+#if 0
     retval = copy_semundo(clone_flags, p);
     if (retval)
         goto bad_fork_cleanup_security;
+#endif
     retval = copy_files(clone_flags, p);
     if (retval)
         goto bad_fork_cleanup_semundo;
@@ -598,12 +781,15 @@ copy_process(struct pid *pid, int trace, int node,
     retval = copy_sighand(clone_flags, p);
     if (retval)
         goto bad_fork_cleanup_fs;
+#if 0
     retval = copy_signal(clone_flags, p);
     if (retval)
         goto bad_fork_cleanup_sighand;
+#endif
     retval = copy_mm(clone_flags, p);
     if (retval)
         goto bad_fork_cleanup_signal;
+#if 0
     retval = copy_namespaces(clone_flags, p);
     if (retval)
         goto bad_fork_cleanup_mm;
@@ -758,23 +944,70 @@ copy_process(struct pid *pid, int trace, int node,
 
     return p;
 
- bad_fork_cleanup_thread:
+//bad_fork_cancel_cgroup:
+    //sched_core_free(p);
+    spin_unlock(&current->sighand->siglock);
+    write_unlock_irq(&tasklist_lock);
+    //cgroup_cancel_fork(p, args);
+//bad_fork_put_pidfd:
 #if 0
-    exit_thread(p);
+    if (clone_flags & CLONE_PIDFD) {
+        fput(pidfile);
+        put_unused_fd(pidfd);
+    }
 #endif
+//bad_fork_free_pid:
+#if 0
+    if (pid != &init_struct_pid)
+        free_pid(pid);
+#endif
+ bad_fork_cleanup_thread:
+    //exit_thread(p);
  bad_fork_cleanup_io:
 #if 0
     if (p->io_context)
         exit_io_context(p);
 #endif
+//bad_fork_cleanup_namespaces:
+    //exit_task_namespaces(p);
+ bad_fork_cleanup_mm:
+    if (p->mm) {
+        //mm_clear_owner(p->mm, p);
+        mmput(p->mm);
+    }
+ bad_fork_cleanup_signal:
+#if 0
+    if (!(clone_flags & CLONE_THREAD))
+        free_signal_struct(p->signal);
+#endif
+ bad_fork_cleanup_sighand:
+    //__cleanup_sighand(p->sighand);
+ bad_fork_cleanup_fs:
+    //exit_fs(p); /* blocking */
+ bad_fork_cleanup_files:
+    //exit_files(p); /* blocking */
+ bad_fork_cleanup_semundo:
+    //exit_sem(p);
+//bad_fork_cleanup_security:
+//bad_fork_cleanup_audit:
+//bad_fork_cleanup_perf:
+    //perf_event_free_task(p);
  bad_fork_cleanup_policy:
  bad_fork_cleanup_delayacct:
     //delayacct_tsk_free(p);
  bad_fork_cleanup_count:
     //dec_rlimit_ucounts(task_ucounts(p), UCOUNT_RLIMIT_NPROC, 1);
     //exit_creds(p);
+ bad_fork_free:
+    WRITE_ONCE(p->__state, TASK_DEAD);
+    exit_task_stack_account(p);
+    put_task_stack(p);
+    //delayed_free_task(p);
  fork_out:
     panic("%s: ERROR!\n", __func__);
+    spin_lock_irq(&current->sighand->siglock);
+    //hlist_del_init(&delayed.node);
+    spin_unlock_irq(&current->sighand->siglock);
     return ERR_PTR(retval);
 }
 
@@ -1091,9 +1324,26 @@ void mmput(struct mm_struct *mm)
 }
 EXPORT_SYMBOL_GPL(mmput);
 
+static void sighand_ctor(void *data)
+{
+    struct sighand_struct *sighand = data;
+
+    spin_lock_init(&sighand->siglock);
+    init_waitqueue_head(&sighand->signalfd_wqh);
+}
+
 void __init proc_caches_init(void)
 {
     unsigned int mm_size;
+
+    sighand_cachep = kmem_cache_create("sighand_cache",
+            sizeof(struct sighand_struct), 0,
+            SLAB_HWCACHE_ALIGN|SLAB_PANIC|SLAB_TYPESAFE_BY_RCU|
+            SLAB_ACCOUNT, sighand_ctor);
+    signal_cachep = kmem_cache_create("signal_cache",
+            sizeof(struct signal_struct), 0,
+            SLAB_HWCACHE_ALIGN|SLAB_PANIC|SLAB_ACCOUNT,
+            NULL);
 
     /*
      * The mm_cpumask is located at the end of mm_struct, and is
@@ -1108,7 +1358,18 @@ void __init proc_caches_init(void)
             offsetof(struct mm_struct, saved_auxv),
             sizeof_field(struct mm_struct, saved_auxv),
             NULL);
-    vm_area_cachep = KMEM_CACHE(vm_area_struct, SLAB_PANIC|SLAB_ACCOUNT);
+    files_cachep =
+        kmem_cache_create("files_cache",
+                          sizeof(struct files_struct), 0,
+                          SLAB_HWCACHE_ALIGN|SLAB_PANIC|SLAB_ACCOUNT,
+                          NULL);
+    fs_cachep =
+        kmem_cache_create("fs_cache", sizeof(struct fs_struct), 0,
+                          SLAB_HWCACHE_ALIGN|SLAB_PANIC|SLAB_ACCOUNT,
+                          NULL);
+
+    vm_area_cachep = KMEM_CACHE(vm_area_struct,
+                                SLAB_PANIC|SLAB_ACCOUNT);
 }
 
 void __init fork_init(void)

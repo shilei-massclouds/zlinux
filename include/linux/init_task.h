@@ -34,4 +34,6 @@ extern struct cred init_cred;
 
 extern struct fs_struct init_fs;
 
+extern struct files_struct init_files;
+
 #endif /* _LINUX__INIT_TASK_H */

@@ -14,8 +14,8 @@
 #include <linux/pid.h>
 #if 0
 #include <linux/sem.h>
-#include <linux/shm.h>
 #endif
+#include <linux/shm.h>
 #include <linux/mutex.h>
 #if 0
 #include <linux/plist.h>
@@ -308,6 +308,12 @@ struct task_struct {
     /* A live task holds one reference: */
     refcount_t stack_refcount;
 
+    //struct sysv_sem         sysvsem;
+    struct sysv_shm         sysvshm;
+
+    unsigned long           last_switch_count;
+    unsigned long           last_switch_time;
+
     /* Filesystem information: */
     struct fs_struct        *fs;
 
@@ -476,6 +482,10 @@ struct task_struct {
      */
     u64 timer_slack_ns;
     u64 default_timer_slack_ns;
+
+    /* Context switch counts: */
+    unsigned long           nvcsw;
+    unsigned long           nivcsw;
 
     /* MM fault and swap info:
      * this can arguably be seen as either mm-specific or thread-specific: */

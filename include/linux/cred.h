@@ -184,4 +184,26 @@ static inline void put_cred(const struct cred *_cred)
     }
 }
 
+/**
+ * __task_cred - Access a task's objective credentials
+ * @task: The task to query
+ *
+ * Access the objective credentials of a task.  The caller must hold the RCU
+ * readlock.
+ *
+ * The result of this function should not be passed directly to get_cred();
+ * rather get_task_cred() should be used instead.
+ */
+#define __task_cred(task) \
+    rcu_dereference((task)->real_cred)
+
+#define task_cred_xxx(task, xxx)            \
+({                          \
+    __typeof__(((struct cred *)NULL)->xxx) ___val;  \
+    rcu_read_lock();                \
+    ___val = __task_cred((task))->xxx;      \
+    rcu_read_unlock();              \
+    ___val;                     \
+})
+
 #endif /* _LINUX_CRED_H */
