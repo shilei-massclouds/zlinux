@@ -1324,6 +1324,139 @@ void mmput(struct mm_struct *mm)
 }
 EXPORT_SYMBOL_GPL(mmput);
 
+/*
+ * Unshare file descriptor table if it is being shared
+ */
+int unshare_fd(unsigned long unshare_flags, unsigned int max_fds,
+               struct files_struct **new_fdp)
+{
+    struct files_struct *fd = current->files;
+    int error = 0;
+
+    if ((unshare_flags & CLONE_FILES) &&
+        (fd && atomic_read(&fd->count) > 1)) {
+        *new_fdp = dup_fd(fd, max_fds, &error);
+        if (!*new_fdp)
+            return error;
+    }
+
+    return 0;
+}
+
+/*
+ *  Helper to unshare the files of the current task.
+ *  We don't want to expose copy_files internals to
+ *  the exec layer of the kernel.
+ */
+
+int unshare_files(void)
+{
+    struct task_struct *task = current;
+    struct files_struct *old, *copy = NULL;
+    int error;
+
+    error = unshare_fd(CLONE_FILES, NR_OPEN_MAX, &copy);
+    if (error || !copy)
+        return error;
+
+    old = task->files;
+    task_lock(task);
+    task->files = copy;
+    task_unlock(task);
+    put_files_struct(old);
+    return 0;
+}
+
+/**
+ * set_mm_exe_file - change a reference to the mm's executable file
+ *
+ * This changes mm's executable file (shown as symlink /proc/[pid]/exe).
+ *
+ * Main users are mmput() and sys_execve(). Callers prevent concurrent
+ * invocations: in mmput() nobody alive left, in execve task is single
+ * threaded.
+ *
+ * Can only fail if new_exe_file != NULL.
+ */
+int set_mm_exe_file(struct mm_struct *mm, struct file *new_exe_file)
+{
+    struct file *old_exe_file;
+
+    /*
+     * It is safe to dereference the exe_file without RCU as
+     * this function is only called if nobody else can access
+     * this mm -- see comment above for justification.
+     */
+    old_exe_file = rcu_dereference_raw(mm->exe_file);
+
+    if (new_exe_file) {
+        /*
+         * We expect the caller (i.e., sys_execve) to already denied
+         * write access, so this is unlikely to fail.
+         */
+        if (unlikely(deny_write_access(new_exe_file)))
+            return -EACCES;
+        get_file(new_exe_file);
+    }
+    rcu_assign_pointer(mm->exe_file, new_exe_file);
+    if (old_exe_file) {
+        allow_write_access(old_exe_file);
+        fput(old_exe_file);
+    }
+    return 0;
+}
+
+static void complete_vfork_done(struct task_struct *tsk)
+{
+    struct completion *vfork;
+
+    task_lock(tsk);
+    vfork = tsk->vfork_done;
+    if (likely(vfork)) {
+        tsk->vfork_done = NULL;
+        complete(vfork);
+    }
+    task_unlock(tsk);
+}
+
+/* Please note the differences between mmput and mm_release.
+ * mmput is called whenever we stop holding onto a mm_struct,
+ * error success whatever.
+ *
+ * mm_release is called after a mm_struct has been removed
+ * from the current process.
+ *
+ * This difference is important for error handling, when we
+ * only half set up a mm_struct for a new process and need to restore
+ * the old one.  Because we mmput the new mm_struct before
+ * restoring the old one. . .
+ * Eric Biederman 10 January 1998
+ */
+static void mm_release(struct task_struct *tsk, struct mm_struct *mm)
+{
+    /*
+     * Signal userspace if we're not exiting with a core dump
+     * because we want to leave the value intact for debugging
+     * purposes.
+     */
+    if (tsk->clear_child_tid) {
+        panic("%s: tsk->clear_child_tid!\n", __func__);
+    }
+
+    /*
+     * All done, finally we can wake up parent and return this mm to him.
+     * Also kthread_stop() uses this completion for synchronization.
+     */
+    if (tsk->vfork_done)
+        complete_vfork_done(tsk);
+}
+
+void exec_mm_release(struct task_struct *tsk, struct mm_struct *mm)
+{
+    //futex_exec_release(tsk);
+    mm_release(tsk, mm);
+}
+
 static void sighand_ctor(void *data)
 {
     struct sighand_struct *sighand = data;

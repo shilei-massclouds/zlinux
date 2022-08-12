@@ -1234,4 +1234,7 @@ static inline unsigned long thp_size(struct page *page)
     return PAGE_SIZE << thp_order(page);
 }
 
+extern int set_mm_exe_file(struct mm_struct *mm,
+                           struct file *new_exe_file);
+
 #endif /* _LINUX_MM_H */

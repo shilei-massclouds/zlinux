@@ -557,4 +557,10 @@ static inline void mm_init_cpumask(struct mm_struct *mm)
     cpumask_clear((struct cpumask *)cpu_bitmap);
 }
 
+/* Future-safe accessor for struct mm_struct's cpu_vm_mask. */
+static inline cpumask_t *mm_cpumask(struct mm_struct *mm)
+{
+    return (struct cpumask *)&mm->cpu_bitmap;
+}
+
 #endif /* _LINUX_MM_TYPES_H */

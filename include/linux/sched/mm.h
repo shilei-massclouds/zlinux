@@ -162,4 +162,6 @@ static inline void mmget(struct mm_struct *mm)
     atomic_inc(&mm->mm_users);
 }
 
+extern void exec_mm_release(struct task_struct *, struct mm_struct *);
+
 #endif /* _LINUX_SCHED_MM_H */

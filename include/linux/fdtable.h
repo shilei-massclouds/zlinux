@@ -70,4 +70,8 @@ extern struct kmem_cache *files_cachep;
 #define files_fdtable(files) \
     rcu_dereference_check_fdtable((files), (files)->fdt)
 
+void put_files_struct(struct files_struct *fs);
+
+int unshare_files(void);
+
 #endif /* __LINUX_FDTABLE_H */

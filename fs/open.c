@@ -175,3 +175,31 @@ int vfs_open(const struct path *path, struct file *file)
     file->f_path = *path;
     return do_dentry_open(file, d_backing_inode(path->dentry), NULL);
 }
+
+/*
+ * "id" is the POSIX thread ID. We use the
+ * files pointer for this..
+ */
+int filp_close(struct file *filp, fl_owner_t id)
+{
+    int retval = 0;
+
+    if (!file_count(filp)) {
+        printk(KERN_ERR "VFS: Close: file count is 0\n");
+        return 0;
+    }
+
+    if (filp->f_op->flush)
+        retval = filp->f_op->flush(filp, id);
+
+    if (likely(!(filp->f_mode & FMODE_PATH))) {
+#if 0
+        dnotify_flush(filp, id);
+        locks_remove_posix(filp, id);
+#endif
+        panic("%s: FMODE_PATH!\n", __func__);
+    }
+    fput(filp);
+    return retval;
+}
+EXPORT_SYMBOL(filp_close);

@@ -26,7 +26,7 @@
 //#include <linux/kernel_read_file.h>
 #include <linux/slab.h>
 #include <linux/file.h>
-//#include <linux/fdtable.h>
+#include <linux/fdtable.h>
 #include <linux/mm.h>
 #include <linux/vmacache.h>
 #include <linux/stat.h>
@@ -74,7 +74,7 @@
 #endif
 
 #include <linux/uaccess.h>
-//#include <asm/mmu_context.h>
+#include <asm/mmu_context.h>
 //#include <asm/tlb.h>
 
 #include "internal.h"
@@ -97,7 +97,8 @@ static inline void put_binfmt(struct linux_binfmt * fmt)
  * for oom_badness()->get_mm_rss(). Once exec succeeds or fails, we
  * change the counter back via acct_arg_size(0).
  */
-static void acct_arg_size(struct linux_binprm *bprm, unsigned long pages)
+static void acct_arg_size(struct linux_binprm *bprm,
+                          unsigned long pages)
 {
     struct mm_struct *mm = current->mm;
     long diff = (long)(pages - bprm->vma_pages);
@@ -777,6 +778,80 @@ static int de_thread(struct task_struct *tsk)
 }
 
 /*
+ * Maps the mm_struct mm into the current task struct.
+ * On success, this function returns with exec_update_lock
+ * held for writing.
+ */
+static int exec_mmap(struct mm_struct *mm)
+{
+    struct task_struct *tsk;
+    struct mm_struct *old_mm, *active_mm;
+    int ret;
+
+    /* Notify parent that we're no longer interested in the old VM */
+    tsk = current;
+    old_mm = current->mm;
+    exec_mm_release(tsk, old_mm);
+#if 0
+    if (old_mm)
+        sync_mm_rss(old_mm);
+#endif
+
+    ret = down_write_killable(&tsk->signal->exec_update_lock);
+    if (ret)
+        return ret;
+
+    if (old_mm) {
+#if 0
+        /*
+         * If there is a pending fatal signal perhaps a signal
+         * whose default action is to create a coredump get
+         * out and die instead of going through with the exec.
+         */
+        ret = mmap_read_lock_killable(old_mm);
+        if (ret) {
+            up_write(&tsk->signal->exec_update_lock);
+            return ret;
+        }
+#endif
+        panic("%s: old_mm!\n", __func__);
+    }
+
+    task_lock(tsk);
+    //membarrier_exec_mmap(mm);
+
+    local_irq_disable();
+    active_mm = tsk->active_mm;
+    tsk->active_mm = mm;
+    tsk->mm = mm;
+    /*
+     * This prevents preemption while active_mm is being loaded and
+     * it and mm are being updated, which could cause problems for
+     * lazy tlb mm refcounting when these are updated by context
+     * switches. Not all architectures can handle irqs off over
+     * activate_mm yet.
+     */
+    local_irq_enable();
+    activate_mm(active_mm, mm);
+    tsk->mm->vmacache_seqnum = 0;
+    vmacache_flush(tsk);
+    task_unlock(tsk);
+    if (old_mm) {
+#if 0
+        mmap_read_unlock(old_mm);
+        BUG_ON(active_mm != old_mm);
+        setmax_mm_hiwater_rss(&tsk->signal->maxrss, old_mm);
+        mm_update_next_owner(old_mm);
+        mmput(old_mm);
+#endif
+        panic("%s: 2 old_mm!\n", __func__);
+        return 0;
+    }
+    mmdrop(active_mm);
+    return 0;
+}
+
+/*
  * Calling this is the point of no return. None of the failures will be
  * seen by userspace since either the process is already taking a fatal
  * signal (via de_thread() or coredump), or will have SEGV raised
@@ -801,6 +876,42 @@ int begin_new_exec(struct linux_binprm * bprm)
      * Make this the only thread in the thread group.
      */
     retval = de_thread(me);
+    if (retval)
+        goto out;
+
+#if 0
+    /*
+     * Cancel any io_uring activity across execve
+     */
+    io_uring_task_cancel();
+#endif
+
+    /* Ensure the files table is not shared. */
+    retval = unshare_files();
+    if (retval)
+        goto out;
+
+    /*
+     * Must be called _before_ exec_mmap() as bprm->mm is
+     * not visible until then. This also enables the update
+     * to be lockless.
+     */
+    retval = set_mm_exe_file(bprm->mm, bprm->file);
+    if (retval)
+        goto out;
+
+#if 0
+    /* If the binary is not readable then enforce mm->dumpable=0 */
+    would_dump(bprm, bprm->file);
+    if (bprm->have_execfd)
+        would_dump(bprm, bprm->executable);
+#endif
+
+    /*
+     * Release all of the old mmap stuff
+     */
+    acct_arg_size(bprm, 0);
+    retval = exec_mmap(bprm->mm);
     if (retval)
         goto out;
 

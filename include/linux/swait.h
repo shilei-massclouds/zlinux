@@ -46,6 +46,11 @@ struct swait_queue_head {
     struct list_head    task_list;
 };
 
+struct swait_queue {
+    struct task_struct  *task;
+    struct list_head    task_list;
+};
+
 #define __SWAIT_QUEUE_HEAD_INITIALIZER(name) {              \
     .lock       = __RAW_SPIN_LOCK_UNLOCKED(name.lock),      \
     .task_list  = LIST_HEAD_INIT((name).task_list),     \
@@ -61,5 +66,9 @@ do {                             \
     static struct lock_class_key __key;         \
     __init_swait_queue_head((q), #q, &__key);   \
 } while (0)
+
+extern void swake_up_one(struct swait_queue_head *q);
+extern void swake_up_all(struct swait_queue_head *q);
+extern void swake_up_locked(struct swait_queue_head *q);
 
 #endif /* _LINUX_SWAIT_H */

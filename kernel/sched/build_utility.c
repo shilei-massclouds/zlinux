@@ -66,7 +66,7 @@
 #endif
 
 #include "loadavg.c"
-//#include "completion.c"
+#include "completion.c"
 #include "swait.c"
 #include "wait_bit.c"
 #include "wait.c"

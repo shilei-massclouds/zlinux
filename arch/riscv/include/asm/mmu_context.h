@@ -13,6 +13,9 @@
 #include <linux/mm.h>
 #include <linux/sched.h>
 
+void switch_mm(struct mm_struct *prev, struct mm_struct *next,
+               struct task_struct *task);
+
 #define init_new_context init_new_context
 static inline int init_new_context(struct task_struct *tsk,
                                    struct mm_struct *mm)
@@ -20,6 +23,15 @@ static inline int init_new_context(struct task_struct *tsk,
     atomic_long_set(&mm->context.id, 0);
     return 0;
 }
+
+#define activate_mm activate_mm
+static inline void activate_mm(struct mm_struct *prev,
+                               struct mm_struct *next)
+{
+    switch_mm(prev, next, NULL);
+}
+
+DECLARE_STATIC_KEY_FALSE(use_asid_allocator);
 
 //#include <asm-generic/mmu_context.h>
 

@@ -1642,4 +1642,8 @@ static inline struct file *get_file(struct file *f)
     return f;
 }
 
+#define file_count(x)   atomic_long_read(&(x)->f_count)
+
+extern int filp_close(struct file *, fl_owner_t id);
+
 #endif /* _LINUX_FS_H */

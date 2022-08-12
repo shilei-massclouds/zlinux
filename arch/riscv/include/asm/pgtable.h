@@ -341,6 +341,8 @@ static inline int pte_same(pte_t pte_a, pte_t pte_b)
     return pte_val(pte_a) == pte_val(pte_b);
 }
 
+extern u64 satp_mode;
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* _ASM_RISCV_PGTABLE_H */

@@ -58,4 +58,7 @@ static inline void init_completion(struct completion *x)
     init_swait_queue_head(&x->wait);
 }
 
+extern void complete(struct completion *);
+extern void complete_all(struct completion *);
+
 #endif /* __LINUX_COMPLETION_H */
