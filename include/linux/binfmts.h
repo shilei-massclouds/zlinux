@@ -92,4 +92,30 @@ struct linux_binfmt {
 int kernel_execve(const char *filename,
                   const char *const *argv, const char *const *envp);
 
+extern void __register_binfmt(struct linux_binfmt *fmt, int insert);
+
+/* Registration of default binfmt handlers */
+static inline void register_binfmt(struct linux_binfmt *fmt)
+{
+    __register_binfmt(fmt, 0);
+}
+/* Same as above, but adds a new binfmt at the top of the list */
+static inline void insert_binfmt(struct linux_binfmt *fmt)
+{
+    __register_binfmt(fmt, 1);
+}
+
+extern void unregister_binfmt(struct linux_binfmt *);
+
+/* Stack area protections */
+#define EXSTACK_DEFAULT   0 /* Whatever the arch defaults to */
+#define EXSTACK_DISABLE_X 1 /* Disable executable stacks */
+#define EXSTACK_ENABLE_X  2 /* Enable executable stacks */
+
+extern int __must_check remove_arg_zero(struct linux_binprm *);
+extern int begin_new_exec(struct linux_binprm *bprm);
+extern void setup_new_exec(struct linux_binprm *bprm);
+extern void finalize_exec(struct linux_binprm *bprm);
+extern void would_dump(struct linux_binprm *, struct file *);
+
 #endif /* _LINUX_BINFMTS_H */

@@ -7,6 +7,8 @@
 
 #define arch_task_struct_size (sizeof(struct task_struct))
 
+extern rwlock_t tasklist_lock;
+
 extern struct task_struct init_task;
 
 extern pid_t kernel_thread(int (*fn)(void *), void *arg, unsigned long flags);

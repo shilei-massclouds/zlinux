@@ -57,6 +57,7 @@ struct task_struct init_task __aligned(L1_CACHE_BYTES) = {
     .usage          = REFCOUNT_INIT(2),
     .flags          = PF_KTHREAD,
     .thread_pid     = &init_struct_pid,
+    .thread_group   = LIST_HEAD_INIT(init_task.thread_group),
     .thread_node    = LIST_HEAD_INIT(init_signals.thread_head),
     .cpus_ptr       = &init_task.cpus_mask,
     .user_cpus_ptr  = NULL,

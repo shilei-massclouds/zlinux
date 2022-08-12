@@ -48,4 +48,21 @@ static inline void __raw_read_unlock(rwlock_t *lock)
     preempt_enable();
 }
 
+void __lockfunc _raw_write_lock_irq(rwlock_t *lock) __acquires(lock);
+void __lockfunc _raw_write_unlock_irq(rwlock_t *lock) __releases(lock);
+
+static inline void __raw_write_lock_irq(rwlock_t *lock)
+{
+    local_irq_disable();
+    preempt_disable();
+    do_raw_write_lock(lock);
+}
+
+static inline void __raw_write_unlock_irq(rwlock_t *lock)
+{
+    do_raw_write_unlock(lock);
+    local_irq_enable();
+    preempt_enable();
+}
+
 #endif /* __LINUX_RWLOCK_API_SMP_H */

@@ -714,3 +714,102 @@ bool path_noexec(const struct path *path)
     return (path->mnt->mnt_flags & MNT_NOEXEC) ||
            (path->mnt->mnt_sb->s_iflags & SB_I_NOEXEC);
 }
+
+void __register_binfmt(struct linux_binfmt *fmt, int insert)
+{
+    write_lock(&binfmt_lock);
+    insert ? list_add(&fmt->lh, &formats) :
+        list_add_tail(&fmt->lh, &formats);
+    write_unlock(&binfmt_lock);
+}
+EXPORT_SYMBOL(__register_binfmt);
+
+void unregister_binfmt(struct linux_binfmt * fmt)
+{
+    write_lock(&binfmt_lock);
+    list_del(&fmt->lh);
+    write_unlock(&binfmt_lock);
+}
+EXPORT_SYMBOL(unregister_binfmt);
+
+/*
+ * Compute brpm->cred based upon the final binary.
+ */
+static int bprm_creds_from_file(struct linux_binprm *bprm)
+{
+    /* Compute creds based on which file? */
+    struct file *file = bprm->execfd_creds ?
+        bprm->executable : bprm->file;
+
+#if 0
+    bprm_fill_uid(bprm, file);
+    return security_bprm_creds_from_file(bprm, file);
+#else
+    return 0;
+#endif
+}
+
+static int de_thread(struct task_struct *tsk)
+{
+    struct signal_struct *sig = tsk->signal;
+    struct sighand_struct *oldsighand = tsk->sighand;
+    spinlock_t *lock = &oldsighand->siglock;
+
+    if (thread_group_empty(tsk))
+        goto no_thread_group;
+
+    panic("%s: END!\n", __func__);
+
+ no_thread_group:
+    /* we have changed execution domain */
+    tsk->exit_signal = SIGCHLD;
+
+    BUG_ON(!thread_group_leader(tsk));
+    return 0;
+
+ killed:
+    /* protects against exit_notify() and __exit_signal() */
+    read_lock(&tasklist_lock);
+    sig->group_exec_task = NULL;
+    sig->notify_count = 0;
+    read_unlock(&tasklist_lock);
+    return -EAGAIN;
+}
+
+/*
+ * Calling this is the point of no return. None of the failures will be
+ * seen by userspace since either the process is already taking a fatal
+ * signal (via de_thread() or coredump), or will have SEGV raised
+ * (after exec_mmap()) by search_binary_handler (see below).
+ */
+int begin_new_exec(struct linux_binprm * bprm)
+{
+    struct task_struct *me = current;
+    int retval;
+
+    /* Once we are committed compute the creds */
+    retval = bprm_creds_from_file(bprm);
+    if (retval)
+        return retval;
+
+    /*
+     * Ensure all future errors are fatal.
+     */
+    bprm->point_of_no_return = true;
+
+    /*
+     * Make this the only thread in the thread group.
+     */
+    retval = de_thread(me);
+    if (retval)
+        goto out;
+
+    panic("%s: END!\n", __func__);
+    return 0;
+
+ out_unlock:
+    up_write(&me->signal->exec_update_lock);
+ out:
+    return retval;
+}
+EXPORT_SYMBOL(begin_new_exec);

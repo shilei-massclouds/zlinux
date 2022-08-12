@@ -262,6 +262,7 @@ struct task_struct {
     /* PID/PID hash table linkage. */
     struct pid *thread_pid;
     struct hlist_node pid_links[PIDTYPE_MAX];
+    struct list_head thread_group;
 
     struct list_head    thread_node;
 
@@ -318,6 +319,9 @@ struct task_struct {
 
     /* Signal handlers: */
     struct signal_struct *signal;
+    struct sighand_struct __rcu *sighand;
+
+    struct callback_head *task_works;
 
     struct wake_q_node wake_q;
 
@@ -394,6 +398,15 @@ struct task_struct {
 
     pid_t               pid;
     pid_t               tgid;
+
+    /*
+     * When (nr_dirtied >= nr_dirtied_pause), it's time to call
+     * balance_dirty_pages() for a dirty throttling pause:
+     */
+    int             nr_dirtied;
+    int             nr_dirtied_pause;
+    /* Start of a write-and-pause period: */
+    unsigned long   dirty_paused_when;
 
     struct rseq __user *rseq;
     u32 rseq_sig;

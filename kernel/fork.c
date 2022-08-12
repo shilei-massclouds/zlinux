@@ -97,11 +97,11 @@
 #include <linux/stackleak.h>
 #include <linux/kasan.h>
 #include <linux/scs.h>
+*/
 
 #include <linux/uaccess.h>
 #include <asm/cacheflush.h>
 #include <asm/tlbflush.h>
-*/
 #include <asm/pgalloc.h>
 #include <asm/mmu_context.h>
 #include <linux/hugetlb.h>
@@ -135,6 +135,8 @@ struct vm_stack {
     struct rcu_head rcu;
     struct vm_struct *stack_vm_area;
 };
+
+__cacheline_aligned DEFINE_RWLOCK(tasklist_lock);  /* outer */
 
 /*
  * vmalloc() is a bit slow, and calling vfree() enough times will force a TLB
@@ -364,6 +366,14 @@ init_task_pid(struct task_struct *task, enum pid_type type, struct pid *pid)
         task->signal->pids[type] = pid;
 }
 
+static void rt_mutex_init_task(struct task_struct *p)
+{
+    raw_spin_lock_init(&p->pi_lock);
+    p->pi_waiters = RB_ROOT_CACHED;
+    p->pi_top_task = NULL;
+    p->pi_blocked_on = NULL;
+}
+
 /*
  * This creates a new process as a copy of the old one,
  * but does not actually start it yet.
@@ -494,9 +504,7 @@ copy_process(struct pid *pid, int trace, int node,
     p->clear_child_tid = (clone_flags & CLONE_CHILD_CLEARTID) ?
         args->child_tid : NULL;
 
-#if 0
     rt_mutex_init_task(p);
-#endif
 
 #if 0
     retval = copy_creds(p, clone_flags);
@@ -628,7 +636,6 @@ copy_process(struct pid *pid, int trace, int node,
         p->tgid = p->pid;
     }
 
-#if 0
     p->nr_dirtied = 0;
     p->nr_dirtied_pause = 128 >> (PAGE_SHIFT - 10);
     p->dirty_paused_when = 0;
@@ -636,8 +643,8 @@ copy_process(struct pid *pid, int trace, int node,
     p->pdeath_signal = 0;
     INIT_LIST_HEAD(&p->thread_group);
     p->task_works = NULL;
-    clear_posix_cputimers_work(p);
 
+#if 0
     /*
      * Ensure that the cgroup subsystem policies allow the new process to be
      * forked. It should be noted that the new process's css_set can be changed
@@ -669,13 +676,13 @@ copy_process(struct pid *pid, int trace, int node,
 
     p->start_time = ktime_get_ns();
     p->start_boottime = ktime_get_boottime_ns();
+#endif
 
     /*
      * Make it visible to the rest of the system, but dont wake it up yet.
      * Need tasklist lock for parent etc handling!
      */
     write_lock_irq(&tasklist_lock);
-#endif
 
     /* CLONE_PARENT re-uses the old parent */
     if (clone_flags & (CLONE_PARENT|CLONE_THREAD)) {
@@ -736,8 +743,10 @@ copy_process(struct pid *pid, int trace, int node,
     hlist_del_init(&delayed.node);
     spin_unlock(&current->sighand->siglock);
     syscall_tracepoint_update(p);
+#endif
     write_unlock_irq(&tasklist_lock);
 
+#if 0
     if (pidfile)
         fd_install(pidfd, pidfile);
 

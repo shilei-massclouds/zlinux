@@ -127,3 +127,15 @@ void __lockfunc _raw_spin_unlock_bh(raw_spinlock_t *lock)
     __raw_spin_unlock_bh(lock);
 }
 EXPORT_SYMBOL(_raw_spin_unlock_bh);
+
+void __lockfunc _raw_write_lock_irq(rwlock_t *lock)
+{
+    __raw_write_lock_irq(lock);
+}
+EXPORT_SYMBOL(_raw_write_lock_irq);
+
+void __lockfunc _raw_write_unlock_irq(rwlock_t *lock)
+{
+    __raw_write_unlock_irq(lock);
+}
+EXPORT_SYMBOL(_raw_write_unlock_irq);

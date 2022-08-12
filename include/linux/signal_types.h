@@ -14,4 +14,14 @@ struct sigpending {
     sigset_t signal;
 };
 
+struct sigaction {
+    __sighandler_t  sa_handler;
+    unsigned long   sa_flags;
+    sigset_t        sa_mask;    /* mask last for extensibility */
+};
+
+struct k_sigaction {
+    struct sigaction sa;
+};
+
 #endif /* _LINUX_SIGNAL_TYPES_H */

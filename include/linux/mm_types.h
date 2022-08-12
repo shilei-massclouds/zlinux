@@ -20,6 +20,8 @@
 
 #include <asm/mmu.h>
 
+struct file;
+
 #define _struct_page_alignment
 
 #define AT_VECTOR_SIZE (2*(AT_VECTOR_SIZE_ARCH + AT_VECTOR_SIZE_BASE + 1))

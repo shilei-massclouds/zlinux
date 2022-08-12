@@ -40,4 +40,11 @@
 #define do_raw_write_unlock(rwlock) \
     do {arch_write_unlock(&(rwlock)->raw_lock); __release(lock); } while (0)
 
+#define read_lock_irq(lock)     _raw_read_lock_irq(lock)
+#define read_lock_bh(lock)      _raw_read_lock_bh(lock)
+#define write_lock_irq(lock)    _raw_write_lock_irq(lock)
+#define write_lock_bh(lock)     _raw_write_lock_bh(lock)
+#define read_unlock_irq(lock)   _raw_read_unlock_irq(lock)
+#define write_unlock_irq(lock)  _raw_write_unlock_irq(lock)
+
 #endif /* __LINUX_RWLOCK_H */

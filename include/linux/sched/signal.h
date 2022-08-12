@@ -17,6 +17,17 @@
 #include <linux/ktime.h>
 
 /*
+ * Types defining task->signal and task->sighand and APIs using them:
+ */
+
+struct sighand_struct {
+    spinlock_t      siglock;
+    refcount_t      count;
+    wait_queue_head_t   signalfd_wqh;
+    struct k_sigaction  action[_NSIG];
+};
+
+/*
  * NOTE! "signal_struct" does not have its own
  * locking, because a shared signal_struct always
  * implies a shared sighand_struct, so locking
@@ -200,6 +211,11 @@ signal_pending_state(unsigned int state, struct task_struct *p)
 static inline bool thread_group_leader(struct task_struct *p)
 {
     return p->exit_signal >= 0;
+}
+
+static inline int thread_group_empty(struct task_struct *p)
+{
+    return list_empty(&p->thread_group);
 }
 
 #endif /* _LINUX_SCHED_SIGNAL_H */
