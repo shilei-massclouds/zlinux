@@ -4,7 +4,7 @@
  * Copyright (C) 2017 SiFive
  */
 
-#define RO_EXCEPTION_TABLE_ALIGN    16
+#define RO_EXCEPTION_TABLE_ALIGN    4
 
 #include <asm/pgtable.h>
 #define LOAD_OFFSET KERNEL_LINK_ADDR

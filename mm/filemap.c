@@ -1552,9 +1552,16 @@ ssize_t filemap_read(struct kiocb *iocb, struct iov_iter *iter,
                 flush_dcache_folio(folio);
 
             copied = copy_folio_to_iter(folio, offset, bytes, iter);
-            panic("%s: 0 [%d]!\n", __func__, i);
+
+            already_read += copied;
+            iocb->ki_pos += copied;
+            ra->prev_pos = iocb->ki_pos;
+
+            if (copied < bytes) {
+                error = -EFAULT;
+                break;
+            }
         }
-        panic("%s: 1!\n", __func__);
 
      put_folios:
         for (i = 0; i < folio_batch_count(&fbatch); i++)
@@ -1562,7 +1569,9 @@ ssize_t filemap_read(struct kiocb *iocb, struct iov_iter *iter,
         folio_batch_init(&fbatch);
     } while (iov_iter_count(iter) && iocb->ki_pos < isize && !error);
 
-    panic("%s: END!\n", __func__);
+    file_accessed(filp);
+
+    return already_read ? already_read : error;
 }
 
 /**

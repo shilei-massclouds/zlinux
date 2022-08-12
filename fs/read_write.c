@@ -107,7 +107,8 @@ static int warn_unsupported(struct file *file, const char *op)
     return -EINVAL;
 }
 
-ssize_t __kernel_read(struct file *file, void *buf, size_t count, loff_t *pos)
+ssize_t __kernel_read(struct file *file, void *buf, size_t count,
+                      loff_t *pos)
 {
     struct kvec iov = {
         .iov_base   = buf,
@@ -132,8 +133,12 @@ ssize_t __kernel_read(struct file *file, void *buf, size_t count, loff_t *pos)
     kiocb.ki_pos = pos ? *pos : 0;
     iov_iter_kvec(&iter, READ, &iov, 1, iov.iov_len);
     ret = file->f_op->read_iter(&kiocb, &iter);
-
-    panic("%s: END!\n", __func__);
+    if (ret > 0) {
+        if (pos)
+            *pos = kiocb.ki_pos;
+        //fsnotify_access(file);
+    }
+    return ret;
 }
 
 ssize_t kernel_read(struct file *file, void *buf, size_t count, loff_t *pos)

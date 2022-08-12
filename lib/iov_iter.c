@@ -220,7 +220,6 @@ size_t _copy_to_iter(const void *addr, size_t bytes, struct iov_iter *i)
                         memcpy(base, addr + off, len)
     )
 
-    panic("%s: END!\n", __func__);
     return bytes;
 }
 EXPORT_SYMBOL(_copy_to_iter);
@@ -253,7 +252,6 @@ size_t copy_page_to_iter(struct page *page, size_t offset, size_t bytes,
         size_t n = __copy_page_to_iter(page, offset,
                                        min(bytes, (size_t)PAGE_SIZE - offset),
                                        i);
-#if 0
         res += n;
         bytes -= n;
         if (!bytes || !n)
@@ -263,8 +261,6 @@ size_t copy_page_to_iter(struct page *page, size_t offset, size_t bytes,
             page++;
             offset = 0;
         }
-#endif
-        panic("%s: END!\n", __func__);
     }
     return res;
 }

@@ -1628,4 +1628,12 @@ static inline int mapping_writably_mapped(struct address_space *mapping)
     return atomic_read(&mapping->i_mmap_writable) > 0;
 }
 
+static inline void file_accessed(struct file *file)
+{
+#if 0
+    if (!(file->f_flags & O_NOATIME))
+        touch_atime(&file->f_path);
+#endif
+}
+
 #endif /* _LINUX_FS_H */

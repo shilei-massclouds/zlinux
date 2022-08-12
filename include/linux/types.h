@@ -153,6 +153,19 @@ typedef u32 __kernel_dev_t;
 typedef __kernel_dev_t      dev_t;
 typedef __kernel_loff_t     loff_t;
 
+/* bsd */
+typedef unsigned char       u_char;
+typedef unsigned short      u_short;
+typedef unsigned int        u_int;
+typedef unsigned long       u_long;
+
+/* sysv */
+typedef unsigned char       unchar;
+typedef unsigned short      ushort;
+typedef unsigned int        uint;
+typedef unsigned long       ulong;
+
+
 #endif /*  __ASSEMBLY__ */
 
 #endif /* _LINUX_TYPES_H */

@@ -495,6 +495,9 @@ static int prepare_binprm(struct linux_binprm *bprm)
     return kernel_read(bprm->file, bprm->buf, BINPRM_BUF_SIZE, &pos);
 }
 
+#define printable(c) \
+    (((c)=='\t') || ((c)=='\n') || (0x20<=(c) && (c)<=0x7e))
+
 /*
  * cycle the list of binary formats handler, until one recognizes the image
  */
@@ -527,7 +530,20 @@ static int search_binary_handler(struct linux_binprm *bprm)
     }
     read_unlock(&binfmt_lock);
 
-    panic("%s: END!\n", __func__);
+    if (need_retry) {
+        if (printable(bprm->buf[0]) && printable(bprm->buf[1]) &&
+            printable(bprm->buf[2]) && printable(bprm->buf[3]))
+            return retval;
+#if 0
+        if (request_module("binfmt-%04x",
+                           *(ushort *)(bprm->buf + 2)) < 0)
+            return retval;
+#endif
+        need_retry = false;
+        goto retry;
+    }
+
+    return retval;
 }
 
 static int exec_binprm(struct linux_binprm *bprm)

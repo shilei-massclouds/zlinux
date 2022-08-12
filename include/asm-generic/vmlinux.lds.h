@@ -268,6 +268,28 @@
     __end_sched_classes = .;
 
 /*
+ * Exception table
+ */
+#define EXCEPTION_TABLE(align)                          \
+    . = ALIGN(align);                                   \
+    __ex_table : AT(ADDR(__ex_table) - LOAD_OFFSET) {   \
+        __start___ex_table = .;                         \
+        KEEP(*(__ex_table))                             \
+        __stop___ex_table = .;                          \
+    }
+
+/*
+ * Some architectures have non-executable read-only exception tables.
+ * They can be added to the RO_DATA segment by specifying their desired
+ * alignment.
+ */
+#ifdef RO_EXCEPTION_TABLE_ALIGN
+#define RO_EXCEPTION_TABLE  EXCEPTION_TABLE(RO_EXCEPTION_TABLE_ALIGN)
+#else
+#define RO_EXCEPTION_TABLE
+#endif
+
+/*
  * Read only Data
  */
 #define RO_DATA(align)  \
@@ -299,15 +321,22 @@
         *(__ksymtab_strings)                    \
     }                                           \
                                                 \
+    /* __*init sections */                      \
+    __init_rodata : AT(ADDR(__init_rodata) - LOAD_OFFSET) {     \
+        *(.ref.rodata)                          \
+        MEM_KEEP(init.rodata)                   \
+        MEM_KEEP(exit.rodata)                   \
+    }                                           \
     /* Built-in module parameters. */           \
     __param : AT(ADDR(__param) - LOAD_OFFSET) { \
         __start___param = .;                    \
         KEEP(*(__param))                        \
         __stop___param = .;                     \
     }                                           \
-            \
-    NOTES   \
-            \
+                        \
+    RO_EXCEPTION_TABLE  \
+    NOTES               \
+                        \
     . = ALIGN((align)); \
     __end_rodata = .;
 
