@@ -23,7 +23,7 @@
 #include <asm/csr.h>
 //#include <asm/stacktrace.h>
 #include <asm/string.h>
-//#include <asm/switch_to.h>
+#include <asm/switch_to.h>
 #include <asm/thread_info.h>
 //#include <asm/cpuidle.h>
 
@@ -76,4 +76,15 @@ int copy_thread(unsigned long clone_flags, unsigned long usp, unsigned long arg,
     }
     p->thread.sp = (unsigned long)childregs; /* kernel sp */
     return 0;
+}
+
+void flush_thread(void)
+{
+    /*
+     * Reset FPU state and context
+     *  frm: round to nearest, ties to even (IEEE default)
+     *  fflags: accrued exceptions cleared
+     */
+    fstate_off(current, task_pt_regs(current));
+    memset(&current->thread.fstate, 0, sizeof(current->thread.fstate));
 }

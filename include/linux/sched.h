@@ -86,12 +86,17 @@
 #define PF_SUPERPRIV        0x00000100  /* Used super-user privileges */
 #define PF_MEMALLOC         0x00000800  /* Allocating memory */
 #define PF_NPROC_EXCEEDED   0x00001000  /* set_user() noticed that RLIMIT_NPROC was exceeded */
+#define PF_NOFREEZE         0x00008000  /* This thread should not be frozen */
 #define PF_MEMALLOC_NOFS    0x00040000  /* All allocation requests will inherit GFP_NOFS */
 #define PF_MEMALLOC_NOIO    0x00080000  /* All allocation requests will inherit GFP_NOIO */
 
 #define PF_KTHREAD          0x00200000  /* I am a kernel thread */
+#define PF_RANDOMIZE        0x00400000  /* Randomize virtual address space */
 #define PF_NO_SETAFFINITY   0x04000000  /* Userland is not allowed to meddle with cpus_mask */
+#define PF_MCE_EARLY        0x08000000      /* Early kill for mce process policy */
 #define PF_MEMALLOC_PIN     0x10000000  /* Allocation context constrained to zones which allow long term pinning. */
+#define PF_FREEZER_SKIP     0x40000000  /* Freezer should not count it as freezable */
+#define PF_SUSPEND_TASK     0x80000000      /* This thread called freeze_processes() and should not be frozen */
 
 /* Wake flags. The first three directly map to some SD flag value */
 #define WF_EXEC     0x02 /* Wakeup after exec; maps to SD_BALANCE_EXEC */
@@ -280,6 +285,9 @@ struct task_struct {
     /* The signal sent when the parent dies: */
     int pdeath_signal;
 
+    /* Used for emulating ABI behavior of previous Linux versions: */
+    unsigned int personality;
+
     /* Thread group tracking: */
     u64 parent_exec_id;
     u64 self_exec_id;
@@ -326,6 +334,10 @@ struct task_struct {
     /* Signal handlers: */
     struct signal_struct *signal;
     struct sighand_struct __rcu *sighand;
+
+    unsigned long       sas_ss_sp;
+    size_t              sas_ss_size;
+    unsigned int        sas_ss_flags;
 
     struct callback_head *task_works;
 

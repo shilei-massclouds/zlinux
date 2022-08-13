@@ -39,6 +39,8 @@ struct anon_vma_chain;
 struct user_struct;
 struct pt_regs;
 
+#define randomize_va_space 0
+
 /* to align the pointer to the (next) page boundary */
 #define PAGE_ALIGN(addr) ALIGN(addr, PAGE_SIZE)
 
@@ -1236,5 +1238,15 @@ static inline unsigned long thp_size(struct page *page)
 
 extern int set_mm_exe_file(struct mm_struct *mm,
                            struct file *new_exe_file);
+
+struct vm_unmapped_area_info {
+#define VM_UNMAPPED_AREA_TOPDOWN 1
+    unsigned long flags;
+    unsigned long length;
+    unsigned long low_limit;
+    unsigned long high_limit;
+    unsigned long align_mask;
+    unsigned long align_offset;
+};
 
 #endif /* _LINUX_MM_H */

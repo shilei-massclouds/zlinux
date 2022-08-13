@@ -458,3 +458,34 @@ struct anon_vma *find_mergeable_anon_vma(struct vm_area_struct *vma)
      */
     return anon_vma;
 }
+
+/* Get an address range which is currently unmapped.
+ * For shmat() with addr=0.
+ *
+ * Ugly calling convention alert:
+ * Return value with the low bits set means error value,
+ * ie
+ *  if (ret & ~PAGE_MASK)
+ *      error = ret;
+ *
+ * This function "knows" that -ENOMEM has the bits set.
+ */
+unsigned long
+arch_get_unmapped_area(struct file *filp, unsigned long addr,
+        unsigned long len, unsigned long pgoff, unsigned long flags)
+{
+    struct mm_struct *mm = current->mm;
+    struct vm_area_struct *vma, *prev;
+    struct vm_unmapped_area_info info;
+    const unsigned long mmap_end = arch_get_mmap_end(addr);
+
+#if 0
+    if (len > mmap_end - mmap_min_addr)
+        return -ENOMEM;
+#endif
+
+    if (flags & MAP_FIXED)
+        return addr;
+
+    panic("%s: END!\n", __func__);
+}

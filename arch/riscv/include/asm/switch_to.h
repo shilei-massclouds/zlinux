@@ -22,4 +22,10 @@ do {                                        \
     ((last) = __switch_to(__prev, __next)); \
 } while (0)
 
+static inline void fstate_off(struct task_struct *task,
+                              struct pt_regs *regs)
+{
+    regs->status = (regs->status & ~SR_FS) | SR_FS_OFF;
+}
+
 #endif /* _ASM_RISCV_SWITCH_TO_H */

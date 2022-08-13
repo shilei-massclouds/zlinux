@@ -65,6 +65,8 @@
     } while (0)
 #endif
 
+#define __no_kasan_or_inline __always_inline
+
 #define _compiletime_assert(condition, msg, prefix, suffix) \
     __compiletime_assert(condition, msg, prefix, suffix)
 

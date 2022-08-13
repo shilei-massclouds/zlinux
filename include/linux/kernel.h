@@ -20,6 +20,14 @@
 #include <asm/div64.h>
 #include <uapi/linux/kernel.h>
 
+/**
+ * REPEAT_BYTE - repeat the value @x multiple times as an unsigned long value
+ * @x: value to repeat
+ *
+ * NOTE: @x is not checked for > 0xff; larger values produce odd results.
+ */
+#define REPEAT_BYTE(x)  ((~0ul / 0xff) * (x))
+
 /* generic data direction definitions */
 #define READ    0
 #define WRITE   1

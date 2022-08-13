@@ -35,7 +35,7 @@
 #include <linux/string.h>
 #include <linux/init.h>
 #include <linux/sched/mm.h>
-//#include <linux/sched/coredump.h>
+#include <linux/sched/coredump.h>
 #include <linux/sched/signal.h>
 //#include <linux/sched/numa_balancing.h>
 #include <linux/sched/task.h>
@@ -72,6 +72,7 @@
 #include <linux/syscall_user_dispatch.h>
 #include <linux/coredump.h>
 #endif
+#include <linux/kthread.h>
 
 #include <linux/uaccess.h>
 #include <asm/mmu_context.h>
@@ -852,6 +853,35 @@ static int exec_mmap(struct mm_struct *mm)
 }
 
 /*
+ * This function makes sure the current process has its own signal table,
+ * so that flush_signal_handlers can later reset the handlers without
+ * disturbing other processes.  (Other processes might share the signal
+ * table via the CLONE_SIGHAND option to clone().)
+ */
+static int unshare_sighand(struct task_struct *me)
+{
+    struct sighand_struct *oldsighand = me->sighand;
+
+    if (refcount_read(&oldsighand->count) != 1) {
+        panic("%s: 1!\n", __func__);
+    }
+    return 0;
+}
+
+/*
+ * These functions flushes out all traces of the currently running executable
+ * so that a new one can be started
+ */
+
+void __set_task_comm(struct task_struct *tsk, const char *buf, bool exec)
+{
+    task_lock(tsk);
+    strscpy_pad(tsk->comm, buf, sizeof(tsk->comm));
+    task_unlock(tsk);
+    //perf_event_comm(tsk, exec);
+}
+
+/*
  * Calling this is the point of no return. None of the failures will be
  * seen by userspace since either the process is already taking a fatal
  * signal (via de_thread() or coredump), or will have SEGV raised
@@ -915,7 +945,87 @@ int begin_new_exec(struct linux_binprm * bprm)
     if (retval)
         goto out;
 
-    panic("%s: END!\n", __func__);
+    bprm->mm = NULL;
+
+#if 0
+    exit_itimers(me->signal);
+    flush_itimer_signals();
+#endif
+
+    /*
+     * Make the signal table private.
+     */
+    retval = unshare_sighand(me);
+    if (retval)
+        goto out_unlock;
+
+    if (me->flags & PF_KTHREAD)
+        free_kthread_struct(me);
+    me->flags &= ~(PF_RANDOMIZE | PF_FORKNOEXEC | PF_KTHREAD |
+                   PF_NOFREEZE | PF_NO_SETAFFINITY);
+    flush_thread();
+    me->personality &= ~bprm->per_clear;
+
+    /*
+     * We have to apply CLOEXEC before we change whether the process is
+     * dumpable (in setup_new_exec) to avoid a race with a process in userspace
+     * trying to access the should-be-closed file descriptors of a process
+     * undergoing exec(2).
+     */
+    do_close_on_exec(me->files);
+
+    if (bprm->secureexec) {
+        panic("%s: bprm->secureexec!\n", __func__);
+    }
+
+    me->sas_ss_sp = me->sas_ss_size = 0;
+
+#if 0
+    /*
+     * Figure out dumpability. Note that this checking only of current
+     * is wrong, but userspace depends on it. This should be testing
+     * bprm->secureexec instead.
+     */
+    if (bprm->interp_flags & BINPRM_FLAGS_ENFORCE_NONDUMP ||
+        !(uid_eq(current_euid(), current_uid()) &&
+          gid_eq(current_egid(), current_gid())))
+        set_dumpable(current->mm, suid_dumpable);
+    else
+        set_dumpable(current->mm, SUID_DUMP_USER);
+#endif
+
+    //perf_event_exec();
+    __set_task_comm(me, kbasename(bprm->filename), true);
+
+    /* An exec changes our domain. We are no longer part of the thread
+       group */
+    WRITE_ONCE(me->self_exec_id, me->self_exec_id + 1);
+    flush_signal_handlers(me, 0);
+
+#if 0
+    retval = set_cred_ucounts(bprm->cred);
+    if (retval < 0)
+        goto out_unlock;
+#endif
+
+    //commit_creds(bprm->cred);
+    bprm->cred = NULL;
+
+#if 0
+    /*
+     * Disable monitoring for regular users
+     * when executing setuid binaries. Must
+     * wait until new credentials are committed
+     * by commit_creds() above
+     */
+    if (get_dumpable(me->mm) != SUID_DUMP_USER)
+        perf_event_exit_task(me);
+#endif
+
+    /* Pass the opened binary to the interpreter. */
+    if (bprm->have_execfd) {
+        panic("%s: bprm->have_execfd!\n", __func__);
+    }
     return 0;
 
  out_unlock:
@@ -924,3 +1034,20 @@ int begin_new_exec(struct linux_binprm * bprm)
     return retval;
 }
 EXPORT_SYMBOL(begin_new_exec);
+
+void setup_new_exec(struct linux_binprm * bprm)
+{
+    /* Setup things that can depend upon the personality */
+    struct task_struct *me = current;
+
+    arch_pick_mmap_layout(me->mm, &bprm->rlim_stack);
+
+    /* Set the new mm task size. We have to do that late because it may
+     * depend on TIF_32BIT which is only updated in flush_thread() on
+     * some architectures like powerpc
+     */
+    me->mm->task_size = TASK_SIZE;
+    up_write(&me->signal->exec_update_lock);
+    mutex_unlock(&me->signal->cred_guard_mutex);
+}
+EXPORT_SYMBOL(setup_new_exec);

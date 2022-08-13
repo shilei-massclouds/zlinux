@@ -60,6 +60,12 @@ do {                                    \
     __WRITE_ONCE(x, val);               \
 } while (0)
 
+static __no_kasan_or_inline
+unsigned long read_word_at_a_time(const void *addr)
+{
+    return *(unsigned long *)addr;
+}
+
 #endif /* __ASSEMBLY__ */
 
 #endif  /* __ASM_GENERIC_RWONCE_H */

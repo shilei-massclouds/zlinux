@@ -85,4 +85,6 @@ static inline void task_unlock(struct task_struct *p)
 
 extern void sched_exec(void);
 
+extern void flush_thread(void);
+
 #endif /* _LINUX_SCHED_TASK_H */

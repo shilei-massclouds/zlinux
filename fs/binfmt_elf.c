@@ -22,8 +22,8 @@
 #include <linux/string.h>
 #include <linux/file.h>
 #include <linux/slab.h>
-#if 0
 #include <linux/personality.h>
+#if 0
 #include <linux/elfcore.h>
 #endif
 #include <linux/init.h>
@@ -238,6 +238,15 @@ static int load_elf_binary(struct linux_binprm *bprm)
     retval = begin_new_exec(bprm);
     if (retval)
         goto out_free_dentry;
+
+    /* Do this immediately, since STACK_TOP as used in setup_arg_pages
+       may depend on the personality.  */
+    SET_PERSONALITY2(*elf_ex, &arch_state);
+
+    if (!(current->personality & ADDR_NO_RANDOMIZE) && randomize_va_space)
+        current->flags |= PF_RANDOMIZE;
+
+    setup_new_exec(bprm);
 
     panic("%s: END!\n", __func__);
 

@@ -6,7 +6,7 @@
 #include <linux/percpu_counter.h>
 
 #include <linux/atomic.h>
-//#include <uapi/linux/mman.h>
+#include <uapi/linux/mman.h>
 
 #define arch_vm_get_page_prot(vm_flags) __pgprot(0)
 

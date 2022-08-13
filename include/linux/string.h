@@ -123,4 +123,8 @@ char *strreplace(char *s, char old, char new);
 
 extern char *kmemdup_nul(const char *s, size_t len, gfp_t gfp);
 
+ssize_t strscpy_pad(char *dest, const char *src, size_t count);
+
+ssize_t strscpy(char *, const char *, size_t);
+
 #endif /* _LINUX_STRING_H_ */

@@ -267,3 +267,19 @@ bool __kthread_should_park(struct task_struct *k)
     return test_bit(KTHREAD_SHOULD_PARK, &to_kthread(k)->flags);
 }
 EXPORT_SYMBOL_GPL(__kthread_should_park);
+
+void free_kthread_struct(struct task_struct *k)
+{
+    struct kthread *kthread;
+
+    /*
+     * Can be NULL if kmalloc() in set_kthread_struct() failed.
+     */
+    kthread = to_kthread(k);
+    if (!kthread)
+        return;
+
+    k->worker_private = NULL;
+    kfree(kthread->full_name);
+    kfree(kthread);
+}

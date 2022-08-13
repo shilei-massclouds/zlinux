@@ -6,6 +6,23 @@
 #include <asm/elf.h>
 #include <uapi/linux/elf.h>
 
+#ifndef elf_read_implies_exec
+  /* Executables for which elf_read_implies_exec() returns TRUE will
+     have the READ_IMPLIES_EXEC personality flag set automatically.
+     Override in asm/elf.h as needed.  */
+# define elf_read_implies_exec(ex, have_pt_gnu_stack)   0
+#endif
+
+#ifndef SET_PERSONALITY
+#define SET_PERSONALITY(ex) \
+    set_personality(PER_LINUX | (current->personality & (~PER_MASK)))
+#endif
+
+#ifndef SET_PERSONALITY2
+#define SET_PERSONALITY2(ex, state) \
+    SET_PERSONALITY(ex)
+#endif
+
 #define ELF64_GNU_PROPERTY_ALIGN    8
 
 extern Elf64_Dyn _DYNAMIC [];

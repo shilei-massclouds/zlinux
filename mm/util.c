@@ -296,3 +296,9 @@ void flush_dcache_folio(struct folio *folio)
 }
 EXPORT_SYMBOL(flush_dcache_folio);
 #endif
+
+void arch_pick_mmap_layout(struct mm_struct *mm, struct rlimit *rlim_stack)
+{
+    mm->mmap_base = TASK_UNMAPPED_BASE;
+    mm->get_unmapped_area = arch_get_unmapped_area;
+}
