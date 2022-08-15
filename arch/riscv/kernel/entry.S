@@ -120,7 +120,33 @@ _save_context:
      * Exceptions run with interrupts enabled or disabled depending on the
      * state of SR_PIE in m/sstatus.
      */
+    andi t0, s1, SR_PIE
+    beqz t0, 1f
+    /* kprobes, entered via ebreak, must have interrupts disabled. */
+    li t0, EXC_BREAKPOINT
+    beq s4, t0, 1f
+    csrs CSR_STATUS, SR_IE
 
+1:
+    la ra, ret_from_exception
+    /* Handle syscalls */
+    li t0, EXC_SYSCALL
+    beq s4, t0, handle_syscall
+
+    /* Handle other exceptions */
+    slli t0, s4, RISCV_LGPTR
+    la t1, excp_vect_table
+    la t2, excp_vect_table_end
+    move a0, sp /* pt_regs */
+    add t0, t1, t0
+    /* Check if exception code lies within bounds */
+    bgeu t0, t2, 1f
+    REG_L t0, 0(t0)
+    jr t0
+1:
+    tail do_trap_unknown
+
+handle_syscall:
     ebreak
 
 ret_from_exception:
@@ -280,3 +306,27 @@ ENTRY(__switch_to)
     move tp, a1
     ret
 ENDPROC(__switch_to)
+
+    .section ".rodata"
+    .align LGREG
+    /* Exception vector table */
+ENTRY(excp_vect_table)
+    RISCV_PTR do_trap_insn_misaligned
+    RISCV_PTR do_trap_insn_fault
+    RISCV_PTR do_trap_insn_illegal
+    RISCV_PTR do_trap_break
+    RISCV_PTR do_trap_load_misaligned
+    RISCV_PTR do_trap_load_fault
+    RISCV_PTR do_trap_store_misaligned
+    RISCV_PTR do_trap_store_fault
+    RISCV_PTR do_trap_ecall_u /* system call, gets intercepted */
+    RISCV_PTR do_trap_ecall_s
+    RISCV_PTR do_trap_unknown
+    RISCV_PTR do_trap_ecall_m
+    /* instruciton page fault */
+    RISCV_PTR do_page_fault
+    RISCV_PTR do_page_fault   /* load page fault */
+    RISCV_PTR do_trap_unknown
+    RISCV_PTR do_page_fault   /* store page fault */
+excp_vect_table_end:
+END(excp_vect_table)

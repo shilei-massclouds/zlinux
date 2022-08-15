@@ -7,3 +7,5 @@ obj-y += cacheflush.o
 obj-y += context.o
 obj-y += tlbflush.o
 obj-y += hugetlbpage.o
+
+obj-y += fault.o #pageattr.o

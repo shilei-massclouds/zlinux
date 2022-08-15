@@ -1366,4 +1366,12 @@ vma_merge(struct mm_struct *,
           struct mempolicy *, struct vm_userfaultfd_ctx,
           struct anon_vma_name *);
 
+/*
+ * The default fault flags that should be used by most of the
+ * arch-specific page fault handlers.
+ */
+#define FAULT_FLAG_DEFAULT  (FAULT_FLAG_ALLOW_RETRY | \
+                             FAULT_FLAG_KILLABLE | \
+                             FAULT_FLAG_INTERRUPTIBLE)
+
 #endif /* _LINUX_MM_H */

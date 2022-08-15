@@ -243,4 +243,11 @@ static inline unsigned long rlimit_max(unsigned int limit)
     return task_rlimit_max(current, limit);
 }
 
+int force_sig_fault_to_task(int sig, int code, void __user *addr,
+                            struct task_struct *t);
+
+int force_sig_fault(int sig, int code, void __user *addr);
+
+int send_sig_fault(int sig, int code, void __user *addr, struct task_struct *t);
+
 #endif /* _LINUX_SCHED_SIGNAL_H */

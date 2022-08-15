@@ -55,6 +55,24 @@
 # define RV_IRQ_TIMER   IRQ_S_TIMER
 # define RV_IRQ_EXT     IRQ_S_EXT
 
+/* Exception causes */
+#define EXC_INST_MISALIGNED 0
+#define EXC_INST_ACCESS     1
+#define EXC_INST_ILLEGAL    2
+#define EXC_BREAKPOINT      3
+#define EXC_LOAD_ACCESS     5
+#define EXC_STORE_ACCESS    7
+#define EXC_SYSCALL         8
+#define EXC_HYPERVISOR_SYSCALL  9
+#define EXC_SUPERVISOR_SYSCALL  10
+#define EXC_INST_PAGE_FAULT     12
+#define EXC_LOAD_PAGE_FAULT     13
+#define EXC_STORE_PAGE_FAULT    15
+#define EXC_INST_GUEST_PAGE_FAULT   20
+#define EXC_LOAD_GUEST_PAGE_FAULT   21
+#define EXC_VIRTUAL_INST_FAULT      22
+#define EXC_STORE_GUEST_PAGE_FAULT  23
+
 #ifndef __ASSEMBLY__
 
 #define csr_swap(csr, val)  \

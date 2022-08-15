@@ -23,8 +23,8 @@
 #include <linux/unistd.h>
 
 #include <asm/compat.h>
-#include <asm/siginfo.h>
 #include <asm/signal.h>
 #endif
+#include <asm/siginfo.h>
 
 #endif /* _LINUX_COMPAT_H */

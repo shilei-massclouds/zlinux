@@ -80,3 +80,14 @@ flush_signal_handlers(struct task_struct *t, int force_default)
         ka++;
     }
 }
+
+int force_sig_fault_to_task(int sig, int code, void __user *addr,
+                            struct task_struct *t)
+{
+    panic("%s: END!\n", __func__);
+}
+
+int force_sig_fault(int sig, int code, void __user *addr)
+{
+    return force_sig_fault_to_task(sig, code, addr, current);
+}

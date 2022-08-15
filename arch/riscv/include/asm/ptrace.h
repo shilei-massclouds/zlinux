@@ -51,6 +51,8 @@ struct pt_regs {
 
 #define REG_FMT "%016lx"
 
+#define user_mode(regs) (((regs)->status & SR_PP) == 0)
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* _ASM_RISCV_PTRACE_H */
