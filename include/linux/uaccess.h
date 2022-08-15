@@ -44,4 +44,24 @@ static inline void pagefault_enable(void)
     pagefault_disabled_dec();
 }
 
+/*
+ * Is the pagefault handler disabled? If so, user access methods will not sleep.
+ */
+static inline bool pagefault_disabled(void)
+{
+    return current->pagefault_disabled != 0;
+}
+
+/*
+ * The pagefault handler is in general disabled by pagefault_disable() or
+ * when in irq context (via in_atomic()).
+ *
+ * This function should only be used by the fault handlers. Other users should
+ * stick to pagefault_disabled().
+ * Please NEVER use preempt_disable() to disable the fault handler. With
+ * !CONFIG_PREEMPT_COUNT, this is like a NOP. So the handler won't be disabled.
+ * in_atomic() will report different values based on !CONFIG_PREEMPT_COUNT.
+ */
+#define faulthandler_disabled() (pagefault_disabled() || in_atomic())
+
 #endif /* __LINUX_UACCESS_H__ */

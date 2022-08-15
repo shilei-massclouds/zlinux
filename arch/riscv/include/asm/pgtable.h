@@ -48,6 +48,11 @@
 #define FIXADDR_SIZE    PMD_SIZE
 #define FIXADDR_START   (FIXADDR_TOP - FIXADDR_SIZE)
 
+/* This is used to define the end of the KASAN shadow region */
+#define MODULES_LOWEST_VADDR    (KERNEL_LINK_ADDR - SZ_2G)
+#define MODULES_VADDR           (PFN_ALIGN((unsigned long)&_end) - SZ_2G)
+#define MODULES_END             (PFN_ALIGN((unsigned long)&_start))
+
 #ifndef __ASSEMBLY__
 
 #include <asm/page.h>

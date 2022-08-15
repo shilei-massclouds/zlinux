@@ -227,4 +227,13 @@ do { \
 extern void migrate_disable(void);
 extern void migrate_enable(void);
 
+/*
+ * Are we running in atomic context?  WARNING: this macro cannot
+ * always detect atomic context; in particular, it cannot know about
+ * held spinlocks in non-preemptible kernels.  Thus it should not be
+ * used in the general case to determine whether sleeping is possible.
+ * Do not use in_atomic() in driver code.
+ */
+#define in_atomic() (preempt_count() != 0)
+
 #endif /* __LINUX_PREEMPT_H */
