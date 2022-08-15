@@ -3,10 +3,8 @@
 #define _LINUX_BINFMTS_H
 
 #include <linux/sched.h>
-#if 0
-#include <linux/unistd.h>
+//#include <linux/unistd.h>
 #include <asm/exec.h>
-#endif
 #include <uapi/linux/binfmts.h>
 
 struct filename;
@@ -117,5 +115,9 @@ extern int begin_new_exec(struct linux_binprm *bprm);
 extern void setup_new_exec(struct linux_binprm *bprm);
 extern void finalize_exec(struct linux_binprm *bprm);
 extern void would_dump(struct linux_binprm *, struct file *);
+
+extern int setup_arg_pages(struct linux_binprm * bprm,
+                           unsigned long stack_top,
+                           int executable_stack);
 
 #endif /* _LINUX_BINFMTS_H */

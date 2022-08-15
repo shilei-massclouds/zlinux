@@ -54,3 +54,9 @@ void mlock_new_page(struct page *page)
 #endif
     panic("%s: END!\n", __func__);
 }
+
+bool can_do_mlock(void)
+{
+    return true;
+}
+EXPORT_SYMBOL(can_do_mlock);

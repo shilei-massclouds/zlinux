@@ -289,6 +289,36 @@ static inline unsigned long my_zero_pfn(unsigned long addr)
     return zero_pfn;
 }
 
+#ifndef pgprot_noncached
+#define pgprot_noncached(prot)  (prot)
+#endif
+
+#ifndef pgprot_writecombine
+#define pgprot_writecombine pgprot_noncached
+#endif
+
+#ifndef pgprot_writethrough
+#define pgprot_writethrough pgprot_noncached
+#endif
+
+#ifndef pgprot_device
+#define pgprot_device pgprot_noncached
+#endif
+
+#ifndef pgprot_modify
+#define pgprot_modify pgprot_modify
+static inline pgprot_t pgprot_modify(pgprot_t oldprot, pgprot_t newprot)
+{
+    if (pgprot_val(oldprot) == pgprot_val(pgprot_noncached(oldprot)))
+        newprot = pgprot_noncached(newprot);
+    if (pgprot_val(oldprot) == pgprot_val(pgprot_writecombine(oldprot)))
+        newprot = pgprot_writecombine(newprot);
+    if (pgprot_val(oldprot) == pgprot_val(pgprot_device(oldprot)))
+        newprot = pgprot_device(newprot);
+    return newprot;
+}
+#endif
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* _LINUX_PGTABLE_H */

@@ -33,6 +33,7 @@
 #include <linux/fcntl.h>
 #include <linux/swap.h>
 #include <linux/string.h>
+#include <linux/security.h>
 #include <linux/init.h>
 #include <linux/sched/mm.h>
 #include <linux/sched/coredump.h>
@@ -1051,3 +1052,128 @@ void setup_new_exec(struct linux_binprm * bprm)
     mutex_unlock(&me->signal->cred_guard_mutex);
 }
 EXPORT_SYMBOL(setup_new_exec);
+
+/*
+ * During bprm_mm_init(), we create a temporary stack at STACK_TOP_MAX.  Once
+ * the binfmt code determines where the new stack should reside, we shift it to
+ * its final location.  The process proceeds as follows:
+ *
+ * 1) Use shift to calculate the new vma endpoints.
+ * 2) Extend vma to cover both the old and new ranges.  This ensures the
+ *    arguments passed to subsequent functions are consistent.
+ * 3) Move vma's page tables to the new range.
+ * 4) Free up any cleared pgd range.
+ * 5) Shrink the vma to cover only the new range.
+ */
+static int shift_arg_pages(struct vm_area_struct *vma, unsigned long shift)
+{
+    struct mm_struct *mm = vma->vm_mm;
+    unsigned long old_start = vma->vm_start;
+    unsigned long old_end = vma->vm_end;
+    unsigned long length = old_end - old_start;
+    unsigned long new_start = old_start - shift;
+    unsigned long new_end = old_end - shift;
+    //struct mmu_gather tlb;
+
+    BUG_ON(new_start > new_end);
+
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * Finalizes the stack vm_area_struct. The flags and permissions are updated,
+ * the stack is optionally relocated, and some extra space is added.
+ */
+int setup_arg_pages(struct linux_binprm *bprm,
+                    unsigned long stack_top,
+                    int executable_stack)
+{
+    unsigned long ret;
+    unsigned long stack_shift;
+    struct mm_struct *mm = current->mm;
+    struct vm_area_struct *vma = bprm->vma;
+    struct vm_area_struct *prev = NULL;
+    unsigned long vm_flags;
+    unsigned long stack_base;
+    unsigned long stack_size;
+    unsigned long stack_expand;
+    unsigned long rlim_stack;
+
+    stack_top = arch_align_stack(stack_top);
+    stack_top = PAGE_ALIGN(stack_top);
+
+    if (unlikely(stack_top < mmap_min_addr) ||
+        unlikely(vma->vm_end - vma->vm_start >= stack_top - mmap_min_addr))
+        return -ENOMEM;
+
+    stack_shift = vma->vm_end - stack_top;
+
+    bprm->p -= stack_shift;
+    mm->arg_start = bprm->p;
+
+    if (bprm->loader)
+        bprm->loader -= stack_shift;
+    bprm->exec -= stack_shift;
+
+    if (mmap_write_lock_killable(mm))
+        return -EINTR;
+
+    vm_flags = VM_STACK_FLAGS;
+
+    /*
+     * Adjust stack execute permissions; explicitly enable for
+     * EXSTACK_ENABLE_X, disable for EXSTACK_DISABLE_X and leave alone
+     * (arch default) otherwise.
+     */
+    if (unlikely(executable_stack == EXSTACK_ENABLE_X))
+        vm_flags |= VM_EXEC;
+    else if (executable_stack == EXSTACK_DISABLE_X)
+        vm_flags &= ~VM_EXEC;
+    vm_flags |= mm->def_flags;
+    vm_flags |= VM_STACK_INCOMPLETE_SETUP;
+
+#if 0
+    ret = mprotect_fixup(vma, &prev, vma->vm_start, vma->vm_end, vm_flags);
+    if (ret)
+        goto out_unlock;
+    BUG_ON(prev != vma);
+#endif
+
+    if (unlikely(vm_flags & VM_EXEC)) {
+        pr_warn_once("process '%pD4' started with executable stack\n",
+                     bprm->file);
+    }
+
+    /* Move stack pages down in memory. */
+    if (stack_shift) {
+        ret = shift_arg_pages(vma, stack_shift);
+        if (ret)
+            goto out_unlock;
+    }
+
+    /* mprotect_fixup is overkill to remove the temporary stack flags */
+    vma->vm_flags &= ~VM_STACK_INCOMPLETE_SETUP;
+
+    stack_expand = 131072UL; /* randomly 32*4k (or 2*64k) pages */
+    stack_size = vma->vm_end - vma->vm_start;
+    /*
+     * Align this down to a page boundary as expand_stack
+     * will align it up.
+     */
+    rlim_stack = bprm->rlim_stack.rlim_cur & PAGE_MASK;
+
+    if (stack_size + stack_expand > rlim_stack)
+        stack_base = vma->vm_end - rlim_stack;
+    else
+        stack_base = vma->vm_start - stack_expand;
+
+    current->mm->start_stack = bprm->p;
+    ret = expand_stack(vma, stack_base);
+    if (ret)
+        ret = -EFAULT;
+
+ out_unlock:
+    mmap_write_unlock(mm);
+    return ret;
+}
+EXPORT_SYMBOL(setup_arg_pages);

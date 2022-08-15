@@ -33,6 +33,6 @@ static inline void activate_mm(struct mm_struct *prev,
 
 DECLARE_STATIC_KEY_FALSE(use_asid_allocator);
 
-//#include <asm-generic/mmu_context.h>
+#include <asm-generic/mmu_context.h>
 
 #endif /* _ASM_RISCV_MMU_CONTEXT_H */

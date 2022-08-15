@@ -1646,4 +1646,36 @@ static inline struct file *get_file(struct file *f)
 
 extern int filp_close(struct file *, fl_owner_t id);
 
+static inline int mapping_map_writable(struct address_space *mapping)
+{
+    return atomic_inc_unless_negative(&mapping->i_mmap_writable) ?
+        0 : -EPERM;
+}
+
+static inline void mapping_unmap_writable(struct address_space *mapping)
+{
+    atomic_dec(&mapping->i_mmap_writable);
+}
+
+static inline int mapping_deny_writable(struct address_space *mapping)
+{
+    return atomic_dec_unless_positive(&mapping->i_mmap_writable) ?
+        0 : -EBUSY;
+}
+
+static inline void mapping_allow_writable(struct address_space *mapping)
+{
+    atomic_inc(&mapping->i_mmap_writable);
+}
+
+static inline bool vma_is_dax(const struct vm_area_struct *vma)
+{
+    return vma->vm_file && IS_DAX(vma->vm_file->f_mapping->host);
+}
+
+static inline int call_mmap(struct file *file, struct vm_area_struct *vma)
+{
+    return file->f_op->mmap(file, vma);
+}
+
 #endif /* _LINUX_FS_H */

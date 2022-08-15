@@ -221,4 +221,26 @@ static inline int thread_group_empty(struct task_struct *p)
 extern void flush_signal_handlers(struct task_struct *,
                                   int force_default);
 
+static inline unsigned long task_rlimit(const struct task_struct *task,
+                                        unsigned int limit)
+{
+    return READ_ONCE(task->signal->rlim[limit].rlim_cur);
+}
+
+static inline unsigned long task_rlimit_max(const struct task_struct *task,
+                                            unsigned int limit)
+{
+    return READ_ONCE(task->signal->rlim[limit].rlim_max);
+}
+
+static inline unsigned long rlimit(unsigned int limit)
+{
+    return task_rlimit(current, limit);
+}
+
+static inline unsigned long rlimit_max(unsigned int limit)
+{
+    return task_rlimit_max(current, limit);
+}
+
 #endif /* _LINUX_SCHED_SIGNAL_H */

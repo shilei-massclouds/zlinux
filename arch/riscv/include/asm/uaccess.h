@@ -52,4 +52,15 @@ raw_copy_to_user(void __user *to, const void *from, unsigned long n)
     return __asm_copy_to_user(to, from, n);
 }
 
+extern
+unsigned long __must_check __clear_user(void __user *addr, unsigned long n);
+
+static inline
+unsigned long __must_check clear_user(void __user *to, unsigned long n)
+{
+    might_fault();
+    return access_ok(to, n) ?
+        __clear_user(to, n) : n;
+}
+
 #endif /* _ASM_RISCV_UACCESS_H */

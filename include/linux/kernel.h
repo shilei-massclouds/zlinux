@@ -165,4 +165,6 @@ int sscanf(const char *, const char *, ...);
 extern __scanf(2, 0)
 int vsscanf(const char *, const char *, va_list);
 
+static inline void might_fault(void) { }
+
 #endif /* _LINUX_KERNEL_H */

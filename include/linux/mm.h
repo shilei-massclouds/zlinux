@@ -134,6 +134,9 @@ struct pt_regs;
 #define VM_DATA_FLAGS_EXEC \
     (VM_READ | VM_WRITE | VM_EXEC | VM_MAYREAD | VM_MAYWRITE | VM_MAYEXEC)
 
+/* This mask is used to clear all the VMA flags used by mlock */
+#define VM_LOCKED_CLEAR_MASK    (~(VM_LOCKED | VM_LOCKONFAULT))
+
 #define VM_STACK_DEFAULT_FLAGS VM_DATA_DEFAULT_FLAGS
 
 #define VM_STACK        VM_GROWSDOWN
@@ -149,6 +152,27 @@ struct pt_regs;
 
 /* Bits set in the VMA until the stack is in its final location */
 #define VM_STACK_INCOMPLETE_SETUP   (VM_RAND_READ | VM_SEQ_READ)
+
+/*
+ * Default maximum number of active map areas, this limits the number of vmas
+ * per mm struct. Users can overwrite this number by sysctl but there is a
+ * problem.
+ *
+ * When a program's coredump is generated as ELF format, a section is created
+ * per a vma. In ELF, the number of sections is represented in unsigned short.
+ * This means the number of sections should be smaller than 65535 at coredump.
+ * Because the kernel adds some informative sections to a image of program at
+ * generating coredump, we need some margin. The number of extra sections is
+ * 1-3 now and depends on arch. We use "5" as safe margin, here.
+ *
+ * ELF extended numbering allows more than 65535 sections, so 16-bit bound is
+ * not a hard limit any more. Although some userspace tools can be surprised by
+ * that.
+ */
+#define MAPCOUNT_ELF_CORE_MARGIN    (5)
+#define DEFAULT_MAX_MAP_COUNT       (USHRT_MAX - MAPCOUNT_ELF_CORE_MARGIN)
+
+extern int sysctl_max_map_count;
 
 typedef unsigned long vm_flags_t;
 
@@ -1248,5 +1272,98 @@ struct vm_unmapped_area_info {
     unsigned long align_mask;
     unsigned long align_offset;
 };
+
+unsigned long randomize_stack_top(unsigned long stack_top);
+unsigned long randomize_page(unsigned long start, unsigned long range);
+
+/* Generic expand stack which grows the stack according to GROWS{UP,DOWN} */
+extern int expand_stack(struct vm_area_struct *vma, unsigned long address);
+
+static inline bool vma_is_accessible(struct vm_area_struct *vma)
+{
+    return vma->vm_flags & VM_ACCESS_FLAGS;
+}
+
+extern unsigned long do_mmap(struct file *file, unsigned long addr,
+                             unsigned long len, unsigned long prot,
+                             unsigned long flags, unsigned long pgoff,
+                             unsigned long *populate, struct list_head *uf);
+extern int __do_munmap(struct mm_struct *, unsigned long, size_t,
+                       struct list_head *uf, bool downgrade);
+extern int do_munmap(struct mm_struct *, unsigned long, size_t,
+                     struct list_head *uf);
+
+extern int __mm_populate(unsigned long addr, unsigned long len,
+                         int ignore_errors);
+static inline void mm_populate(unsigned long addr, unsigned long len)
+{
+    /* Ignore errors */
+    (void) __mm_populate(addr, len, 1);
+}
+
+extern int vm_munmap(unsigned long, size_t);
+extern unsigned long __must_check
+vm_mmap(struct file *, unsigned long,
+        unsigned long, unsigned long,
+        unsigned long, unsigned long);
+
+/* Look up the first VMA which satisfies  addr < vm_end,  NULL if none. */
+extern struct vm_area_struct *
+find_vma(struct mm_struct * mm, unsigned long addr);
+
+extern struct vm_area_struct *
+find_vma_prev(struct mm_struct * mm,
+              unsigned long addr,
+              struct vm_area_struct **pprev);
+
+/**
+ * find_vma_intersection() - Look up the first VMA which intersects the interval
+ * @mm: The process address space.
+ * @start_addr: The inclusive start user address.
+ * @end_addr: The exclusive end user address.
+ *
+ * Returns: The first VMA within the provided range, %NULL otherwise.  Assumes
+ * start_addr < end_addr.
+ */
+static inline
+struct vm_area_struct *find_vma_intersection(struct mm_struct *mm,
+                                             unsigned long start_addr,
+                                             unsigned long end_addr)
+{
+    struct vm_area_struct *vma = find_vma(mm, start_addr);
+
+    if (vma && end_addr <= vma->vm_start)
+        vma = NULL;
+    return vma;
+}
+
+extern bool can_do_mlock(void);
+
+static inline struct vm_area_struct *get_gate_vma(struct mm_struct *mm)
+{
+    return NULL;
+}
+static inline int in_gate_area_no_mm(unsigned long addr) { return 0; }
+static inline int in_gate_area(struct mm_struct *mm, unsigned long addr)
+{
+    return 0;
+}
+
+void vma_interval_tree_insert(struct vm_area_struct *node,
+                              struct rb_root_cached *root);
+
+extern int __must_check
+vm_brk_flags(unsigned long, unsigned long, unsigned long);
+
+extern unsigned long
+get_unmapped_area(struct file *, unsigned long, unsigned long, unsigned long,
+                  unsigned long);
+
+extern struct vm_area_struct *
+vma_merge(struct mm_struct *,
+          struct vm_area_struct *prev, unsigned long addr, unsigned long end,
+          unsigned long vm_flags, struct anon_vma *, struct file *, pgoff_t,
+          struct mempolicy *, struct vm_userfaultfd_ctx,
+          struct anon_vma_name *);
 
 #endif /* _LINUX_MM_H */

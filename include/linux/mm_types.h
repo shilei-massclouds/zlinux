@@ -563,4 +563,7 @@ static inline cpumask_t *mm_cpumask(struct mm_struct *mm)
     return (struct cpumask *)&mm->cpu_bitmap;
 }
 
+#define NULL_VM_UFFD_CTX ((struct vm_userfaultfd_ctx) {})
+struct vm_userfaultfd_ctx {};
+
 #endif /* _LINUX_MM_TYPES_H */

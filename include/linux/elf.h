@@ -35,4 +35,11 @@ extern Elf64_Dyn _DYNAMIC [];
 #define Elf_Word    Elf64_Word
 #define ELF_GNU_PROPERTY_ALIGN  ELF64_GNU_PROPERTY_ALIGN
 
+static inline int arch_elf_adjust_prot(int prot,
+                                       const struct arch_elf_state *state,
+                                       bool has_interp, bool is_interp)
+{
+    return prot;
+}
+
 #endif /* _LINUX_ELF_H */

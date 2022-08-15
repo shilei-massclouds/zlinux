@@ -622,4 +622,9 @@ task_pid_nr_ns(struct task_struct *tsk, struct pid_namespace *ns)
     return __task_pid_nr_ns(tsk, PIDTYPE_PID, ns);
 }
 
+static inline pid_t task_pid_nr(struct task_struct *tsk)
+{
+    return tsk->pid;
+}
+
 #endif /* _LINUX_SCHED_H */

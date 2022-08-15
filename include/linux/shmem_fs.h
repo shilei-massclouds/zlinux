@@ -61,4 +61,9 @@ static inline bool shmem_mapping(struct address_space *mapping)
     return mapping->a_ops == &shmem_aops;
 }
 
+extern unsigned long
+shmem_get_unmapped_area(struct file *, unsigned long addr,
+                        unsigned long len, unsigned long pgoff,
+                        unsigned long flags);
+
 #endif /* __SHMEM_FS_H */

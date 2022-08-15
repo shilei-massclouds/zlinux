@@ -457,4 +457,8 @@ int __pure cpumask_next_and(int n,
                             const struct cpumask *,
                             const struct cpumask *);
 
+int __pure cpumask_any_but(const struct cpumask *mask, unsigned int cpu);
+unsigned int cpumask_local_spread(unsigned int i, int node);
+int cpumask_any_distribute(const struct cpumask *srcp);
+
 #endif /* __LINUX_CPUMASK_H */

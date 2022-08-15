@@ -52,4 +52,14 @@ struct page *follow_huge_pgd(struct mm_struct *mm, unsigned long address,
 int pmd_huge(pmd_t pmd);
 int pud_huge(pud_t pud);
 
+extern const struct file_operations hugetlbfs_file_operations;
+
+static inline bool is_file_hugepages(struct file *file)
+{
+    if (file->f_op == &hugetlbfs_file_operations)
+        return true;
+
+    return is_file_shm_hugepages(file);
+}
+
 #endif /* _LINUX_HUGETLB_H */

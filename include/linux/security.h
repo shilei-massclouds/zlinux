@@ -23,9 +23,11 @@
 #ifndef __LINUX_SECURITY_H
 #define __LINUX_SECURITY_H
 
+#if 0
 #include <linux/kernel_read_file.h>
 #include <linux/key.h>
 #include <linux/capability.h>
+#endif
 #include <linux/fs.h>
 #include <linux/slab.h>
 #include <linux/err.h>

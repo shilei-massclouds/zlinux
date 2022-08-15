@@ -17,4 +17,6 @@ struct sysv_shm {
 
 #define shm_init_task(task) INIT_LIST_HEAD(&(task)->sysvshm.shm_clist)
 
+bool is_file_shm_hugepages(struct file *file);
+
 #endif /* _LINUX_SHM_H_ */

@@ -207,4 +207,34 @@ static inline bool page_evictable(struct page *page)
     return ret;
 }
 
+/*
+ * Executable code area - executable, not writable, not stack
+ */
+static inline bool is_exec_mapping(vm_flags_t flags)
+{
+    return (flags & (VM_EXEC | VM_WRITE | VM_STACK)) == VM_EXEC;
+}
+
+/*
+ * Stack area - automatically grows in one direction
+ *
+ * VM_GROWSUP / VM_GROWSDOWN VMAs are always private anonymous:
+ * do_mmap() forbids all other combinations.
+ */
+static inline bool is_stack_mapping(vm_flags_t flags)
+{
+    return (flags & VM_STACK) == VM_STACK;
+}
+
+/*
+ * Data area - private, writable, not stack
+ */
+static inline bool is_data_mapping(vm_flags_t flags)
+{
+    return (flags & (VM_WRITE | VM_SHARED | VM_STACK)) == VM_WRITE;
+}
+
+extern int mlock_future_check(struct mm_struct *mm, unsigned long flags,
+                              unsigned long len);
+
 #endif  /* __MM_INTERNAL_H */

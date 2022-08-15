@@ -9,7 +9,7 @@
 #include <linux/sched/mm.h>
 #include <linux/sched/signal.h>
 #include <linux/sched/task_stack.h>
-//#include <linux/security.h>
+#include <linux/security.h>
 #include <linux/swap.h>
 #include <linux/swapops.h>
 #if 0
@@ -21,10 +21,10 @@
 #include <linux/elf.h>
 #if 0
 #include <linux/elf-randomize.h>
-#include <linux/personality.h>
 #include <linux/random.h>
 #include <linux/processor.h>
 #endif
+#include <linux/personality.h>
 #include <linux/sizes.h>
 #include <linux/compat.h>
 
@@ -32,6 +32,8 @@
 #include <asm/sections.h>
 
 #include "internal.h"
+
+int sysctl_max_map_count __read_mostly = DEFAULT_MAX_MAP_COUNT;
 
 /**
  * kfree_const - conditionally free memory
@@ -302,3 +304,50 @@ void arch_pick_mmap_layout(struct mm_struct *mm, struct rlimit *rlim_stack)
     mm->mmap_base = TASK_UNMAPPED_BASE;
     mm->get_unmapped_area = arch_get_unmapped_area;
 }
+
+unsigned long randomize_stack_top(unsigned long stack_top)
+{
+    unsigned long random_variable = 0;
+
+    if (current->flags & PF_RANDOMIZE) {
+#if 0
+        random_variable = get_random_long();
+        random_variable &= STACK_RND_MASK;
+        random_variable <<= PAGE_SHIFT;
+#endif
+        panic("%s: END!\n", __func__);
+    }
+    return PAGE_ALIGN(stack_top) - random_variable;
+}
+
+unsigned long vm_mmap_pgoff(struct file *file, unsigned long addr,
+                            unsigned long len, unsigned long prot,
+                            unsigned long flag, unsigned long pgoff)
+{
+    unsigned long ret;
+    struct mm_struct *mm = current->mm;
+    unsigned long populate;
+    LIST_HEAD(uf);
+
+    if (mmap_write_lock_killable(mm))
+        return -EINTR;
+    ret = do_mmap(file, addr, len, prot, flag, pgoff, &populate, &uf);
+    mmap_write_unlock(mm);
+    if (populate)
+        mm_populate(ret, populate);
+
+    return ret;
+}
+
+unsigned long vm_mmap(struct file *file, unsigned long addr,
+                      unsigned long len, unsigned long prot,
+                      unsigned long flag, unsigned long offset)
+{
+    if (unlikely(offset + PAGE_ALIGN(len) < offset))
+        return -EINVAL;
+    if (unlikely(offset_in_page(offset)))
+        return -EINVAL;
+
+    return vm_mmap_pgoff(file, addr, len, prot, flag, offset >> PAGE_SHIFT);
+}
+EXPORT_SYMBOL(vm_mmap);

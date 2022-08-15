@@ -82,19 +82,55 @@ vm_fault_t filemap_map_pages(struct vm_fault *vmf,
     panic("%s: END!\n", __func__);
 }
 
+/**
+ * filemap_fault - read in file data for page fault handling
+ * @vmf:    struct vm_fault containing details of the fault
+ *
+ * filemap_fault() is invoked via the vma operations vector for a
+ * mapped memory region to read in file data during a page fault.
+ *
+ * The goto's are kind of ugly, but this streamlines the normal case of having
+ * it in the page cache, and handles the special cases reasonably without
+ * having a lot of duplicated code.
+ *
+ * vma->vm_mm->mmap_lock must be held on entry.
+ *
+ * If our return value has VM_FAULT_RETRY set, it's because the mmap_lock
+ * may be dropped before doing I/O or by lock_folio_maybe_drop_mmap().
+ *
+ * If our return value does not have VM_FAULT_RETRY set, the mmap_lock
+ * has not been released.
+ *
+ * We never return with VM_FAULT_RETRY and a bit from VM_FAULT_ERROR set.
+ *
+ * Return: bitwise-OR of %VM_FAULT_ codes.
+ */
+vm_fault_t filemap_fault(struct vm_fault *vmf)
+{
+    panic("%s: END!\n", __func__);
+}
+
+vm_fault_t filemap_page_mkwrite(struct vm_fault *vmf)
+{
+    panic("%s: END!\n", __func__);
+}
+
+const struct vm_operations_struct generic_file_vm_ops = {
+    .fault          = filemap_fault,
+    .map_pages      = filemap_map_pages,
+    .page_mkwrite   = filemap_page_mkwrite,
+};
+
 /* This is used for a general mmap of a disk file */
 
 int generic_file_mmap(struct file *file, struct vm_area_struct *vma)
 {
-#if 0
     struct address_space *mapping = file->f_mapping;
 
     if (!mapping->a_ops->readpage)
         return -ENOEXEC;
     file_accessed(file);
     vma->vm_ops = &generic_file_vm_ops;
-#endif
-    panic("%s: END!\n", __func__);
     return 0;
 }
 EXPORT_SYMBOL(generic_file_mmap);

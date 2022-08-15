@@ -72,3 +72,23 @@ int cpumask_next_and(int n,
                              nr_cpumask_bits, n + 1);
 }
 EXPORT_SYMBOL(cpumask_next_and);
+
+/**
+ * cpumask_any_but - return a "random" in a cpumask, but not this one.
+ * @mask: the cpumask to search
+ * @cpu: the cpu to ignore.
+ *
+ * Often used to find any cpu but smp_processor_id() in a mask.
+ * Returns >= nr_cpu_ids if no cpus set.
+ */
+int cpumask_any_but(const struct cpumask *mask, unsigned int cpu)
+{
+    unsigned int i;
+
+    cpumask_check(cpu);
+    for_each_cpu(i, mask)
+        if (i != cpu)
+            break;
+    return i;
+}
+EXPORT_SYMBOL(cpumask_any_but);

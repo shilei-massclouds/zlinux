@@ -759,6 +759,24 @@ int shmem_init_fs_context(struct fs_context *fc)
     return 0;
 }
 
+unsigned long shmem_get_unmapped_area(struct file *file,
+                      unsigned long uaddr, unsigned long len,
+                      unsigned long pgoff, unsigned long flags)
+{
+    unsigned long (*get_area)(struct file *,
+        unsigned long, unsigned long, unsigned long, unsigned long);
+    unsigned long addr;
+    unsigned long offset;
+    unsigned long inflated_len;
+    unsigned long inflated_addr;
+    unsigned long inflated_offset;
+
+    if (len > TASK_SIZE)
+        return -ENOMEM;
+
+    panic("%s: END!\n", __func__);
+}
+
 static struct file_system_type shmem_fs_type = {
     .owner      = THIS_MODULE,
     .name       = "tmpfs",
