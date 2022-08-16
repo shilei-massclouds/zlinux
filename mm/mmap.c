@@ -1088,6 +1088,21 @@ can_vma_merge_before(struct vm_area_struct *vma, unsigned long vm_flags,
 }
 
 /*
+ * We cannot adjust vm_start, vm_end, vm_pgoff fields of a vma that
+ * is already present in an i_mmap tree without adjusting the tree.
+ * The following helper function should be used when such adjustments
+ * are necessary.  The "insert" vma (if any) is to be inserted
+ * before we drop the necessary locks.
+ */
+int __vma_adjust(struct vm_area_struct *vma, unsigned long start,
+                 unsigned long end, pgoff_t pgoff,
+                 struct vm_area_struct *insert,
+                 struct vm_area_struct *expand)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
  * Given a mapping request (addr,end,vm_flags,file,pgoff,anon_name),
  * figure out whether that can be merged with its predecessor or its
  * successor.  Or both (it neatly fills a hole).
@@ -1166,7 +1181,24 @@ vma_merge(struct mm_struct *mm,
     if (prev && prev->vm_end == addr &&
         can_vma_merge_after(prev, vm_flags, anon_vma, file, pgoff,
                             vm_userfaultfd_ctx, anon_name)) {
+        /*
+         * OK, it can.  Can we now merge in the successor as well?
+         */
+        if (next && end == next->vm_start &&
+            can_vma_merge_before(next, vm_flags, anon_vma, file, pgoff+pglen,
+                                 vm_userfaultfd_ctx, anon_name) &&
+            is_mergeable_anon_vma(prev->anon_vma, next->anon_vma, NULL)) {
+            /* cases 1, 6 */
+            err = __vma_adjust(prev, prev->vm_start,
+                               next->vm_end, prev->vm_pgoff, NULL,
+                               prev);
+        } else  /* cases 2, 5, 7 */
+            err = __vma_adjust(prev, prev->vm_start,
+                               end, prev->vm_pgoff, NULL, prev);
+        if (err)
+            return NULL;
         panic("%s: after!\n", __func__);
+        return prev;
     }
 
     /*
@@ -1570,5 +1602,89 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
     bool downgraded = false;
     LIST_HEAD(uf);
 
-    panic("%s: END!\n", __func__);
+    if (mmap_write_lock_killable(mm))
+        return -EINTR;
+
+    origbrk = mm->brk;
+
+    /*
+     * CONFIG_COMPAT_BRK can still be overridden by setting
+     * randomize_va_space to 2, which will still cause mm->start_brk
+     * to be arbitrarily shifted
+     */
+#if 0
+    if (current->brk_randomized)
+        min_brk = mm->start_brk;
+    else
+        min_brk = mm->end_data;
+#else
+    min_brk = mm->end_data;
+#endif
+
+    if (brk < min_brk)
+        goto out;
+
+    /*
+     * Check against rlimit here. If this check is done later after the test
+     * of oldbrk with newbrk then it can escape the test and let the data
+     * segment grow beyond its set limit the in case where the limit is
+     * not page aligned -Ram Gupta
+     */
+    if (check_data_rlimit(rlimit(RLIMIT_DATA), brk, mm->start_brk,
+                          mm->end_data, mm->start_data))
+        goto out;
+
+    newbrk = PAGE_ALIGN(brk);
+    oldbrk = PAGE_ALIGN(mm->brk);
+    if (oldbrk == newbrk) {
+        mm->brk = brk;
+        goto success;
+    }
+
+    /*
+     * Always allow shrinking brk.
+     * __do_munmap() may downgrade mmap_lock to read.
+     */
+    if (brk <= mm->brk) {
+        int ret;
+
+        /*
+         * mm->brk must to be protected by write mmap_lock so update it
+         * before downgrading mmap_lock. When __do_munmap() fails,
+         * mm->brk will be restored from origbrk.
+         */
+        mm->brk = brk;
+        ret = __do_munmap(mm, newbrk, oldbrk-newbrk, &uf, true);
+        if (ret < 0) {
+            mm->brk = origbrk;
+            goto out;
+        } else if (ret == 1) {
+            downgraded = true;
+        }
+        goto success;
+    }
+
+    /* Check against existing mmap mappings. */
+    next = find_vma(mm, oldbrk);
+    if (next && newbrk + PAGE_SIZE > vm_start_gap(next))
+        goto out;
+
+    /* Ok, looks good - let it rip. */
+    if (do_brk_flags(oldbrk, newbrk-oldbrk, 0, &uf) < 0)
+        goto out;
+    mm->brk = brk;
+
+ success:
+    populate = newbrk > oldbrk && (mm->def_flags & VM_LOCKED) != 0;
+    if (downgraded)
+        mmap_read_unlock(mm);
+    else
+        mmap_write_unlock(mm);
+    if (populate)
+        mm_populate(oldbrk, newbrk - oldbrk);
+    return brk;
+
+ out:
+    mmap_write_unlock(mm);
+    return origbrk;
 }

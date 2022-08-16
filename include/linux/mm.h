@@ -1411,4 +1411,19 @@ void do_set_pte(struct vm_fault *vmf, struct page *page, unsigned long addr);
 vm_fault_t finish_fault(struct vm_fault *vmf);
 vm_fault_t finish_mkwrite_fault(struct vm_fault *vmf);
 
+static inline int
+check_data_rlimit(unsigned long rlim,
+                  unsigned long new,
+                  unsigned long start,
+                  unsigned long end_data,
+                  unsigned long start_data)
+{
+    if (rlim < RLIM_INFINITY) {
+        if (((new - start) + (end_data - start_data)) > rlim)
+            return -ENOSPC;
+    }
+
+    return 0;
+}
+
 #endif /* _LINUX_MM_H */
