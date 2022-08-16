@@ -133,4 +133,6 @@ static inline void put_anon_vma(struct anon_vma *anon_vma)
 void page_add_new_anon_rmap(struct page *, struct vm_area_struct *,
                             unsigned long address, bool compound);
 
+void page_add_file_rmap(struct page *, struct vm_area_struct *, bool compound);
+
 #endif  /* _LINUX_RMAP_H */

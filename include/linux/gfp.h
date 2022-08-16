@@ -343,7 +343,7 @@ void *alloc_pages_exact(size_t size, gfp_t gfp_mask) __alloc_size(1);
 void free_pages_exact(void *virt, size_t size);
 __meminit void *alloc_pages_exact_nid(int nid, size_t size, gfp_t gfp_mask)
     __alloc_size(2);
-    
+
 struct folio *
 __folio_alloc(gfp_t gfp, unsigned int order, int preferred_nid,
               nodemask_t *nodemask);

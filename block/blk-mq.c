@@ -1090,7 +1090,7 @@ blk_mq_rq_ctx_init(struct blk_mq_alloc_data *data,
     if (blk_mq_need_time_stamp(rq)) {
         //rq->start_time_ns = ktime_get_ns();
         rq->start_time_ns = 0;
-        pr_warn("%s: blk_mq_need_time_stamp!\n", __func__);
+        //pr_warn("%s: blk_mq_need_time_stamp!\n", __func__);
     } else {
         rq->start_time_ns = 0;
     }

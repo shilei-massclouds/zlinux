@@ -284,6 +284,22 @@ void page_add_new_anon_rmap(struct page *page,
     __page_set_anon_rmap(page, vma, address, 1);
 }
 
+/**
+ * page_add_file_rmap - add pte mapping to a file page
+ * @page:   the page to add the mapping to
+ * @vma:    the vm area in which the mapping is added
+ * @compound:   charge the page as compound or small page
+ *
+ * The caller needs to hold the pte lock.
+ */
+void page_add_file_rmap(struct page *page, struct vm_area_struct *vma,
+                        bool compound)
+{
+    int i, nr = 0;
+
+    panic("%s: END!\n", __func__);
+}
+
 static void anon_vma_ctor(void *data)
 {
     struct anon_vma *anon_vma = data;

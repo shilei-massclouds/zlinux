@@ -1374,4 +1374,41 @@ vma_merge(struct mm_struct *,
                              FAULT_FLAG_KILLABLE | \
                              FAULT_FLAG_INTERRUPTIBLE)
 
+/**
+ * fault_flag_allow_retry_first - check ALLOW_RETRY the first time
+ * @flags: Fault flags.
+ *
+ * This is mostly used for places where we want to try to avoid taking
+ * the mmap_lock for too long a time when waiting for another condition
+ * to change, in which case we can try to be polite to release the
+ * mmap_lock in the first round to avoid potential starvation of other
+ * processes that would also want the mmap_lock.
+ *
+ * Return: true if the page fault allows retry and this is the first
+ * attempt of the fault handling; false otherwise.
+ */
+static inline bool fault_flag_allow_retry_first(enum fault_flag flags)
+{
+    return (flags & FAULT_FLAG_ALLOW_RETRY) && (!(flags & FAULT_FLAG_TRIED));
+}
+
+/*
+ * Do pte_mkwrite, but only if the vma says VM_WRITE.  We do this when
+ * servicing faults for write access.  In the normal case, do always want
+ * pte_mkwrite.  But get_user_pages can cause write faults for mappings
+ * that do not have writing enabled, when used by access_process_vm.
+ */
+static inline pte_t maybe_mkwrite(pte_t pte, struct vm_area_struct *vma)
+{
+    if (likely(vma->vm_flags & VM_WRITE))
+        pte = pte_mkwrite(pte);
+    return pte;
+}
+
+vm_fault_t do_set_pmd(struct vm_fault *vmf, struct page *page);
+void do_set_pte(struct vm_fault *vmf, struct page *page, unsigned long addr);
+
+vm_fault_t finish_fault(struct vm_fault *vmf);
+vm_fault_t finish_mkwrite_fault(struct vm_fault *vmf);
+
 #endif /* _LINUX_MM_H */

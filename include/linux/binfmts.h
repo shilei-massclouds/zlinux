@@ -120,4 +120,6 @@ extern int setup_arg_pages(struct linux_binprm * bprm,
                            unsigned long stack_top,
                            int executable_stack);
 
+extern void set_binfmt(struct linux_binfmt *new);
+
 #endif /* _LINUX_BINFMTS_H */

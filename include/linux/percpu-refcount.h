@@ -210,9 +210,7 @@ static inline bool percpu_ref_tryget_live_rcu(struct percpu_ref *ref)
     unsigned long __percpu *percpu_count;
     bool ret = false;
 
-    printk("%s: step0\n", __func__);
     if (likely(__ref_is_percpu(ref, &percpu_count))) {
-        printk("%s: step1.1\n", __func__);
         this_cpu_inc(*percpu_count);
         ret = true;
     } else if (!(ref->percpu_count_ptr & __PERCPU_REF_DEAD)) {

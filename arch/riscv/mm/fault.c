@@ -95,6 +95,12 @@ static inline bool access_error(unsigned long cause, struct vm_area_struct *vma)
     return false;
 }
 
+static inline void mm_fault_error(struct pt_regs *regs, unsigned long addr,
+                                  vm_fault_t fault)
+{
+    panic("%s: END!\n", __func__);
+}
+
 /*
  * This routine handles page faults.  It determines the address and the
  * problem, and then passes it off to one of the appropriate routines.
@@ -213,5 +219,33 @@ asmlinkage void do_page_fault(struct pt_regs *regs)
      */
     fault = handle_mm_fault(vma, addr, flags, regs);
 
-    panic("%s: END!\n", __func__);
+#if 0
+    /*
+     * If we need to retry but a fatal signal is pending, handle the
+     * signal first. We do not need to release the mmap_lock because it
+     * would already be released in __lock_page_or_retry in mm/filemap.c.
+     */
+    if (fault_signal_pending(fault, regs))
+        return;
+#endif
+
+    if (unlikely(fault & VM_FAULT_RETRY)) {
+        flags |= FAULT_FLAG_TRIED;
+
+        /*
+         * No need to mmap_read_unlock(mm) as we would
+         * have already released it in __lock_page_or_retry
+         * in mm/filemap.c.
+         */
+        goto retry;
+    }
+
+    mmap_read_unlock(mm);
+
+    if (unlikely(fault & VM_FAULT_ERROR)) {
+        tsk->thread.bad_cause = cause;
+        mm_fault_error(regs, addr, fault);
+        return;
+    }
+    return;
 }

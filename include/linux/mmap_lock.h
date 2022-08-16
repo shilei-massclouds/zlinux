@@ -41,4 +41,12 @@ static inline void mmap_read_unlock(struct mm_struct *mm)
     up_read(&mm->mmap_lock);
 }
 
+static inline int mmap_read_lock_killable(struct mm_struct *mm)
+{
+    int ret;
+
+    ret = down_read_killable(&mm->mmap_lock);
+    return ret;
+}
+
 #endif /* _LINUX_MMAP_LOCK_H */

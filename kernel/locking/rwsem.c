@@ -413,3 +413,20 @@ int down_read_trylock(struct rw_semaphore *sem)
     return ret;
 }
 EXPORT_SYMBOL(down_read_trylock);
+
+static inline int __down_read_killable(struct rw_semaphore *sem)
+{
+    return __down_read_common(sem, TASK_KILLABLE);
+}
+
+int __sched down_read_killable(struct rw_semaphore *sem)
+{
+    might_sleep();
+
+    if (__down_read_killable(sem)) {
+        return -EINTR;
+    }
+
+    return 0;
+}
+EXPORT_SYMBOL(down_read_killable);

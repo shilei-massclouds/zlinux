@@ -14,10 +14,11 @@ obj-y += kstrtox.o percpu_counter.o irq_regs.o iov_iter.o
 obj-y += hexdump.o percpu-refcount.o
 obj-y += lockref.o dec_and_lock.o scatterlist.o
 obj-y += hweight.o bitmap.o sbitmap.o
-obj-y += kasprintf.o string_helpers.o
+obj-y += kasprintf.o string_helpers.o usercopy.o
 
 obj-y += devres.o
 obj-y += sg_pool.o
+obj-y += strnlen_user.o
 
 libfdt_files = fdt.o fdt_ro.o find_bit.o
 

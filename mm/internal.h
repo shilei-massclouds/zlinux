@@ -237,4 +237,29 @@ static inline bool is_data_mapping(vm_flags_t flags)
 extern int mlock_future_check(struct mm_struct *mm, unsigned long flags,
                               unsigned long len);
 
+static inline struct file *maybe_unlock_mmap_for_io(struct vm_fault *vmf,
+                            struct file *fpin)
+{
+    int flags = vmf->flags;
+
+    if (fpin)
+        return fpin;
+
+    /*
+     * FAULT_FLAG_RETRY_NOWAIT means we don't want to wait on page locks or
+     * anything, so we only pin the file and drop the mmap_lock if only
+     * FAULT_FLAG_ALLOW_RETRY is set, while this is the first attempt.
+     */
+    if (fault_flag_allow_retry_first(flags) &&
+        !(flags & FAULT_FLAG_RETRY_NOWAIT)) {
+        fpin = get_file(vmf->vma->vm_file);
+        mmap_read_unlock(vmf->vma->vm_mm);
+    }
+    return fpin;
+}
+
+void page_cache_ra_order(struct readahead_control *, struct file_ra_state *,
+                         unsigned int order);
+
+
 #endif  /* __MM_INTERNAL_H */

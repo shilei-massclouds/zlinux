@@ -86,4 +86,17 @@ static inline void zero_user_segment(struct page *page,
     zero_user_segments(page, start, end, 0, 0);
 }
 
+static inline void
+copy_user_highpage(struct page *to, struct page *from,
+                   unsigned long vaddr, struct vm_area_struct *vma)
+{
+    char *vfrom, *vto;
+
+    vfrom = kmap_local_page(from);
+    vto = kmap_local_page(to);
+    copy_user_page(vto, vfrom, vaddr, to);
+    kunmap_local(vto);
+    kunmap_local(vfrom);
+}
+
 #endif /* _LINUX_HIGHMEM_H */

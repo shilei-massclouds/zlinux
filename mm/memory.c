@@ -332,6 +332,216 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 }
 
 /*
+ * The mmap_lock must have been held on entry, and may have been
+ * released depending on flags and vma->vm_ops->fault() return value.
+ * See filemap_fault() and __lock_page_retry().
+ */
+static vm_fault_t __do_fault(struct vm_fault *vmf)
+{
+    struct vm_area_struct *vma = vmf->vma;
+    vm_fault_t ret;
+
+    /*
+     * Preallocate pte before we take page_lock because this might lead to
+     * deadlocks for memcg reclaim which waits for pages under writeback:
+     *              lock_page(A)
+     *              SetPageWriteback(A)
+     *              unlock_page(A)
+     * lock_page(B)
+     *              lock_page(B)
+     * pte_alloc_one
+     *   shrink_page_list
+     *     wait_on_page_writeback(A)
+     *              SetPageWriteback(B)
+     *              unlock_page(B)
+     *              # flush A, B to clear the writeback
+     */
+    if (pmd_none(*vmf->pmd) && !vmf->prealloc_pte) {
+        vmf->prealloc_pte = pte_alloc_one(vma->vm_mm);
+        if (!vmf->prealloc_pte)
+            return VM_FAULT_OOM;
+    }
+
+    ret = vma->vm_ops->fault(vmf);
+    if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY |
+                        VM_FAULT_DONE_COW)))
+        return ret;
+
+    if (unlikely(PageHWPoison(vmf->page))) {
+        panic("%s: PageHWPoison!\n", __func__);
+    }
+
+    if (unlikely(!(ret & VM_FAULT_LOCKED)))
+        lock_page(vmf->page);
+    else
+        VM_BUG_ON_PAGE(!PageLocked(vmf->page), vmf->page);
+
+    return ret;
+}
+
+#ifndef arch_wants_old_prefaulted_pte
+static inline bool arch_wants_old_prefaulted_pte(void)
+{
+    /*
+     * Transitioning a PTE from 'old' to 'young' can be expensive on
+     * some architectures, even if it's performed in hardware. By
+     * default, "false" means prefaulted entries will be 'young'.
+     */
+    return false;
+}
+#endif
+
+void do_set_pte(struct vm_fault *vmf, struct page *page, unsigned long addr)
+{
+    struct vm_area_struct *vma = vmf->vma;
+    bool write = vmf->flags & FAULT_FLAG_WRITE;
+    bool prefault = vmf->address != addr;
+    pte_t entry;
+
+    flush_icache_page(vma, page);
+    entry = mk_pte(page, vma->vm_page_prot);
+
+    if (prefault && arch_wants_old_prefaulted_pte())
+        entry = pte_mkold(entry);
+    else
+        entry = pte_sw_mkyoung(entry);
+
+    if (write)
+        entry = maybe_mkwrite(pte_mkdirty(entry), vma);
+    /* copy-on-write page */
+    if (write && !(vma->vm_flags & VM_SHARED)) {
+        //inc_mm_counter_fast(vma->vm_mm, MM_ANONPAGES);
+        page_add_new_anon_rmap(page, vma, addr, false);
+        lru_cache_add_inactive_or_unevictable(page, vma);
+    } else {
+        //inc_mm_counter_fast(vma->vm_mm, mm_counter_file(page));
+        page_add_file_rmap(page, vma, false);
+    }
+    set_pte_at(vma->vm_mm, addr, vmf->pte, entry);
+}
+
+vm_fault_t do_set_pmd(struct vm_fault *vmf, struct page *page)
+{
+    return VM_FAULT_FALLBACK;
+}
+
+/**
+ * finish_fault - finish page fault once we have prepared the page to fault
+ *
+ * @vmf: structure describing the fault
+ *
+ * This function handles all that is needed to finish a page fault once the
+ * page to fault in is prepared. It handles locking of PTEs, inserts PTE for
+ * given page, adds reverse page mapping, handles memcg charges and LRU
+ * addition.
+ *
+ * The function expects the page to be locked and on success it consumes a
+ * reference of a page being mapped (for the PTE which maps it).
+ *
+ * Return: %0 on success, %VM_FAULT_ code in case of error.
+ */
+vm_fault_t finish_fault(struct vm_fault *vmf)
+{
+    struct vm_area_struct *vma = vmf->vma;
+    struct page *page;
+    vm_fault_t ret;
+
+    /* Did we COW the page? */
+    if ((vmf->flags & FAULT_FLAG_WRITE) && !(vma->vm_flags & VM_SHARED))
+        page = vmf->cow_page;
+    else
+        page = vmf->page;
+
+    /*
+     * check even for read faults because we might have lost our CoWed
+     * page
+     */
+    if (!(vma->vm_flags & VM_SHARED)) {
+        ret = check_stable_address_space(vma->vm_mm);
+        if (ret)
+            return ret;
+    }
+
+    if (pmd_none(*vmf->pmd)) {
+        if (PageTransCompound(page)) {
+            ret = do_set_pmd(vmf, page);
+            if (ret != VM_FAULT_FALLBACK)
+                return ret;
+        }
+
+        if (vmf->prealloc_pte)
+            pmd_install(vma->vm_mm, vmf->pmd, &vmf->prealloc_pte);
+        else if (unlikely(pte_alloc(vma->vm_mm, vmf->pmd)))
+            return VM_FAULT_OOM;
+    }
+
+    /* See comment in handle_pte_fault() */
+    if (pmd_devmap_trans_unstable(vmf->pmd))
+        return 0;
+
+    vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd,
+                                   vmf->address, &vmf->ptl);
+    ret = 0;
+    /* Re-check under ptl */
+    if (likely(pte_none(*vmf->pte)))
+        do_set_pte(vmf, page, vmf->address);
+    else
+        ret = VM_FAULT_NOPAGE;
+
+    update_mmu_tlb(vma, vmf->address, vmf->pte);
+    pte_unmap_unlock(vmf->pte, vmf->ptl);
+    return ret;
+}
+
+static vm_fault_t do_shared_fault(struct vm_fault *vmf)
+{
+    struct vm_area_struct *vma = vmf->vma;
+    vm_fault_t ret, tmp;
+
+    panic("%s: END!\n", __func__);
+}
+
+static vm_fault_t do_cow_fault(struct vm_fault *vmf)
+{
+    struct vm_area_struct *vma = vmf->vma;
+    vm_fault_t ret;
+
+    if (unlikely(anon_vma_prepare(vma)))
+        return VM_FAULT_OOM;
+
+    vmf->cow_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, vmf->address);
+    if (!vmf->cow_page)
+        return VM_FAULT_OOM;
+
+    ret = __do_fault(vmf);
+    if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
+        goto uncharge_out;
+    if (ret & VM_FAULT_DONE_COW)
+        return ret;
+
+    copy_user_highpage(vmf->cow_page, vmf->page, vmf->address, vma);
+    __SetPageUptodate(vmf->cow_page);
+
+    ret |= finish_fault(vmf);
+    unlock_page(vmf->page);
+    put_page(vmf->page);
+    if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
+        goto uncharge_out;
+    return ret;
+ uncharge_out:
+    put_page(vmf->cow_page);
+    return ret;
+}
+
+static vm_fault_t do_read_fault(struct vm_fault *vmf)
+{
+    struct vm_area_struct *vma = vmf->vma;
+    vm_fault_t ret = 0;
+
+    panic("%s: END!\n", __func__);
+}
+
+/*
  * We enter with non-exclusive mmap_lock (to exclude vma changes,
  * but allow concurrent faults).
  * The mmap_lock may have been released depending on flags and our
@@ -345,7 +555,26 @@ static vm_fault_t do_fault(struct vm_fault *vmf)
     struct mm_struct *vm_mm = vma->vm_mm;
     vm_fault_t ret;
 
-    panic("%s: END!\n", __func__);
+    /*
+     * The VMA was not fully populated on mmap() or missing VM_DONTEXPAND
+     */
+    if (!vma->vm_ops->fault) {
+        panic("%s: has no fault!\n", __func__);
+    } else if (!(vmf->flags & FAULT_FLAG_WRITE)) {
+        ret = do_read_fault(vmf);
+    } else if (!(vma->vm_flags & VM_SHARED)) {
+        ret = do_cow_fault(vmf);
+    } else {
+        ret = do_shared_fault(vmf);
+    }
+
+    /* preallocated pagetable is unused: free it */
+    if (vmf->prealloc_pte) {
+        pte_free(vm_mm, vmf->prealloc_pte);
+        vmf->prealloc_pte = NULL;
+    }
+
+    return ret;
 }
 
 /*

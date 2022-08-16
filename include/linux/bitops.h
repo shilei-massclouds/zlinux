@@ -8,6 +8,8 @@
 
 #include <uapi/linux/kernel.h>
 
+#define aligned_byte_mask(n) ((1UL << 8*(n))-1)
+
 #define BITS_PER_TYPE(type) (sizeof(type) * BITS_PER_BYTE)
 #define BITS_TO_LONGS(nr)   DIV_ROUND_UP(nr, BITS_PER_TYPE(long))
 

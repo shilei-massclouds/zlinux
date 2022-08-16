@@ -642,4 +642,17 @@ static inline loff_t folio_pos(struct folio *folio)
     return page_offset(&folio->page);
 }
 
+/*
+ * lock_page may only be called if we have the page's inode pinned.
+ */
+static inline void lock_page(struct page *page)
+{
+    struct folio *folio;
+    might_sleep();
+
+    folio = page_folio(page);
+    if (!folio_trylock(folio))
+        __folio_lock(folio);
+}
+
 #endif /* _LINUX_PAGEMAP_H */

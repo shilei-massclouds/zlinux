@@ -15,4 +15,11 @@ static inline void flush_cache_page(struct vm_area_struct *vma,
 }
 #endif
 
+#ifndef flush_icache_page
+static inline void flush_icache_page(struct vm_area_struct *vma,
+                                     struct page *page)
+{
+}
+#endif
+
 #endif /* _ASM_GENERIC_CACHEFLUSH_H */

@@ -42,4 +42,9 @@ static inline int arch_elf_adjust_prot(int prot,
     return prot;
 }
 
+#if defined(ARCH_HAS_SETUP_ADDITIONAL_PAGES) && !defined(ARCH_SETUP_ADDITIONAL_PAGES)
+#define ARCH_SETUP_ADDITIONAL_PAGES(bprm, ex, interpreter) \
+    arch_setup_additional_pages(bprm, interpreter)
+#endif
+
 #endif /* _LINUX_ELF_H */
