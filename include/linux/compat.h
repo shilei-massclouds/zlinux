@@ -19,9 +19,9 @@
 #endif
 #include <linux/fs.h>
 #include <linux/uaccess.h>
-#if 0
 #include <linux/unistd.h>
 
+#if 0
 #include <asm/compat.h>
 #include <asm/signal.h>
 #endif

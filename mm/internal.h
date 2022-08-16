@@ -300,4 +300,6 @@ static inline void mlock_vma_page(struct page *page,
     mlock_vma_folio(page_folio(page), vma, compound);
 }
 
+extern void free_unref_page(struct page *page, unsigned int order);
+
 #endif  /* __MM_INTERNAL_H */

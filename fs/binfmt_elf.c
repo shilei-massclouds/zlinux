@@ -252,7 +252,6 @@ static int padzero(unsigned long elf_bss)
     nbyte = ELF_PAGEOFFSET(elf_bss);
     if (nbyte) {
         nbyte = ELF_MIN_ALIGN - nbyte;
-        printk("%s: step1 (%x)(%x)\n", __func__, elf_bss, nbyte);
         if (clear_user((void __user *) elf_bss, nbyte))
             return -EFAULT;
     }

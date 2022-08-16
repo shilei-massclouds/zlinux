@@ -9,7 +9,7 @@
 
 #include <asm/asm.h>
 #include <asm/csr.h>
-//#include <asm/unistd.h>
+#include <asm/unistd.h>
 #include <asm/thread_info.h>
 #include <asm/asm-offsets.h>
 //#include <asm/errata_list.h>
@@ -147,7 +147,48 @@ _save_context:
     tail do_trap_unknown
 
 handle_syscall:
-    ebreak
+     /* save the initial A0 value (needed in signal handlers) */
+    REG_S a0, PT_ORIG_A0(sp)
+    /*
+     * Advance SEPC to avoid executing the original
+     * scall instruction on sret
+     */
+    addi s2, s2, 0x4
+    REG_S s2, PT_EPC(sp)
+    /* Trace syscalls, but only if requested by the user. */
+    REG_L t0, TASK_TI_FLAGS(tp)
+    andi t0, t0, _TIF_SYSCALL_WORK
+    bnez t0, handle_syscall_trace_enter
+check_syscall_nr:
+    /* Check to make sure we don't jump to a bogus syscall number. */
+    li t0, __NR_syscalls
+    la s0, sys_ni_syscall
+    /*
+     * Syscall number held in a7.
+     * If syscall number is above allowed value, redirect to ni_syscall.
+     */
+    bgeu a7, t0, 1f
+    /* Call syscall */
+    la s0, sys_call_table
+    slli t0, a7, RISCV_LGPTR
+    add s0, s0, t0
+    REG_L s0, 0(s0)
+1:
+    jalr s0
+
+ret_from_syscall:
+    /* Set user a0 to kernel a0 */
+    REG_S a0, PT_A0(sp)
+    /*
+     * We didn't execute the actual syscall.
+     * Seccomp already set return value for the current task pt_regs.
+     * (If it was configured with SECCOMP_RET_ERRNO/TRACE)
+     */
+ret_from_syscall_rejected:
+    /* Trace syscalls, but only if requested by the user. */
+    REG_L t0, TASK_TI_FLAGS(tp)
+    andi t0, t0, _TIF_SYSCALL_WORK
+    bnez t0, handle_syscall_trace_exit
 
 ret_from_exception:
     REG_L s0, PT_STATUS(sp)
@@ -244,6 +285,26 @@ work_notifysig:
     tail do_notify_resume
 work_resched:
     tail schedule
+
+/* Slow paths for ptrace. */
+handle_syscall_trace_enter:
+    move a0, sp
+    call do_syscall_trace_enter
+    move t0, a0
+    REG_L a0, PT_A0(sp)
+    REG_L a1, PT_A1(sp)
+    REG_L a2, PT_A2(sp)
+    REG_L a3, PT_A3(sp)
+    REG_L a4, PT_A4(sp)
+    REG_L a5, PT_A5(sp)
+    REG_L a6, PT_A6(sp)
+    REG_L a7, PT_A7(sp)
+    bnez t0, ret_from_syscall_rejected
+    j check_syscall_nr
+handle_syscall_trace_exit:
+    move a0, sp
+    call do_syscall_trace_exit
+    j ret_from_exception
 
 handle_kernel_stack_overflow:
     ebreak

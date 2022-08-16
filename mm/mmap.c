@@ -21,8 +21,8 @@
 #include <linux/mman.h>
 #include <linux/pagemap.h>
 #include <linux/swap.h>
-#if 0
 #include <linux/syscalls.h>
+#if 0
 #include <linux/capability.h>
 #endif
 #include <linux/init.h>
@@ -1558,4 +1558,17 @@ unsigned long do_mmap(struct file *file, unsigned long addr,
          (flags & (MAP_POPULATE | MAP_NONBLOCK)) == MAP_POPULATE))
         *populate = len;
     return addr;
+}
+
+SYSCALL_DEFINE1(brk, unsigned long, brk)
+{
+    unsigned long newbrk, oldbrk, origbrk;
+    struct mm_struct *mm = current->mm;
+    struct vm_area_struct *next;
+    unsigned long min_brk;
+    bool populate;
+    bool downgraded = false;
+    LIST_HEAD(uf);
+
+    panic("%s: END!\n", __func__);
 }

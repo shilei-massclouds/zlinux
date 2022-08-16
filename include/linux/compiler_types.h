@@ -149,4 +149,10 @@
 
 #define __cond_lock(x,c) (c)
 
+#define __diag_push()   __diag(push)
+#define __diag_pop()    __diag(pop)
+
+#define __diag_ignore(compiler, version, option, comment) \
+    __diag_ ## compiler(version, ignore, option)
+
 #endif /* __LINUX_COMPILER_TYPES_H */

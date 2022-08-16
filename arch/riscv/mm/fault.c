@@ -179,7 +179,6 @@ asmlinkage void do_page_fault(struct pt_regs *regs)
  retry:
     mmap_read_lock(mm);
     vma = find_vma(mm, addr);
-    printk("%s: step1\n", __func__);
     if (unlikely(!vma)) {
         tsk->thread.bad_cause = cause;
         bad_area(regs, mm, code, addr);

@@ -59,13 +59,36 @@ static DEFINE_PER_CPU(struct lru_pvecs, lru_pvecs) = {
 
 atomic_t lru_disable_count = ATOMIC_INIT(0);
 
+/*
+ * This path almost never happens for VM activity - pages are normally freed
+ * via pagevecs.  But it gets used by networking - and for compound pages.
+ */
+static void __page_cache_release(struct page *page)
+{
+    if (PageLRU(page)) {
+        struct folio *folio = page_folio(page);
+        struct lruvec *lruvec;
+        unsigned long flags;
+
+        lruvec = folio_lruvec_lock_irqsave(folio, &flags);
+        del_page_from_lru_list(page, lruvec);
+        __clear_page_lru_flags(page);
+        unlock_page_lruvec_irqrestore(lruvec, flags);
+    }
+    /* See comment on PageMlocked in release_pages() */
+    if (unlikely(PageMlocked(page))) {
+        int nr_pages = thp_nr_pages(page);
+
+        __ClearPageMlocked(page);
+        //mod_zone_page_state(page_zone(page), NR_MLOCK, -nr_pages);
+        //count_vm_events(UNEVICTABLE_PGCLEARED, nr_pages);
+    }
+}
+
 static void __put_single_page(struct page *page)
 {
-#if 0
     __page_cache_release(page);
     free_unref_page(page, 0);
-#endif
-    pr_warn("%s: END!\n", __func__);
 }
 
 static void __put_compound_page(struct page *page)
