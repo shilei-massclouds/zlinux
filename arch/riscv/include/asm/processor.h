@@ -56,6 +56,10 @@ static inline void arch_thread_struct_whitelist(unsigned long *offset,
 
 int riscv_of_parent_hartid(struct device_node *node);
 
+/* Do necessary setup to start up a newly executed thread. */
+extern void start_thread(struct pt_regs *regs, unsigned long pc,
+                         unsigned long sp);
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* _ASM_RISCV_PROCESSOR_H */

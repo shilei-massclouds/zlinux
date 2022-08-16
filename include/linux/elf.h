@@ -47,4 +47,9 @@ static inline int arch_elf_adjust_prot(int prot,
     arch_setup_additional_pages(bprm, interpreter)
 #endif
 
+#ifndef START_THREAD
+#define START_THREAD(elf_ex, regs, elf_entry, start_stack)  \
+    start_thread(regs, elf_entry, start_stack)
+#endif
+
 #endif /* _LINUX_ELF_H */

@@ -88,3 +88,20 @@ void flush_thread(void)
     fstate_off(current, task_pt_regs(current));
     memset(&current->thread.fstate, 0, sizeof(current->thread.fstate));
 }
+
+void start_thread(struct pt_regs *regs, unsigned long pc, unsigned long sp)
+{
+    regs->status = SR_PIE;
+#if 0
+    if (has_fpu()) {
+        regs->status |= SR_FS_INITIAL;
+        /*
+         * Restore the initial value to the FP register
+         * before starting the user program.
+         */
+        fstate_restore(current, regs);
+    }
+#endif
+    regs->epc = pc;
+    regs->sp = sp;
+}

@@ -119,7 +119,6 @@ static void free_bprm(struct linux_binprm *bprm)
         mmput(bprm->mm);
     }
     free_arg_pages(bprm);
-#if 0
     if (bprm->cred) {
         mutex_unlock(&current->signal->cred_guard_mutex);
         abort_creds(bprm->cred);
@@ -135,9 +134,6 @@ static void free_bprm(struct linux_binprm *bprm)
         kfree(bprm->interp);
     kfree(bprm->fdpath);
     kfree(bprm);
-#endif
-
-    panic("%s: END!\n", __func__);
 }
 
 static int __bprm_mm_init(struct linux_binprm *bprm)
@@ -587,7 +583,8 @@ static int exec_binprm(struct linux_binprm *bprm)
             fput(exec);
     }
 
-    panic("%s: END!\n", __func__);
+    //audit_bprm(bprm);
+    return 0;
 }
 
 /*
@@ -634,8 +631,6 @@ static int bprm_execve(struct linux_binprm *bprm,
     current->fs->in_exec = 0;
     current->in_execve = 0;
     rseq_execve(current);
-
-    panic("%s: END!\n", __func__);
     return retval;
 
  out:
@@ -1190,3 +1185,13 @@ void set_binfmt(struct linux_binfmt *new)
         __module_get(new->module);
 }
 EXPORT_SYMBOL(set_binfmt);
+
+/* Runs immediately before start_thread() takes over. */
+void finalize_exec(struct linux_binprm *bprm)
+{
+    /* Store any stack rlimit changes before starting thread. */
+    task_lock(current->group_leader);
+    current->signal->rlim[RLIMIT_STACK] = bprm->rlim_stack;
+    task_unlock(current->group_leader);
+}
+EXPORT_SYMBOL(finalize_exec);

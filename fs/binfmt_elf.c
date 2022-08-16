@@ -50,6 +50,7 @@
 #include <linux/cred.h>
 //#include <linux/dax.h>
 #include <linux/uaccess.h>
+#include <linux/ptrace.h>
 #include <asm/param.h>
 #include <asm/page.h>
 
@@ -751,8 +752,49 @@ static int load_elf_binary(struct linux_binprm *bprm)
     if (retval < 0)
         goto out;
 
-    panic("%s: END!\n", __func__);
+    mm = current->mm;
+    mm->end_code = end_code;
+    mm->start_code = start_code;
+    mm->start_data = start_data;
+    mm->end_data = end_data;
+    mm->start_stack = bprm->p;
 
+    if ((current->flags & PF_RANDOMIZE) && (randomize_va_space > 1)) {
+#if 0
+        /*
+         * For architectures with ELF randomization, when executing
+         * a loader directly (i.e. no interpreter listed in ELF
+         * headers), move the brk area out of the mmap region
+         * (since it grows up, and may collide early with the stack
+         * growing down), and into the unused ELF_ET_DYN_BASE region.
+         */
+        if (IS_ENABLED(CONFIG_ARCH_HAS_ELF_RANDOMIZE) &&
+            elf_ex->e_type == ET_DYN && !interpreter) {
+            mm->brk = mm->start_brk = ELF_ET_DYN_BASE;
+        }
+
+        mm->brk = mm->start_brk = arch_randomize_brk(mm);
+#ifdef compat_brk_randomized
+        current->brk_randomized = 1;
+#endif
+#endif
+        panic("%s: PF_RANDOMIZE!\n", __func__);
+    }
+
+    if (current->personality & MMAP_PAGE_ZERO) {
+        /* Why this, you ask???  Well SVr4 maps page 0 as read-only,
+           and some applications "depend" upon this behavior.
+           Since we do not have the power to recompile these, we
+           emulate the SVr4 behavior. Sigh. */
+        error = vm_mmap(NULL, 0, PAGE_SIZE, PROT_READ | PROT_EXEC,
+                        MAP_FIXED | MAP_PRIVATE, 0);
+    }
+
+    regs = current_pt_regs();
+
+    finalize_exec(bprm);
+    START_THREAD(elf_ex, regs, elf_entry, bprm->p);
+    retval = 0;
  out:
     return retval;
 

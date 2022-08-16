@@ -206,4 +206,6 @@ static inline void put_cred(const struct cred *_cred)
     ___val;                     \
 })
 
+extern void abort_creds(struct cred *);
+
 #endif /* _LINUX_CRED_H */
