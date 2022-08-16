@@ -288,4 +288,10 @@ atomic_dec_unless_positive(atomic_t *v)
     return arch_atomic_dec_unless_positive(v);
 }
 
+static __always_inline bool
+atomic_inc_and_test(atomic_t *v)
+{
+    return arch_atomic_inc_and_test(v);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */

@@ -30,6 +30,15 @@
 
 #include "internal.h"
 
+struct mlock_pvec {
+    local_lock_t lock;
+    struct pagevec vec;
+};
+
+static DEFINE_PER_CPU(struct mlock_pvec, mlock_pvec) = {
+    .lock = INIT_LOCAL_LOCK(lock),
+};
+
 /**
  * mlock_new_page - mlock a newly allocated page not yet on LRU
  * @page: page to be mlocked, either a normal page or a THP head.
@@ -60,3 +69,17 @@ bool can_do_mlock(void)
     return true;
 }
 EXPORT_SYMBOL(can_do_mlock);
+
+/**
+ * mlock_folio - mlock a folio already on (or temporarily off) LRU
+ * @folio: folio to be mlocked.
+ */
+void mlock_folio(struct folio *folio)
+{
+    struct pagevec *pvec;
+
+    local_lock(&mlock_pvec.lock);
+    pvec = this_cpu_ptr(&mlock_pvec.vec);
+
+    panic("%s: END!\n", __func__);
+}

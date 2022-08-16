@@ -261,5 +261,43 @@ static inline struct file *maybe_unlock_mmap_for_io(struct vm_fault *vmf,
 void page_cache_ra_order(struct readahead_control *, struct file_ra_state *,
                          unsigned int order);
 
+void pmd_install(struct mm_struct *mm, pmd_t *pmd, pgtable_t *pte);
+
+/*
+ * mlock_vma_page() and munlock_vma_page():
+ * should be called with vma's mmap_lock held for read or write,
+ * under page table lock for the pte/pmd being added or removed.
+ *
+ * mlock is usually called at the end of page_add_*_rmap(),
+ * munlock at the end of page_remove_rmap(); but new anon
+ * pages are managed by lru_cache_add_inactive_or_unevictable()
+ * calling mlock_new_page().
+ *
+ * @compound is used to include pmd mappings of THPs, but filter out
+ * pte mappings of THPs, which cannot be consistently counted: a pte
+ * mapping of the THP head cannot be distinguished by the page alone.
+ */
+void mlock_folio(struct folio *folio);
+static inline void mlock_vma_folio(struct folio *folio,
+                                   struct vm_area_struct *vma, bool compound)
+{
+    /*
+     * The VM_SPECIAL check here serves two purposes.
+     * 1) VM_IO check prevents migration from double-counting during mlock.
+     * 2) Although mmap_region() and mlock_fixup() take care that VM_LOCKED
+     *    is never left set on a VM_SPECIAL vma, there is an interval while
+     *    file->f_op->mmap() is using vm_insert_page(s), when VM_LOCKED may
+     *    still be set while VM_SPECIAL bits are added: so ignore it then.
+     */
+    if (unlikely((vma->vm_flags & (VM_LOCKED|VM_SPECIAL)) == VM_LOCKED) &&
+        (compound || !folio_test_large(folio)))
+        mlock_folio(folio);
+}
+
+static inline void mlock_vma_page(struct page *page,
+                                  struct vm_area_struct *vma, bool compound)
+{
+    mlock_vma_folio(page_folio(page), vma, compound);
+}
 
 #endif  /* __MM_INTERNAL_H */

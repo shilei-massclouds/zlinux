@@ -177,9 +177,13 @@ struct signal_struct {
 
 #define SIGNAL_UNKILLABLE   0x00000040 /* for init: ignore fatal signals */
 
+static inline int task_sigpending(struct task_struct *p)
+{
+    return unlikely(test_tsk_thread_flag(p, TIF_SIGPENDING));
+}
+
 static inline int signal_pending(struct task_struct *p)
 {
-#if 0
     /*
      * TIF_NOTIFY_SIGNAL isn't really a signal, but it requires the same
      * behavior in terms of ensuring that we break out of wait loops
@@ -188,9 +192,6 @@ static inline int signal_pending(struct task_struct *p)
     if (unlikely(test_tsk_thread_flag(p, TIF_NOTIFY_SIGNAL)))
         return 1;
     return task_sigpending(p);
-#endif
-    panic("%s: END!\n", __func__);
-    return 1;
 }
 
 static inline int

@@ -76,11 +76,182 @@ enum behavior {
                  */
 };
 
+static inline int
+folio_wait_bit_common(struct folio *folio, int bit_nr,
+                      int state, enum behavior behavior);
+
+static struct folio *next_uptodate_page(struct folio *folio,
+                       struct address_space *mapping,
+                       struct xa_state *xas, pgoff_t end_pgoff)
+{
+    unsigned long max_idx;
+
+    do {
+        if (!folio)
+            return NULL;
+        if (xas_retry(xas, folio))
+            continue;
+        if (xa_is_value(folio))
+            continue;
+        if (folio_test_locked(folio))
+            continue;
+        if (!folio_try_get_rcu(folio))
+            continue;
+        /* Has the page moved or been split? */
+        if (unlikely(folio != xas_reload(xas)))
+            goto skip;
+        if (!folio_test_uptodate(folio) || folio_test_readahead(folio))
+            goto skip;
+        if (!folio_trylock(folio))
+            goto skip;
+        if (folio->mapping != mapping)
+            goto unlock;
+        if (!folio_test_uptodate(folio))
+            goto unlock;
+        max_idx = DIV_ROUND_UP(i_size_read(mapping->host), PAGE_SIZE);
+        if (xas->xa_index >= max_idx)
+            goto unlock;
+        return folio;
+unlock:
+        folio_unlock(folio);
+skip:
+        folio_put(folio);
+    } while ((folio = xas_next_entry(xas, end_pgoff)) != NULL);
+
+    return NULL;
+}
+
+static inline struct folio *
+first_map_page(struct address_space *mapping, struct xa_state *xas,
+               pgoff_t end_pgoff)
+{
+    return next_uptodate_page(xas_find(xas, end_pgoff),
+                              mapping, xas, end_pgoff);
+}
+
+static inline struct folio *
+next_map_page(struct address_space *mapping, struct xa_state *xas,
+              pgoff_t end_pgoff)
+{
+    return next_uptodate_page(xas_next_entry(xas, end_pgoff),
+                              mapping, xas, end_pgoff);
+}
+
+static inline
+bool folio_more_pages(struct folio *folio, pgoff_t index, pgoff_t max)
+{
+    if (!folio_test_large(folio) || folio_test_hugetlb(folio))
+        return false;
+    if (index >= max)
+        return false;
+    return index < folio->index + folio_nr_pages(folio) - 1;
+}
+
+static bool filemap_map_pmd(struct vm_fault *vmf, struct page *page)
+{
+    struct mm_struct *mm = vmf->vma->vm_mm;
+
+    /* Huge page is mapped? No need to proceed. */
+    if (pmd_trans_huge(*vmf->pmd)) {
+        unlock_page(page);
+        put_page(page);
+        return true;
+    }
+
+    if (pmd_none(*vmf->pmd) && PageTransHuge(page)) {
+        vm_fault_t ret = do_set_pmd(vmf, page);
+        if (!ret) {
+            /* The page is mapped successfully, reference consumed. */
+            unlock_page(page);
+            return true;
+        }
+    }
+
+    if (pmd_none(*vmf->pmd))
+        pmd_install(mm, vmf->pmd, &vmf->prealloc_pte);
+
+    /* See comment in handle_pte_fault() */
+    if (pmd_devmap_trans_unstable(vmf->pmd)) {
+        unlock_page(page);
+        put_page(page);
+        return true;
+    }
+
+    return false;
+}
+
 vm_fault_t filemap_map_pages(struct vm_fault *vmf,
                              pgoff_t start_pgoff, pgoff_t end_pgoff)
 {
-    panic("%s: END!\n", __func__);
+    struct vm_area_struct *vma = vmf->vma;
+    struct file *file = vma->vm_file;
+    struct address_space *mapping = file->f_mapping;
+    pgoff_t last_pgoff = start_pgoff;
+    unsigned long addr;
+    XA_STATE(xas, &mapping->i_pages, start_pgoff);
+    struct folio *folio;
+    struct page *page;
+    unsigned int mmap_miss = READ_ONCE(file->f_ra.mmap_miss);
+    vm_fault_t ret = 0;
+
+    rcu_read_lock();
+    folio = first_map_page(mapping, &xas, end_pgoff);
+    if (!folio)
+        goto out;
+
+    if (filemap_map_pmd(vmf, &folio->page)) {
+        ret = VM_FAULT_NOPAGE;
+        goto out;
+    }
+
+    addr = vma->vm_start + ((start_pgoff - vma->vm_pgoff) << PAGE_SHIFT);
+    vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd, addr, &vmf->ptl);
+
+    do {
+     again:
+        page = folio_file_page(folio, xas.xa_index);
+        if (PageHWPoison(page))
+            goto unlock;
+
+        if (mmap_miss > 0)
+            mmap_miss--;
+
+        addr += (xas.xa_index - last_pgoff) << PAGE_SHIFT;
+        vmf->pte += xas.xa_index - last_pgoff;
+        last_pgoff = xas.xa_index;
+
+        if (!pte_none(*vmf->pte))
+            goto unlock;
+
+        /* We're about to handle the fault */
+        if (vmf->address == addr)
+            ret = VM_FAULT_NOPAGE;
+
+        do_set_pte(vmf, page, addr);
+        /* no need to invalidate: a not-present page won't be cached */
+        update_mmu_cache(vma, addr, vmf->pte);
+        if (folio_more_pages(folio, xas.xa_index, end_pgoff)) {
+            xas.xa_index++;
+            folio_ref_inc(folio);
+            goto again;
+        }
+        folio_unlock(folio);
+        continue;
+     unlock:
+        if (folio_more_pages(folio, xas.xa_index, end_pgoff)) {
+            xas.xa_index++;
+            goto again;
+        }
+        folio_unlock(folio);
+        folio_put(folio);
+    } while ((folio = next_map_page(mapping, &xas, end_pgoff)) != NULL);
+    pte_unmap_unlock(vmf->pte, vmf->ptl);
+ out:
+    rcu_read_unlock();
+    WRITE_ONCE(file->f_ra.mmap_miss, mmap_miss);
+    return ret;
 }
+EXPORT_SYMBOL(filemap_map_pages);
 
 /*
  * Synchronous readahead happens when we don't even find a page in the page
@@ -134,6 +305,12 @@ static struct file *do_sync_mmap_readahead(struct vm_fault *vmf)
     return fpin;
 }
 
+int __folio_lock_killable(struct folio *folio)
+{
+    return folio_wait_bit_common(folio, PG_locked, TASK_KILLABLE, EXCLUSIVE);
+}
+EXPORT_SYMBOL_GPL(__folio_lock_killable);
+
 /*
  * lock_folio_maybe_drop_mmap - lock the page, possibly dropping the mmap_lock
  * @vmf - the vm_fault for this fault.
@@ -151,6 +328,30 @@ static int lock_folio_maybe_drop_mmap(struct vm_fault *vmf, struct folio *folio,
 {
     if (folio_trylock(folio))
         return 1;
+
+    /*
+     * NOTE! This will make us return with VM_FAULT_RETRY, but with
+     * the mmap_lock still held. That's how FAULT_FLAG_RETRY_NOWAIT
+     * is supposed to work. We have way too many special cases..
+     */
+    if (vmf->flags & FAULT_FLAG_RETRY_NOWAIT)
+        return 0;
+
+    *fpin = maybe_unlock_mmap_for_io(vmf, *fpin);
+    if (vmf->flags & FAULT_FLAG_KILLABLE) {
+        if (__folio_lock_killable(folio)) {
+            /*
+             * We didn't have the right flags to drop the mmap_lock,
+             * but all fault_handlers only check for fatal signals
+             * if we return VM_FAULT_RETRY, so we need to drop the
+             * mmap_lock here and return 0 if we don't have a fpin.
+             */
+            if (*fpin == NULL)
+                mmap_read_unlock(vmf->vma->vm_mm);
+            return 0;
+        }
+    } else
+        __folio_lock(folio);
 
     panic("%s: END!\n", __func__);
 }
@@ -171,7 +372,25 @@ static int filemap_read_folio(struct file *file, struct address_space *mapping,
 static struct file *do_async_mmap_readahead(struct vm_fault *vmf,
                                             struct folio *folio)
 {
-    panic("%s: END!\n", __func__);
+    struct file *file = vmf->vma->vm_file;
+    struct file_ra_state *ra = &file->f_ra;
+    DEFINE_READAHEAD(ractl, file, ra, file->f_mapping, vmf->pgoff);
+    struct file *fpin = NULL;
+    unsigned int mmap_miss;
+
+    /* If we don't want any read-ahead, don't bother */
+    if (vmf->vma->vm_flags & VM_RAND_READ || !ra->ra_pages)
+        return fpin;
+
+    mmap_miss = READ_ONCE(ra->mmap_miss);
+    if (mmap_miss)
+        WRITE_ONCE(ra->mmap_miss, --mmap_miss);
+
+    if (folio_test_readahead(folio)) {
+        fpin = maybe_unlock_mmap_for_io(vmf, fpin);
+        page_cache_async_ra(&ractl, folio, ra->ra_pages);
+    }
+    return fpin;
 }
 
 /**

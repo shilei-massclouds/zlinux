@@ -297,7 +297,22 @@ void page_add_file_rmap(struct page *page, struct vm_area_struct *vma,
 {
     int i, nr = 0;
 
-    panic("%s: END!\n", __func__);
+    VM_BUG_ON_PAGE(compound && !PageTransHuge(page), page);
+    if (compound && PageTransHuge(page)) {
+        panic("%s: PageTransHuge!\n", __func__);
+    } else {
+        if (PageTransCompound(page) && page_mapping(page)) {
+            VM_WARN_ON_ONCE(!PageLocked(page));
+            SetPageDoubleMap(compound_head(page));
+        }
+        if (atomic_inc_and_test(&page->_mapcount))
+            nr++;
+    }
+out:
+    if (nr)
+        __mod_lruvec_page_state(page, NR_FILE_MAPPED, nr);
+
+    mlock_vma_page(page, vma, compound);
 }
 
 static void anon_vma_ctor(void *data)

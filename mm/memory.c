@@ -45,19 +45,19 @@
 */
 #include <linux/oom.h>
 #include <linux/numa.h>
-/*
-#include <linux/perf_event.h>
 #include <linux/ptrace.h>
 #include <linux/vmalloc.h>
+/*
+#include <linux/perf_event.h>
 
 #include <trace/events/kmem.h>
 
 #include <asm/io.h>
 #include <asm/mmu_context.h>
-#include <linux/uaccess.h>
 #include <asm/tlb.h>
-#include <asm/tlbflush.h>
 */
+#include <linux/uaccess.h>
+#include <asm/tlbflush.h>
 #include <asm/pgalloc.h>
 
 #include "pgalloc-track.h"
@@ -82,6 +82,9 @@ EXPORT_SYMBOL(zero_pfn);
  */
 void *high_memory;
 EXPORT_SYMBOL(high_memory);
+
+static unsigned long fault_around_bytes __read_mostly =
+    rounddown_pow_of_two(65536);
 
 unsigned long highest_memmap_pfn __read_mostly;
 
@@ -533,10 +536,81 @@ static vm_fault_t do_cow_fault(struct vm_fault *vmf)
     return ret;
 }
 
+/*
+ * do_fault_around() tries to map few pages around the fault address. The hope
+ * is that the pages will be needed soon and this will lower the number of
+ * faults to handle.
+ *
+ * It uses vm_ops->map_pages() to map the pages, which skips the page if it's
+ * not ready to be mapped: not up-to-date, locked, etc.
+ *
+ * This function is called with the page table lock taken. In the split ptlock
+ * case the page table lock only protects only those entries which belong to
+ * the page table corresponding to the fault address.
+ *
+ * This function doesn't cross the VMA boundaries, in order to call map_pages()
+ * only once.
+ *
+ * fault_around_bytes defines how many bytes we'll try to map.
+ * do_fault_around() expects it to be set to a power of two less than or equal
+ * to PTRS_PER_PTE.
+ *
+ * The virtual address of the area that we map is naturally aligned to
+ * fault_around_bytes rounded down to the machine page size
+ * (and therefore to page order).  This way it's easier to guarantee
+ * that we don't cross page table boundaries.
+ */
+static vm_fault_t do_fault_around(struct vm_fault *vmf)
+{
+    unsigned long address = vmf->address, nr_pages, mask;
+    pgoff_t start_pgoff = vmf->pgoff;
+    pgoff_t end_pgoff;
+    int off;
+
+    nr_pages = READ_ONCE(fault_around_bytes) >> PAGE_SHIFT;
+    mask = ~(nr_pages * PAGE_SIZE - 1) & PAGE_MASK;
+
+    address = max(address & mask, vmf->vma->vm_start);
+    off = ((vmf->address - address) >> PAGE_SHIFT) & (PTRS_PER_PTE - 1);
+    start_pgoff -= off;
+
+    /*
+     *  end_pgoff is either the end of the page table, the end of
+     *  the vma or nr_pages from start_pgoff, depending what is nearest.
+     */
+    end_pgoff = start_pgoff - ((address >> PAGE_SHIFT) & (PTRS_PER_PTE - 1)) +
+        PTRS_PER_PTE - 1;
+    end_pgoff = min3(end_pgoff, vma_pages(vmf->vma) + vmf->vma->vm_pgoff - 1,
+                     start_pgoff + nr_pages - 1);
+
+    if (pmd_none(*vmf->pmd)) {
+        vmf->prealloc_pte = pte_alloc_one(vmf->vma->vm_mm);
+        if (!vmf->prealloc_pte)
+            return VM_FAULT_OOM;
+    }
+
+    return vmf->vma->vm_ops->map_pages(vmf, start_pgoff, end_pgoff);
+}
+
 static vm_fault_t do_read_fault(struct vm_fault *vmf)
 {
     struct vm_area_struct *vma = vmf->vma;
     vm_fault_t ret = 0;
+
+    /*
+     * Let's call ->map_pages() first and use ->fault() as fallback
+     * if page by the offset is not ready to be mapped (cold cache or
+     * something).
+     */
+    if (vma->vm_ops->map_pages && fault_around_bytes >> PAGE_SHIFT > 1) {
+        ret = do_fault_around(vmf);
+        if (ret)
+            return ret;
+    }
+
+    ret = __do_fault(vmf);
+    if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
+        return ret;
 
     panic("%s: END!\n", __func__);
 }
@@ -578,6 +652,48 @@ static vm_fault_t do_fault(struct vm_fault *vmf)
 }
 
 /*
+ * We enter with non-exclusive mmap_lock (to exclude vma changes,
+ * but allow concurrent faults), and pte mapped but not yet locked.
+ * We return with pte unmapped and unlocked.
+ *
+ * We return with the mmap_lock locked or unlocked in the same cases
+ * as does filemap_fault().
+ */
+vm_fault_t do_swap_page(struct vm_fault *vmf)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static vm_fault_t do_numa_page(struct vm_fault *vmf)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * This routine handles present pages, when users try to write
+ * to a shared page. It is done by copying the page to a new address
+ * and decrementing the shared-page counter for the old page.
+ *
+ * Note that this routine assumes that the protection checks have been
+ * done by the caller (the low-level page fault routine in most cases).
+ * Thus we can safely just mark it writable once we've done any necessary
+ * COW.
+ *
+ * We also mark the page dirty at this point even though the page will
+ * change only once the write actually happens. This avoids a few races,
+ * and potentially makes it more efficient.
+ *
+ * We enter with non-exclusive mmap_lock (to exclude vma changes,
+ * but allow concurrent faults), with pte both mapped and locked.
+ * We return with mmap_lock still held, but pte unmapped and unlocked.
+ */
+static vm_fault_t do_wp_page(struct vm_fault *vmf)
+    __releases(vmf->ptl)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
  * These routines also need to handle stuff like marking pages dirty
  * and/or accessed for architectures that don't do it in hardware (most
  * RISC architectures).  The early dirtying is also good on the i386.
@@ -605,7 +721,42 @@ static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
          */
         vmf->pte = NULL;
     } else {
-        panic("%s: 1!\n", __func__);
+        /*
+         * If a huge pmd materialized under us just retry later.  Use
+         * pmd_trans_unstable() via pmd_devmap_trans_unstable() instead
+         * of pmd_trans_huge() to ensure the pmd didn't become
+         * pmd_trans_huge under us and then back to pmd_none, as a
+         * result of MADV_DONTNEED running immediately after a huge pmd
+         * fault in a different thread of this mm, in turn leading to a
+         * misleading pmd_trans_huge() retval. All we have to ensure is
+         * that it is a regular pmd that we can walk with
+         * pte_offset_map() and we can do that through an atomic read
+         * in C, which is what pmd_trans_unstable() provides.
+         */
+        if (pmd_devmap_trans_unstable(vmf->pmd))
+            return 0;
+        /*
+         * A regular pmd is established and it can't morph into a huge
+         * pmd from under us anymore at this point because we hold the
+         * mmap_lock read mode and khugepaged takes it in write mode.
+         * So now it's safe to run pte_offset_map().
+         */
+        vmf->pte = pte_offset_map(vmf->pmd, vmf->address);
+        vmf->orig_pte = *vmf->pte;
+
+        /*
+         * some architectures can have larger ptes than wordsize,
+         * e.g.ppc44x-defconfig has CONFIG_PTE_64BIT=y and
+         * CONFIG_32BIT=y, so READ_ONCE cannot guarantee atomic
+         * accesses.  The code below just needs a consistent view
+         * for the ifs and we later double check anyway with the
+         * ptl lock held. So here a barrier will do.
+         */
+        barrier();
+        if (pte_none(vmf->orig_pte)) {
+            pte_unmap(vmf->pte);
+            vmf->pte = NULL;
+        }
     }
 
     if (!vmf->pte) {
@@ -615,7 +766,44 @@ static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
             return do_fault(vmf);
     }
 
-    panic("%s: END!\n", __func__);
+    if (!pte_present(vmf->orig_pte))
+        return do_swap_page(vmf);
+
+    if (pte_protnone(vmf->orig_pte) && vma_is_accessible(vmf->vma))
+        return do_numa_page(vmf);
+
+    vmf->ptl = pte_lockptr(vmf->vma->vm_mm, vmf->pmd);
+    spin_lock(vmf->ptl);
+    entry = vmf->orig_pte;
+    if (unlikely(!pte_same(*vmf->pte, entry))) {
+        update_mmu_tlb(vmf->vma, vmf->address, vmf->pte);
+        goto unlock;
+    }
+    if (vmf->flags & FAULT_FLAG_WRITE) {
+        if (!pte_write(entry))
+            return do_wp_page(vmf);
+        entry = pte_mkdirty(entry);
+    }
+    entry = pte_mkyoung(entry);
+    if (ptep_set_access_flags(vmf->vma, vmf->address, vmf->pte, entry,
+                              vmf->flags & FAULT_FLAG_WRITE)) {
+        update_mmu_cache(vmf->vma, vmf->address, vmf->pte);
+    } else {
+        /* Skip spurious TLB flush for retried page fault */
+        if (vmf->flags & FAULT_FLAG_TRIED)
+            goto unlock;
+        /*
+         * This is needed only for protection faults but the arch code
+         * is not yet telling us if this is a protection fault or not.
+         * This still avoids useless tlb flushes for .text page faults
+         * with threads.
+         */
+        if (vmf->flags & FAULT_FLAG_WRITE)
+            flush_tlb_fix_spurious_fault(vmf->vma, vmf->address);
+    }
+ unlock:
+    pte_unmap_unlock(vmf->pte, vmf->ptl);
+    return 0;
 }
 
 /*

@@ -627,4 +627,9 @@ static inline pid_t task_pid_nr(struct task_struct *tsk)
     return tsk->pid;
 }
 
+static inline int test_tsk_thread_flag(struct task_struct *tsk, int flag)
+{
+    return test_ti_thread_flag(task_thread_info(tsk), flag);
+}
+
 #endif /* _LINUX_SCHED_H */

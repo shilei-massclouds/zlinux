@@ -376,6 +376,10 @@ static inline void update_mmu_tlb(struct vm_area_struct *vma,
 #define __HAVE_ARCH_UPDATE_MMU_TLB
 #endif
 
+#ifndef flush_tlb_fix_spurious_fault
+#define flush_tlb_fix_spurious_fault(vma, address) flush_tlb_page(vma, address)
+#endif
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* _LINUX_PGTABLE_H */

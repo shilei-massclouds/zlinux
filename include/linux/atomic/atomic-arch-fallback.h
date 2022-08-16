@@ -360,4 +360,21 @@ arch_atomic_dec_unless_positive(atomic_t *v)
 #define arch_atomic_dec_unless_positive arch_atomic_dec_unless_positive
 #endif
 
+#ifndef arch_atomic_inc_and_test
+/**
+ * arch_atomic_inc_and_test - increment and test
+ * @v: pointer of type atomic_t
+ *
+ * Atomically increments @v by 1
+ * and returns true if the result is zero, or false for all
+ * other cases.
+ */
+static __always_inline bool
+arch_atomic_inc_and_test(atomic_t *v)
+{
+    return arch_atomic_inc_return(v) == 0;
+}
+#define arch_atomic_inc_and_test arch_atomic_inc_and_test
+#endif
+
 #endif /* _LINUX_ATOMIC_FALLBACK_H */

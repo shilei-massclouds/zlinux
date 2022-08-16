@@ -94,6 +94,8 @@ enum node_stat_item {
     NR_SLAB_UNRECLAIMABLE_B,
     WORKINGSET_NODES,
     NR_ANON_MAPPED,     /* Mapped anonymous pages */
+    NR_FILE_MAPPED,     /* pagecache pages mapped into pagetables.
+                           only modified from process context */
     NR_FILE_PAGES,
     NR_FILE_DIRTY,
     NR_WRITEBACK,
