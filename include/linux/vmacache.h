@@ -16,4 +16,9 @@ extern void vmacache_update(unsigned long addr,
 extern struct vm_area_struct *
 vmacache_find(struct mm_struct *mm, unsigned long addr);
 
+static inline void vmacache_invalidate(struct mm_struct *mm)
+{
+    mm->vmacache_seqnum++;
+}
+
 #endif /* __LINUX_VMACACHE_H */

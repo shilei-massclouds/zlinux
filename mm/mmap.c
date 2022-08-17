@@ -1088,6 +1088,78 @@ can_vma_merge_before(struct vm_area_struct *vma, unsigned long vm_flags,
 }
 
 /*
+ * Helper for vma_adjust() in the split_vma insert case: insert a vma into the
+ * mm's list and rbtree.  It has already been inserted into the interval tree.
+ */
+static void __insert_vm_struct(struct mm_struct *mm, struct vm_area_struct *vma)
+{
+    struct vm_area_struct *prev;
+    struct rb_node **rb_link, *rb_parent;
+
+    if (find_vma_links(mm, vma->vm_start, vma->vm_end,
+                       &prev, &rb_link, &rb_parent))
+        BUG();
+
+    __vma_link(mm, vma, prev, rb_link, rb_parent);
+    mm->map_count++;
+}
+
+static void __vma_rb_erase(struct vm_area_struct *vma, struct rb_root *root)
+{
+    /*
+     * Note rb_erase_augmented is a fairly large inline function,
+     * so make sure we instantiate it only once with our desired
+     * augmented rbtree callbacks.
+     */
+    rb_erase_augmented(&vma->vm_rb, root, &vma_gap_callbacks);
+}
+
+static __always_inline
+void vma_rb_erase_ignore(struct vm_area_struct *vma,
+                         struct rb_root *root,
+                         struct vm_area_struct *ignore)
+{
+    /*
+     * All rb_subtree_gap values must be consistent prior to erase,
+     * with the possible exception of
+     *
+     * a. the "next" vma being erased if next->vm_start was reduced in
+     *    __vma_adjust() -> __vma_unlink()
+     * b. the vma being erased in detach_vmas_to_be_unmapped() ->
+     *    vma_rb_erase()
+     */
+    validate_mm_rb(root, ignore);
+
+    __vma_rb_erase(vma, root);
+}
+
+static __always_inline
+void __vma_unlink(struct mm_struct *mm,
+                  struct vm_area_struct *vma,
+                  struct vm_area_struct *ignore)
+{
+    vma_rb_erase_ignore(vma, &mm->mm_rb, ignore);
+    __vma_unlink_list(mm, vma);
+    /* Kill the cache */
+    vmacache_invalidate(mm);
+}
+
+/*
+ * Requires inode->i_mapping->i_mmap_rwsem
+ */
+static void __remove_shared_vm_struct(struct vm_area_struct *vma,
+                                      struct file *file,
+                                      struct address_space *mapping)
+{
+    if (vma->vm_flags & VM_SHARED)
+        mapping_unmap_writable(mapping);
+
+    flush_dcache_mmap_lock(mapping);
+    vma_interval_tree_remove(vma, &mapping->i_mmap);
+    flush_dcache_mmap_unlock(mapping);
+}
+
+/*
  * We cannot adjust vm_start, vm_end, vm_pgoff fields of a vma that
  * is already present in an i_mmap tree without adjusting the tree.
  * The following helper function should be used when such adjustments
@@ -1099,7 +1171,223 @@ int __vma_adjust(struct vm_area_struct *vma, unsigned long start,
                  struct vm_area_struct *insert,
                  struct vm_area_struct *expand)
 {
-    panic("%s: END!\n", __func__);
+    struct mm_struct *mm = vma->vm_mm;
+    struct vm_area_struct *next = vma->vm_next, *orig_vma = vma;
+    struct address_space *mapping = NULL;
+    struct rb_root_cached *root = NULL;
+    struct anon_vma *anon_vma = NULL;
+    struct file *file = vma->vm_file;
+    bool start_changed = false, end_changed = false;
+    long adjust_next = 0;
+    int remove_next = 0;
+
+    if (next && !insert) {
+        struct vm_area_struct *exporter = NULL, *importer = NULL;
+
+        if (end >= next->vm_end) {
+            panic("%s: 1.1!\n", __func__);
+        } else if (end > next->vm_start) {
+            panic("%s: 1.2!\n", __func__);
+        } else if (end < vma->vm_end) {
+            panic("%s: 1.3!\n", __func__);
+        }
+
+        /*
+         * Easily overlooked: when mprotect shifts the boundary,
+         * make sure the expanding vma has anon_vma set if the
+         * shrinking vma had, to cover any anon pages imported.
+         */
+        if (exporter && exporter->anon_vma && !importer->anon_vma) {
+            int error;
+
+            importer->anon_vma = exporter->anon_vma;
+            error = anon_vma_clone(importer, exporter);
+            if (error)
+                return error;
+        }
+    }
+
+ again:
+    if (file) {
+#if 0
+        mapping = file->f_mapping;
+        root = &mapping->i_mmap;
+        uprobe_munmap(vma, vma->vm_start, vma->vm_end);
+
+        if (adjust_next)
+            uprobe_munmap(next, next->vm_start, next->vm_end);
+
+        i_mmap_lock_write(mapping);
+        if (insert) {
+            /*
+             * Put into interval tree now, so instantiated pages
+             * are visible to arm/parisc __flush_dcache_page
+             * throughout; but we cannot insert into address
+             * space until vma start or end is updated.
+             */
+            __vma_link_file(insert);
+        }
+#endif
+
+        panic("%s: file 1 !\n", __func__);
+    }
+
+    anon_vma = vma->anon_vma;
+    if (!anon_vma && adjust_next)
+        anon_vma = next->anon_vma;
+    if (anon_vma) {
+        VM_WARN_ON(adjust_next && next->anon_vma && anon_vma != next->anon_vma);
+        anon_vma_lock_write(anon_vma);
+        anon_vma_interval_tree_pre_update_vma(vma);
+        if (adjust_next)
+            anon_vma_interval_tree_pre_update_vma(next);
+    }
+
+    if (file) {
+        flush_dcache_mmap_lock(mapping);
+        vma_interval_tree_remove(vma, root);
+        if (adjust_next)
+            vma_interval_tree_remove(next, root);
+    }
+
+    if (start != vma->vm_start) {
+        vma->vm_start = start;
+        start_changed = true;
+    }
+    if (end != vma->vm_end) {
+        vma->vm_end = end;
+        end_changed = true;
+    }
+    vma->vm_pgoff = pgoff;
+    if (adjust_next) {
+        next->vm_start += adjust_next;
+        next->vm_pgoff += adjust_next >> PAGE_SHIFT;
+    }
+
+    if (file) {
+        if (adjust_next)
+            vma_interval_tree_insert(next, root);
+        vma_interval_tree_insert(vma, root);
+        flush_dcache_mmap_unlock(mapping);
+    }
+
+    if (remove_next) {
+        /*
+         * vma_merge has merged next into vma, and needs
+         * us to remove next before dropping the locks.
+         */
+        if (remove_next != 3)
+            __vma_unlink(mm, next, next);
+        else
+            /*
+             * vma is not before next if they've been
+             * swapped.
+             *
+             * pre-swap() next->vm_start was reduced so
+             * tell validate_mm_rb to ignore pre-swap()
+             * "next" (which is stored in post-swap()
+             * "vma").
+             */
+            __vma_unlink(mm, next, vma);
+        if (file)
+            __remove_shared_vm_struct(next, file, mapping);
+    } else if (insert) {
+        /*
+         * split_vma has split insert from vma, and needs
+         * us to insert it before dropping the locks
+         * (it may either follow vma or precede it).
+         */
+        __insert_vm_struct(mm, insert);
+    } else {
+        if (start_changed)
+            vma_gap_update(vma);
+        if (end_changed) {
+            if (!next)
+                mm->highest_vm_end = vm_end_gap(vma);
+            else if (!adjust_next)
+                vma_gap_update(next);
+        }
+    }
+
+    if (anon_vma) {
+        anon_vma_interval_tree_post_update_vma(vma);
+        if (adjust_next)
+            anon_vma_interval_tree_post_update_vma(next);
+        anon_vma_unlock_write(anon_vma);
+    }
+
+    if (file) {
+        i_mmap_unlock_write(mapping);
+    }
+
+    if (remove_next) {
+        if (file) {
+            fput(file);
+        }
+        if (next->anon_vma)
+            anon_vma_merge(vma, next);
+        mm->map_count--;
+        vm_area_free(next);
+        /*
+         * In mprotect's case 6 (see comments on vma_merge),
+         * we must remove another next too. It would clutter
+         * up the code too much to do both in one go.
+         */
+        if (remove_next != 3) {
+            /*
+             * If "next" was removed and vma->vm_end was
+             * expanded (up) over it, in turn
+             * "next->vm_prev->vm_end" changed and the
+             * "vma->vm_next" gap must be updated.
+             */
+            next = vma->vm_next;
+        } else {
+            /*
+             * For the scope of the comment "next" and
+             * "vma" considered pre-swap(): if "vma" was
+             * removed, next->vm_start was expanded (down)
+             * over it and the "next" gap must be updated.
+             * Because of the swap() the post-swap() "vma"
+             * actually points to pre-swap() "next"
+             * (post-swap() "next" as opposed is now a
+             * dangling pointer).
+             */
+            next = vma;
+        }
+        if (remove_next == 2) {
+            remove_next = 1;
+            end = next->vm_end;
+            goto again;
+        }
+        else if (next)
+            vma_gap_update(next);
+        else {
+            /*
+             * If remove_next == 2 we obviously can't
+             * reach this path.
+             *
+             * If remove_next == 3 we can't reach this
+             * path because pre-swap() next is always not
+             * NULL. pre-swap() "next" is not being
+             * removed and its next->vm_end is not altered
+             * (and furthermore "end" already matches
+             * next->vm_end in remove_next == 3).
+             *
+             * We reach this only in the remove_next == 1
+             * case if the "next" vma that was removed was
+             * the highest vma of the mm. However in such
+             * case next->vm_end == "end" and the extended
+             * "vma" has vma->vm_end == next->vm_end so
+             * mm->highest_vm_end doesn't need any update
+             * in remove_next == 1 case.
+             */
+            VM_WARN_ON(mm->highest_vm_end != vm_end_gap(vma));
+        }
+    }
+
+    validate_mm(mm);
+
+    return 0;
 }
 
 /*
@@ -1197,7 +1485,6 @@ vma_merge(struct mm_struct *mm,
                                end, prev->vm_pgoff, NULL, prev);
         if (err)
             return NULL;
-        panic("%s: after!\n", __func__);
         return prev;
     }
 

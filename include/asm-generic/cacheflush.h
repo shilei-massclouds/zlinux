@@ -22,4 +22,16 @@ static inline void flush_icache_page(struct vm_area_struct *vma,
 }
 #endif
 
+#ifndef flush_dcache_mmap_lock
+static inline void flush_dcache_mmap_lock(struct address_space *mapping)
+{
+}
+#endif
+
+#ifndef flush_dcache_mmap_unlock
+static inline void flush_dcache_mmap_unlock(struct address_space *mapping)
+{
+}
+#endif
+
 #endif /* _ASM_GENERIC_CACHEFLUSH_H */

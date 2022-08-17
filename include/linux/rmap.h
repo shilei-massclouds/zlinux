@@ -135,4 +135,14 @@ void page_add_new_anon_rmap(struct page *, struct vm_area_struct *,
 
 void page_add_file_rmap(struct page *, struct vm_area_struct *, bool compound);
 
+static inline void anon_vma_merge(struct vm_area_struct *vma,
+                                  struct vm_area_struct *next)
+{
+    VM_BUG_ON_VMA(vma->anon_vma != next->anon_vma, vma);
+#if 0
+    unlink_anon_vmas(next);
+#endif
+    panic("%s: END!\n", __func__);
+}
+
 #endif  /* _LINUX_RMAP_H */

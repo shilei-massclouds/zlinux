@@ -1426,4 +1426,7 @@ check_data_rlimit(unsigned long rlim,
     return 0;
 }
 
+void vma_interval_tree_remove(struct vm_area_struct *node,
+                              struct rb_root_cached *root);
+
 #endif /* _LINUX_MM_H */

@@ -353,7 +353,7 @@ static int lock_folio_maybe_drop_mmap(struct vm_fault *vmf, struct folio *folio,
     } else
         __folio_lock(folio);
 
-    panic("%s: END!\n", __func__);
+    return 1;
 }
 
 static int filemap_read_folio(struct file *file, struct address_space *mapping,
