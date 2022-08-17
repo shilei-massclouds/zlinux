@@ -23,8 +23,8 @@
 
 #if 0
 #include <asm/compat.h>
-#include <asm/signal.h>
 #endif
+#include <asm/signal.h>
 #include <asm/siginfo.h>
 
 #endif /* _LINUX_COMPAT_H */

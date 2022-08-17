@@ -60,6 +60,10 @@ int riscv_of_parent_hartid(struct device_node *node);
 extern void start_thread(struct pt_regs *regs, unsigned long pc,
                          unsigned long sp);
 
+#define INIT_THREAD {   \
+    .sp = sizeof(init_stack) + (long)&init_stack,   \
+}
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* _ASM_RISCV_PROCESSOR_H */

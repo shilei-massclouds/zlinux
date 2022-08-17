@@ -48,4 +48,9 @@ typedef unsigned short  __kernel_gid16_t;
 
 typedef long long       __kernel_loff_t;
 
+typedef long long __kernel_time64_t;
+typedef __kernel_long_t __kernel_clock_t;
+typedef int __kernel_timer_t;
+typedef int __kernel_clockid_t;
+
 #endif /* __ASM_GENERIC_POSIX_TYPES_H */

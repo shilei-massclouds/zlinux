@@ -165,7 +165,8 @@ typedef unsigned short      ushort;
 typedef unsigned int        uint;
 typedef unsigned long       ulong;
 
+typedef __kernel_clockid_t  clockid_t;
 
-#endif /*  __ASSEMBLY__ */
+#endif /* __ASSEMBLY__ */
 
 #endif /* _LINUX_TYPES_H */

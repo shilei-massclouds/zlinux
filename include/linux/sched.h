@@ -30,15 +30,15 @@
 #if 0
 #include <linux/latencytop.h>
 #include <linux/sched/types.h>
-#include <linux/signal_types.h>
 #include <linux/syscall_user_dispatch.h>
 #endif
+#include <linux/signal_types.h>
 #include <linux/sched/prio.h>
 #include <linux/mm_types_task.h>
 #include <linux/rbtree.h>
+#include <linux/posix-timers.h>
 #if 0
 #include <linux/task_io_accounting.h>
-#include <linux/posix-timers.h>
 #include <linux/rseq.h>
 #include <linux/seqlock.h>
 #include <asm/kmap_size.h>
@@ -257,6 +257,24 @@ struct sched_dl_entity {
     struct sched_dl_entity *pi_se;
 };
 
+/**
+ * struct prev_cputime - snapshot of system and user cputime
+ * @utime: time spent in user mode
+ * @stime: time spent in system mode
+ * @lock: protects the above two fields
+ *
+ * Stores previous user/system time values such that we can guarantee
+ * monotonicity.
+ */
+struct prev_cputime {
+    u64             utime;
+    u64             stime;
+    raw_spinlock_t  lock;
+};
+
+struct sched_info {
+};
+
 struct task_struct {
     /*
      * For reasons of header soup (see current_thread_info()), this
@@ -272,6 +290,10 @@ struct task_struct {
     struct list_head    thread_node;
 
     unsigned int __state;
+
+    struct sched_info   sched_info;
+
+    struct list_head    tasks;
 
     struct mm_struct    *mm;
     struct mm_struct    *active_mm;
@@ -328,12 +350,16 @@ struct task_struct {
     /* Open file information: */
     struct files_struct     *files;
 
+    struct io_uring_task    *io_uring;
+
     /* Namespaces: */
     struct nsproxy *nsproxy;
 
     /* Signal handlers: */
     struct signal_struct *signal;
     struct sighand_struct __rcu *sighand;
+    sigset_t            blocked;
+    struct sigpending   pending;
 
     unsigned long       sas_ss_sp;
     size_t              sas_ss_size;
@@ -417,6 +443,9 @@ struct task_struct {
     pid_t               pid;
     pid_t               tgid;
 
+    /* Empty if CONFIG_POSIX_CPUTIMERS=n */
+    struct posix_cputimers      posix_cputimers;
+
     /*
      * When (nr_dirtied >= nr_dirtied_pause), it's time to call
      * balance_dirty_pages() for a dirty throttling pause:
@@ -482,8 +511,13 @@ struct task_struct {
     /* Stacked block device info: */
     struct bio_list         *bio_list;
 
+    /* Journalling filesystem info: */
+    void                    *journal_info;
+
     /* Stack plugging: */
     struct blk_plug         *plug;
+
+    struct prev_cputime     prev_cputime;
 
     /* Protection against (de-)allocation: mm, files, fs, tty, keyrings, mems_allowed, mempolicy: */
     spinlock_t alloc_lock;
