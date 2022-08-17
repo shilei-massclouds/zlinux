@@ -125,3 +125,12 @@ void __wake_up(struct wait_queue_head *wq_head, unsigned int mode,
     __wake_up_common_lock(wq_head, mode, nr_exclusive, 0, key);
 }
 EXPORT_SYMBOL(__wake_up);
+
+void __wake_up_locked_key_bookmark(struct wait_queue_head *wq_head,
+                                   unsigned int mode,
+                                   void *key,
+                                   wait_queue_entry_t *bookmark)
+{
+    __wake_up_common(wq_head, mode, 1, 0, key, bookmark);
+}
+EXPORT_SYMBOL_GPL(__wake_up_locked_key_bookmark);

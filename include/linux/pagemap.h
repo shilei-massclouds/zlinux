@@ -51,6 +51,12 @@ struct wait_page_queue {
     wait_queue_entry_t wait;
 };
 
+struct wait_page_key {
+    struct folio *folio;
+    int bit_nr;
+    int page_match;
+};
+
 typedef int filler_t(void *, struct page *);
 
 /**

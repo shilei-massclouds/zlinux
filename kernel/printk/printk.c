@@ -40,6 +40,13 @@ static char *log_buf = __log_buf;
 static u32 log_buf_len = __LOG_BUF_LEN;
 
 /*
+ * Low level drivers may need that to know if they can schedule in
+ * their unblank() callback or not. So let's export it.
+ */
+int oops_in_progress;
+EXPORT_SYMBOL(oops_in_progress);
+
+/*
  * Define the average message size. This only affects the number of
  * descriptors that will be available. Underestimating is better than
  * overestimating (too many available descriptors is better than not enough).

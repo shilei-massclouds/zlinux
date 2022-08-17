@@ -209,4 +209,7 @@ extern const char linux_banner[];
 asmlinkage __printf(1, 0)
 int vprintk(const char *fmt, va_list args);
 
+/* If set, an oops, panic(), BUG() or die() is in progress */
+extern int oops_in_progress;
+
 #endif /* __KERNEL_PRINTK__ */

@@ -26,8 +26,8 @@ static void die_kernel_fault(const char *msg, unsigned long addr,
 #if 0
     bust_spinlocks(1);
 
-    pr_alert("Unable to handle kernel %s at virtual address " REG_FMT "\n", msg,
-        addr);
+    pr_alert("Unable to handle kernel %s at virtual address " REG_FMT "\n",
+             msg, addr);
 
     bust_spinlocks(0);
     die(regs, "Oops");
@@ -36,7 +36,8 @@ static void die_kernel_fault(const char *msg, unsigned long addr,
     panic("%s: END!\n", __func__);
 }
 
-static inline void vmalloc_fault(struct pt_regs *regs, int code, unsigned long addr)
+static inline void vmalloc_fault(struct pt_regs *regs, int code,
+                                 unsigned long addr)
 {
     pgd_t *pgd, *pgd_k;
     pud_t *pud, *pud_k;

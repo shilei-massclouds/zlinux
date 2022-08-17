@@ -80,9 +80,30 @@ static inline int
 folio_wait_bit_common(struct folio *folio, int bit_nr,
                       int state, enum behavior behavior);
 
+/*
+ * In order to wait for pages to become available there must be
+ * waitqueues associated with pages. By using a hash table of
+ * waitqueues where the bucket discipline is to maintain all
+ * waiters on the same queue and wake all when any of the pages
+ * become available, and for the woken contexts to check to be
+ * sure the appropriate page became available, this saves space
+ * at a cost of "thundering herd" phenomena during rare hash
+ * collisions.
+ */
+#define PAGE_WAIT_TABLE_BITS 8
+#define PAGE_WAIT_TABLE_SIZE (1 << PAGE_WAIT_TABLE_BITS)
+static wait_queue_head_t folio_wait_table[PAGE_WAIT_TABLE_SIZE]
+    __cacheline_aligned;
+
+static wait_queue_head_t *folio_waitqueue(struct folio *folio)
+{
+    return &folio_wait_table[hash_ptr(folio, PAGE_WAIT_TABLE_BITS)];
+}
+
 static struct folio *next_uptodate_page(struct folio *folio,
-                       struct address_space *mapping,
-                       struct xa_state *xas, pgoff_t end_pgoff)
+                                        struct address_space *mapping,
+                                        struct xa_state *xas,
+                                        pgoff_t end_pgoff)
 {
     unsigned long max_idx;
 
@@ -1092,7 +1113,49 @@ clear_bit_unlock_is_negative_byte(long nr, volatile void *mem)
 
 static void folio_wake_bit(struct folio *folio, int bit_nr)
 {
-    panic("%s: END!\n", __func__);
+    wait_queue_head_t *q = folio_waitqueue(folio);
+    struct wait_page_key key;
+    unsigned long flags;
+    wait_queue_entry_t bookmark;
+
+    key.folio = folio;
+    key.bit_nr = bit_nr;
+    key.page_match = 0;
+
+    bookmark.flags = 0;
+    bookmark.private = NULL;
+    bookmark.func = NULL;
+    INIT_LIST_HEAD(&bookmark.entry);
+
+    spin_lock_irqsave(&q->lock, flags);
+    __wake_up_locked_key_bookmark(q, TASK_NORMAL, &key, &bookmark);
+
+    while (bookmark.flags & WQ_FLAG_BOOKMARK) {
+        /*
+         * Take a breather from holding the lock,
+         * allow pages that finish wake up asynchronously
+         * to acquire the lock and remove themselves
+         * from wait queue
+         */
+        spin_unlock_irqrestore(&q->lock, flags);
+        cpu_relax();
+        spin_lock_irqsave(&q->lock, flags);
+        __wake_up_locked_key_bookmark(q, TASK_NORMAL, &key, &bookmark);
+    }
+
+    /*
+     * It's possible to miss clearing waiters here, when we woke our page
+     * waiters, but the hashed waitqueue has waiters for other pages on it.
+     * That's okay, it's a rare case. The next waker will clear it.
+     *
+     * Note that, depending on the page pool (buddy, hugetlb, ZONE_DEVICE,
+     * other), the flag may be cleared in the course of freeing the page;
+     * but that is not required for correctness.
+     */
+    if (!waitqueue_active(q) || !key.page_match)
+        folio_clear_waiters(folio);
+
+    spin_unlock_irqrestore(&q->lock, flags);
 }
 
 /**
@@ -1114,26 +1177,6 @@ void folio_unlock(struct folio *folio)
         folio_wake_bit(folio, PG_locked);
 }
 EXPORT_SYMBOL(folio_unlock);
-
-/*
- * In order to wait for pages to become available there must be
- * waitqueues associated with pages. By using a hash table of
- * waitqueues where the bucket discipline is to maintain all
- * waiters on the same queue and wake all when any of the pages
- * become available, and for the woken contexts to check to be
- * sure the appropriate page became available, this saves space
- * at a cost of "thundering herd" phenomena during rare hash
- * collisions.
- */
-#define PAGE_WAIT_TABLE_BITS 8
-#define PAGE_WAIT_TABLE_SIZE (1 << PAGE_WAIT_TABLE_BITS)
-static wait_queue_head_t folio_wait_table[PAGE_WAIT_TABLE_SIZE]
-    __cacheline_aligned;
-
-static wait_queue_head_t *folio_waitqueue(struct folio *folio)
-{
-    return &folio_wait_table[hash_ptr(folio, PAGE_WAIT_TABLE_BITS)];
-}
 
 void __init pagecache_init(void)
 {
