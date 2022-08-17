@@ -145,4 +145,6 @@ static inline void anon_vma_merge(struct vm_area_struct *vma,
     panic("%s: END!\n", __func__);
 }
 
+void page_remove_rmap(struct page *, struct vm_area_struct *, bool compound);
+
 #endif  /* _LINUX_RMAP_H */

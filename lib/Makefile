@@ -18,7 +18,7 @@ obj-y += kasprintf.o string_helpers.o usercopy.o
 
 obj-y += devres.o
 obj-y += sg_pool.o
-obj-y += strnlen_user.o
+obj-y += strnlen_user.o strncpy_from_user.o
 
 libfdt_files = fdt.o fdt_ro.o find_bit.o
 

@@ -168,4 +168,11 @@ static inline int is_syscall_trace_event(struct trace_event_call *tp_event)
 /* mm/nommu.c, also with MMU */
 asmlinkage long sys_brk(unsigned long brk);
 
+/* fs/stat.c */
+asmlinkage long sys_readlinkat(int dfd, const char __user *path,
+                               char __user *buf, int bufsiz);
+
+/* kernel/sys.c */
+asmlinkage long sys_newuname(struct new_utsname __user *name);
+
 #endif /* _LINUX_SYSCALLS_H */

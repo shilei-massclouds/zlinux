@@ -338,6 +338,86 @@ int anon_vma_clone(struct vm_area_struct *dst, struct vm_area_struct *src)
     panic("%s: END!\n", __func__);
 }
 
+static void page_remove_file_rmap(struct page *page, bool compound)
+{
+    int i, nr = 0;
+
+    VM_BUG_ON_PAGE(compound && !PageHead(page), page);
+
+    /* Hugepages are not counted in NR_FILE_MAPPED for now. */
+    if (unlikely(PageHuge(page))) {
+        /* hugetlb pages are always mapped with pmds */
+        atomic_dec(compound_mapcount_ptr(page));
+        return;
+    }
+
+    /* page still mapped by someone else? */
+    if (compound && PageTransHuge(page)) {
+        int nr_pages = thp_nr_pages(page);
+
+        for (i = 0; i < nr_pages; i++) {
+            if (atomic_add_negative(-1, &page[i]._mapcount))
+                nr++;
+        }
+        if (!atomic_add_negative(-1, compound_mapcount_ptr(page)))
+            goto out;
+        if (PageSwapBacked(page))
+            __mod_lruvec_page_state(page, NR_SHMEM_PMDMAPPED, -nr_pages);
+        else
+            __mod_lruvec_page_state(page, NR_FILE_PMDMAPPED, -nr_pages);
+    } else {
+        if (atomic_add_negative(-1, &page->_mapcount))
+            nr++;
+    }
+ out:
+    if (nr)
+        __mod_lruvec_page_state(page, NR_FILE_MAPPED, -nr);
+}
+
+static void page_remove_anon_compound_rmap(struct page *page)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * page_remove_rmap - take down pte mapping from a page
+ * @page:   page to remove mapping from
+ * @vma:    the vm area from which the mapping is removed
+ * @compound:   uncharge the page as compound or small page
+ *
+ * The caller needs to hold the pte lock.
+ */
+void page_remove_rmap(struct page *page, struct vm_area_struct *vma,
+                      bool compound)
+{
+    if (!PageAnon(page)) {
+        page_remove_file_rmap(page, compound);
+        goto out;
+    }
+
+    if (compound) {
+        page_remove_anon_compound_rmap(page);
+        goto out;
+    }
+
+    /* page still mapped by someone else? */
+    if (!atomic_add_negative(-1, &page->_mapcount))
+        goto out;
+
+    panic("%s: END!\n", __func__);
+    /*
+     * It would be tidy to reset the PageAnon mapping here,
+     * but that might overwrite a racing page_add_anon_rmap
+     * which increments mapcount after us but sets mapping
+     * before us: so leave the reset to free_unref_page,
+     * and remember that it's only reliable while mapped.
+     * Leaving it set also helps swapoff to reinstate ptes
+     * faster for those pages still in swapcache.
+     */
+ out:
+    munlock_vma_page(page, vma, compound);
+}
+
 static void anon_vma_ctor(void *data)
 {
     struct anon_vma *anon_vma = data;

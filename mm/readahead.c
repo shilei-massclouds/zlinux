@@ -403,6 +403,30 @@ static void ondemand_readahead(struct readahead_control *ractl,
         goto readit;
     }
 
+    /*
+     * Hit a marked folio without valid readahead state.
+     * E.g. interleaved reads.
+     * Query the pagecache for async_size, which normally equals to
+     * readahead size. Ramp it up and use it as the new readahead size.
+     */
+    if (folio) {
+        pgoff_t start;
+
+        rcu_read_lock();
+        start = page_cache_next_miss(ractl->mapping, index + 1, max_pages);
+        rcu_read_unlock();
+
+        if (!start || start - index > max_pages)
+            return;
+
+        ra->start = start;
+        ra->size = start - index;   /* old async_size */
+        ra->size += req_size;
+        ra->size = get_next_ra_size(ra, max_pages);
+        ra->async_size = ra->size;
+        goto readit;
+    }
+
     panic("%s: END!\n", __func__);
     return;
 

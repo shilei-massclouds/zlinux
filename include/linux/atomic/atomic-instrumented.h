@@ -294,4 +294,10 @@ atomic_inc_and_test(atomic_t *v)
     return arch_atomic_inc_and_test(v);
 }
 
+static __always_inline bool
+atomic_add_negative(int i, atomic_t *v)
+{
+    return arch_atomic_add_negative(i, v);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */

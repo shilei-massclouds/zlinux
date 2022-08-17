@@ -1357,8 +1357,9 @@ steal_suitable_fallback(struct zone *zone, struct page *page,
                         unsigned int alloc_flags, int start_type,
                         bool whole_block)
 {
-    int old_block_type;
     unsigned int current_order = buddy_order(page);
+    int free_pages, movable_pages, alike_pages;
+    int old_block_type;
 
     old_block_type = get_pageblock_migratetype(page);
 
@@ -1375,7 +1376,54 @@ steal_suitable_fallback(struct zone *zone, struct page *page,
         goto single_page;
     }
 
-    panic("%s: order(%d) END\n", __func__, current_order);
+#if 0
+    /*
+     * Boost watermarks to increase reclaim pressure to reduce the
+     * likelihood of future fallbacks. Wake kswapd now as the node
+     * may be balanced overall and kswapd will not wake naturally.
+     */
+    if (boost_watermark(zone) && (alloc_flags & ALLOC_KSWAPD))
+        set_bit(ZONE_BOOSTED_WATERMARK, &zone->flags);
+#endif
+    /* We are not allowed to try stealing from the whole block */
+    if (!whole_block)
+        goto single_page;
+
+    free_pages = move_freepages_block(zone, page, start_type, &movable_pages);
+    /*
+     * Determine how many pages are compatible with our allocation.
+     * For movable allocation, it's the number of movable pages which
+     * we just obtained. For other types it's a bit more tricky.
+     */
+    if (start_type == MIGRATE_MOVABLE) {
+        alike_pages = movable_pages;
+    } else {
+        /*
+         * If we are falling back a RECLAIMABLE or UNMOVABLE allocation
+         * to MOVABLE pageblock, consider all non-movable pages as
+         * compatible. If it's UNMOVABLE falling back to RECLAIMABLE or
+         * vice versa, be conservative since we can't distinguish the
+         * exact migratetype of non-movable pages.
+         */
+        if (old_block_type == MIGRATE_MOVABLE)
+            alike_pages = pageblock_nr_pages - (free_pages + movable_pages);
+        else
+            alike_pages = 0;
+    }
+
+    /* moving whole block can fail due to zone boundary conditions */
+    if (!free_pages)
+        goto single_page;
+
+    /*
+     * If a sufficient number of pages in the block are either free or of
+     * comparable migratability as our allocation, claim the whole block.
+     */
+    if (free_pages + alike_pages >= (1 << (pageblock_order-1)) ||
+        page_group_by_mobility_disabled)
+        set_pageblock_migratetype(page, start_type);
+
+    return;
 
 single_page:
     move_to_free_list(page, zone, current_order, start_type);

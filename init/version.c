@@ -10,13 +10,29 @@
 #include <generated/compile.h>
 #include <linux/build-salt.h>
 #include <linux/export.h>
-/*
-#include <linux/uts.h>
 #include <linux/utsname.h>
+/*
 #include <linux/version.h>
-#include <linux/proc_ns.h>
 */
+#include <linux/proc_ns.h>
+#include <linux/uts.h>
 #include <generated/utsrelease.h>
+
+struct uts_namespace init_uts_ns = {
+    .ns.count = REFCOUNT_INIT(2),
+    .name = {
+        .sysname    = UTS_SYSNAME,
+        .nodename   = UTS_NODENAME,
+        .release    = UTS_RELEASE,
+        .version    = UTS_VERSION,
+        .machine    = UTS_MACHINE,
+        .domainname = UTS_DOMAINNAME,
+    },
+    .user_ns = &init_user_ns,
+    .ns.inum = PROC_UTS_INIT_INO,
+    .ns.ops = &utsns_operations,
+};
+EXPORT_SYMBOL_GPL(init_uts_ns);
 
 /* FIXED STRINGS! Don't touch! */
 const char linux_banner[] =

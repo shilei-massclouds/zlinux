@@ -83,3 +83,36 @@ void mlock_folio(struct folio *folio)
 
     panic("%s: END!\n", __func__);
 }
+
+/*
+ * mlock_pagevec() is derived from pagevec_lru_move_fn():
+ * perhaps that can make use of such page pointer flags in future,
+ * but for now just keep it for mlock.  We could use three separate
+ * pagevecs instead, but one feels better (munlocking a full pagevec
+ * does not need to drain mlocking pagevecs first).
+ */
+static void mlock_pagevec(struct pagevec *pvec)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * munlock_page - munlock a page
+ * @page: page to be munlocked, either a normal page or a THP head.
+ */
+void munlock_page(struct page *page)
+{
+    struct pagevec *pvec;
+
+    local_lock(&mlock_pvec.lock);
+    pvec = this_cpu_ptr(&mlock_pvec.vec);
+    /*
+     * TestClearPageMlocked(page) must be left to __munlock_page(),
+     * which will check whether the page is multiply mlocked.
+     */
+
+    get_page(page);
+    if (!pagevec_add(pvec, page) || PageHead(page) || lru_cache_disabled())
+        mlock_pagevec(pvec);
+    local_unlock(&mlock_pvec.lock);
+}

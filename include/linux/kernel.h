@@ -32,9 +32,6 @@
 #define READ    0
 #define WRITE   1
 
-/* This cannot be an enum because some may be used in assembly source. */
-#define TAINT_WARN          9
-
 #define might_resched() do { } while (0)
 #define might_sleep() do { might_resched(); } while (0)
 #define might_sleep_if(cond) do { if (cond) might_sleep(); } while (0)

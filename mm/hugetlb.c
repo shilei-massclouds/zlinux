@@ -111,3 +111,18 @@ follow_huge_pmd(struct mm_struct *mm, unsigned long address,
 
     panic("%s: END!\n", __func__);
 }
+
+/*
+ * PageHuge() only returns true for hugetlbfs pages, but not for normal or
+ * transparent huge pages.  See the PageTransHuge() documentation for more
+ * details.
+ */
+int PageHuge(struct page *page)
+{
+    if (!PageCompound(page))
+        return 0;
+
+    page = compound_head(page);
+    return page[1].compound_dtor == HUGETLB_PAGE_DTOR;
+}
+EXPORT_SYMBOL_GPL(PageHuge);

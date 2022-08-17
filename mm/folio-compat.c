@@ -62,3 +62,9 @@ void delete_from_page_cache(struct page *page)
 {
     return filemap_remove_folio(page_folio(page));
 }
+
+bool page_mapped(struct page *page)
+{
+    return folio_mapped(page_folio(page));
+}
+EXPORT_SYMBOL(page_mapped);

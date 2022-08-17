@@ -28,3 +28,21 @@ struct address_space *swapper_spaces[MAX_SWAPFILES] __read_mostly;
 static unsigned int nr_swapper_spaces[MAX_SWAPFILES] __read_mostly;
 static bool enable_vma_readahead __read_mostly = true;
 
+/*
+ * If we are the only user, then try to free up the swap cache.
+ *
+ * Its ok to check for PageSwapCache without the page lock
+ * here because we are going to recheck again inside
+ * try_to_free_swap() _with_ the lock.
+ *                  - Marcelo
+ */
+void free_swap_cache(struct page *page)
+{
+    if (PageSwapCache(page) && !page_mapped(page) && trylock_page(page)) {
+#if 0
+        try_to_free_swap(page);
+        unlock_page(page);
+#endif
+        panic("%s: END!\n", __func__);
+    }
+}

@@ -93,6 +93,8 @@ static inline swp_entry_t folio_swap_entry(struct folio *folio)
     return entry;
 }
 
+extern void free_swap_cache(struct page *);
+
 /*
  * Unaddressable device memory support. See include/linux/hmm.h and
  * Documentation/vm/hmm.rst. Short description is we need struct pages for

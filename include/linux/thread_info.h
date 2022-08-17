@@ -9,6 +9,7 @@
 #define _LINUX_THREAD_INFO_H
 
 #include <linux/types.h>
+#include <linux/limits.h>
 #include <linux/bug.h>
 #include <linux/bitops.h>
 
@@ -61,7 +62,6 @@ static inline void copy_overflow(int size, unsigned long count)
     if (IS_ENABLED(CONFIG_BUG))
         __copy_overflow(size, count);
 #endif
-    panic("%s: END!\n", __func__);
 }
 
 static __always_inline __must_check bool

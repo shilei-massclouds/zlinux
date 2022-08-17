@@ -289,9 +289,6 @@ ext2_find_entry(struct inode *dir, const struct qstr *child,
             goto out;
         }
     } while (n != start);
-
-    panic("%s: END!\n", __func__);
-
  out:
     return ERR_PTR(-ENOENT);
 

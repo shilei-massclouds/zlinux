@@ -1429,4 +1429,11 @@ check_data_rlimit(unsigned long rlim,
 void vma_interval_tree_remove(struct vm_area_struct *node,
                               struct rb_root_cached *root);
 
+static inline void get_page(struct page *page)
+{
+    folio_get(page_folio(page));
+}
+
+bool page_mapped(struct page *page);
+
 #endif /* _LINUX_MM_H */

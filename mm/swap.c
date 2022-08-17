@@ -297,9 +297,33 @@ void folio_add_lru(struct folio *folio)
 }
 EXPORT_SYMBOL(folio_add_lru);
 
+static void __folio_activate(struct folio *folio, struct lruvec *lruvec)
+{
+    if (!folio_test_active(folio) && !folio_test_unevictable(folio)) {
+        long nr_pages = folio_nr_pages(folio);
+
+        lruvec_del_folio(lruvec, folio);
+        folio_set_active(folio);
+        lruvec_add_folio(lruvec, folio);
+
+        //__count_vm_events(PGACTIVATE, nr_pages);
+    }
+}
+
+static void __activate_page(struct page *page, struct lruvec *lruvec)
+{
+    return __folio_activate(page_folio(page), lruvec);
+}
+
+static void pagevec_lru_move_fn(struct pagevec *pvec,
+                                void (*move_fn)(struct page *page,
+                                                struct lruvec *lruvec))
+{
+    panic("%s: END!\n", __func__);
+}
+
 static void folio_activate(struct folio *folio)
 {
-#if 0
     if (folio_test_lru(folio) && !folio_test_active(folio) &&
         !folio_test_unevictable(folio)) {
         struct pagevec *pvec;
@@ -311,8 +335,6 @@ static void folio_activate(struct folio *folio)
             pagevec_lru_move_fn(pvec, __activate_page);
         local_unlock(&lru_pvecs.lock);
     }
-#endif
-    panic("%s: END!\n", __func__);
 }
 
 static void __lru_cache_activate_folio(struct folio *folio)

@@ -552,6 +552,14 @@ static __always_inline bool folio_test_swapcache(struct folio *folio)
         test_bit(PG_swapcache, folio_flags(folio, 0));
 }
 
+static __always_inline bool PageSwapCache(struct page *page)
+{
+    return folio_test_swapcache(page_folio(page));
+}
+
+SETPAGEFLAG(SwapCache, swapcache, PF_NO_TAIL)
+CLEARPAGEFLAG(SwapCache, swapcache, PF_NO_TAIL)
+
 /**
  * folio_test_large() - Does this folio contain more than one page?
  * @folio: The folio to test.

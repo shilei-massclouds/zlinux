@@ -3,9 +3,9 @@
 #if 0
 #include <linux/seq_file.h>
 #include <linux/poll.h>
-#include <linux/ns_common.h>
 #include <linux/fs_pin.h>
 #endif
+#include <linux/ns_common.h>
 
 struct mnt_namespace {
     struct ns_common    ns;

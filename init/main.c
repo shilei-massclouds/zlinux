@@ -32,6 +32,8 @@
 #include <linux/init_syscalls.h>
 #include <linux/kthread.h>
 #include <linux/rmap.h>
+#include <linux/unistd.h>
+#include <linux/utsname.h>
 
 #include <asm/setup.h>
 #include "z_tests.h"
@@ -782,6 +784,7 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
     cred_init();
     fork_init();
     proc_caches_init();
+    uts_ns_init();
 
     vfs_caches_init();
     pagecache_init();

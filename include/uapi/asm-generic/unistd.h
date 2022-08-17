@@ -16,6 +16,14 @@
 #define __SYSCALL(x, y)
 #endif
 
+/* fs/stat.c */
+#define __NR_readlinkat 78
+__SYSCALL(__NR_readlinkat, sys_readlinkat)
+
+/* kernel/sys.c */
+#define __NR_uname 160
+__SYSCALL(__NR_uname, sys_newuname)
+
 /* mm/nommu.c, also with MMU */
 #define __NR_brk 214
 __SYSCALL(__NR_brk, sys_brk)

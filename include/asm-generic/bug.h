@@ -13,6 +13,8 @@
 #define BUG_GET_TAINT(bug)      ((bug)->flags >> 8)
 
 #ifndef __ASSEMBLY__
+#include <linux/panic.h>
+#include <linux/printk.h>
 
 struct bug_entry {
     signed int  bug_addr_disp;

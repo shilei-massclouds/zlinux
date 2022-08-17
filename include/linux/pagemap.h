@@ -655,4 +655,17 @@ static inline void lock_page(struct page *page)
         __folio_lock(folio);
 }
 
+pgoff_t page_cache_next_miss(struct address_space *mapping,
+                             pgoff_t index, unsigned long max_scan);
+pgoff_t page_cache_prev_miss(struct address_space *mapping,
+                             pgoff_t index, unsigned long max_scan);
+
+/*
+ * Return true if the page was successfully locked
+ */
+static inline int trylock_page(struct page *page)
+{
+    return folio_trylock(page_folio(page));
+}
+
 #endif /* _LINUX_PAGEMAP_H */

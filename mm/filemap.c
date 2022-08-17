@@ -2144,3 +2144,39 @@ void filemap_remove_folio(struct folio *folio)
 #endif
     panic("%s: END!\n", __func__);
 }
+
+/**
+ * page_cache_next_miss() - Find the next gap in the page cache.
+ * @mapping: Mapping.
+ * @index: Index.
+ * @max_scan: Maximum range to search.
+ *
+ * Search the range [index, min(index + max_scan - 1, ULONG_MAX)] for the
+ * gap with the lowest index.
+ *
+ * This function may be called under the rcu_read_lock.  However, this will
+ * not atomically search a snapshot of the cache at a single point in time.
+ * For example, if a gap is created at index 5, then subsequently a gap is
+ * created at index 10, page_cache_next_miss covering both indices may
+ * return 10 if called under the rcu_read_lock.
+ *
+ * Return: The index of the gap if found, otherwise an index outside the
+ * range specified (in which case 'return - index >= max_scan' will be true).
+ * In the rare case of index wrap-around, 0 will be returned.
+ */
+pgoff_t page_cache_next_miss(struct address_space *mapping,
+                             pgoff_t index, unsigned long max_scan)
+{
+    XA_STATE(xas, &mapping->i_pages, index);
+
+    while (max_scan--) {
+        void *entry = xas_next(&xas);
+        if (!entry || xa_is_value(entry))
+            break;
+        if (xas.xa_index == 0)
+            break;
+    }
+
+    return xas.xa_index;
+}
+EXPORT_SYMBOL(page_cache_next_miss);
