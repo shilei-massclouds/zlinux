@@ -81,6 +81,8 @@ static const char *panic_later, *panic_param;
 
 static char *ramdisk_execute_command = "/init";
 
+extern void time_init(void);
+
 extern void radix_tree_init(void);
 
 struct blacklist_entry {
@@ -768,6 +770,8 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
     printk("############## %s: step2\n", __func__);
 
     init_IRQ();
+    //softirq_init();
+    time_init();
 
     setup_per_cpu_pageset();
 

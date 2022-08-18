@@ -69,7 +69,9 @@
     KEEP(*(__##name##_of_table))                    \
     KEEP(*(__##name##_of_table_end))
 
+#define TIMER_OF_TABLES() OF_TABLE(CONFIG_TIMER_OF, timer)
 #define IRQCHIP_OF_MATCH_TABLE() OF_TABLE(CONFIG_IRQCHIP, irqchip)
+#define CLK_OF_TABLES() OF_TABLE(CONFIG_COMMON_CLK, clk)
 
 /* init and exit section handling */
 #define INIT_DATA                       \
@@ -77,6 +79,8 @@
     MEM_DISCARD(init.data*)             \
     *(.init.rodata .init.rodata.*)      \
     MEM_DISCARD(init.rodata)            \
+    CLK_OF_TABLES()                     \
+    TIMER_OF_TABLES()                   \
     IRQCHIP_OF_MATCH_TABLE()            \
     EARLYCON_TABLE()
 

@@ -47,6 +47,11 @@
 # define CSR_TVAL       CSR_STVAL
 # define CSR_IP         CSR_SIP
 
+/* symbolic CSR names: */
+#define CSR_CYCLE       0xc00
+#define CSR_TIME        0xc01
+#define CSR_INSTRET     0xc02
+
 # define SR_IE      SR_SIE
 # define SR_PIE     SR_SPIE
 # define SR_PP      SR_SPP

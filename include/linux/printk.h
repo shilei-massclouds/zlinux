@@ -104,6 +104,16 @@ static inline int printk_get_level(const char *buffer)
 #endif
 
 /**
+ * pr_crit - Print a critical-level message
+ * @fmt: format string
+ * @...: arguments for the format string
+ *
+ * This macro expands to a printk with KERN_CRIT loglevel. It uses pr_fmt() to
+ * generate the format string.
+ */
+#define pr_crit(fmt, ...) \
+    printk(KERN_CRIT pr_fmt(fmt), ##__VA_ARGS__)
+/**
  * pr_err - Print an error-level message
  * @fmt: format string
  * @...: arguments for the format string

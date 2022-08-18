@@ -947,3 +947,28 @@ of_get_next_available_child(const struct device_node *node,
     return next;
 }
 EXPORT_SYMBOL(of_get_next_available_child);
+
+/**
+ * of_get_compatible_child - Find compatible child node
+ * @parent: parent node
+ * @compatible: compatible string
+ *
+ * Lookup child node whose compatible property contains the given compatible
+ * string.
+ *
+ * Return: a node pointer with refcount incremented, use of_node_put() on it
+ * when done; or NULL if not found.
+ */
+struct device_node *of_get_compatible_child(const struct device_node *parent,
+                                            const char *compatible)
+{
+    struct device_node *child;
+
+    for_each_child_of_node(parent, child) {
+        if (of_device_is_compatible(child, compatible))
+            break;
+    }
+
+    return child;
+}
+EXPORT_SYMBOL(of_get_compatible_child);

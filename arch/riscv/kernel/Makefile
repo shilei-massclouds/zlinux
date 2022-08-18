@@ -16,6 +16,7 @@ obj-y   += signal.o
 obj-y	+= smp.o
 obj-y   += smpboot.o
 obj-y   += traps.o
+obj-y   += time.o
 obj-y   += cpu_ops.o
 obj-y   += process.o
 obj-y	+= cpu_ops_sbi.o
