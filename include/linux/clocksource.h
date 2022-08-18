@@ -132,6 +132,15 @@ __clocksource_register_scale(struct clocksource *cs, u32 scale, u32 freq);
 extern void
 __clocksource_update_freq_scale(struct clocksource *cs, u32 scale, u32 freq);
 
+/*
+ * Don't call this unless you are a default clocksource
+ * (AKA: jiffies) and absolutely have to.
+ */
+static inline int __clocksource_register(struct clocksource *cs)
+{
+    return __clocksource_register_scale(cs, 1, 0);
+}
+
 static inline int clocksource_register_hz(struct clocksource *cs, u32 hz)
 {
     return __clocksource_register_scale(cs, 1, hz);
@@ -171,5 +180,7 @@ static inline s64 clocksource_cyc2ns(u64 cycles, u32 mult, u32 shift)
 {
     return ((u64) cycles * mult) >> shift;
 }
+
+extern struct clocksource * __init clocksource_default_clock(void);
 
 #endif /* _LINUX_CLOCKSOURCE_H */

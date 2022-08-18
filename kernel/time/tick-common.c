@@ -9,14 +9,14 @@
  */
 #include <linux/cpu.h>
 #include <linux/err.h>
-#include <linux/hrtimer.h>
+//#include <linux/hrtimer.h>
 #include <linux/interrupt.h>
-#include <linux/nmi.h>
+//#include <linux/nmi.h>
 #include <linux/percpu.h>
-#include <linux/profile.h>
+//#include <linux/profile.h>
 #include <linux/sched.h>
 #include <linux/module.h>
-#include <trace/events/power.h>
+//#include <trace/events/power.h>
 
 #include <asm/irq_regs.h>
 

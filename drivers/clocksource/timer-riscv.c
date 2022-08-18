@@ -14,7 +14,7 @@
 #include <linux/irq.h>
 #include <linux/irqdomain.h>
 #include <linux/module.h>
-//#include <linux/sched_clock.h>
+#include <linux/sched_clock.h>
 //#include <linux/io-64-nonatomic-lo-hi.h>
 #include <linux/interrupt.h>
 #include <linux/of_irq.h>
@@ -31,6 +31,11 @@ static unsigned int riscv_clock_event_irq;
  * backwards when hopping between CPUs, practically it won't happen.
  */
 static unsigned long long riscv_clocksource_rdtime(struct clocksource *cs)
+{
+    return get_cycles64();
+}
+
+static u64 notrace riscv_sched_clock(void)
 {
     return get_cycles64();
 }
@@ -84,13 +89,15 @@ static int __init riscv_timer_init_dt(struct device_node *n)
     }
 
     pr_info("%s: Registering clocksource cpuid [%d] hartid [%d]\n",
-           __func__, cpuid, hartid);
+            __func__, cpuid, hartid);
     error = clocksource_register_hz(&riscv_clocksource, riscv_timebase);
     if (error) {
         pr_err("RISCV timer register failed [%d] for cpu = [%d]\n",
                error, cpuid);
         return error;
     }
+
+    sched_clock_register(riscv_sched_clock, 64, riscv_timebase);
 
     panic("%s: END!\n", __func__);
 }

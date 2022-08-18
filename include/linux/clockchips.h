@@ -12,10 +12,31 @@
 #include <linux/clocksource.h>
 #include <linux/cpumask.h>
 #include <linux/ktime.h>
-#include <linux/notifier.h>
+//#include <linux/notifier.h>
 
 struct clock_event_device;
 struct module;
+
+/*
+ * Possible states of a clock event device.
+ *
+ * DETACHED:    Device is not used by clockevents core. Initial state or can be
+ *      reached from SHUTDOWN.
+ * SHUTDOWN:    Device is powered-off. Can be reached from PERIODIC or ONESHOT.
+ * PERIODIC:    Device is programmed to generate events periodically. Can be
+ *      reached from DETACHED or SHUTDOWN.
+ * ONESHOT: Device is programmed to generate event only once. Can be reached
+ *      from DETACHED or SHUTDOWN.
+ * ONESHOT_STOPPED: Device was programmed in ONESHOT mode and is temporarily
+ *          stopped.
+ */
+enum clock_event_state {
+    CLOCK_EVT_STATE_DETACHED,
+    CLOCK_EVT_STATE_SHUTDOWN,
+    CLOCK_EVT_STATE_PERIODIC,
+    CLOCK_EVT_STATE_ONESHOT,
+    CLOCK_EVT_STATE_ONESHOT_STOPPED,
+};
 
 /**
  * struct clock_event_device - clock event device descriptor

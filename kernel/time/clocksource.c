@@ -20,8 +20,11 @@
 #include "tick-internal.h"
 //#include "timekeeping_internal.h"
 
+static struct clocksource *curr_clocksource;
+static struct clocksource *suspend_clocksource;
 static LIST_HEAD(clocksource_list);
 static DEFINE_MUTEX(clocksource_mutex);
+static int finished_booting;
 
 static void clocksource_enqueue_watchdog(struct clocksource *cs)
 {
@@ -284,10 +287,25 @@ static void clocksource_enqueue(struct clocksource *cs)
     list_add(&cs->list, entry);
 }
 
+static struct clocksource *clocksource_find_best(bool oneshot, bool skipcur)
+{
+    struct clocksource *cs;
+
+    if (!finished_booting || list_empty(&clocksource_list))
+        return NULL;
+
+    panic("%s: END!\n", __func__);
+}
+
 static void __clocksource_select(bool skipcur)
 {
     bool oneshot = tick_oneshot_mode_active();
     struct clocksource *best, *cs;
+
+    /* Find the best suitable clocksource */
+    best = clocksource_find_best(oneshot, skipcur);
+    if (!best)
+        return;
 
     panic("%s: END!\n", __func__);
 }
@@ -307,7 +325,26 @@ static void clocksource_select(void)
 
 static void __clocksource_suspend_select(struct clocksource *cs)
 {
-    panic("%s: END!\n", __func__);
+    /*
+     * Skip the clocksource which will be stopped in suspend state.
+     */
+    if (!(cs->flags & CLOCK_SOURCE_SUSPEND_NONSTOP))
+        return;
+
+    /*
+     * The nonstop clocksource can be selected as the suspend clocksource to
+     * calculate the suspend time, so it should not supply suspend/resume
+     * interfaces to suspend the nonstop clocksource when system suspends.
+     */
+    if (cs->suspend || cs->resume) {
+        pr_warn("Nonstop clocksource %s should not supply "
+                "suspend/resume interfaces\n",
+                cs->name);
+    }
+
+    /* Pick the best rating. */
+    if (!suspend_clocksource || cs->rating > suspend_clocksource->rating)
+        suspend_clocksource = cs;
 }
 
 /**
@@ -352,7 +389,28 @@ int __clocksource_register_scale(struct clocksource *cs, u32 scale, u32 freq)
     clocksource_select_watchdog(false);
     __clocksource_suspend_select(cs);
     mutex_unlock(&clocksource_mutex);
-    panic("%s: END!\n", __func__);
     return 0;
 }
 EXPORT_SYMBOL_GPL(__clocksource_register_scale);
+
+/*
+ * clocksource_done_booting - Called near the end of core bootup
+ *
+ * Hack to avoid lots of clocksource churn at boot time.
+ * We use fs_initcall because we want this to start before
+ * device_initcall but after subsys_initcall.
+ */
+static int __init clocksource_done_booting(void)
+{
+    mutex_lock(&clocksource_mutex);
+    curr_clocksource = clocksource_default_clock();
+    finished_booting = 1;
+    /*
+     * Run the watchdog first to eliminate unstable clock sources
+     */
+    __clocksource_watchdog_kthread();
+    clocksource_select();
+    mutex_unlock(&clocksource_mutex);
+    return 0;
+}
+fs_initcall(clocksource_done_booting);
