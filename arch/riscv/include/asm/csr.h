@@ -52,13 +52,18 @@
 #define CSR_TIME        0xc01
 #define CSR_INSTRET     0xc02
 
-# define SR_IE      SR_SIE
-# define SR_PIE     SR_SPIE
-# define SR_PP      SR_SPP
-
 # define RV_IRQ_SOFT    IRQ_S_SOFT
 # define RV_IRQ_TIMER   IRQ_S_TIMER
 # define RV_IRQ_EXT     IRQ_S_EXT
+
+/* IE/IP (Supervisor/Machine Interrupt Enable/Pending) flags */
+#define IE_SIE  (_AC(0x1, UL) << RV_IRQ_SOFT)
+#define IE_TIE  (_AC(0x1, UL) << RV_IRQ_TIMER)
+#define IE_EIE  (_AC(0x1, UL) << RV_IRQ_EXT)
+
+#define SR_IE   SR_SIE
+#define SR_PIE  SR_SPIE
+#define SR_PP   SR_SPP
 
 /* Exception causes */
 #define EXC_INST_MISALIGNED 0

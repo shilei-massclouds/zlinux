@@ -17,6 +17,8 @@
 unsigned long sbi_spec_version __ro_after_init = SBI_SPEC_VERSION_DEFAULT;
 EXPORT_SYMBOL(sbi_spec_version);
 
+static void (*__sbi_set_timer)(uint64_t stime) __ro_after_init;
+
 static int (*__sbi_rfence)(int fid, const struct cpumask *cpu_mask,
                            unsigned long start, unsigned long size,
                            unsigned long arg4, unsigned long arg5)
@@ -213,6 +215,17 @@ static void sbi_srst_power_off(void)
                    SBI_SRST_RESET_REASON_NONE);
 }
 
+static void __sbi_set_timer_v02(uint64_t stime_value)
+{
+    sbi_ecall(SBI_EXT_TIME, SBI_EXT_TIME_SET_TIMER, stime_value, 0, 0, 0, 0, 0);
+}
+
+static void __sbi_set_timer_v01(uint64_t stime_value)
+{
+    panic("Timer extension is not available in SBI v%lu.%lu\n",
+          sbi_major_version(), sbi_minor_version());
+}
+
 void __init sbi_init(void)
 {
     int ret;
@@ -229,13 +242,13 @@ void __init sbi_init(void)
     pr_info("SBI implementation ID=0x%lx Version=0x%lx\n",
             sbi_get_firmware_id(), sbi_get_firmware_version());
 
-#if 0
     if (sbi_probe_extension(SBI_EXT_TIME) > 0) {
         __sbi_set_timer = __sbi_set_timer_v02;
         pr_info("SBI TIME extension detected\n");
     } else {
         __sbi_set_timer = __sbi_set_timer_v01;
     }
+#if 0
     if (sbi_probe_extension(SBI_EXT_IPI) > 0) {
         __sbi_send_ipi  = __sbi_send_ipi_v02;
         pr_info("SBI IPI extension detected\n");
@@ -313,3 +326,14 @@ int sbi_remote_sfence_vma(const struct cpumask *cpu_mask,
                         cpu_mask, start, size, 0, 0);
 }
 EXPORT_SYMBOL(sbi_remote_sfence_vma);
+
+/**
+ * sbi_set_timer() - Program the timer for next timer event.
+ * @stime_value: The value after which next timer event should fire.
+ *
+ * Return: None.
+ */
+void sbi_set_timer(uint64_t stime_value)
+{
+    __sbi_set_timer(stime_value);
+}

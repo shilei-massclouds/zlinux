@@ -8,7 +8,7 @@
  * setup events, or directly accessed using MMIO registers.
  */
 #include <linux/clocksource.h>
-//#include <linux/clockchips.h>
+#include <linux/clockchips.h>
 #include <linux/cpu.h>
 #include <linux/delay.h>
 #include <linux/irq.h>
@@ -23,7 +23,21 @@
 #include <asm/sbi.h>
 #include <asm/timex.h>
 
+static int riscv_clock_next_event(unsigned long delta,
+                                  struct clock_event_device *ce)
+{
+    csr_set(CSR_IE, IE_TIE);
+    sbi_set_timer(get_cycles64() + delta);
+    return 0;
+}
+
 static unsigned int riscv_clock_event_irq;
+static DEFINE_PER_CPU(struct clock_event_device, riscv_clock_event) = {
+    .name           = "riscv_timer_clockevent",
+    .features       = CLOCK_EVT_FEAT_ONESHOT,
+    .rating         = 100,
+    .set_next_event = riscv_clock_next_event,
+};
 
 /*
  * It is guaranteed that all the timers across all the harts are synchronized
@@ -47,6 +61,42 @@ static struct clocksource riscv_clocksource = {
     .flags      = CLOCK_SOURCE_IS_CONTINUOUS,
     .read       = riscv_clocksource_rdtime,
 };
+
+/* called directly from the low-level interrupt handler */
+static irqreturn_t riscv_timer_interrupt(int irq, void *dev_id)
+{
+    struct clock_event_device *evdev = this_cpu_ptr(&riscv_clock_event);
+
+    csr_clear(CSR_IE, IE_TIE);
+    evdev->event_handler(evdev);
+
+    return IRQ_HANDLED;
+}
+
+static int riscv_timer_starting_cpu(unsigned int cpu)
+{
+    struct clock_event_device *ce = per_cpu_ptr(&riscv_clock_event, cpu);
+
+    ce->cpumask = cpumask_of(cpu);
+    ce->irq = riscv_clock_event_irq;
+#if 0
+    clockevents_config_and_register(ce, riscv_timebase, 100, 0x7fffffff);
+
+    enable_percpu_irq(riscv_clock_event_irq,
+                      irq_get_trigger_type(riscv_clock_event_irq));
+#endif
+    panic("%s: END!\n", __func__);
+    return 0;
+}
+
+static int riscv_timer_dying_cpu(unsigned int cpu)
+{
+#if 0
+    disable_percpu_irq(riscv_clock_event_irq);
+#endif
+    panic("%s: END!\n", __func__);
+    return 0;
+}
 
 static int __init riscv_timer_init_dt(struct device_node *n)
 {
@@ -99,7 +149,23 @@ static int __init riscv_timer_init_dt(struct device_node *n)
 
     sched_clock_register(riscv_sched_clock, 64, riscv_timebase);
 
+    error = request_percpu_irq(riscv_clock_event_irq,
+                               riscv_timer_interrupt,
+                               "riscv-timer",
+                               &riscv_clock_event);
+    if (error) {
+        pr_err("registering percpu irq failed [%d]\n", error);
+        return error;
+    }
+
+    error = cpuhp_setup_state(CPUHP_AP_RISCV_TIMER_STARTING,
+                              "clockevents/riscv/timer:starting",
+                              riscv_timer_starting_cpu, riscv_timer_dying_cpu);
+    if (error)
+        pr_err("cpu hp setup state failed for RISCV timer [%d]\n",
+               error);
     panic("%s: END!\n", __func__);
+    return error;
 }
 
 TIMER_OF_DECLARE(riscv_timer, "riscv", riscv_timer_init_dt);

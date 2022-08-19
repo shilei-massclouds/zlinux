@@ -44,6 +44,10 @@ enum sbi_ext_base_fid {
     SBI_EXT_BASE_GET_MIMPID,
 };
 
+enum sbi_ext_time_fid {
+    SBI_EXT_TIME_SET_TIMER = 0,
+};
+
 enum sbi_ext_rfence_fid {
     SBI_EXT_RFENCE_REMOTE_FENCE_I = 0,
     SBI_EXT_RFENCE_REMOTE_SFENCE_VMA,
@@ -139,5 +143,7 @@ sbi_mk_version(unsigned long major, unsigned long minor)
 int sbi_remote_sfence_vma(const struct cpumask *cpu_mask,
                           unsigned long start,
                           unsigned long size);
+
+void sbi_set_timer(uint64_t stime_value);
 
 #endif /* _ASM_RISCV_SBI_H */

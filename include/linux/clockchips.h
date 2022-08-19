@@ -103,4 +103,11 @@ struct clock_event_device {
     struct module       *owner;
 } ____cacheline_aligned;
 
+/*
+ * Clock event features
+ */
+# define CLOCK_EVT_FEAT_PERIODIC    0x000001
+# define CLOCK_EVT_FEAT_ONESHOT     0x000002
+# define CLOCK_EVT_FEAT_KTIME       0x000004
+
 #endif /* _LINUX_CLOCKCHIPS_H */

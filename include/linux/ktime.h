@@ -31,4 +31,18 @@
 /* Nanosecond scalar representation for kernel time values */
 typedef s64 ktime_t;
 
+//#include <vdso/ktime.h>
+
+static inline ktime_t ns_to_ktime(u64 ns)
+{
+    return ns;
+}
+
+static inline ktime_t ms_to_ktime(u64 ms)
+{
+    return ms * NSEC_PER_MSEC;
+}
+
+//#include <linux/timekeeping.h>
+
 #endif /* _LINUX_KTIME_H */

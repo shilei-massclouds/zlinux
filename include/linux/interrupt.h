@@ -255,4 +255,16 @@ asmlinkage void __do_softirq(void);
 
 #define set_softirq_pending(x)  (__this_cpu_write(local_softirq_pending_ref, (x)))
 
+extern int __must_check
+__request_percpu_irq(unsigned int irq, irq_handler_t handler,
+                     unsigned long flags, const char *devname,
+                     void __percpu *percpu_dev_id);
+
+static inline int __must_check
+request_percpu_irq(unsigned int irq, irq_handler_t handler,
+                   const char *devname, void __percpu *percpu_dev_id)
+{
+    return __request_percpu_irq(irq, handler, 0, devname, percpu_dev_id);
+}
+
 #endif /* _LINUX_INTERRUPT_H */

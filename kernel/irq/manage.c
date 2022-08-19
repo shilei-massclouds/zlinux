@@ -599,13 +599,10 @@ __setup_irq(unsigned int irq,
         irqd_clear(&desc->irq_data, IRQD_IRQ_INPROGRESS);
 
         if (new->flags & IRQF_PERCPU) {
-            panic("%s: IRQF_PERCPU!\n", __func__);
-#if 0
             irqd_set(&desc->irq_data, IRQD_PER_CPU);
             irq_settings_set_per_cpu(desc);
             if (new->flags & IRQF_NO_DEBUG)
                 irq_settings_set_no_debug(desc);
-#endif
         }
 
         if (noirqdebug)
@@ -864,8 +861,71 @@ void enable_percpu_irq(unsigned int irq, unsigned int type)
     }
 
     irq_percpu_enable(desc, cpu);
- 
+
  out:
     irq_put_desc_unlock(desc, flags);
 }
 EXPORT_SYMBOL_GPL(enable_percpu_irq);
+
+/**
+ *  __request_percpu_irq - allocate a percpu interrupt line
+ *  @irq: Interrupt line to allocate
+ *  @handler: Function to be called when the IRQ occurs.
+ *  @flags: Interrupt type flags (IRQF_TIMER only)
+ *  @devname: An ascii name for the claiming device
+ *  @dev_id: A percpu cookie passed back to the handler function
+ *
+ *  This call allocates interrupt resources and enables the
+ *  interrupt on the local CPU. If the interrupt is supposed to be
+ *  enabled on other CPUs, it has to be done on each CPU using
+ *  enable_percpu_irq().
+ *
+ *  Dev_id must be globally unique. It is a per-cpu variable, and
+ *  the handler gets called with the interrupted CPU's instance of
+ *  that variable.
+ */
+int __request_percpu_irq(unsigned int irq, irq_handler_t handler,
+                         unsigned long flags, const char *devname,
+                         void __percpu *dev_id)
+{
+    struct irqaction *action;
+    struct irq_desc *desc;
+    int retval;
+
+    if (!dev_id)
+        return -EINVAL;
+
+    desc = irq_to_desc(irq);
+    if (!desc || !irq_settings_can_request(desc) ||
+        !irq_settings_is_per_cpu_devid(desc))
+        return -EINVAL;
+
+    if (flags && flags != IRQF_TIMER)
+        return -EINVAL;
+
+    action = kzalloc(sizeof(struct irqaction), GFP_KERNEL);
+    if (!action)
+        return -ENOMEM;
+
+    action->handler = handler;
+    action->flags = flags | IRQF_PERCPU | IRQF_NO_SUSPEND;
+    action->name = devname;
+    action->percpu_dev_id = dev_id;
+
+#if 0
+    retval = irq_chip_pm_get(&desc->irq_data);
+    if (retval < 0) {
+        kfree(action);
+        return retval;
+    }
+#endif
+
+    retval = __setup_irq(irq, desc, action);
+
+    if (retval) {
+        //irq_chip_pm_put(&desc->irq_data);
+        kfree(action);
+    }
+
+    return retval;
+}

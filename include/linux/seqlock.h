@@ -53,6 +53,20 @@ typedef struct seqcount {
 } seqcount_t;
 
 /*
+ * Latch sequence counters (seqcount_latch_t)
+ *
+ * A sequence counter variant where the counter even/odd value is used to
+ * switch between two copies of protected data. This allows the read path,
+ * typically NMIs, to safely interrupt the write side critical section.
+ *
+ * As the write sections are fully preemptible, no special handling for
+ * PREEMPT_RT is needed.
+ */
+typedef struct {
+    seqcount_t seqcount;
+} seqcount_latch_t;
+
+/*
  * SEQCOUNT_LOCKNAME()  - Instantiate seqcount_LOCKNAME_t and helpers
  * seqprop_LOCKNAME_*() - Property accessors for seqcount_LOCKNAME_t
  *
@@ -415,6 +429,94 @@ static inline void read_seqlock_excl(seqlock_t *sl)
 static inline void read_sequnlock_excl(seqlock_t *sl)
 {
     spin_unlock(&sl->lock);
+}
+
+/**
+ * raw_write_seqcount_latch() - redirect latch readers to even/odd copy
+ * @s: Pointer to seqcount_latch_t
+ *
+ * The latch technique is a multiversion concurrency control method that allows
+ * queries during non-atomic modifications. If you can guarantee queries never
+ * interrupt the modification -- e.g. the concurrency is strictly between CPUs
+ * -- you most likely do not need this.
+ *
+ * Where the traditional RCU/lockless data structures rely on atomic
+ * modifications to ensure queries observe either the old or the new state the
+ * latch allows the same for non-atomic updates. The trade-off is doubling the
+ * cost of storage; we have to maintain two copies of the entire data
+ * structure.
+ *
+ * Very simply put: we first modify one copy and then the other. This ensures
+ * there is always one copy in a stable state, ready to give us an answer.
+ *
+ * The basic form is a data structure like::
+ *
+ *  struct latch_struct {
+ *      seqcount_latch_t    seq;
+ *      struct data_struct  data[2];
+ *  };
+ *
+ * Where a modification, which is assumed to be externally serialized, does the
+ * following::
+ *
+ *  void latch_modify(struct latch_struct *latch, ...)
+ *  {
+ *      smp_wmb();  // Ensure that the last data[1] update is visible
+ *      latch->seq.sequence++;
+ *      smp_wmb();  // Ensure that the seqcount update is visible
+ *
+ *      modify(latch->data[0], ...);
+ *
+ *      smp_wmb();  // Ensure that the data[0] update is visible
+ *      latch->seq.sequence++;
+ *      smp_wmb();  // Ensure that the seqcount update is visible
+ *
+ *      modify(latch->data[1], ...);
+ *  }
+ *
+ * The query will have a form like::
+ *
+ *  struct entry *latch_query(struct latch_struct *latch, ...)
+ *  {
+ *      struct entry *entry;
+ *      unsigned seq, idx;
+ *
+ *      do {
+ *          seq = raw_read_seqcount_latch(&latch->seq);
+ *
+ *          idx = seq & 0x01;
+ *          entry = data_query(latch->data[idx], ...);
+ *
+ *      // This includes needed smp_rmb()
+ *      } while (read_seqcount_latch_retry(&latch->seq, seq));
+ *
+ *      return entry;
+ *  }
+ *
+ * So during the modification, queries are first redirected to data[1]. Then we
+ * modify data[0]. When that is complete, we redirect queries back to data[0]
+ * and we can modify data[1].
+ *
+ * NOTE:
+ *
+ *  The non-requirement for atomic modifications does _NOT_ include
+ *  the publishing of new entries in the case where data is a dynamic
+ *  data structure.
+ *
+ *  An iteration might start in data[0] and get suspended long enough
+ *  to miss an entire modification sequence, once it resumes it might
+ *  observe the new entry.
+ *
+ * NOTE2:
+ *
+ *  When data is a dynamic data structure; one should use regular RCU
+ *  patterns to manage the lifetimes of the objects within.
+ */
+static inline void raw_write_seqcount_latch(seqcount_latch_t *s)
+{
+    smp_wmb();  /* prior stores before incrementing "sequence" */
+    s->seqcount.sequence++;
+    smp_wmb();      /* increment "sequence" before following stores */
 }
 
 #endif /* __LINUX_SEQLOCK_H */

@@ -130,3 +130,8 @@ static inline bool irq_settings_no_debug(struct irq_desc *desc)
 {
     return desc->status_use_accessors & _IRQ_NO_DEBUG;
 }
+
+static inline void irq_settings_set_per_cpu(struct irq_desc *desc)
+{
+    desc->status_use_accessors |= _IRQ_PER_CPU;
+}
