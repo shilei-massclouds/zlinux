@@ -83,6 +83,9 @@ static DEFINE_PER_CPU(struct cpuhp_cpu_state, cpuhp_state) = {
     .fail = CPUHP_INVALID,
 };
 
+const DECLARE_BITMAP(cpu_all_bits, NR_CPUS) = CPU_BITS_ALL;
+EXPORT_SYMBOL(cpu_all_bits);
+
 int __boot_cpu_id;
 
 struct cpumask __cpu_possible_mask __read_mostly;

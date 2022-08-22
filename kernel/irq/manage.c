@@ -929,3 +929,13 @@ int __request_percpu_irq(unsigned int irq, irq_handler_t handler,
 
     return retval;
 }
+
+/**
+ *  irq_can_set_affinity - Check if the affinity of a given irq can be set
+ *  @irq:       Interrupt to check
+ *
+ */
+int irq_can_set_affinity(unsigned int irq)
+{
+    return __irq_can_set_affinity(irq_to_desc(irq));
+}

@@ -519,4 +519,116 @@ static inline void raw_write_seqcount_latch(seqcount_latch_t *s)
     smp_wmb();      /* increment "sequence" before following stores */
 }
 
+/**
+ * write_seqcount_begin() - start a seqcount_t write side critical section
+ * @s: Pointer to seqcount_t or any of the seqcount_LOCKNAME_t variants
+ *
+ * Context: sequence counter write side sections must be serialized and
+ * non-preemptible. Preemption will be automatically disabled if and
+ * only if the seqcount write serialization lock is associated, and
+ * preemptible.  If readers can be invoked from hardirq or softirq
+ * context, interrupts or bottom halves must be respectively disabled.
+ */
+#define write_seqcount_begin(s)                     \
+do {                                    \
+    seqprop_assert(s);                      \
+                                    \
+    if (seqprop_preemptible(s))                 \
+        preempt_disable();                  \
+                                    \
+    do_write_seqcount_begin(seqprop_ptr(s));            \
+} while (0)
+
+/**
+ * __read_seqcount_begin() - begin a seqcount_t read section w/o barrier
+ * @s: Pointer to seqcount_t or any of the seqcount_LOCKNAME_t variants
+ *
+ * __read_seqcount_begin is like read_seqcount_begin, but has no smp_rmb()
+ * barrier. Callers should ensure that smp_rmb() or equivalent ordering is
+ * provided before actually loading any of the variables that are to be
+ * protected in this critical section.
+ *
+ * Use carefully, only in critical code, and comment how the barrier is
+ * provided.
+ *
+ * Return: count to be passed to read_seqcount_retry()
+ */
+#define __read_seqcount_begin(s)                \
+({                                              \
+    unsigned __seq;                             \
+                                                \
+    while ((__seq = seqprop_sequence(s)) & 1)   \
+        cpu_relax();                            \
+                                                \
+    __seq;                                      \
+})
+
+/**
+ * raw_read_seqcount_begin() - begin a seqcount_t read section w/o lockdep
+ * @s: Pointer to seqcount_t or any of the seqcount_LOCKNAME_t variants
+ *
+ * Return: count to be passed to read_seqcount_retry()
+ */
+#define raw_read_seqcount_begin(s)              \
+({                                              \
+    unsigned _seq = __read_seqcount_begin(s);   \
+                                                \
+    smp_rmb();                                  \
+    _seq;                                       \
+})
+
+/**
+ * read_seqcount_begin() - begin a seqcount_t read critical section
+ * @s: Pointer to seqcount_t or any of the seqcount_LOCKNAME_t variants
+ *
+ * Return: count to be passed to read_seqcount_retry()
+ */
+#define read_seqcount_begin(s)  \
+({                              \
+    raw_read_seqcount_begin(s); \
+})
+
+/**
+ * __read_seqcount_retry() - end a seqcount_t read section w/o barrier
+ * @s: Pointer to seqcount_t or any of the seqcount_LOCKNAME_t variants
+ * @start: count, from read_seqcount_begin()
+ *
+ * __read_seqcount_retry is like read_seqcount_retry, but has no smp_rmb()
+ * barrier. Callers should ensure that smp_rmb() or equivalent ordering is
+ * provided before actually loading any of the variables that are to be
+ * protected in this critical section.
+ *
+ * Use carefully, only in critical code, and comment how the barrier is
+ * provided.
+ *
+ * Return: true if a read section retry is required, else false
+ */
+#define __read_seqcount_retry(s, start)                 \
+    do___read_seqcount_retry(seqprop_ptr(s), start)
+
+static inline int do___read_seqcount_retry(const seqcount_t *s, unsigned start)
+{
+    return unlikely(READ_ONCE(s->sequence) != start);
+}
+
+/**
+ * read_seqcount_retry() - end a seqcount_t read critical section
+ * @s: Pointer to seqcount_t or any of the seqcount_LOCKNAME_t variants
+ * @start: count, from read_seqcount_begin()
+ *
+ * read_seqcount_retry closes the read critical section of given
+ * seqcount_t.  If the critical section was invalid, it must be ignored
+ * (and typically retried).
+ *
+ * Return: true if a read section retry is required, else false
+ */
+#define read_seqcount_retry(s, start) \
+    do_read_seqcount_retry(seqprop_ptr(s), start)
+
+static inline int do_read_seqcount_retry(const seqcount_t *s, unsigned start)
+{
+    smp_rmb();
+    return do___read_seqcount_retry(s, start);
+}
+
 #endif /* __LINUX_SEQLOCK_H */

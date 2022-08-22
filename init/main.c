@@ -771,6 +771,7 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 
     init_IRQ();
     //softirq_init();
+    timekeeping_init();
     time_init();
 
     setup_per_cpu_pageset();

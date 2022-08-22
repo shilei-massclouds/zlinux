@@ -33,3 +33,15 @@ int tick_oneshot_mode_active(void)
 
     return ret;
 }
+
+/**
+ * tick_setup_oneshot - setup the event device for oneshot mode (hres or nohz)
+ */
+void tick_setup_oneshot(struct clock_event_device *newdev,
+                        void (*handler)(struct clock_event_device *),
+                        ktime_t next_event)
+{
+    newdev->event_handler = handler;
+    clockevents_switch_state(newdev, CLOCK_EVT_STATE_ONESHOT);
+    clockevents_program_event(newdev, next_event, true);
+}

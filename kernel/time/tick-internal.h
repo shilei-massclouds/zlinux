@@ -2,11 +2,16 @@
 /*
  * tick internal variable and functions used by low/high res code
  */
-//#include <linux/hrtimer.h>
+#include <linux/hrtimer.h>
 #include <linux/tick.h>
 
-//#include "timekeeping.h"
+#include "timekeeping.h"
 #include "tick-sched.h"
+
+#define TICK_DO_TIMER_NONE -1
+#define TICK_DO_TIMER_BOOT -2
+
+extern int tick_do_timer_cpu __read_mostly;
 
 DECLARE_PER_CPU(struct tick_device, tick_cpu_device);
 
@@ -22,6 +27,8 @@ extern int tick_oneshot_mode_active(void);
 extern void tick_clock_notify(void);
 extern int tick_check_oneshot_change(int allow_nohz);
 extern int tick_init_highres(void);
+
+extern int tick_device_uses_broadcast(struct clock_event_device *dev, int cpu);
 
 /* Since jiffies uses a simple TICK_NSEC multiplier
  * conversion, the .shift value could be zero. However
@@ -42,3 +49,50 @@ extern int tick_init_highres(void);
 #else
 #define JIFFIES_SHIFT   8
 #endif
+
+extern void tick_check_new_device(struct clock_event_device *dev);
+
+static inline void clockevent_set_state(struct clock_event_device *dev,
+                                        enum clock_event_state state)
+{
+    dev->state_use_accessors = state;
+}
+
+static inline
+enum clock_event_state clockevent_get_state(struct clock_event_device *dev)
+{
+    return dev->state_use_accessors;
+}
+
+extern void tick_install_broadcast_device(struct clock_event_device *dev,
+                                          int cpu);
+
+extern int tick_is_broadcast_device(struct clock_event_device *dev);
+
+extern void clockevents_shutdown(struct clock_event_device *dev);
+
+extern void clockevents_exchange_device(struct clock_event_device *old,
+                                        struct clock_event_device *new);
+
+extern void clockevents_handle_noop(struct clock_event_device *dev);
+
+/* Check, if the device is functional or a dummy for broadcast */
+static inline int tick_device_is_functional(struct clock_event_device *dev)
+{
+    return !(dev->features & CLOCK_EVT_FEAT_DUMMY);
+}
+
+extern void tick_set_periodic_handler(struct clock_event_device *dev,
+                                      int broadcast);
+
+extern void clockevents_switch_state(struct clock_event_device *dev,
+                                     enum clock_event_state state);
+
+extern int clockevents_program_event(struct clock_event_device *dev,
+                                     ktime_t expires, bool force);
+
+extern void tick_handle_periodic(struct clock_event_device *dev);
+
+extern int tick_broadcast_oneshot_active(void);
+
+void clock_was_set_delayed(void);

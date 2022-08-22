@@ -79,13 +79,10 @@ static int riscv_timer_starting_cpu(unsigned int cpu)
 
     ce->cpumask = cpumask_of(cpu);
     ce->irq = riscv_clock_event_irq;
-#if 0
     clockevents_config_and_register(ce, riscv_timebase, 100, 0x7fffffff);
 
     enable_percpu_irq(riscv_clock_event_irq,
                       irq_get_trigger_type(riscv_clock_event_irq));
-#endif
-    panic("%s: END!\n", __func__);
     return 0;
 }
 
@@ -162,9 +159,7 @@ static int __init riscv_timer_init_dt(struct device_node *n)
                               "clockevents/riscv/timer:starting",
                               riscv_timer_starting_cpu, riscv_timer_dying_cpu);
     if (error)
-        pr_err("cpu hp setup state failed for RISCV timer [%d]\n",
-               error);
-    panic("%s: END!\n", __func__);
+        pr_err("cpu hp setup state failed for RISCV timer [%d]\n", error);
     return error;
 }
 

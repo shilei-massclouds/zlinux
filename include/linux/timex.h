@@ -17,7 +17,7 @@
 #ifndef _LINUX_TIMEX_H
 #define _LINUX_TIMEX_H
 
-//#include <uapi/linux/timex.h>
+#include <uapi/linux/timex.h>
 
 #define ADJ_ADJTIME     0x8000  /* switch between adjtime/adjtimex modes */
 #define ADJ_OFFSET_SINGLESHOT   0x0001  /* old-fashioned adjtime */
@@ -27,6 +27,18 @@
 #include <linux/param.h>
 
 unsigned long random_get_entropy_fallback(void);
+
+#define NTP_INTERVAL_FREQ  (HZ)
+#define NTP_INTERVAL_LENGTH (NSEC_PER_SEC/NTP_INTERVAL_FREQ)
+
+#define NTP_SCALE_SHIFT     32
+
+#define MAXPHASE 500000000L /* max phase error (ns) */
+#define MAXFREQ 500000      /* max frequency error (ns/s) */
+#define MAXFREQ_SCALED ((s64)MAXFREQ << NTP_SCALE_SHIFT)
+#define MINSEC 256      /* min interval between updates (s) */
+#define MAXSEC 2048     /* max interval between updates (s) */
+#define NTP_PHASE_LIMIT ((MAXPHASE / NSEC_PER_USEC) << 5) /* beyond max. dispersion */
 
 #include <asm/timex.h>
 

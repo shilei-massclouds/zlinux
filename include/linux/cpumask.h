@@ -26,6 +26,9 @@ extern unsigned int nr_cpu_ids;
 /* Don't assign or return these: may not be this big! */
 typedef struct cpumask { DECLARE_BITMAP(bits, NR_CPUS); } cpumask_t;
 
+#define this_cpu_cpumask_var_ptr(x) this_cpu_ptr(x)
+#define __cpumask_var_read_mostly
+
 extern struct cpumask __cpu_possible_mask;
 extern struct cpumask __cpu_online_mask;
 extern struct cpumask __cpu_present_mask;
@@ -460,5 +463,15 @@ int __pure cpumask_next_and(int n,
 int __pure cpumask_any_but(const struct cpumask *mask, unsigned int cpu);
 unsigned int cpumask_local_spread(unsigned int i, int node);
 int cpumask_any_distribute(const struct cpumask *srcp);
+
+/* It's common to want to use cpu_all_mask in struct member initializers,
+ * so it has to refer to an address rather than a pointer. */
+extern const DECLARE_BITMAP(cpu_all_bits, NR_CPUS);
+#define cpu_all_mask to_cpumask(cpu_all_bits)
+
+#define CPU_BITS_ALL    \
+{                       \
+    [BITS_TO_LONGS(NR_CPUS)-1] = BITMAP_LAST_WORD_MASK(NR_CPUS) \
+}
 
 #endif /* __LINUX_CPUMASK_H */

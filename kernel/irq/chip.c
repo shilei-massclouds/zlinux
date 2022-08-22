@@ -139,8 +139,6 @@ void handle_percpu_devid_irq(struct irq_desc *desc)
     unsigned int irq = irq_desc_get_irq(desc);
     irqreturn_t res;
 
-    panic("%s: END!\n", __func__);
-#if 0
     /*
      * PER CPU interrupts are not serialized. Do not touch
      * desc->tot_count.
@@ -151,9 +149,7 @@ void handle_percpu_devid_irq(struct irq_desc *desc)
         chip->irq_ack(&desc->irq_data);
 
     if (likely(action)) {
-        trace_irq_handler_entry(irq, action);
         res = action->handler(irq, raw_cpu_ptr(action->percpu_dev_id));
-        trace_irq_handler_exit(irq, action, res);
     } else {
         unsigned int cpu = smp_processor_id();
         bool enabled = cpumask_test_cpu(cpu, desc->percpu_enabled);
@@ -162,12 +158,12 @@ void handle_percpu_devid_irq(struct irq_desc *desc)
             irq_percpu_disable(desc, cpu);
 
         pr_err_once("Spurious%s percpu IRQ%u on CPU%u\n",
-                enabled ? " and unmasked" : "", irq, cpu);
+                    enabled ? " and unmasked" : "", irq, cpu);
     }
 
     if (chip->irq_eoi)
         chip->irq_eoi(&desc->irq_data);
-#endif
+    panic("%s: END!\n", __func__);
 }
 
 int irq_activate(struct irq_desc *desc)
@@ -515,4 +511,13 @@ void irq_percpu_enable(struct irq_desc *desc, unsigned int cpu)
     else
         desc->irq_data.chip->irq_unmask(&desc->irq_data);
     cpumask_set_cpu(cpu, desc->percpu_enabled);
+}
+
+void irq_percpu_disable(struct irq_desc *desc, unsigned int cpu)
+{
+    if (desc->irq_data.chip->irq_disable)
+        desc->irq_data.chip->irq_disable(&desc->irq_data);
+    else
+        desc->irq_data.chip->irq_mask(&desc->irq_data);
+    cpumask_clear_cpu(cpu, desc->percpu_enabled);
 }

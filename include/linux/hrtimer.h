@@ -24,6 +24,41 @@
 struct hrtimer_clock_base;
 struct hrtimer_cpu_base;
 
+/*
+ * Mode arguments of xxx_hrtimer functions:
+ *
+ * HRTIMER_MODE_ABS     - Time value is absolute
+ * HRTIMER_MODE_REL     - Time value is relative to now
+ * HRTIMER_MODE_PINNED      - Timer is bound to CPU (is only considered
+ *                when starting the timer)
+ * HRTIMER_MODE_SOFT        - Timer callback function will be executed in
+ *                soft irq context
+ * HRTIMER_MODE_HARD        - Timer callback function will be executed in
+ *                hard irq context even on PREEMPT_RT.
+ */
+enum hrtimer_mode {
+    HRTIMER_MODE_ABS    = 0x00,
+    HRTIMER_MODE_REL    = 0x01,
+    HRTIMER_MODE_PINNED = 0x02,
+    HRTIMER_MODE_SOFT   = 0x04,
+    HRTIMER_MODE_HARD   = 0x08,
+
+    HRTIMER_MODE_ABS_PINNED = HRTIMER_MODE_ABS | HRTIMER_MODE_PINNED,
+    HRTIMER_MODE_REL_PINNED = HRTIMER_MODE_REL | HRTIMER_MODE_PINNED,
+
+    HRTIMER_MODE_ABS_SOFT   = HRTIMER_MODE_ABS | HRTIMER_MODE_SOFT,
+    HRTIMER_MODE_REL_SOFT   = HRTIMER_MODE_REL | HRTIMER_MODE_SOFT,
+
+    HRTIMER_MODE_ABS_PINNED_SOFT = HRTIMER_MODE_ABS_PINNED | HRTIMER_MODE_SOFT,
+    HRTIMER_MODE_REL_PINNED_SOFT = HRTIMER_MODE_REL_PINNED | HRTIMER_MODE_SOFT,
+
+    HRTIMER_MODE_ABS_HARD   = HRTIMER_MODE_ABS | HRTIMER_MODE_HARD,
+    HRTIMER_MODE_REL_HARD   = HRTIMER_MODE_REL | HRTIMER_MODE_HARD,
+
+    HRTIMER_MODE_ABS_PINNED_HARD = HRTIMER_MODE_ABS_PINNED | HRTIMER_MODE_HARD,
+    HRTIMER_MODE_REL_PINNED_HARD = HRTIMER_MODE_REL_PINNED | HRTIMER_MODE_HARD,
+};
+
 /**
  * struct hrtimer - the basic hrtimer structure
  * @node:   timerqueue node, which also manages node.expires,

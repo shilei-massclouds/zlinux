@@ -9,9 +9,7 @@
 #include <linux/types.h>
 #include <linux/bvec.h>
 #include <linux/device.h>
-#if 0
 #include <linux/ktime.h>
-#endif
 
 /*
  * The basic unit of block I/O is a sector. It is used in a number of contexts

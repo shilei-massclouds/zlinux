@@ -14,6 +14,11 @@
 
 extern unsigned long boot_cpu_hartid;
 
+struct riscv_ipi_ops {
+    void (*ipi_inject)(const struct cpumask *target);
+    void (*ipi_clear)(void);
+};
+
 /*
  * Mapping between linux logical cpu index and hartid.
  */

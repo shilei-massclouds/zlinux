@@ -61,9 +61,7 @@
 
 #endif
 
-#if 0
 #include "clock.c"
-#endif
 
 #include "loadavg.c"
 #include "completion.c"

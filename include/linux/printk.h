@@ -168,9 +168,6 @@ static inline int printk_get_level(const char *buffer)
 
 #define printk_once(fmt, ...) DO_ONCE_LITE(printk, fmt, ##__VA_ARGS__)
 
-#define pr_warn_once(fmt, ...) \
-    printk_once(KERN_WARNING pr_fmt(fmt), ##__VA_ARGS__)
-
 #if 0
 #define printk_ratelimited(fmt, ...)                    \
 ({                                  \
@@ -221,5 +218,20 @@ int vprintk(const char *fmt, va_list args);
 
 /* If set, an oops, panic(), BUG() or die() is in progress */
 extern int oops_in_progress;
+
+#define pr_emerg_once(fmt, ...)                 \
+    printk_once(KERN_EMERG pr_fmt(fmt), ##__VA_ARGS__)
+#define pr_alert_once(fmt, ...)                 \
+    printk_once(KERN_ALERT pr_fmt(fmt), ##__VA_ARGS__)
+#define pr_crit_once(fmt, ...)                  \
+    printk_once(KERN_CRIT pr_fmt(fmt), ##__VA_ARGS__)
+#define pr_err_once(fmt, ...)                   \
+    printk_once(KERN_ERR pr_fmt(fmt), ##__VA_ARGS__)
+#define pr_warn_once(fmt, ...)                  \
+    printk_once(KERN_WARNING pr_fmt(fmt), ##__VA_ARGS__)
+#define pr_notice_once(fmt, ...)                \
+    printk_once(KERN_NOTICE pr_fmt(fmt), ##__VA_ARGS__)
+#define pr_info_once(fmt, ...)                  \
+    printk_once(KERN_INFO pr_fmt(fmt), ##__VA_ARGS__)
 
 #endif /* __KERNEL_PRINTK__ */

@@ -267,4 +267,6 @@ request_percpu_irq(unsigned int irq, irq_handler_t handler,
     return __request_percpu_irq(irq, handler, 0, devname, percpu_dev_id);
 }
 
+extern int irq_can_set_affinity(unsigned int irq);
+
 #endif /* _LINUX_INTERRUPT_H */

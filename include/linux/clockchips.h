@@ -14,6 +14,33 @@
 #include <linux/ktime.h>
 //#include <linux/notifier.h>
 
+/*
+ * Clock event features
+ */
+#define CLOCK_EVT_FEAT_PERIODIC     0x000001
+#define CLOCK_EVT_FEAT_ONESHOT      0x000002
+#define CLOCK_EVT_FEAT_KTIME        0x000004
+
+/*
+ * x86(64) specific (mis)features:
+ *
+ * - Clockevent source stops in C3 State and needs broadcast support.
+ * - Local APIC timer is used as a dummy device.
+ */
+#define CLOCK_EVT_FEAT_C3STOP       0x000008
+#define CLOCK_EVT_FEAT_DUMMY        0x000010
+
+/*
+ * Core shall set the interrupt affinity dynamically in broadcast mode
+ */
+#define CLOCK_EVT_FEAT_DYNIRQ       0x000020
+#define CLOCK_EVT_FEAT_PERCPU       0x000040
+
+/*
+ * Clockevent device is based on a hrtimer for broadcast
+ */
+#define CLOCK_EVT_FEAT_HRTIMER     0x000080
+
 struct clock_event_device;
 struct module;
 
@@ -106,8 +133,37 @@ struct clock_event_device {
 /*
  * Clock event features
  */
-# define CLOCK_EVT_FEAT_PERIODIC    0x000001
-# define CLOCK_EVT_FEAT_ONESHOT     0x000002
-# define CLOCK_EVT_FEAT_KTIME       0x000004
+#define CLOCK_EVT_FEAT_PERIODIC     0x000001
+#define CLOCK_EVT_FEAT_ONESHOT      0x000002
+#define CLOCK_EVT_FEAT_KTIME        0x000004
+
+extern void clockevents_config_and_register(struct clock_event_device *dev,
+                                            u32 freq, unsigned long min_delta,
+                                            unsigned long max_delta);
+
+static inline void
+clockevents_calc_mult_shift(struct clock_event_device *ce, u32 freq, u32 maxsec)
+{
+    return clocks_calc_mult_shift(&ce->mult, &ce->shift, NSEC_PER_SEC, freq,
+                                  maxsec);
+}
+
+/* Helpers to verify state of a clockevent device */
+static inline bool clockevent_state_detached(struct clock_event_device *dev)
+{
+    return dev->state_use_accessors == CLOCK_EVT_STATE_DETACHED;
+}
+
+static inline bool clockevent_state_oneshot(struct clock_event_device *dev)
+{
+    return dev->state_use_accessors == CLOCK_EVT_STATE_ONESHOT;
+}
+
+extern void tick_broadcast(const struct cpumask *mask);
+
+static inline bool clockevent_state_shutdown(struct clock_event_device *dev)
+{
+    return dev->state_use_accessors == CLOCK_EVT_STATE_SHUTDOWN;
+}
 
 #endif /* _LINUX_CLOCKCHIPS_H */

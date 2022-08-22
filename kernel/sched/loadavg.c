@@ -59,3 +59,15 @@ atomic_long_t calc_load_tasks;
 unsigned long calc_load_update;
 unsigned long avenrun[3];
 EXPORT_SYMBOL(avenrun); /* should be removed */
+
+/*
+ * calc_load - update the avenrun load estimates 10 ticks after the
+ * CPUs have updated calc_load_tasks.
+ *
+ * Called from the global timer code.
+ */
+void calc_global_load(void)
+{
+    panic("%s: END!\n", __func__);
+}
+

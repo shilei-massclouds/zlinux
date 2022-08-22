@@ -1,4 +1,3 @@
-
 /*
  *  include/linux/ktime.h
  *
@@ -43,6 +42,51 @@ static inline ktime_t ms_to_ktime(u64 ms)
     return ms * NSEC_PER_MSEC;
 }
 
-//#include <linux/timekeeping.h>
+/**
+ * ktime_set - Set a ktime_t variable from a seconds/nanoseconds value
+ * @secs:   seconds to set
+ * @nsecs:  nanoseconds to set
+ *
+ * Return: The ktime_t representation of the value.
+ */
+static inline ktime_t ktime_set(const s64 secs, const unsigned long nsecs)
+{
+    if (unlikely(secs >= KTIME_SEC_MAX))
+        return KTIME_MAX;
+
+    return secs * NSEC_PER_SEC + (s64)nsecs;
+}
+
+/* convert a timespec64 to ktime_t format: */
+static inline ktime_t timespec64_to_ktime(struct timespec64 ts)
+{
+    return ktime_set(ts.tv_sec, ts.tv_nsec);
+}
+
+/* Subtract two ktime_t variables. rem = lhs -rhs: */
+#define ktime_sub(lhs, rhs) ((lhs) - (rhs))
+
+/* Add two ktime_t variables. res = lhs + rhs: */
+#define ktime_add(lhs, rhs) ((lhs) + (rhs))
+
+/*
+ * Add a ktime_t variable and a scalar nanosecond value.
+ * res = kt + nsval:
+ */
+#define ktime_add_ns(kt, nsval)     ((kt) + (nsval))
+
+/*
+ * Subtract a scalar nanosecod from a ktime_t variable
+ * res = kt - nsval:
+ */
+#define ktime_sub_ns(kt, nsval)     ((kt) - (nsval))
+
+/* Convert ktime_t to nanoseconds */
+static inline s64 ktime_to_ns(const ktime_t kt)
+{
+    return kt;
+}
+
+#include <linux/timekeeping.h>
 
 #endif /* _LINUX_KTIME_H */
