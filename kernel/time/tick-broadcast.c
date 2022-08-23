@@ -151,7 +151,8 @@ int tick_device_uses_broadcast(struct clock_event_device *dev, int cpu)
 /*
  * Event handler for periodic broadcast ticks
  */
-static void tick_handle_periodic_broadcast(struct clock_event_device *dev)
+static void
+tick_handle_periodic_broadcast(struct clock_event_device *dev)
 {
     panic("%s: END!\n", __func__);
 }

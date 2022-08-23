@@ -66,6 +66,14 @@ typedef struct {
     seqcount_t seqcount;
 } seqcount_latch_t;
 
+/**
+ * SEQCNT_LATCH_ZERO() - static initializer for seqcount_latch_t
+ * @seq_name: Name of the seqcount_latch_t instance
+ */
+#define SEQCNT_LATCH_ZERO(seq_name) {                   \
+    .seqcount       = SEQCNT_ZERO(seq_name.seqcount),   \
+}
+
 /*
  * SEQCOUNT_LOCKNAME()  - Instantiate seqcount_LOCKNAME_t and helpers
  * seqprop_LOCKNAME_*() - Property accessors for seqcount_LOCKNAME_t

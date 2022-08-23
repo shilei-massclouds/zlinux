@@ -245,7 +245,6 @@ static void tick_periodic(int cpu)
     update_process_times(user_mode(get_irq_regs()));
     profile_tick(CPU_PROFILING);
 #endif
-    panic("%s: END!\n", __func__);
 }
 
 /*
@@ -257,6 +256,39 @@ void tick_handle_periodic(struct clock_event_device *dev)
     ktime_t next = dev->next_event;
 
     tick_periodic(cpu);
+
+    /*
+     * The cpu might have transitioned to HIGHRES or NOHZ mode via
+     * update_process_times() -> run_local_timers() ->
+     * hrtimer_run_queues().
+     */
+    if (dev->event_handler != tick_handle_periodic)
+        return;
+
+    if (!clockevent_state_oneshot(dev))
+        return;
+    for (;;) {
+        /*
+         * Setup the next period for devices, which do not have
+         * periodic mode:
+         */
+        next = ktime_add_ns(next, TICK_NSEC);
+
+        if (!clockevents_program_event(dev, next, false))
+            return;
+        /*
+         * Have to be careful here. If we're in oneshot mode,
+         * before we call tick_periodic() in a loop, we need
+         * to be sure we're using a real hardware clocksource.
+         * Otherwise we could get trapped in an infinite
+         * loop, as the tick_periodic() increments jiffies,
+         * which then will increment time, possibly causing
+         * the loop to trigger again and again.
+         */
+        if (timekeeping_valid_for_hres())
+            tick_periodic(cpu);
+    }
+
 
     panic("%s: END!\n", __func__);
 }

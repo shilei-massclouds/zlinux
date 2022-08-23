@@ -1687,3 +1687,13 @@ void sched_exec(void)
 unlock:
     raw_spin_unlock_irqrestore(&p->pi_lock, flags);
 }
+
+int wake_up_state(struct task_struct *p, unsigned int state)
+{
+    return try_to_wake_up(p, state, 0);
+}
+
+void sched_set_stop_task(int cpu, struct task_struct *stop)
+{
+    panic("%s: NO implementation!\n", __func__);
+}

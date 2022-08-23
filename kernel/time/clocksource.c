@@ -25,6 +25,7 @@ static struct clocksource *suspend_clocksource;
 static LIST_HEAD(clocksource_list);
 static DEFINE_MUTEX(clocksource_mutex);
 static int finished_booting;
+static char override_name[CS_NAME_LEN];
 
 static void clocksource_enqueue_watchdog(struct clocksource *cs)
 {
@@ -294,7 +295,19 @@ static struct clocksource *clocksource_find_best(bool oneshot, bool skipcur)
     if (!finished_booting || list_empty(&clocksource_list))
         return NULL;
 
-    panic("%s: END!\n", __func__);
+    /*
+     * We pick the clocksource with the highest rating. If oneshot
+     * mode is active, we pick the highres valid clocksource with
+     * the best rating.
+     */
+    list_for_each_entry(cs, &clocksource_list, list) {
+        if (skipcur && cs == curr_clocksource)
+            continue;
+        if (oneshot && !(cs->flags & CLOCK_SOURCE_VALID_FOR_HRES))
+            continue;
+        return cs;
+    }
+    return NULL;
 }
 
 static void __clocksource_select(bool skipcur)
@@ -307,7 +320,16 @@ static void __clocksource_select(bool skipcur)
     if (!best)
         return;
 
+    if (!strlen(override_name))
+        goto found;
+
     panic("%s: END!\n", __func__);
+
+ found:
+    if (curr_clocksource != best && !timekeeping_notify(best)) {
+        pr_info("Switched to clocksource %s\n", best->name);
+        curr_clocksource = best;
+    }
 }
 
 /**

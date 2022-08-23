@@ -29,4 +29,22 @@ struct cpu_stop_work {
 
 int stop_one_cpu(unsigned int cpu, cpu_stop_fn_t fn, void *arg);
 
+/**
+ * stop_machine: freeze the machine on all CPUs and run this function
+ * @fn: the function to run
+ * @data: the data ptr for the @fn()
+ * @cpus: the cpus to run the @fn() on (NULL = any online cpu)
+ *
+ * Description: This causes a thread to be scheduled on every cpu,
+ * each of which disables interrupts.  The result is that no one is
+ * holding a spinlock or inside any other preempt-disabled region when
+ * @fn() runs.
+ *
+ * This can be thought of as a very heavy write lock, equivalent to
+ * grabbing every spinlock in the kernel.
+ *
+ * Protects against CPU hotplug.
+ */
+int stop_machine(cpu_stop_fn_t fn, void *data, const struct cpumask *cpus);
+
 #endif  /* _LINUX_STOP_MACHINE */

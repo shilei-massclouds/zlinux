@@ -283,3 +283,30 @@ void free_kthread_struct(struct task_struct *k)
     kfree(kthread->full_name);
     kfree(kthread);
 }
+
+/**
+ * kthread_unpark - unpark a thread created by kthread_create().
+ * @k:      thread created by kthread_create().
+ *
+ * Sets kthread_should_park() for @k to return false, wakes it, and
+ * waits for it to return. If the thread is marked percpu then its
+ * bound to the cpu again.
+ */
+void kthread_unpark(struct task_struct *k)
+{
+    struct kthread *kthread = to_kthread(k);
+
+    /*
+     * Newly created kthread was parked when the CPU was offline.
+     * The binding was lost and we need to set it again.
+     */
+    if (test_bit(KTHREAD_IS_PER_CPU, &kthread->flags))
+        __kthread_bind(k, kthread->cpu, TASK_PARKED);
+
+    clear_bit(KTHREAD_SHOULD_PARK, &kthread->flags);
+    /*
+     * __kthread_parkme() will either see !SHOULD_PARK or get the wakeup.
+     */
+    wake_up_state(k, TASK_PARKED);
+}
+EXPORT_SYMBOL_GPL(kthread_unpark);

@@ -51,6 +51,8 @@
 #define __TASK_STOPPED          0x0004
 #define __TASK_TRACED           0x0008
 
+/* Used in tsk->state again: */
+#define TASK_PARKED             0x0040
 #define TASK_DEAD               0x0080
 #define TASK_WAKEKILL           0x0100
 
@@ -665,5 +667,7 @@ static inline int test_tsk_thread_flag(struct task_struct *tsk, int flag)
 {
     return test_ti_thread_flag(task_thread_info(tsk), flag);
 }
+
+extern int wake_up_state(struct task_struct *tsk, unsigned int state);
 
 #endif /* _LINUX_SCHED_H */

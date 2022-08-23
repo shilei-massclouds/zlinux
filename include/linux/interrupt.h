@@ -269,4 +269,14 @@ request_percpu_irq(unsigned int irq, irq_handler_t handler,
 
 extern int irq_can_set_affinity(unsigned int irq);
 
+/* Some architectures might implement lazy enabling/disabling of
+ * interrupts. In some cases, such as stop_machine, we might want
+ * to ensure that after a local_irq_disable(), interrupts have
+ * really been disabled in hardware. Such architectures need to
+ * implement the following hook.
+ */
+#ifndef hard_irq_disable
+#define hard_irq_disable()  do { } while(0)
+#endif
+
 #endif /* _LINUX_INTERRUPT_H */

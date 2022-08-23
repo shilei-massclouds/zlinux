@@ -675,7 +675,7 @@ __setup_irq(unsigned int irq,
 #endif
     return 0;
 
-mismatch:
+ mismatch:
     if (!(new->flags & IRQF_PROBE_SHARED)) {
         pr_err("Flags mismatch irq %d. %08x (%s) vs. %08x (%s)\n",
                irq, new->flags, new->name, old->flags, old->name);

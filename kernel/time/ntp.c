@@ -23,6 +23,12 @@
 #include "ntp_internal.h"
 #include "timekeeping_internal.h"
 
+#define SECS_PER_DAY        86400
+#define MAX_TICKADJ         500LL       /* usecs */
+#define MAX_TICKADJ_SCALED \
+    (((MAX_TICKADJ * NSEC_PER_USEC) << NTP_SCALE_SHIFT) / NTP_INTERVAL_FREQ)
+#define MAX_TAI_OFFSET      100000
+
 /* USER_HZ period (usecs): */
 unsigned long   tick_usec = USER_TICK_USEC;
 
@@ -74,12 +80,10 @@ static time64_t     ntp_next_leap_sec = TIME64_MAX;
 
 static struct hrtimer sync_hrtimer;
 
-#if 0
 static inline s64 ntp_offset_chunk(s64 offset)
 {
     return shift_right(offset, SHIFT_PLL + time_constant);
 }
-#endif
 
 static inline void pps_reset_freq_interval(void) {}
 static inline void pps_clear(void) {}
@@ -166,6 +170,115 @@ static void __init ntp_init_cmos_sync(void)
 {
     hrtimer_init(&sync_hrtimer, CLOCK_REALTIME, HRTIMER_MODE_ABS);
     sync_hrtimer.function = sync_timer_callback;
+}
+
+/**
+ * ntp_get_next_leap - Returns the next leapsecond in CLOCK_REALTIME ktime_t
+ *
+ * Provides the time of the next leapsecond against CLOCK_REALTIME in
+ * a ktime_t format. Returns KTIME_MAX if no leapsecond is pending.
+ */
+ktime_t ntp_get_next_leap(void)
+{
+    ktime_t ret;
+
+    if ((time_state == TIME_INS) && (time_status & STA_INS))
+        return ktime_set(ntp_next_leap_sec, 0);
+    ret = KTIME_MAX;
+    return ret;
+}
+
+/*
+ * this routine handles the overflow of the microsecond field
+ *
+ * The tricky bits of code to handle the accurate clock support
+ * were provided by Dave Mills (Mills@UDEL.EDU) of NTP fame.
+ * They were originally developed for SUN and DEC kernels.
+ * All the kudos should go to Dave for this stuff.
+ *
+ * Also handles leap second processing, and returns leap offset
+ */
+int second_overflow(time64_t secs)
+{
+    s64 delta;
+    int leap = 0;
+    s32 rem;
+
+    /*
+     * Leap second processing. If in leap-insert state at the end of the
+     * day, the system clock is set back one second; if in leap-delete
+     * state, the system clock is set ahead one second.
+     */
+    switch (time_state) {
+    case TIME_OK:
+        if (time_status & STA_INS) {
+            time_state = TIME_INS;
+            div_s64_rem(secs, SECS_PER_DAY, &rem);
+            ntp_next_leap_sec = secs + SECS_PER_DAY - rem;
+        } else if (time_status & STA_DEL) {
+            time_state = TIME_DEL;
+            div_s64_rem(secs + 1, SECS_PER_DAY, &rem);
+            ntp_next_leap_sec = secs + SECS_PER_DAY - rem;
+        }
+        break;
+    case TIME_INS:
+        if (!(time_status & STA_INS)) {
+            ntp_next_leap_sec = TIME64_MAX;
+            time_state = TIME_OK;
+        } else if (secs == ntp_next_leap_sec) {
+            leap = -1;
+            time_state = TIME_OOP;
+            printk(KERN_NOTICE
+                   "Clock: inserting leap second 23:59:60 UTC\n");
+        }
+        break;
+    case TIME_DEL:
+        if (!(time_status & STA_DEL)) {
+            ntp_next_leap_sec = TIME64_MAX;
+            time_state = TIME_OK;
+        } else if (secs == ntp_next_leap_sec) {
+            leap = 1;
+            ntp_next_leap_sec = TIME64_MAX;
+            time_state = TIME_WAIT;
+            printk(KERN_NOTICE
+                   "Clock: deleting leap second 23:59:59 UTC\n");
+        }
+        break;
+    case TIME_OOP:
+        ntp_next_leap_sec = TIME64_MAX;
+        time_state = TIME_WAIT;
+        break;
+    case TIME_WAIT:
+        if (!(time_status & (STA_INS | STA_DEL)))
+            time_state = TIME_OK;
+        break;
+    }
+
+    /* Bump the maxerror field */
+    time_maxerror += MAXFREQ / NSEC_PER_USEC;
+    if (time_maxerror > NTP_PHASE_LIMIT) {
+        time_maxerror = NTP_PHASE_LIMIT;
+        time_status |= STA_UNSYNC;
+    }
+
+    /* Compute the phase adjustment for the next second */
+    tick_length  = tick_length_base;
+
+    delta        = ntp_offset_chunk(time_offset);
+    time_offset -= delta;
+    tick_length += delta;
+
+    /* Check PPS signal */
+    pps_dec_valid();
+
+    if (!time_adjust)
+        goto out;
+
+    panic("%s: END!\n", __func__);
+    time_adjust = 0;
+
+ out:
+    return leap;
 }
 
 void __init ntp_init(void)

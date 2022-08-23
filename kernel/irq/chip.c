@@ -163,7 +163,6 @@ void handle_percpu_devid_irq(struct irq_desc *desc)
 
     if (chip->irq_eoi)
         chip->irq_eoi(&desc->irq_data);
-    panic("%s: END!\n", __func__);
 }
 
 int irq_activate(struct irq_desc *desc)
