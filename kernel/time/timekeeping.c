@@ -436,3 +436,29 @@ void do_timer(unsigned long ticks)
     jiffies_64 += ticks;
     //calc_global_load();
 }
+
+static ktime_t *offsets[TK_OFFS_MAX] = {
+    [TK_OFFS_REAL]  = &tk_core.timekeeper.offs_real,
+    [TK_OFFS_BOOT]  = &tk_core.timekeeper.offs_boot,
+    [TK_OFFS_TAI]   = &tk_core.timekeeper.offs_tai,
+};
+
+ktime_t ktime_get_with_offset(enum tk_offsets offs)
+{
+    struct timekeeper *tk = &tk_core.timekeeper;
+    unsigned int seq;
+    ktime_t base, *offset = offsets[offs];
+    u64 nsecs;
+
+    WARN_ON(timekeeping_suspended);
+
+    do {
+        seq = read_seqcount_begin(&tk_core.seq);
+        base = ktime_add(tk->tkr_mono.base, *offset);
+        nsecs = timekeeping_get_ns(&tk->tkr_mono);
+
+    } while (read_seqcount_retry(&tk_core.seq, seq));
+
+    return ktime_add_ns(base, nsecs);
+}
+EXPORT_SYMBOL_GPL(ktime_get_with_offset);

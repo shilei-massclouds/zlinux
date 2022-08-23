@@ -23,6 +23,12 @@
 #include "ntp_internal.h"
 #include "timekeeping_internal.h"
 
+/* USER_HZ period (usecs): */
+unsigned long   tick_usec = USER_TICK_USEC;
+
+/* SHIFTED_HZ period (nsecs): */
+unsigned long   tick_nsec;
+
 static u64          tick_length;
 static u64          tick_length_base;
 
@@ -96,6 +102,32 @@ static inline void pps_fill_timex(struct __kernel_timex *txc)
     txc->calcnt    = 0;
     txc->errcnt    = 0;
     txc->stbcnt    = 0;
+}
+
+/*
+ * Update (tick_length, tick_length_base, tick_nsec), based
+ * on (tick_usec, ntp_tick_adj, time_freq):
+ */
+static void ntp_update_frequency(void)
+{
+    u64 second_length;
+    u64 new_base;
+
+    second_length       = (u64)(tick_usec * NSEC_PER_USEC * USER_HZ)
+                            << NTP_SCALE_SHIFT;
+
+    second_length       += ntp_tick_adj;
+    second_length       += time_freq;
+
+    tick_nsec           = div_u64(second_length, HZ) >> NTP_SCALE_SHIFT;
+    new_base            = div_u64(second_length, NTP_INTERVAL_FREQ);
+
+    /*
+     * Don't wait for the next second_overflow, apply
+     * the change to the tick length immediately:
+     */
+    tick_length         += new_base - tick_length_base;
+    tick_length_base    = new_base;
 }
 
 /**

@@ -3,6 +3,7 @@
 CFLAGS_init.o := -mcmodel=medany
 
 obj-y += init.o
+obj-y += extable.o
 obj-y += cacheflush.o
 obj-y += context.o
 obj-y += tlbflush.o

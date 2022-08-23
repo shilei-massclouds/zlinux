@@ -88,4 +88,7 @@ static __always_inline unsigned long msecs_to_jiffies(const unsigned int m)
      ((long)((b) - (a)) < 0))
 #define time_before(a,b)    time_after(b,a)
 
+/* USER_TICK_USEC is the time between ticks in usec assuming fake USER_HZ */
+#define USER_TICK_USEC ((1000000UL + USER_HZ/2) / USER_HZ)
+
 #endif /* _LINUX_JIFFIES_H */

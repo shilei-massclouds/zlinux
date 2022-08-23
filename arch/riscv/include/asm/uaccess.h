@@ -18,7 +18,7 @@
 #include <linux/compiler.h>
 #include <linux/thread_info.h>
 #include <asm/byteorder.h>
-//#include <asm/extable.h>
+#include <asm/extable.h>
 #include <asm/asm.h>
 #include <asm-generic/access_ok.h>
 

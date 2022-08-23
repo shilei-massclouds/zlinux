@@ -19,4 +19,20 @@
 #define CLOCK_REALTIME_ALARM        8
 #define CLOCK_BOOTTIME_ALARM        9
 
+/*
+ * The driver implementing this got removed. The clock ID is kept as a
+ * place holder. Do not reuse!
+ */
+#define CLOCK_SGI_CYCLE             10
+#define CLOCK_TAI                   11
+
+#define MAX_CLOCKS                  16
+#define CLOCKS_MASK                 (CLOCK_REALTIME | CLOCK_MONOTONIC)
+#define CLOCKS_MONO                 CLOCK_MONOTONIC
+
+/*
+ * The various flags for setting POSIX.1b interval timers:
+ */
+#define TIMER_ABSTIME               0x01
+
 #endif /* _UAPI_LINUX_TIME_H */

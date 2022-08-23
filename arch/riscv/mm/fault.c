@@ -52,6 +52,12 @@ static inline void vmalloc_fault(struct pt_regs *regs, int code,
 
 static inline void no_context(struct pt_regs *regs, unsigned long addr)
 {
+    const char *msg;
+
+    /* Are we prepared to handle this kernel fault? */
+    if (fixup_exception(regs))
+        return;
+
     panic("%s: END!\n", __func__);
 }
 
