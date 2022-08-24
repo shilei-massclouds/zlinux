@@ -62,4 +62,6 @@ static inline bool is_file_hugepages(struct file *file)
     return is_file_shm_hugepages(file);
 }
 
+void free_huge_page(struct page *page);
+
 #endif /* _LINUX_HUGETLB_H */

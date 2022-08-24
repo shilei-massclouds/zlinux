@@ -107,6 +107,8 @@ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
 {
     struct new_utsname tmp;
 
+    printk("%s: 1\n", __func__);
+
     down_read(&uts_sem);
     memcpy(&tmp, utsname(), sizeof(tmp));
 
@@ -119,5 +121,6 @@ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
     if (override_architecture(name))
         return -EFAULT;
 
+    printk("%s: 2\n", __func__);
     return 0;
 }

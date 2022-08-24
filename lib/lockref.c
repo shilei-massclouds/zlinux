@@ -65,3 +65,14 @@ int lockref_put_return(struct lockref *lockref)
     return -1;
 }
 EXPORT_SYMBOL(lockref_put_return);
+
+/**
+ * lockref_mark_dead - mark lockref dead
+ * @lockref: pointer to lockref structure
+ */
+void lockref_mark_dead(struct lockref *lockref)
+{
+    assert_spin_locked(&lockref->lock);
+    lockref->count = -128;
+}
+EXPORT_SYMBOL(lockref_mark_dead);

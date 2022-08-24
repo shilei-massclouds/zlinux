@@ -83,6 +83,16 @@ do_raw_spin_unlock(raw_spinlock_t *lock) __releases(lock)
     __release(lock);
 }
 
+static inline int do_raw_spin_trylock(raw_spinlock_t *lock)
+{
+    int ret = arch_spin_trylock(&(lock)->raw_lock);
+
+    if (ret)
+        mmiowb_spin_lock();
+
+    return ret;
+}
+
 #include <linux/spinlock_api_smp.h>
 
 static __always_inline raw_spinlock_t *spinlock_check(spinlock_t *lock)
@@ -104,6 +114,11 @@ static __always_inline void spin_lock(spinlock_t *lock)
 static __always_inline void spin_unlock(spinlock_t *lock)
 {
     raw_spin_unlock(&lock->rlock);
+}
+
+static __always_inline int spin_trylock(spinlock_t *lock)
+{
+    return raw_spin_trylock(&lock->rlock);
 }
 
 #define spin_lock_irqsave(lock, flags)                  \

@@ -180,3 +180,13 @@ __sched int bit_wait_io(struct wait_bit_key *word, int mode)
     return 0;
 }
 EXPORT_SYMBOL(bit_wait_io);
+
+__sched int bit_wait(struct wait_bit_key *word, int mode)
+{
+    schedule();
+    if (signal_pending_state(mode, current))
+        return -EINTR;
+
+    return 0;
+}
+EXPORT_SYMBOL(bit_wait);

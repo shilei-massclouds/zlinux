@@ -670,4 +670,6 @@ static inline int test_tsk_thread_flag(struct task_struct *tsk, int flag)
 
 extern int wake_up_state(struct task_struct *tsk, unsigned int state);
 
+asmlinkage void schedule(void);
+
 #endif /* _LINUX_SCHED_H */

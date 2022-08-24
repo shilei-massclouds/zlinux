@@ -126,3 +126,8 @@ int PageHuge(struct page *page)
     return page[1].compound_dtor == HUGETLB_PAGE_DTOR;
 }
 EXPORT_SYMBOL_GPL(PageHuge);
+
+void free_huge_page(struct page *page)
+{
+    panic("%s: END!\n", __func__);
+}

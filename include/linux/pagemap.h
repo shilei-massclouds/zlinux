@@ -674,4 +674,11 @@ static inline int trylock_page(struct page *page)
     return folio_trylock(page_folio(page));
 }
 
+int write_inode_now(struct inode *, int sync);
+
+static inline void mapping_set_exiting(struct address_space *mapping)
+{
+    set_bit(AS_EXITING, &mapping->flags);
+}
+
 #endif /* _LINUX_PAGEMAP_H */

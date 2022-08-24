@@ -63,12 +63,12 @@
 #include <linux/compaction.h>
 #include <trace/events/kmem.h>
 #include <trace/events/oom.h>
-#include <linux/mm_inline.h>
-#include <linux/migrate.h>
-#include <linux/hugetlb.h>
 #include <linux/sched/rt.h>
 #include <linux/page_owner.h>
 */
+#include <linux/mm_inline.h>
+#include <linux/migrate.h>
+#include <linux/hugetlb.h>
 #include <linux/prefetch.h>
 #include <linux/kthread.h>
 #include <linux/sched/mm.h>
@@ -1582,6 +1582,7 @@ static void bad_page(struct page *page, const char *reason)
 //out:
     /* Leave bad fields for debug, except PageBuddy could make trouble */
     page_mapcount_reset(page); /* remove PageBuddy */
+    //add_taint(TAINT_BAD_PAGE, LOCKDEP_NOW_UNRELIABLE);
 }
 
 static void check_new_page_bad(struct page *page)
@@ -1603,12 +1604,16 @@ static void check_new_page_bad(struct page *page)
 static inline bool
 page_expected_state(struct page *page, unsigned long check_flags)
 {
-    if (unlikely(atomic_read(&page->_mapcount) != -1))
+    if (unlikely(atomic_read(&page->_mapcount) != -1)) {
+        //printk("%s: 1\n", __func__);
         return false;
+    }
 
     if (unlikely((unsigned long)page->mapping | page_ref_count(page) |
-                 (page->flags & check_flags)))
+                 (page->flags & check_flags))) {
+        //printk("%s: 2\n", __func__);
         return false;
+    }
 
     return true;
 }
@@ -3497,6 +3502,31 @@ static void free_one_page(struct zone *zone,
     __free_one_page(page, pfn, zone, order, migratetype, fpi_flags);
     spin_unlock_irqrestore(&zone->lock, flags);
 }
+
+/*
+ * Higher-order pages are called "compound pages".  They are structured thusly:
+ *
+ * The first PAGE_SIZE page is called the "head page" and have PG_head set.
+ *
+ * The remaining PAGE_SIZE pages are called "tail pages". PageTail() is encoded
+ * in bit 0 of page->compound_head. The rest of bits is pointer to head page.
+ *
+ * The first tail page's ->compound_dtor holds the offset in array of compound
+ * page destructors. See compound_page_dtors.
+ *
+ * The first tail page's ->compound_order holds the order of allocation.
+ * This usage means that zero-order pages may not be compound.
+ */
+void free_compound_page(struct page *page)
+{
+    free_the_page(page, compound_order(page));
+}
+
+compound_page_dtor * const compound_page_dtors[NR_COMPOUND_DTORS] = {
+    [NULL_COMPOUND_DTOR] = NULL,
+    [COMPOUND_PAGE_DTOR] = free_compound_page,
+    [HUGETLB_PAGE_DTOR] = free_huge_page,
+};
 
 /*
  * Free a list of 0-order pages

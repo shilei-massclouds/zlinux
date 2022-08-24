@@ -32,7 +32,6 @@ static int do_readlinkat(int dfd, const char __user *pathname,
     int empty = 0;
     unsigned int lookup_flags = LOOKUP_EMPTY;
 
-    printk("%s: pathname(%s) bufsiz(%d)\n", __func__, pathname, bufsiz);
     if (bufsiz <= 0)
         return -EINVAL;
 

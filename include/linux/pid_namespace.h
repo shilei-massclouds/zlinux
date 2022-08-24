@@ -21,8 +21,8 @@ struct pid_namespace {
     struct kmem_cache *pid_cachep;
     unsigned int level;
     struct pid_namespace *parent;
-#if 0
     struct user_namespace *user_ns;
+#if 0
     struct ucounts *ucounts;
     int reboot; /* group exit code if this pidns was rebooted */
 #endif

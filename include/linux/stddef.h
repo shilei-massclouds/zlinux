@@ -27,4 +27,13 @@ enum {
  */
 #define sizeof_field(TYPE, MEMBER) sizeof((((TYPE *)0)->MEMBER))
 
+/**
+ * offsetofend() - Report the offset of a struct field within the struct
+ *
+ * @TYPE: The type of the structure
+ * @MEMBER: The member within the structure to get the end offset of
+ */
+#define offsetofend(TYPE, MEMBER) \
+    (offsetof(TYPE, MEMBER) + sizeof_field(TYPE, MEMBER))
+
 #endif /* _LINUX_STDDEF_H */

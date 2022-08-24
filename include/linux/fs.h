@@ -586,8 +586,8 @@ struct inode {
     union {
 #if 0
         struct pipe_inode_info  *i_pipe;
-        struct cdev     *i_cdev;
 #endif
+        struct cdev     *i_cdev;
         char            *i_link;
         unsigned        i_dir_seq;
     };
@@ -1677,5 +1677,34 @@ static inline int call_mmap(struct file *file, struct vm_area_struct *vma)
 {
     return file->f_op->mmap(file, vma);
 }
+
+extern void __mark_inode_dirty(struct inode *, int);
+
+static inline void mark_inode_dirty_sync(struct inode *inode)
+{
+    __mark_inode_dirty(inode, I_DIRTY_SYNC);
+}
+
+static inline int generic_drop_inode(struct inode *inode)
+{
+    return !inode->i_nlink || inode_unhashed(inode);
+}
+
+/*
+ * This is the "filldir" function type, used by readdir() to let
+ * the kernel specify what kind of dirent layout it wants to have.
+ * This allows the kernel to read directories into kernel space or
+ * to have different dirent layouts depending on the binary type.
+ */
+struct dir_context;
+typedef int (*filldir_t)(struct dir_context *, const char *, int, loff_t, u64,
+                         unsigned);
+
+struct dir_context {
+    filldir_t actor;
+    loff_t pos;
+};
+
+extern int always_delete_dentry(const struct dentry *);
 
 #endif /* _LINUX_FS_H */

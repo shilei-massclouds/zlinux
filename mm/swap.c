@@ -99,12 +99,9 @@ static void __put_compound_page(struct page *page)
      * (it's never listed to any LRU lists) and no memcg routines should
      * be called for hugetlb (it has a separate hugetlb_cgroup.)
      */
-#if 0
     if (!PageHuge(page))
         __page_cache_release(page);
     destroy_compound_page(page);
-#endif
-    pr_warn("%s: END!\n", __func__);
 }
 
 void __put_page(struct page *page)

@@ -4,6 +4,7 @@
  */
 
 #include <linux/types.h>
+#include <linux/proc_fs.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/linkage.h>
@@ -793,6 +794,8 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 
     vfs_caches_init();
     pagecache_init();
+    signals_init();
+    proc_root_init();
 
     /* Do the rest non-__init'ed, we're now alive */
     arch_call_rest_init();

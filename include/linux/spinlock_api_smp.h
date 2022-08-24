@@ -101,6 +101,16 @@ void __lockfunc _raw_spin_unlock_bh(raw_spinlock_t *lock) __releases(lock);
 
 #define assert_raw_spin_locked(x)   BUG_ON(!raw_spin_is_locked(x))
 
+static inline int __raw_spin_trylock(raw_spinlock_t *lock)
+{
+    preempt_disable();
+    if (do_raw_spin_trylock(lock))
+        return 1;
+
+    preempt_enable();
+    return 0;
+}
+
 #include <linux/rwlock_api_smp.h>
 
 #endif /* __LINUX_SPINLOCK_API_SMP_H */

@@ -19,6 +19,8 @@
 
 #define DNAME_INLINE_LEN    32  /* 192 bytes */
 
+#define DCACHE_DENTRY_KILLED    0x00008000
+
 #define DCACHE_MOUNTED          0x00010000 /* is a mountpoint */
 #define DCACHE_NEED_AUTOMOUNT   0x00020000 /* handle automount on this dir */
 #define DCACHE_MANAGE_TRANSIT   0x00040000 /* manage transit from this dirent */

@@ -16,6 +16,8 @@ typedef __kernel_ulong_t    ino_t;
 
 typedef __kernel_pid_t      pid_t;
 
+typedef u32         nlink_t;
+
 /*
  * The following typedefs are also protected by individual ifdefs for
  * historical reasons:

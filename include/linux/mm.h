@@ -1436,4 +1436,12 @@ static inline void get_page(struct page *page)
 
 bool page_mapped(struct page *page);
 
+static inline void destroy_compound_page(struct page *page)
+{
+    VM_BUG_ON_PAGE(page[1].compound_dtor >= NR_COMPOUND_DTORS, page);
+    compound_page_dtors[page[1].compound_dtor](page);
+}
+
+extern void truncate_inode_pages_final(struct address_space *);
+
 #endif /* _LINUX_MM_H */

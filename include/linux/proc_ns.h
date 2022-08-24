@@ -39,4 +39,7 @@ enum {
     PROC_TIME_INIT_INO  = 0xEFFFFFFAU,
 };
 
+extern int proc_alloc_inum(unsigned int *pino);
+extern void proc_free_inum(unsigned int inum);
+
 #endif /* _LINUX_PROC_NS_H */

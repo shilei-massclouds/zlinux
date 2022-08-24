@@ -493,6 +493,225 @@ static inline bool retain_dentry(struct dentry *dentry)
     return true;
 }
 
+static struct dentry *__lock_parent(struct dentry *dentry)
+{
+    struct dentry *parent;
+    rcu_read_lock();
+    spin_unlock(&dentry->d_lock);
+again:
+    parent = READ_ONCE(dentry->d_parent);
+    spin_lock(&parent->d_lock);
+    /*
+     * We can't blindly lock dentry until we are sure
+     * that we won't violate the locking order.
+     * Any changes of dentry->d_parent must have
+     * been done with parent->d_lock held, so
+     * spin_lock() above is enough of a barrier
+     * for checking if it's still our child.
+     */
+    if (unlikely(parent != dentry->d_parent)) {
+        spin_unlock(&parent->d_lock);
+        goto again;
+    }
+    rcu_read_unlock();
+    if (parent != dentry)
+        spin_lock_nested(&dentry->d_lock, DENTRY_D_LOCK_NESTED);
+    else
+        parent = NULL;
+    return parent;
+}
+
+static inline struct dentry *lock_parent(struct dentry *dentry)
+{
+    struct dentry *parent = dentry->d_parent;
+    if (IS_ROOT(dentry))
+        return NULL;
+    if (likely(spin_trylock(&parent->d_lock)))
+        return parent;
+    return __lock_parent(dentry);
+}
+
+static void ___d_drop(struct dentry *dentry)
+{
+    struct hlist_bl_head *b;
+    /*
+     * Hashed dentries are normally on the dentry hashtable,
+     * with the exception of those newly allocated by
+     * d_obtain_root, which are always IS_ROOT:
+     */
+    if (unlikely(IS_ROOT(dentry)))
+        b = &dentry->d_sb->s_roots;
+    else
+        b = d_hash(dentry->d_name.hash);
+
+    hlist_bl_lock(b);
+    __hlist_bl_del(&dentry->d_hash);
+    hlist_bl_unlock(b);
+}
+
+void __d_drop(struct dentry *dentry)
+{
+    if (!d_unhashed(dentry)) {
+        ___d_drop(dentry);
+        dentry->d_hash.pprev = NULL;
+        write_seqcount_invalidate(&dentry->d_seq);
+    }
+}
+EXPORT_SYMBOL(__d_drop);
+
+static inline void dentry_unlist(struct dentry *dentry, struct dentry *parent)
+{
+    struct dentry *next;
+    /*
+     * Inform d_walk() and shrink_dentry_list() that we are no longer
+     * attached to the dentry tree
+     */
+    dentry->d_flags |= DCACHE_DENTRY_KILLED;
+    if (unlikely(list_empty(&dentry->d_child)))
+        return;
+    __list_del_entry(&dentry->d_child);
+    /*
+     * Cursors can move around the list of children.  While we'd been
+     * a normal list member, it didn't matter - ->d_child.next would've
+     * been updated.  However, from now on it won't be and for the
+     * things like d_walk() it might end up with a nasty surprise.
+     * Normally d_walk() doesn't care about cursors moving around -
+     * ->d_lock on parent prevents that and since a cursor has no children
+     * of its own, we get through it without ever unlocking the parent.
+     * There is one exception, though - if we ascend from a child that
+     * gets killed as soon as we unlock it, the next sibling is found
+     * using the value left in its ->d_child.next.  And if _that_
+     * pointed to a cursor, and cursor got moved (e.g. by lseek())
+     * before d_walk() regains parent->d_lock, we'll end up skipping
+     * everything the cursor had been moved past.
+     *
+     * Solution: make sure that the pointer left behind in ->d_child.next
+     * points to something that won't be moving around.  I.e. skip the
+     * cursors.
+     */
+    while (dentry->d_child.next != &parent->d_subdirs) {
+        next = list_entry(dentry->d_child.next, struct dentry, d_child);
+        if (likely(!(next->d_flags & DCACHE_DENTRY_CURSOR)))
+            break;
+        dentry->d_child.next = next->d_child.next;
+    }
+}
+
+static inline void __d_clear_type_and_inode(struct dentry *dentry)
+{
+    unsigned flags = READ_ONCE(dentry->d_flags);
+
+    flags &= ~(DCACHE_ENTRY_TYPE | DCACHE_FALLTHRU);
+    WRITE_ONCE(dentry->d_flags, flags);
+    dentry->d_inode = NULL;
+    if (dentry->d_flags & DCACHE_LRU_LIST)
+        this_cpu_inc(nr_dentry_negative);
+}
+
+/*
+ * Release the dentry's inode, using the filesystem
+ * d_iput() operation if defined.
+ */
+static void dentry_unlink_inode(struct dentry * dentry)
+    __releases(dentry->d_lock)
+    __releases(dentry->d_inode->i_lock)
+{
+    struct inode *inode = dentry->d_inode;
+
+    raw_write_seqcount_begin(&dentry->d_seq);
+    __d_clear_type_and_inode(dentry);
+    hlist_del_init(&dentry->d_u.d_alias);
+    raw_write_seqcount_end(&dentry->d_seq);
+    spin_unlock(&dentry->d_lock);
+    spin_unlock(&inode->i_lock);
+#if 0
+    if (!inode->i_nlink)
+        fsnotify_inoderemove(inode);
+#endif
+    if (dentry->d_op && dentry->d_op->d_iput)
+        dentry->d_op->d_iput(dentry, inode);
+    else
+        iput(inode);
+}
+
+static void __d_free_external(struct rcu_head *head)
+{
+    struct dentry *dentry = container_of(head, struct dentry, d_u.d_rcu);
+    kfree(external_name(dentry));
+    kmem_cache_free(dentry_cache, dentry);
+}
+
+static void __d_free(struct rcu_head *head)
+{
+    struct dentry *dentry = container_of(head, struct dentry, d_u.d_rcu);
+
+    kmem_cache_free(dentry_cache, dentry);
+}
+
+static void dentry_free(struct dentry *dentry)
+{
+    WARN_ON(!hlist_unhashed(&dentry->d_u.d_alias));
+    if (unlikely(dname_external(dentry))) {
+        struct external_name *p = external_name(dentry);
+        if (likely(atomic_dec_and_test(&p->u.count))) {
+            call_rcu(&dentry->d_u.d_rcu, __d_free_external);
+            return;
+        }
+    }
+    /* if dentry was never visible to RCU, immediate free is OK */
+    if (dentry->d_flags & DCACHE_NORCU)
+        __d_free(&dentry->d_u.d_rcu);
+    else
+        call_rcu(&dentry->d_u.d_rcu, __d_free);
+}
+
+static void __dentry_kill(struct dentry *dentry)
+{
+    struct dentry *parent = NULL;
+    bool can_free = true;
+    if (!IS_ROOT(dentry))
+        parent = dentry->d_parent;
+
+    /*
+     * The dentry is now unrecoverably dead to the world.
+     */
+    lockref_mark_dead(&dentry->d_lockref);
+
+    /*
+     * inform the fs via d_prune that this dentry is about to be
+     * unhashed and destroyed.
+     */
+    if (dentry->d_flags & DCACHE_OP_PRUNE)
+        dentry->d_op->d_prune(dentry);
+
+    if (dentry->d_flags & DCACHE_LRU_LIST) {
+        if (!(dentry->d_flags & DCACHE_SHRINK_LIST))
+            d_lru_del(dentry);
+    }
+    /* if it was on the hash then remove it */
+    __d_drop(dentry);
+    dentry_unlist(dentry, parent);
+    if (parent)
+        spin_unlock(&parent->d_lock);
+    if (dentry->d_inode)
+        dentry_unlink_inode(dentry);
+    else
+        spin_unlock(&dentry->d_lock);
+    this_cpu_dec(nr_dentry);
+    if (dentry->d_op && dentry->d_op->d_release)
+        dentry->d_op->d_release(dentry);
+
+    spin_lock(&dentry->d_lock);
+    if (dentry->d_flags & DCACHE_SHRINK_LIST) {
+        dentry->d_flags |= DCACHE_MAY_FREE;
+        can_free = false;
+    }
+    spin_unlock(&dentry->d_lock);
+    if (likely(can_free))
+        dentry_free(dentry);
+    cond_resched();
+}
+
 /*
  * Finish off a dentry we've decided to kill.
  * dentry->d_lock must be held, returns with it unlocked.
@@ -501,7 +720,6 @@ static inline bool retain_dentry(struct dentry *dentry)
 static struct dentry *dentry_kill(struct dentry *dentry)
     __releases(dentry->d_lock)
 {
-#if 0
     struct inode *inode = dentry->d_inode;
     struct dentry *parent = NULL;
 
@@ -524,12 +742,13 @@ static struct dentry *dentry_kill(struct dentry *dentry)
     __dentry_kill(dentry);
     return parent;
 
-slow_positive:
+ slow_positive:
     spin_unlock(&dentry->d_lock);
     spin_lock(&inode->i_lock);
     spin_lock(&dentry->d_lock);
     parent = lock_parent(dentry);
-got_locks:
+
+ got_locks:
     if (unlikely(dentry->d_lockref.count != 1)) {
         dentry->d_lockref.count--;
     } else if (likely(!retain_dentry(dentry))) {
@@ -542,8 +761,6 @@ got_locks:
     if (parent)
         spin_unlock(&parent->d_lock);
     spin_unlock(&dentry->d_lock);
-#endif
-    panic("%s: END!\n", __func__);
     return NULL;
 }
 
@@ -579,7 +796,7 @@ void dput(struct dentry *dentry)
         dentry = dentry_kill(dentry);
     }
 #endif
-    pr_warn("%s: END!\n", __func__);
+    pr_warn("%s: NO implementation!\n", __func__);
 }
 EXPORT_SYMBOL(dput);
 
@@ -811,34 +1028,6 @@ struct dentry *d_alloc(struct dentry *parent, const struct qstr *name)
     return dentry;
 }
 EXPORT_SYMBOL(d_alloc);
-
-static void ___d_drop(struct dentry *dentry)
-{
-    struct hlist_bl_head *b;
-    /*
-     * Hashed dentries are normally on the dentry hashtable,
-     * with the exception of those newly allocated by
-     * d_obtain_root, which are always IS_ROOT:
-     */
-    if (unlikely(IS_ROOT(dentry)))
-        b = &dentry->d_sb->s_roots;
-    else
-        b = d_hash(dentry->d_name.hash);
-
-    hlist_bl_lock(b);
-    __hlist_bl_del(&dentry->d_hash);
-    hlist_bl_unlock(b);
-}
-
-void __d_drop(struct dentry *dentry)
-{
-    if (!d_unhashed(dentry)) {
-        ___d_drop(dentry);
-        dentry->d_hash.pprev = NULL;
-        write_seqcount_invalidate(&dentry->d_seq);
-    }
-}
-EXPORT_SYMBOL(__d_drop);
 
 /**
  * d_invalidate - detach submounts, prune dcache, and drop

@@ -21,4 +21,6 @@ static inline void sigemptyset(sigset_t *set)
     }
 }
 
+void signals_init(void);
+
 #endif /* _LINUX_SIGNAL_H */

@@ -86,4 +86,6 @@ static inline void inode_detach_wb(struct inode *inode)
 {
 }
 
+void inode_wait_for_writeback(struct inode *inode);
+
 #endif  /* WRITEBACK_H */

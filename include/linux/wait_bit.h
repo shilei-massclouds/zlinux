@@ -107,4 +107,11 @@ wait_on_bit_io(unsigned long *word, int bit, unsigned mode)
     return out_of_line_wait_on_bit(word, bit, bit_wait_io, mode);
 }
 
+struct wait_queue_head *bit_waitqueue(void *word, int bit);
+
+int __wait_on_bit(struct wait_queue_head *wq_head,
+                  struct wait_bit_queue_entry *wbq_entry,
+                  wait_bit_action_f *action,
+                  unsigned int mode);
+
 #endif /* _LINUX_WAIT_BIT_H */

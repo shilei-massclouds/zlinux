@@ -9,6 +9,23 @@
 #include <linux/list.h>
 #include <uapi/linux/signal.h>
 
+typedef struct kernel_siginfo {
+    __SIGINFO;
+} kernel_siginfo_t;
+
+struct ucounts;
+
+/*
+ * Real Time signals may be queued.
+ */
+
+struct sigqueue {
+    struct list_head list;
+    int flags;
+    kernel_siginfo_t info;
+    struct ucounts *ucounts;
+};
+
 struct sigpending {
     struct list_head list;
     sigset_t signal;
