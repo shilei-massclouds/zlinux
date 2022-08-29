@@ -22,8 +22,8 @@
 #include <linux/moduleparam.h>
 #include <linux/jump_label.h>
 #include <linux/export.h>
-#if 0
 #include <linux/rbtree_latch.h>
+#if 0
 #include <linux/error-injection.h>
 #include <linux/tracepoint-defs.h>
 #include <linux/static_call_types.h>
@@ -124,5 +124,7 @@ static inline bool module_is_live(struct module *mod)
 {
     return mod->state != MODULE_STATE_GOING;
 }
+
+struct module *__module_address(unsigned long addr);
 
 #endif /* _LINUX_MODULE_H */

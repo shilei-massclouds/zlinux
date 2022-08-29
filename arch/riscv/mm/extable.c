@@ -7,7 +7,7 @@
  */
 
 //#include <linux/bitfield.h>
-//#include <linux/extable.h>
+#include <linux/extable.h>
 #include <linux/module.h>
 #include <linux/uaccess.h>
 #include <asm/asm-extable.h>
@@ -15,13 +15,13 @@
 
 bool fixup_exception(struct pt_regs *regs)
 {
-#if 0
     const struct exception_table_entry *ex;
 
     ex = search_exception_tables(regs->epc);
     if (!ex)
         return false;
 
+#if 0
     switch (ex->type) {
     case EX_TYPE_FIXUP:
         return ex_handler_fixup(ex, regs);

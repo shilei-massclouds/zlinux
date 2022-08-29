@@ -169,6 +169,8 @@ typedef unsigned long       ulong;
 
 typedef __kernel_clockid_t  clockid_t;
 
+typedef int (*cmp_func_t)(const void *a, const void *b);
+
 #endif /* __ASSEMBLY__ */
 
 #endif /* _LINUX_TYPES_H */

@@ -61,6 +61,17 @@
 #endif
 #include <linux/module.h>
 
+static struct mod_tree_root {
+    struct latch_tree_root root;
+    unsigned long addr_min;
+    unsigned long addr_max;
+} mod_tree __cacheline_aligned = {
+    .addr_min = -1UL,
+};
+
+#define module_addr_min mod_tree.addr_min
+#define module_addr_max mod_tree.addr_max
+
 void __module_get(struct module *module)
 {
     if (module) {
@@ -102,3 +113,43 @@ void module_put(struct module *module)
     }
 }
 EXPORT_SYMBOL(module_put);
+
+/**
+ * __module_address() - get the module which contains an address.
+ * @addr: the address.
+ *
+ * Must be called with preempt disabled or module mutex held so that
+ * module doesn't get freed during this.
+ */
+struct module *__module_address(unsigned long addr)
+{
+    struct module *mod;
+
+    if (addr < module_addr_min || addr > module_addr_max)
+        return NULL;
+
+    panic("%s: END!\n", __func__);
+}
+
+/* Given an address, look for it in the module exception tables. */
+const struct exception_table_entry *search_module_extables(unsigned long addr)
+{
+    const struct exception_table_entry *e = NULL;
+    struct module *mod;
+
+    preempt_disable();
+    mod = __module_address(addr);
+    if (!mod)
+        goto out;
+
+    panic("%s: END!\n", __func__);
+
+ out:
+    preempt_enable();
+
+    /*
+     * Now, if we found one, we are running inside it now, hence
+     * we cannot unload the module, hence no refcnt needed.
+     */
+    return e;
+}
