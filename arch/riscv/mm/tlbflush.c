@@ -55,3 +55,8 @@ void flush_tlb_range(struct vm_area_struct *vma,
 {
     __sbi_tlb_flush_range(vma->vm_mm, start, end - start, PAGE_SIZE);
 }
+
+void flush_tlb_mm(struct mm_struct *mm)
+{
+    __sbi_tlb_flush_range(mm, 0, -1, PAGE_SIZE);
+}

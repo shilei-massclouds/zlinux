@@ -10,4 +10,15 @@ static inline void set_huge_pte_at(struct mm_struct *mm, unsigned long addr,
 }
 #endif
 
+#ifndef __HAVE_ARCH_HUGETLB_FREE_PGD_RANGE
+static inline void hugetlb_free_pgd_range(struct mmu_gather *tlb,
+                                          unsigned long addr,
+                                          unsigned long end,
+                                          unsigned long floor,
+                                          unsigned long ceiling)
+{
+    free_pgd_range(tlb, addr, end, floor, ceiling);
+}
+#endif
+
 #endif /* _ASM_GENERIC_HUGETLB_H */

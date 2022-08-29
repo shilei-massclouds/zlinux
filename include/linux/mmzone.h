@@ -51,6 +51,13 @@
 #define high_wmark_pages(z) (z->_watermark[WMARK_HIGH] + z->watermark_boost)
 #define wmark_pages(z, i)   (z->_watermark[i] + z->watermark_boost)
 
+/*
+ * The "priority" of VM scanning is how much of the queues we will scan in one
+ * go. A value of 12 for DEF_PRIORITY implies that we will scan 1/4096th of the
+ * queues ("queue_length >> 12") during an aging round.
+ */
+#define DEF_PRIORITY 12
+
 enum migratetype {
     MIGRATE_UNMOVABLE,
     MIGRATE_MOVABLE,
@@ -408,6 +415,8 @@ typedef struct pglist_data {
     wait_queue_head_t reclaim_wait[NR_VMSCAN_THROTTLE];
 
     enum zone_type kswapd_highest_zoneidx;
+
+    int kswapd_failures;        /* Number of 'reclaimed == 0' runs */
 
 #if 0
     int kcompactd_max_order;

@@ -180,6 +180,12 @@ typedef struct {
     unsigned long val;
 } swp_entry_t;
 
+struct anon_vma_name {
+    struct kref kref;
+    /* The name needs to be at the end because it is dynamically sized. */
+    char name[];
+};
+
 /*
  * Used for sizing the vmemmap region on some architectures
  */
@@ -283,13 +289,11 @@ struct mm_struct {
 
         unsigned long saved_auxv[AT_VECTOR_SIZE]; /* for /proc/PID/auxv */
 
-#if 0
         /*
          * Special counters, in some configurations protected by the
          * page_table_lock, in other configurations by being atomic.
          */
         struct mm_rss_stat rss_stat;
-#endif
 
         struct linux_binfmt *binfmt;
 
@@ -565,5 +569,10 @@ static inline cpumask_t *mm_cpumask(struct mm_struct *mm)
 
 #define NULL_VM_UFFD_CTX ((struct vm_userfaultfd_ctx) {})
 struct vm_userfaultfd_ctx {};
+
+struct mmu_gather;
+extern void tlb_gather_mmu(struct mmu_gather *tlb, struct mm_struct *mm);
+extern void tlb_gather_mmu_fullmm(struct mmu_gather *tlb, struct mm_struct *mm);
+extern void tlb_finish_mmu(struct mmu_gather *tlb);
 
 #endif /* _LINUX_MM_TYPES_H */

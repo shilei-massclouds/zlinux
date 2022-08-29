@@ -40,6 +40,19 @@ enum {
     NR_MM_COUNTERS
 };
 
+#if USE_SPLIT_PTE_PTLOCKS && defined(CONFIG_MMU)
+#define SPLIT_RSS_COUNTING
+/* per-thread cached information, */
+struct task_rss_stat {
+    int events; /* for synchronization threshold */
+    int count[NR_MM_COUNTERS];
+};
+#endif /* USE_SPLIT_PTE_PTLOCKS */
+
+struct mm_rss_stat {
+    atomic_long_t count[NR_MM_COUNTERS];
+};
+
 struct vmacache {
     u64 seqnum;
     struct vm_area_struct *vmas[VMACACHE_SIZE];

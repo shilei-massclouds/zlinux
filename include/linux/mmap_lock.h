@@ -49,4 +49,9 @@ static inline int mmap_read_lock_killable(struct mm_struct *mm)
     return ret;
 }
 
+static inline void mmap_write_downgrade(struct mm_struct *mm)
+{
+    downgrade_write(&mm->mmap_lock);
+}
+
 #endif /* _LINUX_MMAP_LOCK_H */

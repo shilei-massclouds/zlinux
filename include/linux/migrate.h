@@ -9,6 +9,8 @@
 #include <linux/migrate_mode.h>
 #include <linux/hugetlb.h>
 
+extern bool numa_demotion_enabled;
+
 extern int migrate_page(struct address_space *mapping,
                         struct page *newpage, struct page *page,
                         enum migrate_mode mode);

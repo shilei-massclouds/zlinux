@@ -58,6 +58,20 @@ calc_vm_flag_bits(unsigned long flags)
            arch_calc_vm_flag_bits(flags);
 }
 
+extern struct percpu_counter vm_committed_as;
+extern s32 vm_committed_as_batch;
+extern void mm_compute_batch(int overcommit_policy);
+
+static inline void vm_acct_memory(long pages)
+{
+    percpu_counter_add_batch(&vm_committed_as, pages, vm_committed_as_batch);
+}
+
+static inline void vm_unacct_memory(long pages)
+{
+    vm_acct_memory(-pages);
+}
+
 /*
  * Arrange for legacy / undefined architecture specific flags to be
  * ignored by mmap handling code.

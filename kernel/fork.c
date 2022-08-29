@@ -1309,6 +1309,26 @@ void vm_area_free(struct vm_area_struct *vma)
 
 static inline void __mmput(struct mm_struct *mm)
 {
+    VM_BUG_ON(atomic_read(&mm->mm_users));
+
+#if 0
+    uprobe_clear_state(mm);
+    exit_aio(mm);
+    ksm_exit(mm);
+    khugepaged_exit(mm); /* must run before exit_mmap */
+    exit_mmap(mm);
+    mm_put_huge_zero_page(mm);
+    set_mm_exe_file(mm, NULL);
+    if (!list_empty(&mm->mmlist)) {
+        spin_lock(&mmlist_lock);
+        list_del(&mm->mmlist);
+        spin_unlock(&mmlist_lock);
+    }
+    if (mm->binfmt)
+        module_put(mm->binfmt->module);
+    mmdrop(mm);
+#endif
+
     panic("%s: ERROR!\n", __func__);
 }
 
@@ -1457,6 +1477,23 @@ void exec_mm_release(struct task_struct *tsk, struct mm_struct *mm)
     mm_release(tsk, mm);
 }
 
+struct vm_area_struct *vm_area_dup(struct vm_area_struct *orig)
+{
+    struct vm_area_struct *new = kmem_cache_alloc(vm_area_cachep, GFP_KERNEL);
+
+    if (new) {
+        /*
+         * orig->shared.rb may be modified concurrently, but the clone
+         * will be reinitialized.
+         */
+        *new = data_race(*orig);
+        INIT_LIST_HEAD(&new->anon_vma_chain);
+        new->vm_next = new->vm_prev = NULL;
+        dup_anon_vma_name(orig, new);
+    }
+    return new;
+}
+
 static void sighand_ctor(void *data)
 {
     struct sighand_struct *sighand = data;
@@ -1503,6 +1540,8 @@ void __init proc_caches_init(void)
 
     vm_area_cachep = KMEM_CACHE(vm_area_struct,
                                 SLAB_PANIC|SLAB_ACCOUNT);
+    mmap_init();
+    nsproxy_cache_init();
 }
 
 void __init fork_init(void)

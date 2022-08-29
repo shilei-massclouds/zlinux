@@ -116,4 +116,92 @@ void lruvec_add_folio(struct lruvec *lruvec, struct folio *folio)
         list_add(&folio->lru, &lruvec->lists[lru]);
 }
 
+static inline struct anon_vma_name *anon_vma_name(struct vm_area_struct *vma)
+{
+    return NULL;
+}
+
+static inline struct anon_vma_name *anon_vma_name_alloc(const char *name)
+{
+    return NULL;
+}
+
+static inline void anon_vma_name_get(struct anon_vma_name *anon_name) {}
+static inline void anon_vma_name_put(struct anon_vma_name *anon_name) {}
+static inline void dup_anon_vma_name(struct vm_area_struct *orig_vma,
+                     struct vm_area_struct *new_vma) {}
+static inline void free_anon_vma_name(struct vm_area_struct *vma) {}
+
+static inline bool anon_vma_name_eq(struct anon_vma_name *anon_name1,
+                    struct anon_vma_name *anon_name2)
+{
+    return true;
+}
+
+static inline void inc_tlb_flush_pending(struct mm_struct *mm)
+{
+    atomic_inc(&mm->tlb_flush_pending);
+    /*
+     * The only time this value is relevant is when there are indeed pages
+     * to flush. And we'll only flush pages after changing them, which
+     * requires the PTL.
+     *
+     * So the ordering here is:
+     *
+     *  atomic_inc(&mm->tlb_flush_pending);
+     *  spin_lock(&ptl);
+     *  ...
+     *  set_pte_at();
+     *  spin_unlock(&ptl);
+     *
+     *              spin_lock(&ptl)
+     *              mm_tlb_flush_pending();
+     *              ....
+     *              spin_unlock(&ptl);
+     *
+     *  flush_tlb_range();
+     *  atomic_dec(&mm->tlb_flush_pending);
+     *
+     * Where the increment if constrained by the PTL unlock, it thus
+     * ensures that the increment is visible if the PTE modification is
+     * visible. After all, if there is no PTE modification, nobody cares
+     * about TLB flushes either.
+     *
+     * This very much relies on users (mm_tlb_flush_pending() and
+     * mm_tlb_flush_nested()) only caring about _specific_ PTEs (and
+     * therefore specific PTLs), because with SPLIT_PTE_PTLOCKS and RCpc
+     * locks (PPC) the unlock of one doesn't order against the lock of
+     * another PTL.
+     *
+     * The decrement is ordered by the flush_tlb_range(), such that
+     * mm_tlb_flush_pending() will not return false unless all flushes have
+     * completed.
+     */
+}
+
+static inline bool mm_tlb_flush_nested(struct mm_struct *mm)
+{
+    /*
+     * Similar to mm_tlb_flush_pending(), we must have acquired the PTL
+     * for which there is a TLB flush pending in order to guarantee
+     * we've seen both that PTE modification and the increment.
+     *
+     * (no requirement on actually still holding the PTL, that is irrelevant)
+     */
+    return atomic_read(&mm->tlb_flush_pending) > 1;
+}
+
+static inline void dec_tlb_flush_pending(struct mm_struct *mm)
+{
+    /*
+     * See inc_tlb_flush_pending().
+     *
+     * This cannot be smp_mb__before_atomic() because smp_mb() simply does
+     * not order against TLB invalidate completion, which is what we need.
+     *
+     * Therefore we must rely on tlb_flush_*() to guarantee order.
+     */
+    atomic_dec(&mm->tlb_flush_pending);
+}
+
 #endif /* LINUX_MM_INLINE_H */

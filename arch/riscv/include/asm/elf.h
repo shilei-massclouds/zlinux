@@ -59,4 +59,12 @@ extern int arch_setup_additional_pages(struct linux_binprm *bprm,
  */
 #define ELF_PLATFORM    (NULL)
 
+/*
+ * This is the location that an ET_DYN program is loaded if exec'ed.  Typical
+ * use of this is to invoke "./ld.so someprog" to test out a new version of
+ * the loader.  We need to make sure that it is out of the way of the program
+ * that it will "exec", and that there is sufficient room for the brk.
+ */
+#define ELF_ET_DYN_BASE ((TASK_SIZE / 3) * 2)
+
 #endif /* _ASM_RISCV_ELF_H */

@@ -1444,4 +1444,71 @@ static inline void destroy_compound_page(struct page *page)
 
 extern void truncate_inode_pages_final(struct address_space *);
 
+extern const int mmap_rnd_bits_min;
+extern const int mmap_rnd_bits_max;
+extern int mmap_rnd_bits __read_mostly;
+
+/* mmap.c */
+extern int __vma_adjust(struct vm_area_struct *vma,
+                        unsigned long start, unsigned long end,
+                        pgoff_t pgoff,
+                        struct vm_area_struct *insert,
+                        struct vm_area_struct *expand);
+static inline int vma_adjust(struct vm_area_struct *vma,
+                             unsigned long start, unsigned long end,
+                             pgoff_t pgoff, struct vm_area_struct *insert)
+{
+    return __vma_adjust(vma, start, end, pgoff, insert, NULL);
+}
+
+static inline void update_hiwater_vm(struct mm_struct *mm)
+{
+    if (mm->hiwater_vm < mm->total_vm)
+        mm->hiwater_vm = mm->total_vm;
+}
+
+/*
+ * per-process(per-mm_struct) statistics.
+ */
+static inline unsigned long get_mm_counter(struct mm_struct *mm, int member)
+{
+    long val = atomic_long_read(&mm->rss_stat.count[member]);
+
+#ifdef SPLIT_RSS_COUNTING
+    /*
+     * counter is updated in asynchronous manner and may go to minus.
+     * But it's never be expected number for users.
+     */
+    if (val < 0)
+        val = 0;
+#endif
+    return (unsigned long)val;
+}
+
+static inline unsigned long get_mm_rss(struct mm_struct *mm)
+{
+    return get_mm_counter(mm, MM_FILEPAGES) +
+        get_mm_counter(mm, MM_ANONPAGES) +
+        get_mm_counter(mm, MM_SHMEMPAGES);
+}
+
+static inline void update_hiwater_rss(struct mm_struct *mm)
+{
+    unsigned long _rss = get_mm_rss(mm);
+
+    if ((mm)->hiwater_rss < _rss)
+        (mm)->hiwater_rss = _rss;
+}
+
+void unmap_vmas(struct mmu_gather *tlb, struct vm_area_struct *start_vma,
+                unsigned long start, unsigned long end);
+
+void free_pgd_range(struct mmu_gather *tlb,
+                    unsigned long addr,
+                    unsigned long end,
+                    unsigned long floor,
+                    unsigned long ceiling);
+
+extern void __init mmap_init(void);
+
 #endif /* _LINUX_MM_H */

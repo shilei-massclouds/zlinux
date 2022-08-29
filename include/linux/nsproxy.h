@@ -57,4 +57,6 @@ static inline void get_nsproxy(struct nsproxy *ns)
     atomic_inc(&ns->count);
 }
 
+int __init nsproxy_cache_init(void);
+
 #endif /* _LINUX_NSPROXY_H */

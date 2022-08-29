@@ -282,9 +282,7 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
      * in set_current_state() that the waiting thread does.
      */
     raw_spin_lock_irqsave(&p->pi_lock, flags);
-    printk("%s: step2\n", __func__);
     smp_mb__after_spinlock();
-    printk("%s: step3\n", __func__);
     if (!ttwu_state_match(p, state, &success))
         goto unlock;
 

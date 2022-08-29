@@ -7,6 +7,13 @@
 #include <linux/minmax.h>
 #include <linux/numa.h>
 
+#define NODE_MASK_LAST_WORD BITMAP_LAST_WORD_MASK(MAX_NUMNODES)
+
+#define NODE_MASK_ALL                           \
+((nodemask_t) { {                           \
+    [BITS_TO_LONGS(MAX_NUMNODES)-1] = NODE_MASK_LAST_WORD       \
+} })
+
 #define num_online_nodes()  num_node_state(N_ONLINE)
 
 typedef struct { DECLARE_BITMAP(bits, MAX_NUMNODES); } nodemask_t;

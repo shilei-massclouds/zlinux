@@ -40,6 +40,7 @@ static int do_readlinkat(int dfd, const char __user *pathname,
     if (!error) {
         panic("%s: !error!\n", __func__);
     }
+    printk("%s: error(%d)\n", __func__, error);
     return error;
 }
 

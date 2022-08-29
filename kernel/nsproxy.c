@@ -30,6 +30,8 @@
 #include <linux/syscalls.h>
 #include <linux/cred.h>
 
+static struct kmem_cache *nsproxy_cachep;
+
 /*
  * called from clone.  This now handles copy for nsproxy and all
  * namespaces therein.
@@ -70,6 +72,12 @@ int copy_namespaces(unsigned long flags, struct task_struct *tsk)
     tsk->nsproxy = new_ns;
 #endif
     panic("%s: END!\n", __func__);
+    return 0;
+}
+
+int __init nsproxy_cache_init(void)
+{
+    nsproxy_cachep = KMEM_CACHE(nsproxy, SLAB_PANIC|SLAB_ACCOUNT);
     return 0;
 }
 

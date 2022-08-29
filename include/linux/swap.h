@@ -125,5 +125,60 @@ extern void free_swap_cache(struct page *);
     ((1 << MAX_SWAPFILES_SHIFT) - SWP_DEVICE_NUM - \
     SWP_MIGRATION_NUM - SWP_HWPOISON_NUM)
 
+extern void lru_add_drain(void);
+
+extern void free_pages_and_swap_cache(struct page **, int);
+
+/* linux/mm/vmscan.c */
+extern unsigned long zone_reclaimable_pages(struct zone *zone);
+extern unsigned long try_to_free_pages(struct zonelist *zonelist, int order,
+                                       gfp_t gfp_mask, nodemask_t *mask);
+extern unsigned long try_to_free_mem_cgroup_pages(struct mem_cgroup *memcg,
+                                                  unsigned long nr_pages,
+                                                  gfp_t gfp_mask,
+                                                  bool may_swap);
+extern unsigned long mem_cgroup_shrink_node(struct mem_cgroup *mem,
+                                            gfp_t gfp_mask, bool noswap,
+                                            pg_data_t *pgdat,
+                                            unsigned long *nr_scanned);
+
+extern unsigned long shrink_all_memory(unsigned long nr_pages);
+extern int vm_swappiness;
+long remove_mapping(struct address_space *mapping, struct folio *folio);
+
+/* linux/mm/swapfile.c */
+extern atomic_long_t nr_swap_pages;
+
+static inline long get_nr_swap_pages(void)
+{
+    return atomic_long_read(&nr_swap_pages);
+}
+
+static inline void mem_cgroup_swapout(struct folio *folio, swp_entry_t entry)
+{
+}
+
+static inline int mem_cgroup_try_charge_swap(struct page *page,
+                                             swp_entry_t entry)
+{
+    return 0;
+}
+
+static inline void mem_cgroup_uncharge_swap(swp_entry_t entry,
+                                            unsigned int nr_pages)
+{
+}
+
+static inline long mem_cgroup_get_nr_swap_pages(struct mem_cgroup *memcg)
+{
+    return get_nr_swap_pages();
+}
+
+static inline bool mem_cgroup_swap_full(struct page *page)
+{
+    //return vm_swap_full();
+    panic("%s: END!\n", __func__);
+}
+
 #endif /* __KERNEL__*/
 #endif /* _LINUX_SWAP_H */

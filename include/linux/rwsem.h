@@ -112,4 +112,6 @@ extern int down_read_trylock(struct rw_semaphore *sem);
 
 extern int __must_check down_read_killable(struct rw_semaphore *sem);
 
+extern void downgrade_write(struct rw_semaphore *sem);
+
 #endif /* _LINUX_RWSEM_H */

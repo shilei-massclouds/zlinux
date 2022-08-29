@@ -65,7 +65,12 @@ extern unsigned long highest_memmap_pfn;
 
 #define ALLOC_OOM           0x08
 
-#define ALLOC_HARDER        0x10 /* try to alloc harder */
+#define ALLOC_HARDER        0x10    /* try to alloc harder */
+#define ALLOC_HIGH          0x20    /* __GFP_HIGH set */
+#define ALLOC_CPUSET        0x40    /* check for correct cpuset */
+#define ALLOC_CMA           0x80    /* allow allocations from CMA areas */
+#define ALLOC_NOFRAGMENT    0x100   /* avoid mixing pageblock types */
+#define ALLOC_KSWAPD        0x800   /* allow waking of kswapd, __GFP_KSWAPD_RECLAIM set */
 
 /* The GFP flags allowed during early boot */
 #define GFP_BOOT_MASK (__GFP_BITS_MASK & ~(__GFP_RECLAIM|__GFP_IO|__GFP_FS))
@@ -309,6 +314,20 @@ static inline void munlock_vma_page(struct page *page,
     if (unlikely(vma->vm_flags & VM_LOCKED) &&
         (compound || !PageTransCompound(page)))
         munlock_page(page);
+}
+
+void free_pgtables(struct mmu_gather *tlb, struct vm_area_struct *start_vma,
+                   unsigned long floor, unsigned long ceiling);
+
+/*
+ * Maximum number of reclaim retries without progress before the OOM
+ * killer is consider the only way forward.
+ */
+#define MAX_RECLAIM_RETRIES 16
+
+static inline bool is_migrate_highatomic_page(struct page *page)
+{
+    return get_pageblock_migratetype(page) == MIGRATE_HIGHATOMIC;
 }
 
 #endif  /* __MM_INTERNAL_H */

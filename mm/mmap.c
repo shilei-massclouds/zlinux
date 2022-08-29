@@ -59,10 +59,14 @@
 
 #include <linux/uaccess.h>
 #include <asm/cacheflush.h>
-//#include <asm/tlb.h>
+#include <asm/tlb.h>
 #include <asm/mmu_context.h>
 
 #include "internal.h"
+
+const int mmap_rnd_bits_min = CONFIG_ARCH_MMAP_RND_BITS_MIN;
+const int mmap_rnd_bits_max = CONFIG_ARCH_MMAP_RND_BITS_MAX;
+int mmap_rnd_bits __read_mostly = CONFIG_ARCH_MMAP_RND_BITS;
 
 static bool ignore_rlimit_data;
 
@@ -116,6 +120,24 @@ static inline void vma_rb_insert(struct vm_area_struct *vma,
 {
     /* All rb_subtree_gap values must be consistent prior to insertion */
     rb_insert_augmented(&vma->vm_rb, root, &vma_gap_callbacks);
+}
+
+/*
+ * vma_next() - Get the next VMA.
+ * @mm: The mm_struct.
+ * @vma: The current vma.
+ *
+ * If @vma is NULL, return the first vma in the mm.
+ *
+ * Returns: The next VMA after @vma.
+ */
+static inline struct vm_area_struct *vma_next(struct mm_struct *mm,
+                                              struct vm_area_struct *vma)
+{
+    if (!vma)
+        return mm->mmap;
+
+    return vma->vm_next;
 }
 
 /* description of effects of mapping type and prot in current implementation.
@@ -647,6 +669,155 @@ struct anon_vma *find_mergeable_anon_vma(struct vm_area_struct *vma)
     return anon_vma;
 }
 
+/*
+ * Same as find_vma, but also return a pointer to the previous VMA in *pprev.
+ */
+struct vm_area_struct *
+find_vma_prev(struct mm_struct *mm, unsigned long addr,
+              struct vm_area_struct **pprev)
+{
+    struct vm_area_struct *vma;
+
+    vma = find_vma(mm, addr);
+    if (vma) {
+        *pprev = vma->vm_prev;
+    } else {
+        struct rb_node *rb_node = rb_last(&mm->mm_rb);
+
+        *pprev = rb_node ?
+            rb_entry(rb_node, struct vm_area_struct, vm_rb) : NULL;
+    }
+    return vma;
+}
+
+static unsigned long unmapped_area_topdown(struct vm_unmapped_area_info *info)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static unsigned long unmapped_area(struct vm_unmapped_area_info *info)
+{
+    /*
+     * We implement the search by looking for an rbtree node that
+     * immediately follows a suitable gap. That is,
+     * - gap_start = vma->vm_prev->vm_end <= info->high_limit - length;
+     * - gap_end   = vma->vm_start        >= info->low_limit  + length;
+     * - gap_end - gap_start >= length
+     */
+
+    struct mm_struct *mm = current->mm;
+    struct vm_area_struct *vma;
+    unsigned long length, low_limit, high_limit, gap_start, gap_end;
+
+    /* Adjust search length to account for worst case alignment overhead */
+    length = info->length + info->align_mask;
+    if (length < info->length)
+        return -ENOMEM;
+
+    /* Adjust search limits by the desired length */
+    if (info->high_limit < length)
+        return -ENOMEM;
+    high_limit = info->high_limit - length;
+
+    if (info->low_limit > high_limit)
+        return -ENOMEM;
+    low_limit = info->low_limit + length;
+
+    /* Check if rbtree root looks promising */
+    if (RB_EMPTY_ROOT(&mm->mm_rb))
+        goto check_highest;
+    vma = rb_entry(mm->mm_rb.rb_node, struct vm_area_struct, vm_rb);
+    if (vma->rb_subtree_gap < length)
+        goto check_highest;
+
+    while (true) {
+        /* Visit left subtree if it looks promising */
+        gap_end = vm_start_gap(vma);
+        if (gap_end >= low_limit && vma->vm_rb.rb_left) {
+            struct vm_area_struct *left =
+                rb_entry(vma->vm_rb.rb_left,
+                     struct vm_area_struct, vm_rb);
+            if (left->rb_subtree_gap >= length) {
+                vma = left;
+                continue;
+            }
+        }
+
+        gap_start = vma->vm_prev ? vm_end_gap(vma->vm_prev) : 0;
+
+     check_current:
+        /* Check if current node has a suitable gap */
+        if (gap_start > high_limit)
+            return -ENOMEM;
+        if (gap_end >= low_limit &&
+            gap_end > gap_start && gap_end - gap_start >= length)
+            goto found;
+
+        /* Visit right subtree if it looks promising */
+        if (vma->vm_rb.rb_right) {
+            struct vm_area_struct *right =
+                rb_entry(vma->vm_rb.rb_right, struct vm_area_struct, vm_rb);
+            if (right->rb_subtree_gap >= length) {
+                vma = right;
+                continue;
+            }
+        }
+
+        /* Go back up the rbtree to find next candidate node */
+        while (true) {
+            struct rb_node *prev = &vma->vm_rb;
+            if (!rb_parent(prev))
+                goto check_highest;
+            vma = rb_entry(rb_parent(prev), struct vm_area_struct, vm_rb);
+            if (prev == vma->vm_rb.rb_left) {
+                gap_start = vm_end_gap(vma->vm_prev);
+                gap_end = vm_start_gap(vma);
+                goto check_current;
+            }
+        }
+    }
+
+ check_highest:
+    /* Check highest gap, which does not precede any rbtree node */
+    gap_start = mm->highest_vm_end;
+    gap_end = ULONG_MAX;  /* Only for VM_BUG_ON below */
+    if (gap_start > high_limit)
+        return -ENOMEM;
+
+ found:
+    /* We found a suitable gap. Clip it with the original low_limit. */
+    if (gap_start < info->low_limit)
+        gap_start = info->low_limit;
+
+    /* Adjust gap address to the desired alignment */
+    gap_start += (info->align_offset - gap_start) & info->align_mask;
+
+    VM_BUG_ON(gap_start + info->length > info->high_limit);
+    VM_BUG_ON(gap_start + info->length > gap_end);
+    return gap_start;
+}
+
+/*
+ * Search for an unmapped address range.
+ *
+ * We are looking for a range that:
+ * - does not intersect with any VMA;
+ * - is contained within the [low_limit, high_limit) interval;
+ * - is at least the desired size.
+ * - satisfies (begin_addr & align_mask) == (align_offset & align_mask)
+ */
+unsigned long vm_unmapped_area(struct vm_unmapped_area_info *info)
+{
+    unsigned long addr;
+
+    if (info->flags & VM_UNMAPPED_AREA_TOPDOWN)
+        addr = unmapped_area_topdown(info);
+    else
+        addr = unmapped_area(info);
+
+    return addr;
+}
+
 /* Get an address range which is currently unmapped.
  * For shmat() with addr=0.
  *
@@ -667,15 +838,28 @@ arch_get_unmapped_area(struct file *filp, unsigned long addr,
     struct vm_unmapped_area_info info;
     const unsigned long mmap_end = arch_get_mmap_end(addr);
 
-#if 0
     if (len > mmap_end - mmap_min_addr)
         return -ENOMEM;
-#endif
 
     if (flags & MAP_FIXED)
         return addr;
 
-    panic("%s: END!\n", __func__);
+    if (addr) {
+        addr = PAGE_ALIGN(addr);
+        vma = find_vma_prev(mm, addr, &prev);
+        if (mmap_end - len >= addr && addr >= mmap_min_addr &&
+            (!vma || addr + len <= vm_start_gap(vma)) &&
+            (!prev || addr >= vm_end_gap(prev)))
+            return addr;
+    }
+
+    info.flags = 0;
+    info.length = len;
+    info.low_limit = mm->mmap_base;
+    info.high_limit = mmap_end;
+    info.align_mask = 0;
+    info.align_offset = 0;
+    return vm_unmapped_area(&info);
 }
 
 /*
@@ -904,6 +1088,203 @@ static inline bool file_mmap_ok(struct file *file, struct inode *inode,
     return true;
 }
 
+/*
+ * __split_vma() bypasses sysctl_max_map_count checking.  We use this where it
+ * has already been checked or doesn't make sense to fail.
+ */
+int __split_vma(struct mm_struct *mm, struct vm_area_struct *vma,
+                unsigned long addr, int new_below)
+{
+    struct vm_area_struct *new;
+    int err;
+
+    if (vma->vm_ops && vma->vm_ops->may_split) {
+        err = vma->vm_ops->may_split(vma, addr);
+        if (err)
+            return err;
+    }
+
+    new = vm_area_dup(vma);
+    if (!new)
+        return -ENOMEM;
+
+    if (new_below)
+        new->vm_end = addr;
+    else {
+        new->vm_start = addr;
+        new->vm_pgoff += ((addr - vma->vm_start) >> PAGE_SHIFT);
+    }
+
+    err = anon_vma_clone(new, vma);
+    if (err)
+        goto out_free_mpol;
+
+    if (new->vm_file)
+        get_file(new->vm_file);
+
+    if (new->vm_ops && new->vm_ops->open)
+        new->vm_ops->open(new);
+
+    if (new_below)
+        err = vma_adjust(vma, addr, vma->vm_end, vma->vm_pgoff +
+                         ((addr - new->vm_start) >> PAGE_SHIFT), new);
+    else
+        err = vma_adjust(vma, vma->vm_start, addr, vma->vm_pgoff, new);
+
+    /* Success. */
+    if (!err)
+        return 0;
+
+    panic("%s: END!\n", __func__);
+
+ out_free_mpol:
+ out_free_vma:
+    vm_area_free(new);
+    return err;
+}
+
+static void __vma_rb_erase(struct vm_area_struct *vma, struct rb_root *root)
+{
+    /*
+     * Note rb_erase_augmented is a fairly large inline function,
+     * so make sure we instantiate it only once with our desired
+     * augmented rbtree callbacks.
+     */
+    rb_erase_augmented(&vma->vm_rb, root, &vma_gap_callbacks);
+}
+
+static __always_inline
+void vma_rb_erase_ignore(struct vm_area_struct *vma,
+                         struct rb_root *root,
+                         struct vm_area_struct *ignore)
+{
+    /*
+     * All rb_subtree_gap values must be consistent prior to erase,
+     * with the possible exception of
+     *
+     * a. the "next" vma being erased if next->vm_start was reduced in
+     *    __vma_adjust() -> __vma_unlink()
+     * b. the vma being erased in detach_vmas_to_be_unmapped() ->
+     *    vma_rb_erase()
+     */
+    validate_mm_rb(root, ignore);
+
+    __vma_rb_erase(vma, root);
+}
+
+static __always_inline void vma_rb_erase(struct vm_area_struct *vma,
+                                         struct rb_root *root)
+{
+    vma_rb_erase_ignore(vma, root, vma);
+}
+
+/*
+ * Create a list of vma's touched by the unmap, removing them from the mm's
+ * vma list as we go..
+ */
+static bool
+detach_vmas_to_be_unmapped(struct mm_struct *mm, struct vm_area_struct *vma,
+                           struct vm_area_struct *prev, unsigned long end)
+{
+    struct vm_area_struct **insertion_point;
+    struct vm_area_struct *tail_vma = NULL;
+
+    insertion_point = (prev ? &prev->vm_next : &mm->mmap);
+    vma->vm_prev = NULL;
+
+    do {
+        vma_rb_erase(vma, &mm->mm_rb);
+        if (vma->vm_flags & VM_LOCKED)
+            mm->locked_vm -= vma_pages(vma);
+        mm->map_count--;
+        tail_vma = vma;
+        vma = vma->vm_next;
+    } while (vma && vma->vm_start < end);
+    *insertion_point = vma;
+    if (vma) {
+        vma->vm_prev = prev;
+        vma_gap_update(vma);
+    } else
+        mm->highest_vm_end = prev ? vm_end_gap(prev) : 0;
+    tail_vma->vm_next = NULL;
+
+    /* Kill the cache */
+    vmacache_invalidate(mm);
+
+    /*
+     * Do not downgrade mmap_lock if we are next to VM_GROWSDOWN or
+     * VM_GROWSUP VMA. Such VMAs can change their size under
+     * down_read(mmap_lock) and collide with the VMA we are about to unmap.
+     */
+    if (vma && (vma->vm_flags & VM_GROWSDOWN))
+        return false;
+    if (prev && (prev->vm_flags & VM_GROWSUP))
+        return false;
+    return true;
+}
+
+/*
+ * Close a vm structure and free it, returning the next.
+ */
+static struct vm_area_struct *remove_vma(struct vm_area_struct *vma)
+{
+    struct vm_area_struct *next = vma->vm_next;
+
+    might_sleep();
+    if (vma->vm_ops && vma->vm_ops->close)
+        vma->vm_ops->close(vma);
+    if (vma->vm_file)
+        fput(vma->vm_file);
+    vm_area_free(vma);
+    return next;
+}
+
+/*
+ * Ok - we have the memory areas we should free on the vma list,
+ * so release them, and do the vma updates.
+ *
+ * Called with the mm semaphore held.
+ */
+static void remove_vma_list(struct mm_struct *mm, struct vm_area_struct *vma)
+{
+    unsigned long nr_accounted = 0;
+
+    /* Update high watermark before we lower total_vm */
+    update_hiwater_vm(mm);
+    do {
+        long nrpages = vma_pages(vma);
+
+        if (vma->vm_flags & VM_ACCOUNT)
+            nr_accounted += nrpages;
+        vm_stat_account(mm, vma->vm_flags, -nrpages);
+        vma = remove_vma(vma);
+    } while (vma);
+    vm_unacct_memory(nr_accounted);
+    validate_mm(mm);
+}
+
+/*
+ * Get rid of page table information in the indicated region.
+ *
+ * Called with the mm semaphore held.
+ */
+static void unmap_region(struct mm_struct *mm,
+                         struct vm_area_struct *vma,
+                         struct vm_area_struct *prev,
+                         unsigned long start, unsigned long end)
+{
+    struct vm_area_struct *next = vma_next(mm, prev);
+    struct mmu_gather tlb;
+
+    lru_add_drain();
+    tlb_gather_mmu(&tlb, mm);
+    update_hiwater_rss(mm);
+    unmap_vmas(&tlb, vma, start, end);
+    free_pgtables(&tlb, vma, prev ? prev->vm_end : FIRST_USER_ADDRESS,
+                  next ? next->vm_start : USER_PGTABLES_CEILING);
+    tlb_finish_mmu(&tlb);
+}
+
 /* Munmap is split into 2 main parts -- this part which finds
  * what needs doing, and the areas themselves, which do the
  * work.  This now handles partial unmappings.
@@ -923,7 +1304,58 @@ int __do_munmap(struct mm_struct *mm, unsigned long start, size_t len,
     if (len == 0)
         return -EINVAL;
 
-    panic("%s: END!\n", __func__);
+    /* Find the first overlapping VMA where start < vma->vm_end */
+    vma = find_vma_intersection(mm, start, end);
+    if (!vma)
+        return 0;
+    prev = vma->vm_prev;
+
+    /*
+     * If we need to split any vma, do it now to save pain later.
+     *
+     * Note: mremap's move_vma VM_ACCOUNT handling assumes a partially
+     * unmapped vm_area_struct will remain in use: so lower split_vma
+     * places tmp vma above, and higher split_vma places tmp vma below.
+     */
+    if (start > vma->vm_start) {
+        int error;
+
+        /*
+         * Make sure that map_count on return from munmap() will
+         * not exceed its limit; but let map_count go just above
+         * its limit temporarily, to help free resources as expected.
+         */
+        if (end < vma->vm_end && mm->map_count >= sysctl_max_map_count)
+            return -ENOMEM;
+
+        error = __split_vma(mm, vma, start, 0);
+        if (error)
+            return error;
+        prev = vma;
+    }
+
+    /* Does it split the last one? */
+    last = find_vma(mm, end);
+    if (last && end > last->vm_start) {
+        int error = __split_vma(mm, last, end, 1);
+        if (error)
+            return error;
+    }
+    vma = vma_next(mm, prev);
+
+    /* Detach vmas from rbtree */
+    if (!detach_vmas_to_be_unmapped(mm, vma, prev, end))
+        downgrade = false;
+
+    if (downgrade)
+        mmap_write_downgrade(mm);
+
+    unmap_region(mm, vma, prev, start, end);
+
+    /* Fix up all other VM information */
+    remove_vma_list(mm, vma);
+
+    return downgrade ? 1 : 0;
 }
 
 int do_munmap(struct mm_struct *mm, unsigned long start, size_t len,
@@ -977,24 +1409,6 @@ static inline int accountable_mapping(struct file *file, vm_flags_t vm_flags)
     return (vm_flags & (VM_NORESERVE | VM_SHARED | VM_WRITE)) == VM_WRITE;
 #endif
     panic("%s: END!\n", __func__);
-}
-
-/*
- * vma_next() - Get the next VMA.
- * @mm: The mm_struct.
- * @vma: The current vma.
- *
- * If @vma is NULL, return the first vma in the mm.
- *
- * Returns: The next VMA after @vma.
- */
-static inline struct vm_area_struct *vma_next(struct mm_struct *mm,
-                                              struct vm_area_struct *vma)
-{
-    if (!vma)
-        return mm->mmap;
-
-    return vma->vm_next;
 }
 
 /*
@@ -1104,35 +1518,6 @@ static void __insert_vm_struct(struct mm_struct *mm, struct vm_area_struct *vma)
     mm->map_count++;
 }
 
-static void __vma_rb_erase(struct vm_area_struct *vma, struct rb_root *root)
-{
-    /*
-     * Note rb_erase_augmented is a fairly large inline function,
-     * so make sure we instantiate it only once with our desired
-     * augmented rbtree callbacks.
-     */
-    rb_erase_augmented(&vma->vm_rb, root, &vma_gap_callbacks);
-}
-
-static __always_inline
-void vma_rb_erase_ignore(struct vm_area_struct *vma,
-                         struct rb_root *root,
-                         struct vm_area_struct *ignore)
-{
-    /*
-     * All rb_subtree_gap values must be consistent prior to erase,
-     * with the possible exception of
-     *
-     * a. the "next" vma being erased if next->vm_start was reduced in
-     *    __vma_adjust() -> __vma_unlink()
-     * b. the vma being erased in detach_vmas_to_be_unmapped() ->
-     *    vma_rb_erase()
-     */
-    validate_mm_rb(root, ignore);
-
-    __vma_rb_erase(vma, root);
-}
-
 static __always_inline
 void __vma_unlink(struct mm_struct *mm,
                   struct vm_area_struct *vma,
@@ -1209,13 +1594,8 @@ int __vma_adjust(struct vm_area_struct *vma, unsigned long start,
 
  again:
     if (file) {
-#if 0
         mapping = file->f_mapping;
         root = &mapping->i_mmap;
-        uprobe_munmap(vma, vma->vm_start, vma->vm_end);
-
-        if (adjust_next)
-            uprobe_munmap(next, next->vm_start, next->vm_end);
 
         i_mmap_lock_write(mapping);
         if (insert) {
@@ -1227,9 +1607,6 @@ int __vma_adjust(struct vm_area_struct *vma, unsigned long start,
              */
             __vma_link_file(insert);
         }
-#endif
-
-        panic("%s: file 1 !\n", __func__);
     }
 
     anon_vma = vma->anon_vma;
@@ -1538,30 +1915,6 @@ void vma_set_page_prot(struct vm_area_struct *vma)
     WRITE_ONCE(vma->vm_page_prot, vm_page_prot);
 }
 
-/*
- * Get rid of page table information in the indicated region.
- *
- * Called with the mm semaphore held.
- */
-static void unmap_region(struct mm_struct *mm,
-                         struct vm_area_struct *vma,
-                         struct vm_area_struct *prev,
-                         unsigned long start, unsigned long end)
-{
-#if 0
-    struct vm_area_struct *next = vma_next(mm, prev);
-    struct mmu_gather tlb;
-
-    lru_add_drain();
-    tlb_gather_mmu(&tlb, mm);
-    update_hiwater_rss(mm);
-    unmap_vmas(&tlb, vma, start, end);
-    free_pgtables(&tlb, vma, prev ? prev->vm_end : FIRST_USER_ADDRESS,
-                 next ? next->vm_start : USER_PGTABLES_CEILING);
-    tlb_finish_mmu(&tlb);
-#endif
-    panic("%s: END!\n", __func__);
-}
 
 unsigned long mmap_region(struct file *file, unsigned long addr,
                           unsigned long len, vm_flags_t vm_flags,
@@ -1976,4 +2329,61 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
  out:
     mmap_write_unlock(mm);
     return origbrk;
+}
+
+static int __vm_munmap(unsigned long start, size_t len, bool downgrade)
+{
+    int ret;
+    struct mm_struct *mm = current->mm;
+    LIST_HEAD(uf);
+
+    if (mmap_write_lock_killable(mm))
+        return -EINTR;
+
+    ret = __do_munmap(mm, start, len, &uf, downgrade);
+    /*
+     * Returning 1 indicates mmap_lock is downgraded.
+     * But 1 is not legal return value of vm_munmap() and munmap(), reset
+     * it to 0 before return.
+     */
+    if (ret == 1) {
+        mmap_read_unlock(mm);
+        ret = 0;
+    } else
+        mmap_write_unlock(mm);
+
+    return ret;
+}
+
+int vm_munmap(unsigned long start, size_t len)
+{
+    return __vm_munmap(start, len, false);
+}
+EXPORT_SYMBOL(vm_munmap);
+
+/*
+ * Unlink a file-based vm structure from its interval tree, to hide
+ * vma from rmap and vmtruncate before freeing its page tables.
+ */
+void unlink_file_vma(struct vm_area_struct *vma)
+{
+    struct file *file = vma->vm_file;
+
+    if (file) {
+        struct address_space *mapping = file->f_mapping;
+        i_mmap_lock_write(mapping);
+        __remove_shared_vm_struct(vma, file, mapping);
+        i_mmap_unlock_write(mapping);
+    }
+}
+
+/*
+ * initialise the percpu counter for VM
+ */
+void __init mmap_init(void)
+{
+    int ret;
+
+    ret = percpu_counter_init(&vm_committed_as, 0, GFP_KERNEL);
+    VM_BUG_ON(ret);
 }

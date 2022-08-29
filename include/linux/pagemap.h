@@ -681,4 +681,19 @@ static inline void mapping_set_exiting(struct address_space *mapping)
     set_bit(AS_EXITING, &mapping->flags);
 }
 
+static inline bool wake_page_match(struct wait_page_queue *wait_page,
+                                   struct wait_page_key *key)
+{
+    if (wait_page->folio != key->folio)
+        return false;
+    key->page_match = 1;
+
+    if (wait_page->bit_nr != key->bit_nr)
+        return false;
+
+    return true;
+}
+
+void release_pages(struct page **pages, int nr);
+
 #endif /* _LINUX_PAGEMAP_H */

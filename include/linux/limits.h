@@ -8,6 +8,9 @@
 
 #define PHYS_ADDR_MAX   (~(phys_addr_t)0)
 
+#define U8_MAX      ((u8)~0U)
+#define S8_MAX      ((s8)(U8_MAX >> 1))
+#define S8_MIN      ((s8)(-S8_MAX - 1))
 #define U32_MAX     ((u32)~0U)
 #define U32_MIN     ((u32)0)
 #define S32_MAX     ((s32)(U32_MAX >> 1))

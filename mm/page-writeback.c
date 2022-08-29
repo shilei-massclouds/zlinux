@@ -45,6 +45,13 @@
 #include "internal.h"
 
 /*
+ * Flag that puts the machine in "laptop mode". Doubles as a timeout in jiffies:
+ * a full sync is triggered after this time elapses without any disk activity.
+ */
+int laptop_mode;
+EXPORT_SYMBOL(laptop_mode);
+
+/*
  * vm_dirty_bytes starts at 0 (disabled) so that it is a function of
  * vm_dirty_ratio * the amount of dirtyable memory
  */

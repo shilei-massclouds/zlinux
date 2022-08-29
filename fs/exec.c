@@ -1195,3 +1195,16 @@ void finalize_exec(struct linux_binprm *bprm)
     task_unlock(current->group_leader);
 }
 EXPORT_SYMBOL(finalize_exec);
+
+struct file *open_exec(const char *name)
+{
+    struct filename *filename = getname_kernel(name);
+    struct file *f = ERR_CAST(filename);
+
+    if (!IS_ERR(filename)) {
+        f = do_open_execat(AT_FDCWD, filename, 0);
+        putname(filename);
+    }
+    return f;
+}
+EXPORT_SYMBOL(open_exec);

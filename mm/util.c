@@ -19,9 +19,9 @@
 #endif
 #include <linux/vmalloc.h>
 #include <linux/elf.h>
-#if 0
 #include <linux/elf-randomize.h>
 #include <linux/random.h>
+#if 0
 #include <linux/processor.h>
 #endif
 #include <linux/personality.h>
@@ -32,6 +32,12 @@
 #include <asm/sections.h>
 
 #include "internal.h"
+
+/*
+ * Make sure vm_committed_as in one cacheline and not cacheline shared with
+ * other variables. It can be updated by several CPUs frequently.
+ */
+struct percpu_counter vm_committed_as ____cacheline_aligned_in_smp;
 
 int sysctl_max_map_count __read_mostly = DEFAULT_MAX_MAP_COUNT;
 
@@ -351,3 +357,12 @@ unsigned long vm_mmap(struct file *file, unsigned long addr,
     return vm_mmap_pgoff(file, addr, len, prot, flag, offset >> PAGE_SHIFT);
 }
 EXPORT_SYMBOL(vm_mmap);
+
+unsigned long arch_mmap_rnd(void)
+{
+    unsigned long rnd;
+
+    rnd = get_random_long() & ((1UL << mmap_rnd_bits) - 1);
+
+    return rnd << PAGE_SHIFT;
+}

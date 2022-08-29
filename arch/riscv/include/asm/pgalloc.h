@@ -112,4 +112,16 @@ static inline pgd_t *pgd_alloc(struct mm_struct *mm)
     return pgd;
 }
 
+#define __pte_free_tlb(tlb, pte, buf)   \
+do {                                    \
+    pgtable_pte_page_dtor(pte);     \
+    tlb_remove_page((tlb), pte);    \
+} while (0)
+
+#define __pmd_free_tlb(tlb, pmd, addr)  pmd_free((tlb)->mm, pmd)
+
+#define __pud_free_tlb(tlb, pud, addr)  pud_free((tlb)->mm, pud)
+
+#define __p4d_free_tlb(tlb, p4d, addr)  p4d_free((tlb)->mm, p4d)
+
 #endif /* _ASM_RISCV_PGALLOC_H */

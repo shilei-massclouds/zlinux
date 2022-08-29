@@ -1227,7 +1227,53 @@ void __init pagecache_init(void)
 static int wake_page_function(wait_queue_entry_t *wait,
                               unsigned mode, int sync, void *arg)
 {
-    panic("%s: END!\n", __func__);
+    unsigned int flags;
+    struct wait_page_key *key = arg;
+    struct wait_page_queue *wait_page =
+        container_of(wait, struct wait_page_queue, wait);
+
+    if (!wake_page_match(wait_page, key))
+        return 0;
+
+    /*
+     * If it's a lock handoff wait, we get the bit for it, and
+     * stop walking (and do not wake it up) if we can't.
+     */
+    flags = wait->flags;
+    if (flags & WQ_FLAG_EXCLUSIVE) {
+        if (test_bit(key->bit_nr, &key->folio->flags))
+            return -1;
+        if (flags & WQ_FLAG_CUSTOM) {
+            if (test_and_set_bit(key->bit_nr, &key->folio->flags))
+                return -1;
+            flags |= WQ_FLAG_DONE;
+        }
+    }
+
+    /*
+     * We are holding the wait-queue lock, but the waiter that
+     * is waiting for this will be checking the flags without
+     * any locking.
+     *
+     * So update the flags atomically, and wake up the waiter
+     * afterwards to avoid any races. This store-release pairs
+     * with the load-acquire in folio_wait_bit_common().
+     */
+    smp_store_release(&wait->flags, flags | WQ_FLAG_WOKEN);
+    wake_up_state(wait->private, mode);
+
+    /*
+     * Ok, we have successfully done what we're waiting for,
+     * and we can unconditionally remove the wait entry.
+     *
+     * Note that this pairs with the "finish_wait()" in the
+     * waiter, and has to be the absolute last thing we do.
+     * After this list_del_init(&wait->entry) the wait entry
+     * might be de-allocated and the process might even have
+     * exited.
+     */
+    list_del_init_careful(&wait->entry);
+    return (flags & WQ_FLAG_EXCLUSIVE) != 0;
 }
 
 /*

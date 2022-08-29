@@ -25,6 +25,7 @@
 #define ENOLINK     67  /* Link has been severed */
 #define EOVERFLOW   75  /* Value too large for defined data type */
 #define EREMCHG     78  /* Remote address changed */
+#define ELIBBAD     80  /* Accessing a corrupted shared library */
 #define EILSEQ      84  /* Illegal byte sequence */
 #define EOPNOTSUPP  95  /* Operation not supported on transport endpoint */
 #define ENOTCONN    107 /* Transport endpoint is not connected */

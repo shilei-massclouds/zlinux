@@ -61,6 +61,8 @@
 
 #include "internal.h"
 
+bool numa_demotion_enabled = false;
+
 /*
  * Common logic to directly migrate a single LRU page suitable for
  * pages that do not use PagePrivate/PagePrivate2.
@@ -101,4 +103,3 @@ int buffer_migrate_page(struct address_space *mapping,
     //return __buffer_migrate_page(mapping, newpage, page, mode, false);
 }
 EXPORT_SYMBOL(buffer_migrate_page);
-

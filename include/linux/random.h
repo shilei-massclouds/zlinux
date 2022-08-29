@@ -19,4 +19,12 @@
  */
 #include <linux/prandom.h>
 
+u64 get_random_u64(void);
+
+static inline unsigned long get_random_long(void)
+{
+    //return get_random_u64();
+    panic("%s: END!\n", __func__);
+}
+
 #endif /* _LINUX_RANDOM_H */

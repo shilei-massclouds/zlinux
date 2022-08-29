@@ -109,6 +109,12 @@
 #define RWSEM_READ_FAILED_MASK  (RWSEM_WRITER_MASK|RWSEM_FLAG_WAITERS|\
                                  RWSEM_FLAG_HANDOFF|RWSEM_FLAG_READFAIL)
 
+enum rwsem_wake_type {
+    RWSEM_WAKE_ANY,         /* Wake whatever's at head of wait list */
+    RWSEM_WAKE_READERS,     /* Wake readers only */
+    RWSEM_WAKE_READ_OWNED   /* Waker thread holds the read lock */
+};
+
 /*
  * All writes to owner are protected by WRITE_ONCE() to make sure that
  * store tearing can't happen as optimistic spinners may read and use
@@ -430,3 +436,75 @@ int __sched down_read_killable(struct rw_semaphore *sem)
     return 0;
 }
 EXPORT_SYMBOL(down_read_killable);
+
+/*
+ * handle the lock release when processes blocked on it that can now run
+ * - if we come here from up_xxxx(), then the RWSEM_FLAG_WAITERS bit must
+ *   have been set.
+ * - there must be someone on the queue
+ * - the wait_lock must be held by the caller
+ * - tasks are marked for wakeup, the caller must later invoke wake_up_q()
+ *   to actually wakeup the blocked task(s) and drop the reference count,
+ *   preferably when the wait_lock is released
+ * - woken process blocks are discarded from the list after having task zeroed
+ * - writers are only marked woken if downgrading is false
+ *
+ * Implies rwsem_del_waiter() for all woken readers.
+ */
+static void rwsem_mark_wake(struct rw_semaphore *sem,
+                            enum rwsem_wake_type wake_type,
+                            struct wake_q_head *wake_q)
+{
+    panic("%s: NO IMPLEMENTATION!\n", __func__);
+}
+
+/*
+ * downgrade a write lock into a read lock
+ * - caller incremented waiting part of count and discovered it still negative
+ * - just wake up any readers at the front of the queue
+ */
+static struct rw_semaphore *rwsem_downgrade_wake(struct rw_semaphore *sem)
+{
+    unsigned long flags;
+    DEFINE_WAKE_Q(wake_q);
+
+    raw_spin_lock_irqsave(&sem->wait_lock, flags);
+
+    if (!list_empty(&sem->wait_list))
+        rwsem_mark_wake(sem, RWSEM_WAKE_READ_OWNED, &wake_q);
+
+    raw_spin_unlock_irqrestore(&sem->wait_lock, flags);
+    wake_up_q(&wake_q);
+
+    return sem;
+}
+
+/*
+ * downgrade write lock to read lock
+ */
+static inline void __downgrade_write(struct rw_semaphore *sem)
+{
+    long tmp;
+
+    /*
+     * When downgrading from exclusive to shared ownership,
+     * anything inside the write-locked region cannot leak
+     * into the read side. In contrast, anything in the
+     * read-locked region is ok to be re-ordered into the
+     * write side. As such, rely on RELEASE semantics.
+     */
+    tmp = atomic_long_fetch_add_release(-RWSEM_WRITER_LOCKED+RWSEM_READER_BIAS,
+                                        &sem->count);
+    rwsem_set_reader_owned(sem);
+    if (tmp & RWSEM_FLAG_WAITERS)
+        rwsem_downgrade_wake(sem);
+}
+
+/*
+ * downgrade write lock to read lock
+ */
+void downgrade_write(struct rw_semaphore *sem)
+{
+    __downgrade_write(sem);
+}
+EXPORT_SYMBOL(downgrade_write);

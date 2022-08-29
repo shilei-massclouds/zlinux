@@ -35,4 +35,9 @@ static inline vm_fault_t check_stable_address_space(struct mm_struct *mm)
     return 0;
 }
 
+static inline bool tsk_is_oom_victim(struct task_struct * tsk)
+{
+    return tsk->signal->oom_mm;
+}
+
 #endif /* _INCLUDE_LINUX_OOM_H */
