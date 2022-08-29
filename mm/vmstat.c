@@ -108,3 +108,101 @@ void mod_node_page_state(struct pglist_data *pgdat,
     local_irq_restore(flags);
 }
 EXPORT_SYMBOL(mod_node_page_state);
+
+DEFINE_PER_CPU(struct vm_event_state, vm_event_states) = {{0}};
+EXPORT_PER_CPU_SYMBOL(vm_event_states);
+
+int calculate_normal_threshold(struct zone *zone)
+{
+    int threshold;
+    int mem;    /* memory in 128 MB units */
+
+    /*
+     * The threshold scales with the number of processors and the amount
+     * of memory per zone. More memory means that we can defer updates for
+     * longer, more processors could lead to more contention.
+     * fls() is used to have a cheap way of logarithmic scaling.
+     *
+     * Some sample thresholds:
+     *
+     * Threshold    Processors  (fls)   Zonesize    fls(mem)+1
+     * ------------------------------------------------------------------
+     * 8        1       1   0.9-1 GB    4
+     * 16       2       2   0.9-1 GB    4
+     * 20       2       2   1-2 GB      5
+     * 24       2       2   2-4 GB      6
+     * 28       2       2   4-8 GB      7
+     * 32       2       2   8-16 GB     8
+     * 4        2       2   <128M       1
+     * 30       4       3   2-4 GB      5
+     * 48       4       3   8-16 GB     8
+     * 32       8       4   1-2 GB      4
+     * 32       8       4   0.9-1GB     4
+     * 10       16      5   <128M       1
+     * 40       16      5   900M        4
+     * 70       64      7   2-4 GB      5
+     * 84       64      7   4-8 GB      6
+     * 108      512     9   4-8 GB      6
+     * 125      1024        10  8-16 GB     8
+     * 125      1024        10  16-32 GB    9
+     */
+
+    mem = zone_managed_pages(zone) >> (27 - PAGE_SHIFT);
+
+    threshold = 2 * fls(num_online_cpus()) * (1 + fls(mem));
+
+    /*
+     * Maximum threshold is 125
+     */
+    threshold = min(125, threshold);
+
+    return threshold;
+}
+
+/*
+ * Refresh the thresholds for each zone.
+ */
+void refresh_zone_stat_thresholds(void)
+{
+    struct pglist_data *pgdat;
+    struct zone *zone;
+    int cpu;
+    int threshold;
+
+    /* Zero current pgdat thresholds */
+    for_each_online_pgdat(pgdat) {
+        for_each_online_cpu(cpu) {
+            per_cpu_ptr(pgdat->per_cpu_nodestats, cpu)->stat_threshold = 0;
+        }
+    }
+
+    for_each_populated_zone(zone) {
+        struct pglist_data *pgdat = zone->zone_pgdat;
+        unsigned long max_drift, tolerate_drift;
+
+        threshold = calculate_normal_threshold(zone);
+
+        for_each_online_cpu(cpu) {
+            int pgdat_threshold;
+
+            per_cpu_ptr(zone->per_cpu_zonestats, cpu)->stat_threshold =
+                threshold;
+
+            /* Base nodestat threshold on the largest populated zone. */
+            pgdat_threshold =
+                per_cpu_ptr(pgdat->per_cpu_nodestats, cpu)->stat_threshold;
+            per_cpu_ptr(pgdat->per_cpu_nodestats, cpu)->stat_threshold =
+                max(threshold, pgdat_threshold);
+        }
+
+        /*
+         * Only set percpu_drift_mark if there is a danger that
+         * NR_FREE_PAGES reports the low watermark is ok when in fact
+         * the min watermark could be breached by an allocation
+         */
+        tolerate_drift = low_wmark_pages(zone) - min_wmark_pages(zone);
+        max_drift = num_online_cpus() * threshold;
+        if (max_drift > tolerate_drift)
+            zone->percpu_drift_mark = high_wmark_pages(zone) + max_drift;
+    }
+}

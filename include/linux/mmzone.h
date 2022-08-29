@@ -140,6 +140,7 @@ enum zone_watermarks {
     WMARK_MIN,
     WMARK_LOW,
     WMARK_HIGH,
+    WMARK_PROMO,
     NR_WMARK
 };
 
@@ -288,6 +289,13 @@ struct zone {
     struct pglist_data  *zone_pgdat;
 
     struct per_cpu_zonestat __percpu *per_cpu_zonestats;
+
+    /*
+     * When free pages are below this point, additional steps are taken
+     * when reading the number of free pages to avoid per-cpu counter
+     * drift allowing watermarks to be breached
+     */
+    unsigned long percpu_drift_mark;
 
     /*
      * the high and batch values are copied to individual pagesets for
@@ -689,6 +697,30 @@ static inline struct pglist_data *lruvec_pgdat(struct lruvec *lruvec)
 extern void lruvec_init(struct lruvec *lruvec);
 
 #define for_each_lru(lru) for (lru = 0; lru < NR_LRU_LISTS; lru++)
+
+/**
+ * for_each_zone - helper macro to iterate over all memory zones
+ * @zone: pointer to struct zone variable
+ *
+ * The user only needs to declare the zone variable, for_each_zone
+ * fills it in.
+ */
+#define for_each_zone(zone)                 \
+    for (zone = (first_online_pgdat())->node_zones; \
+         zone;                  \
+         zone = next_zone(zone))
+
+/**
+ * is_highmem - helper function to quickly check if a struct zone is a
+ *              highmem zone or not.  This is an attempt to keep references
+ *              to ZONE_{DMA/NORMAL/HIGHMEM/etc} in general code to a minimum.
+ * @zone: pointer to struct zone variable
+ * Return: 1 for a highmem zone, 0 otherwise
+ */
+static inline int is_highmem(struct zone *zone)
+{
+    return 0;
+}
 
 #endif /* !__GENERATING_BOUNDS_H */
 #endif /* !__ASSEMBLY__ */

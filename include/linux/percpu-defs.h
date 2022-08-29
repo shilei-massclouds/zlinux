@@ -204,6 +204,13 @@ do {                                    \
 #define raw_cpu_cmpxchg(pcp, oval, nval) \
     __pcpu_size_call_return2(raw_cpu_cmpxchg_, pcp, oval, nval)
 
+#define raw_cpu_sub(pcp, val)       raw_cpu_add(pcp, -(val))
+#define raw_cpu_inc(pcp)            raw_cpu_add(pcp, 1)
+#define raw_cpu_dec(pcp)            raw_cpu_sub(pcp, 1)
+#define raw_cpu_sub_return(pcp, val)    raw_cpu_add_return(pcp, -(typeof(pcp))(val))
+#define raw_cpu_inc_return(pcp)     raw_cpu_add_return(pcp, 1)
+#define raw_cpu_dec_return(pcp)     raw_cpu_add_return(pcp, -1)
+
 /*
  * Operations for contexts that are safe from preemption/interrupts.  These
  * operations verify that preemption is disabled.

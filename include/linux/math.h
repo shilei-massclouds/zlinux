@@ -92,4 +92,18 @@
 
 #define sector_div(a, b) do_div(a, b)
 
+unsigned long int_sqrt(unsigned long);
+
+/*
+ * Multiplies an integer by a fraction, while avoiding unnecessary
+ * overflow or loss of precision.
+ */
+#define mult_frac(x, numer, denom)(         \
+{                           \
+    typeof(x) quot = (x) / (denom);         \
+    typeof(x) rem  = (x) % (denom);         \
+    (quot * (numer)) + ((rem * (numer)) / (denom)); \
+}                           \
+)
+
 #endif  /* _LINUX_MATH_H */

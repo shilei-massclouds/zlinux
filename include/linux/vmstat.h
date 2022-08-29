@@ -5,7 +5,7 @@
 #include <linux/types.h>
 #include <linux/percpu.h>
 #include <linux/mmzone.h>
-//#include <linux/vm_event_item.h>
+#include <linux/vm_event_item.h>
 #include <linux/atomic.h>
 //#include <linux/static_key.h>
 #include <linux/mmdebug.h>
@@ -19,6 +19,22 @@
  */
 extern atomic_long_t vm_zone_stat[NR_VM_ZONE_STAT_ITEMS];
 extern atomic_long_t vm_node_stat[NR_VM_NODE_STAT_ITEMS];
+
+/*
+ * Light weight per cpu counter implementation.
+ *
+ * Counters should only be incremented and no critical kernel component
+ * should rely on the counter values.
+ *
+ * Counters are handled completely inline. On many platforms the code
+ * generated will simply be the increment of a global address.
+ */
+
+struct vm_event_state {
+    unsigned long event[NR_VM_EVENT_ITEMS];
+};
+
+DECLARE_PER_CPU(struct vm_event_state, vm_event_states);
 
 static inline void fold_vm_numa_events(void)
 {
@@ -161,5 +177,27 @@ static inline unsigned long zone_page_state_snapshot(struct zone *zone,
         x = 0;
     return x;
 }
+
+/*
+ * vm counters are allowed to be racy. Use raw_cpu_ops to avoid the
+ * local_irq_disable overhead.
+ */
+static inline void __count_vm_event(enum vm_event_item item)
+{
+    raw_cpu_inc(vm_event_states.event[item]);
+    if (item == PGFREE)
+        pr_info("%s: PGFREE 0(%u)\n", __func__,
+                raw_cpu_read(vm_event_states.event[item]));
+}
+
+static inline void __count_vm_events(enum vm_event_item item, long delta)
+{
+    raw_cpu_add(vm_event_states.event[item], delta);
+    if (item == PGFREE)
+        pr_info("%s: PGFREE 1(%u)\n", __func__,
+                raw_cpu_read(vm_event_states.event[item]));
+}
+
+void refresh_zone_stat_thresholds(void);
 
 #endif /* _LINUX_VMSTAT_H */

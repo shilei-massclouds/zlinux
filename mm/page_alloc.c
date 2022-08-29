@@ -44,12 +44,12 @@
 #include <linux/cpuset.h>
 /*
 #include <linux/memory_hotplug.h>
-#include <linux/vmalloc.h>
-#include <linux/vmstat.h>
 #include <linux/mempolicy.h>
 #include <linux/random.h>
 #include <linux/sort.h>
 */
+#include <linux/vmalloc.h>
+#include <linux/vmstat.h>
 #include <linux/stop_machine.h>
 #include <linux/memremap.h>
 #include <linux/nodemask.h>
@@ -96,6 +96,16 @@
 #include "page_reporting.h"
 */
 
+int min_free_kbytes = 1024;
+int user_min_free_kbytes = -1;
+int watermark_boost_factor __read_mostly = 15000;
+int watermark_scale_factor = 10;
+
+int percpu_pagelist_high_fraction;
+
+/* prevent >1 _updater_ of zone percpu pageset ->high and ->batch fields */
+static DEFINE_MUTEX(pcp_batch_high_lock);
+
 /*
  * Array of node states.
  */
@@ -107,6 +117,23 @@ nodemask_t node_states[NR_NODE_STATES] __read_mostly = {
     [N_CPU]     = { { [0] = 1UL } },
 };
 EXPORT_SYMBOL(node_states);
+
+/*
+ * results with 256, 32 in the lowmem_reserve sysctl:
+ *  1G machine -> (16M dma, 800M-16M normal, 1G-800M high)
+ *  1G machine -> (16M dma, 784M normal, 224M high)
+ *  NORMAL allocation will leave 784M/256 of ram reserved in the ZONE_DMA
+ *  HIGHMEM allocation will leave 224M/32 of ram reserved in ZONE_NORMAL
+ *  HIGHMEM allocation will leave (224M+784M)/256 of ram reserved in ZONE_DMA
+ *
+ * TBD: should special case ZONE_DMA32 machines here - in those we normally
+ * don't need any ZONE_NORMAL reservation
+ */
+int sysctl_lowmem_reserve_ratio[MAX_NR_ZONES] = {
+    [ZONE_DMA32]    = 256,
+    [ZONE_NORMAL]   = 32,
+    [ZONE_MOVABLE]  = 0,
+};
 
 /* Free Page Internal flags: for internal, non-pcp variants of free_pages(). */
 typedef int __bitwise fpi_t;
@@ -2007,6 +2034,118 @@ out_unlock:
     spin_unlock_irqrestore(&zone->lock, flags);
 }
 
+static inline long
+__zone_watermark_unusable_free(struct zone *z,
+                               unsigned int order, unsigned int alloc_flags)
+{
+    const bool alloc_harder = (alloc_flags & (ALLOC_HARDER|ALLOC_OOM));
+    long unusable_free = (1 << order) - 1;
+
+    /*
+     * If the caller does not have rights to ALLOC_HARDER then subtract
+     * the high-atomic reserves. This will over-estimate the size of the
+     * atomic reserve but it avoids a search.
+     */
+    if (likely(!alloc_harder))
+        unusable_free += z->nr_reserved_highatomic;
+
+    return unusable_free;
+}
+
+/*
+ * Return true if free base pages are above 'mark'. For high-order checks it
+ * will return true of the order-0 watermark is reached and there is at least
+ * one free page of a suitable size. Checking now avoids taking the zone lock
+ * to check in the allocation paths if no pages are free.
+ */
+bool __zone_watermark_ok(struct zone *z, unsigned int order, unsigned long mark,
+                         int highest_zoneidx, unsigned int alloc_flags,
+                         long free_pages)
+{
+    long min = mark;
+    int o;
+    const bool alloc_harder = (alloc_flags & (ALLOC_HARDER|ALLOC_OOM));
+
+    /* free_pages may go negative - that's OK */
+    free_pages -= __zone_watermark_unusable_free(z, order, alloc_flags);
+
+    if (alloc_flags & ALLOC_HIGH)
+        min -= min / 2;
+
+    if (unlikely(alloc_harder)) {
+        /*
+         * OOM victims can try even harder than normal ALLOC_HARDER
+         * users on the grounds that it's definitely going to be in
+         * the exit path shortly and free memory. Any allocation it
+         * makes during the free path will be small and short-lived.
+         */
+        if (alloc_flags & ALLOC_OOM)
+            min -= min / 2;
+        else
+            min -= min / 4;
+    }
+
+    /*
+     * Check watermarks for an order-0 allocation request. If these
+     * are not met, then a high-order request also cannot go ahead
+     * even if a suitable page happened to be free.
+     */
+    if (free_pages <= min + z->lowmem_reserve[highest_zoneidx])
+        return false;
+
+    /* If this is an order-0 request then the watermark is fine */
+    if (!order)
+        return true;
+
+    /* For a high-order request, check at least one suitable page is free */
+    for (o = order; o < MAX_ORDER; o++) {
+        struct free_area *area = &z->free_area[o];
+        int mt;
+
+        if (!area->nr_free)
+            continue;
+
+        for (mt = 0; mt < MIGRATE_PCPTYPES; mt++) {
+            if (!free_area_empty(area, mt))
+                return true;
+        }
+
+        if (alloc_harder && !free_area_empty(area, MIGRATE_HIGHATOMIC))
+            return true;
+    }
+    panic("%s: END!\n", __func__);
+    return false;
+}
+
+static inline bool
+zone_watermark_fast(struct zone *z, unsigned int order,
+                    unsigned long mark, int highest_zoneidx,
+                    unsigned int alloc_flags, gfp_t gfp_mask)
+{
+    long free_pages;
+
+    free_pages = zone_page_state(z, NR_FREE_PAGES);
+
+    /*
+     * Fast check for order-0 only. If this fails then the reserves
+     * need to be calculated.
+     */
+    if (!order) {
+        long fast_free;
+
+        fast_free = free_pages;
+        fast_free -= __zone_watermark_unusable_free(z, 0, alloc_flags);
+        if (fast_free > mark + z->lowmem_reserve[highest_zoneidx])
+            return true;
+    }
+
+    if (__zone_watermark_ok(z, order, mark, highest_zoneidx, alloc_flags,
+                            free_pages))
+        return true;
+
+    panic("%s: zone(%s) free_pages(%ld) END!\n", __func__, z->name, free_pages);
+}
+
 /*
  * get_page_from_freelist goes through the zonelist trying to allocate
  * a page.
@@ -2031,7 +2170,7 @@ retry:
     for_next_zone_zonelist_nodemask(zone, z, ac->highest_zoneidx,
                                     ac->nodemask) {
         struct page *page;
-        //unsigned long mark;
+        unsigned long mark;
 
         /*
          * When allocating a page cache page for writing, we
@@ -2062,12 +2201,11 @@ retry:
             }
         }
 
-#if 0
         mark = wmark_pages(zone, alloc_flags & ALLOC_WMARK_MASK);
         if (!zone_watermark_fast(zone, order, mark, ac->highest_zoneidx,
                                  alloc_flags, gfp_mask)) {
+            panic("%s: mark(%u)\n", __func__, mark);
         }
-#endif
 
         page = rmqueue(ac->preferred_zoneref->zone, zone, order,
                        gfp_mask, alloc_flags, ac->migratetype);
@@ -2093,6 +2231,9 @@ retry:
         alloc_flags &= ~ALLOC_NOFRAGMENT;
         goto retry;
     }
+
+    pr_info("%s: gfp(%x) order(%u) alloc_flags(%x)\n",
+            __func__, gfp_mask, order, alloc_flags);
 
     return NULL;
 }
@@ -2258,89 +2399,6 @@ out:
     psi_memstall_leave(&pflags);
 
     return page;
-}
-
-static inline long
-__zone_watermark_unusable_free(struct zone *z,
-                               unsigned int order, unsigned int alloc_flags)
-{
-    const bool alloc_harder = (alloc_flags & (ALLOC_HARDER|ALLOC_OOM));
-    long unusable_free = (1 << order) - 1;
-
-    /*
-     * If the caller does not have rights to ALLOC_HARDER then subtract
-     * the high-atomic reserves. This will over-estimate the size of the
-     * atomic reserve but it avoids a search.
-     */
-    if (likely(!alloc_harder))
-        unusable_free += z->nr_reserved_highatomic;
-
-    return unusable_free;
-}
-
-/*
- * Return true if free base pages are above 'mark'. For high-order checks it
- * will return true of the order-0 watermark is reached and there is at least
- * one free page of a suitable size. Checking now avoids taking the zone lock
- * to check in the allocation paths if no pages are free.
- */
-bool __zone_watermark_ok(struct zone *z, unsigned int order, unsigned long mark,
-                         int highest_zoneidx, unsigned int alloc_flags,
-                         long free_pages)
-{
-    long min = mark;
-    int o;
-    const bool alloc_harder = (alloc_flags & (ALLOC_HARDER|ALLOC_OOM));
-
-    /* free_pages may go negative - that's OK */
-    free_pages -= __zone_watermark_unusable_free(z, order, alloc_flags);
-
-    if (alloc_flags & ALLOC_HIGH)
-        min -= min / 2;
-
-    if (unlikely(alloc_harder)) {
-        /*
-         * OOM victims can try even harder than normal ALLOC_HARDER
-         * users on the grounds that it's definitely going to be in
-         * the exit path shortly and free memory. Any allocation it
-         * makes during the free path will be small and short-lived.
-         */
-        if (alloc_flags & ALLOC_OOM)
-            min -= min / 2;
-        else
-            min -= min / 4;
-    }
-
-    /*
-     * Check watermarks for an order-0 allocation request. If these
-     * are not met, then a high-order request also cannot go ahead
-     * even if a suitable page happened to be free.
-     */
-    if (free_pages <= min + z->lowmem_reserve[highest_zoneidx])
-        return false;
-
-    /* If this is an order-0 request then the watermark is fine */
-    if (!order)
-        return true;
-
-    /* For a high-order request, check at least one suitable page is free */
-    for (o = order; o < MAX_ORDER; o++) {
-        struct free_area *area = &z->free_area[o];
-        int mt;
-
-        if (!area->nr_free)
-            continue;
-
-        for (mt = 0; mt < MIGRATE_PCPTYPES; mt++) {
-            if (!free_area_empty(area, mt))
-                return true;
-        }
-
-        if (alloc_harder && !free_area_empty(area, MIGRATE_HIGHATOMIC))
-            return true;
-    }
-    panic("%s: END!\n", __func__);
-    return false;
 }
 
 /*
@@ -3175,7 +3233,7 @@ __free_pages_ok(struct page *page, unsigned int order, fpi_t fpi_flags)
     __free_one_page(page, pfn, zone, order, migratetype, fpi_flags);
     spin_unlock_irqrestore(&zone->lock, flags);
 
-    //__count_vm_events(PGFREE, 1 << order);
+    __count_vm_events(PGFREE, 1 << order);
 }
 
 void __free_pages_core(struct page *page, unsigned int order)
@@ -3214,27 +3272,105 @@ memblock_free_pages(struct page *page, unsigned long pfn,
     __free_pages_core(page, order);
 }
 
+static int zone_highsize(struct zone *zone, int batch, int cpu_online)
+{
+    int high;
+    int nr_split_cpus;
+    unsigned long total_pages;
+
+    if (!percpu_pagelist_high_fraction) {
+        /*
+         * By default, the high value of the pcp is based on the zone
+         * low watermark so that if they are full then background
+         * reclaim will not be started prematurely.
+         */
+        total_pages = low_wmark_pages(zone);
+    } else {
+        /*
+         * If percpu_pagelist_high_fraction is configured, the high
+         * value is based on a fraction of the managed pages in the
+         * zone.
+         */
+        total_pages = zone_managed_pages(zone) / percpu_pagelist_high_fraction;
+    }
+    /*
+     * Split the high value across all online CPUs local to the zone. Note
+     * that early in boot that CPUs may not be online yet and that during
+     * CPU hotplug that the cpumask is not yet updated when a CPU is being
+     * onlined. For memory nodes that have no CPUs, split pcp->high across
+     * all online CPUs to mitigate the risk that reclaim is triggered
+     * prematurely due to pages stored on pcp lists.
+     */
+    nr_split_cpus = cpumask_weight(cpumask_of_node(zone_to_nid(zone)))
+        + cpu_online;
+    if (!nr_split_cpus)
+        nr_split_cpus = num_online_cpus();
+    high = total_pages / nr_split_cpus;
+
+    /*
+     * Ensure high is at least batch*4. The multiple is based on the
+     * historical relationship between high and batch.
+     */
+    high = max(high, batch << 2);
+
+    return high;
+}
+
+/*
+ * pcp->high and pcp->batch values are related and generally batch is lower
+ * than high. They are also related to pcp->count such that count is lower
+ * than high, and as soon as it reaches high, the pcplist is flushed.
+ *
+ * However, guaranteeing these relations at all times would require e.g. write
+ * barriers here but also careful usage of read barriers at the read side, and
+ * thus be prone to error and bad for performance. Thus the update only prevents
+ * store tearing. Any new users of pcp->batch and pcp->high should ensure they
+ * can cope with those fields changing asynchronously, and fully trust only the
+ * pcp->count field on the local CPU with interrupts disabled.
+ *
+ * mutex_is_locked(&pcp_batch_high_lock) required when calling this function
+ * outside of boot time (or some other assurance that no concurrent updaters
+ * exist).
+ */
+static void pageset_update(struct per_cpu_pages *pcp,
+                           unsigned long high,
+                           unsigned long batch)
+{
+    WRITE_ONCE(pcp->batch, batch);
+    WRITE_ONCE(pcp->high, high);
+}
+
+static void __zone_set_pageset_high_and_batch(struct zone *zone,
+                                              unsigned long high,
+                                              unsigned long batch)
+{
+    struct per_cpu_pages *pcp;
+    int cpu;
+
+    for_each_possible_cpu(cpu) {
+        pcp = per_cpu_ptr(zone->per_cpu_pageset, cpu);
+        pageset_update(pcp, high, batch);
+    }
+}
+
 /*
  * Calculate and set new high and batch values for all per-cpu pagesets of a
  * zone based on the zone's size.
  */
 static void zone_set_pageset_high_and_batch(struct zone *zone, int cpu_online)
 {
-#if 0
     int new_high, new_batch;
 
     new_batch = max(1, zone_batchsize(zone));
     new_high = zone_highsize(zone, new_batch, cpu_online);
 
-    if (zone->pageset_high == new_high &&
-        zone->pageset_batch == new_batch)
+    if (zone->pageset_high == new_high && zone->pageset_batch == new_batch)
         return;
 
     zone->pageset_high = new_high;
     zone->pageset_batch = new_batch;
 
     __zone_set_pageset_high_and_batch(zone, new_high, new_batch);
-#endif
 }
 
 void __meminit setup_zone_pageset(struct zone *zone)
@@ -3478,7 +3614,7 @@ free_unref_page_commit(struct page *page, int migratetype,
     int pindex;
     bool free_high;
 
-    //__count_vm_event(PGFREE);
+    __count_vm_event(PGFREE);
     pcp = this_cpu_ptr(zone->per_cpu_pageset);
     pindex = order_to_pindex(migratetype, order);
     list_add(&page->lru, &pcp->lists[pindex]);
@@ -3636,31 +3772,6 @@ void __init mem_init_print_info(void)
             codesize >> 10, datasize >> 10, rosize >> 10,
             (init_data_size + init_code_size) >> 10, bss_size >> 10,
             K(physpages - totalram_pages() - totalcma_pages), K(totalcma_pages));
-}
-
-static inline bool
-zone_watermark_fast(struct zone *z, unsigned int order,
-                    unsigned long mark, int highest_zoneidx,
-                    unsigned int alloc_flags, gfp_t gfp_mask)
-{
-    long free_pages;
-
-    free_pages = zone_page_state(z, NR_FREE_PAGES);
-
-    /*
-     * Fast check for order-0 only. If this fails then the reserves
-     * need to be calculated.
-     */
-    if (!order) {
-        long fast_free;
-
-        fast_free = free_pages;
-        fast_free -= __zone_watermark_unusable_free(z, 0, alloc_flags);
-        if (fast_free > mark + z->lowmem_reserve[highest_zoneidx])
-            return true;
-    }
-
-    panic("%s: zone(%s) free_pages(%ld) END!\n", __func__, z->name, free_pages);
 }
 
 /*
@@ -4182,3 +4293,227 @@ void __init page_alloc_init_late(void)
         set_zone_contiguous(zone);
 #endif
 }
+
+/*
+ * Initialise min_free_kbytes.
+ *
+ * For small machines we want it small (128k min).  For large machines
+ * we want it large (256MB max).  But it is not linear, because network
+ * bandwidth does not increase linearly with machine size.  We use
+ *
+ *  min_free_kbytes = 4 * sqrt(lowmem_kbytes), for better accuracy:
+ *  min_free_kbytes = sqrt(lowmem_kbytes * 16)
+ *
+ * which yields
+ *
+ * 16MB:    512k
+ * 32MB:    724k
+ * 64MB:    1024k
+ * 128MB:   1448k
+ * 256MB:   2048k
+ * 512MB:   2896k
+ * 1024MB:  4096k
+ * 2048MB:  5792k
+ * 4096MB:  8192k
+ * 8192MB:  11584k
+ * 16384MB: 16384k
+ */
+void calculate_min_free_kbytes(void)
+{
+    unsigned long lowmem_kbytes;
+    int new_min_free_kbytes;
+
+    lowmem_kbytes = nr_free_buffer_pages() * (PAGE_SIZE >> 10);
+    new_min_free_kbytes = int_sqrt(lowmem_kbytes * 16);
+
+    if (new_min_free_kbytes > user_min_free_kbytes)
+        min_free_kbytes = clamp(new_min_free_kbytes, 128, 262144);
+    else
+        pr_warn("min_free_kbytes is not updated to %d "
+                "because user defined value %d is preferred\n",
+                new_min_free_kbytes, user_min_free_kbytes);
+
+}
+
+/*
+ * The zone indicated has a new number of managed_pages; batch sizes and percpu
+ * page high values need to be recalculated.
+ */
+void zone_pcp_update(struct zone *zone, int cpu_online)
+{
+    mutex_lock(&pcp_batch_high_lock);
+    zone_set_pageset_high_and_batch(zone, cpu_online);
+    mutex_unlock(&pcp_batch_high_lock);
+}
+
+/*
+ * calculate_totalreserve_pages - called when sysctl_lowmem_reserve_ratio
+ *  or min_free_kbytes changes.
+ */
+static void calculate_totalreserve_pages(void)
+{
+    struct pglist_data *pgdat;
+    unsigned long reserve_pages = 0;
+    enum zone_type i, j;
+
+    for_each_online_pgdat(pgdat) {
+
+        pgdat->totalreserve_pages = 0;
+
+        for (i = 0; i < MAX_NR_ZONES; i++) {
+            struct zone *zone = pgdat->node_zones + i;
+            long max = 0;
+            unsigned long managed_pages = zone_managed_pages(zone);
+
+            /* Find valid and maximum lowmem_reserve in the zone */
+            for (j = i; j < MAX_NR_ZONES; j++) {
+                if (zone->lowmem_reserve[j] > max)
+                    max = zone->lowmem_reserve[j];
+            }
+
+            /* we treat the high watermark as reserved pages. */
+            max += high_wmark_pages(zone);
+
+            if (max > managed_pages)
+                max = managed_pages;
+
+            pgdat->totalreserve_pages += max;
+
+            reserve_pages += max;
+        }
+    }
+    totalreserve_pages = reserve_pages;
+}
+
+static void __setup_per_zone_wmarks(void)
+{
+    unsigned long pages_min = min_free_kbytes >> (PAGE_SHIFT - 10);
+    unsigned long lowmem_pages = 0;
+    struct zone *zone;
+    unsigned long flags;
+
+    /* Calculate total number of !ZONE_HIGHMEM pages */
+    for_each_zone(zone) {
+        if (!is_highmem(zone))
+            lowmem_pages += zone_managed_pages(zone);
+    }
+
+    for_each_zone(zone) {
+        u64 tmp;
+
+        spin_lock_irqsave(&zone->lock, flags);
+        tmp = (u64)pages_min * zone_managed_pages(zone);
+        do_div(tmp, lowmem_pages);
+        if (is_highmem(zone)) {
+            /*
+             * __GFP_HIGH and PF_MEMALLOC allocations usually don't
+             * need highmem pages, so cap pages_min to a small
+             * value here.
+             *
+             * The WMARK_HIGH-WMARK_LOW and (WMARK_LOW-WMARK_MIN)
+             * deltas control async page reclaim, and so should
+             * not be capped for highmem.
+             */
+            unsigned long min_pages;
+
+            min_pages = zone_managed_pages(zone) / 1024;
+            min_pages = clamp(min_pages, SWAP_CLUSTER_MAX, 128UL);
+            zone->_watermark[WMARK_MIN] = min_pages;
+        } else {
+            /*
+             * If it's a lowmem zone, reserve a number of pages
+             * proportionate to the zone's size.
+             */
+            zone->_watermark[WMARK_MIN] = tmp;
+        }
+
+        /*
+         * Set the kswapd watermarks distance according to the
+         * scale factor in proportion to available memory, but
+         * ensure a minimum size on small systems.
+         */
+        tmp = max_t(u64, tmp >> 2, mult_frac(zone_managed_pages(zone),
+                                             watermark_scale_factor, 10000));
+
+
+        zone->watermark_boost = 0;
+        zone->_watermark[WMARK_LOW]  = min_wmark_pages(zone) + tmp;
+        zone->_watermark[WMARK_HIGH] = low_wmark_pages(zone) + tmp;
+        zone->_watermark[WMARK_PROMO] = high_wmark_pages(zone) + tmp;
+
+        spin_unlock_irqrestore(&zone->lock, flags);
+    }
+
+    /* update totalreserve_pages */
+    calculate_totalreserve_pages();
+}
+
+/**
+ * setup_per_zone_wmarks - called when min_free_kbytes changes
+ * or when memory is hot-{added|removed}
+ *
+ * Ensures that the watermark[min,low,high] values for each zone are set
+ * correctly with respect to min_free_kbytes.
+ */
+void setup_per_zone_wmarks(void)
+{
+    struct zone *zone;
+    static DEFINE_SPINLOCK(lock);
+
+    spin_lock(&lock);
+    __setup_per_zone_wmarks();
+    spin_unlock(&lock);
+
+    /*
+     * The watermark size have changed so update the pcpu batch
+     * and high limits or the limits may be inappropriate.
+     */
+    for_each_zone(zone)
+        zone_pcp_update(zone, 0);
+}
+
+/*
+ * setup_per_zone_lowmem_reserve - called whenever
+ *  sysctl_lowmem_reserve_ratio changes.  Ensures that each zone
+ *  has a correct pages reserved value, so an adequate number of
+ *  pages are left in the zone after a successful __alloc_pages().
+ */
+static void setup_per_zone_lowmem_reserve(void)
+{
+    struct pglist_data *pgdat;
+    enum zone_type i, j;
+
+    for_each_online_pgdat(pgdat) {
+        for (i = 0; i < MAX_NR_ZONES - 1; i++) {
+            struct zone *zone = &pgdat->node_zones[i];
+            int ratio = sysctl_lowmem_reserve_ratio[i];
+            bool clear = !ratio || !zone_managed_pages(zone);
+            unsigned long managed_pages = 0;
+
+            for (j = i + 1; j < MAX_NR_ZONES; j++) {
+                struct zone *upper_zone = &pgdat->node_zones[j];
+
+                managed_pages += zone_managed_pages(upper_zone);
+
+                if (clear)
+                    zone->lowmem_reserve[j] = 0;
+                else
+                    zone->lowmem_reserve[j] = managed_pages / ratio;
+            }
+        }
+    }
+
+    /* update totalreserve_pages */
+    calculate_totalreserve_pages();
+}
+
+int __meminit init_per_zone_wmark_min(void)
+{
+    calculate_min_free_kbytes();
+    setup_per_zone_wmarks();
+    refresh_zone_stat_thresholds();
+    setup_per_zone_lowmem_reserve();
+
+    return 0;
+}
+postcore_initcall(init_per_zone_wmark_min)
