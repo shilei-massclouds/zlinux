@@ -54,6 +54,28 @@ void sg_free_table_chained(struct sg_table *table, unsigned nents_first_chunk)
 }
 EXPORT_SYMBOL_GPL(sg_free_table_chained);
 
+static inline unsigned int sg_pool_index(unsigned short nents)
+{
+    unsigned int index;
+
+    BUG_ON(nents > SG_CHUNK_SIZE);
+
+    if (nents <= 8)
+        index = 0;
+    else
+        index = get_count_order(nents) - 3;
+
+    return index;
+}
+
+static struct scatterlist *sg_pool_alloc(unsigned int nents, gfp_t gfp_mask)
+{
+    struct sg_pool *sgp;
+
+    sgp = sg_pools + sg_pool_index(nents);
+    return mempool_alloc(sgp->pool, gfp_mask);
+}
+
 /**
  * sg_alloc_table_chained - Allocate and chain SGLs in an sg table
  * @table:  The sg table header to use
@@ -84,7 +106,6 @@ int sg_alloc_table_chained(struct sg_table *table, int nents,
         }
     }
 
-#if 0
     /* User supposes that the 1st SGL includes real entry */
     if (nents_first_chunk <= 1) {
         first_chunk = NULL;
@@ -92,14 +113,12 @@ int sg_alloc_table_chained(struct sg_table *table, int nents,
     }
 
     ret = __sg_alloc_table(table, nents, SG_CHUNK_SIZE,
-                   first_chunk, nents_first_chunk,
-                   GFP_ATOMIC, sg_pool_alloc);
+                           first_chunk, nents_first_chunk,
+                           GFP_ATOMIC, sg_pool_alloc);
     if (unlikely(ret))
         sg_free_table_chained(table, nents_first_chunk);
-    return ret;
-#endif
 
-    panic("%s: END!\n", __func__);
+    return ret;
 }
 EXPORT_SYMBOL_GPL(sg_alloc_table_chained);
 

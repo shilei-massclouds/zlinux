@@ -60,5 +60,13 @@ static inline int get_count_order_long(unsigned long l)
     return (int)fls_long(--l);
 }
 
+static inline int get_count_order(unsigned int count)
+{
+    if (count == 0)
+        return -1;
+
+    return fls(--count);
+}
+
 #endif /* __KERNEL__ */
 #endif

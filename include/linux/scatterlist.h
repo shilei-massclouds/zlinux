@@ -217,4 +217,36 @@ static inline dma_addr_t sg_phys(struct scatterlist *sg)
     return page_to_phys(sg_page(sg)) + sg->offset;
 }
 
+static inline void __sg_chain(struct scatterlist *chain_sg,
+                              struct scatterlist *sgl)
+{
+    /*
+     * offset and length are unused for chain entry. Clear them.
+     */
+    chain_sg->offset = 0;
+    chain_sg->length = 0;
+
+    /*
+     * Set lowest bit to indicate a link pointer, and make sure to clear
+     * the termination bit if it happens to be set.
+     */
+    chain_sg->page_link = ((unsigned long) sgl | SG_CHAIN) & ~SG_END;
+}
+
+/**
+ * sg_chain - Chain two sglists together
+ * @prv:    First scatterlist
+ * @prv_nents:  Number of entries in prv
+ * @sgl:    Second scatterlist
+ *
+ * Description:
+ *   Links @prv@ and @sgl@ together, to form a longer scatterlist.
+ *
+ **/
+static inline void sg_chain(struct scatterlist *prv, unsigned int prv_nents,
+                            struct scatterlist *sgl)
+{
+    __sg_chain(&prv[prv_nents - 1], sgl);
+}
+
 #endif /* _LINUX_SCATTERLIST_H */
