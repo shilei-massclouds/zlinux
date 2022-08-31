@@ -36,6 +36,19 @@ struct vm_event_state {
 
 DECLARE_PER_CPU(struct vm_event_state, vm_event_states);
 
+struct reclaim_stat {
+    unsigned nr_dirty;
+    unsigned nr_unqueued_dirty;
+    unsigned nr_congested;
+    unsigned nr_writeback;
+    unsigned nr_immediate;
+    unsigned nr_pageout;
+    unsigned nr_activate[ANON_AND_FILE];
+    unsigned nr_ref_keep;
+    unsigned nr_unmap_fail;
+    unsigned nr_lazyfree_fail;
+};
+
 static inline void fold_vm_numa_events(void)
 {
 }
@@ -185,9 +198,6 @@ static inline unsigned long zone_page_state_snapshot(struct zone *zone,
 static inline void __count_vm_event(enum vm_event_item item)
 {
     raw_cpu_inc(vm_event_states.event[item]);
-    if (item == PGFREE)
-        pr_info("%s: PGFREE 0(%u)\n", __func__,
-                raw_cpu_read(vm_event_states.event[item]));
 }
 
 static inline void __count_vm_events(enum vm_event_item item, long delta)
@@ -196,5 +206,8 @@ static inline void __count_vm_events(enum vm_event_item item, long delta)
 }
 
 void refresh_zone_stat_thresholds(void);
+
+#define __count_zid_vm_events(item, zid, delta) \
+    __count_vm_events(item##_NORMAL - ZONE_NORMAL + zid, delta)
 
 #endif /* _LINUX_VMSTAT_H */

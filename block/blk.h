@@ -9,6 +9,12 @@
 #include "blk-crypto-internal.h"
 #endif
 
+/*
+ * Plug flush limits
+ */
+#define BLK_MAX_REQUEST_COUNT   32
+#define BLK_PLUG_FLUSH_SIZE     (128 * 1024)
+
 struct elevator_type;
 
 struct blk_flush_queue {

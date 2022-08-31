@@ -60,6 +60,14 @@ struct blk_queue_stats;
 struct blk_stat_callback;
 struct blk_crypto_profile;
 
+struct blk_plug_cb;
+typedef void (*blk_plug_cb_fn)(struct blk_plug_cb *, bool);
+struct blk_plug_cb {
+    struct list_head list;
+    blk_plug_cb_fn callback;
+    void *data;
+};
+
 extern const struct device_type disk_type;
 extern struct device_type part_type;
 extern struct class block_class;
@@ -800,5 +808,9 @@ static inline unsigned long queue_virt_boundary(const struct request_queue *q)
 
 extern void blk_set_default_limits(struct queue_limits *lim);
 extern void blk_set_stacking_limits(struct queue_limits *lim);
+
+extern void blk_start_plug(struct blk_plug *);
+extern void blk_start_plug_nr_ios(struct blk_plug *, unsigned short);
+extern void blk_finish_plug(struct blk_plug *);
 
 #endif /* _LINUX_BLKDEV_H */

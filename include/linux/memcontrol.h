@@ -110,4 +110,17 @@ static inline void __dec_lruvec_kmem_state(void *p, enum node_stat_item idx)
     __mod_lruvec_kmem_state(p, idx, -1);
 }
 
+static inline unsigned long lruvec_page_state(struct lruvec *lruvec,
+                                              enum node_stat_item idx)
+{
+    return node_page_state(lruvec_pgdat(lruvec), idx);
+}
+
+static inline
+struct lruvec *mem_cgroup_lruvec(struct mem_cgroup *memcg,
+                                 struct pglist_data *pgdat)
+{
+    return &pgdat->__lruvec;
+}
+
 #endif /* _LINUX_MEMCONTROL_H */

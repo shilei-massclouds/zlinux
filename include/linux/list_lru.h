@@ -10,9 +10,7 @@
 
 #include <linux/list.h>
 #include <linux/nodemask.h>
-#if 0
 #include <linux/shrinker.h>
-#endif
 #include <linux/xarray.h>
 
 struct list_lru_one {

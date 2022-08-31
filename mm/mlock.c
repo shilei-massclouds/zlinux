@@ -116,3 +116,14 @@ void munlock_page(struct page *page)
         mlock_pagevec(pvec);
     local_unlock(&mlock_pvec.lock);
 }
+
+void mlock_page_drain_local(void)
+{
+    struct pagevec *pvec;
+
+    local_lock(&mlock_pvec.lock);
+    pvec = this_cpu_ptr(&mlock_pvec.vec);
+    if (pagevec_count(pvec))
+        mlock_pagevec(pvec);
+    local_unlock(&mlock_pvec.lock);
+}

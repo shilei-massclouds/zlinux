@@ -17,9 +17,9 @@
 #include <linux/percpu-refcount.h>
 #if 0
 #include <linux/bit_spinlock.h>
-#include <linux/shrinker.h>
 #include <linux/page_ext.h>
 #endif
+#include <linux/shrinker.h>
 #include <linux/resource.h>
 #include <linux/err.h>
 #include <linux/page-flags.h>
@@ -1548,5 +1548,22 @@ static inline void free_reserved_page(struct page *page)
     adjust_managed_page_count(page, 1);
 }
 #define free_highmem_page(page) free_reserved_page(page)
+
+#define lru_to_page(head) (list_entry((head)->prev, struct page, lru))
+static inline struct folio *lru_to_folio(struct list_head *head)
+{
+    return list_entry((head)->prev, struct folio, lru);
+}
+
+/*
+ * Try to grab a ref unless the page has a refcount of zero, return false if
+ * that is the case.
+ * This can be called when MMU is off so it must not access
+ * any of the virtual mappings.
+ */
+static inline bool get_page_unless_zero(struct page *page)
+{
+    return page_ref_add_unless(page, 1, 0);
+}
 
 #endif /* _LINUX_MM_H */

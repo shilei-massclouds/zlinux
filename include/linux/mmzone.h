@@ -95,11 +95,24 @@ enum zone_stat_item {
 
 enum node_stat_item {
     NR_LRU_BASE,
+    NR_INACTIVE_ANON = NR_LRU_BASE, /* must match order of LRU_[IN]ACTIVE */
     NR_INACTIVE_FILE,   /*  "     "     "   "       "         */
     NR_ACTIVE_FILE,     /*  "     "     "   "       "         */
     NR_SLAB_RECLAIMABLE_B,
     NR_SLAB_UNRECLAIMABLE_B,
+    NR_ISOLATED_ANON,   /* Temporary isolated pages from anon lru */
+    NR_ISOLATED_FILE,   /* Temporary isolated pages from file lru */
     WORKINGSET_NODES,
+    WORKINGSET_REFAULT_BASE,
+    WORKINGSET_REFAULT_ANON = WORKINGSET_REFAULT_BASE,
+    WORKINGSET_REFAULT_FILE,
+    WORKINGSET_ACTIVATE_BASE,
+    WORKINGSET_ACTIVATE_ANON = WORKINGSET_ACTIVATE_BASE,
+    WORKINGSET_ACTIVATE_FILE,
+    WORKINGSET_RESTORE_BASE,
+    WORKINGSET_RESTORE_ANON = WORKINGSET_RESTORE_BASE,
+    WORKINGSET_RESTORE_FILE,
+    WORKINGSET_NODERECLAIM,
     NR_ANON_MAPPED,     /* Mapped anonymous pages */
     NR_FILE_MAPPED,     /* pagecache pages mapped into pagetables.
                            only modified from process context */
@@ -720,6 +733,18 @@ extern void lruvec_init(struct lruvec *lruvec);
 static inline int is_highmem(struct zone *zone)
 {
     return 0;
+}
+
+#define for_each_evictable_lru(lru) for (lru = 0; lru <= LRU_ACTIVE_FILE; lru++)
+
+static inline bool is_file_lru(enum lru_list lru)
+{
+    return (lru == LRU_INACTIVE_FILE || lru == LRU_ACTIVE_FILE);
+}
+
+static inline bool is_active_lru(enum lru_list lru)
+{
+    return (lru == LRU_ACTIVE_ANON || lru == LRU_ACTIVE_FILE);
 }
 
 #endif /* !__GENERATING_BOUNDS_H */

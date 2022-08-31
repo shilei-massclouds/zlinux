@@ -792,4 +792,14 @@ static inline bool blk_rq_is_passthrough(struct request *rq)
     return blk_op_is_passthrough(req_op(rq));
 }
 
+#define rq_list_pop(listptr)                \
+({                          \
+    struct request *__req = NULL;           \
+    if ((listptr) && *(listptr))    {       \
+        __req = *(listptr);         \
+        *(listptr) = __req->rq_next;        \
+    }                       \
+    __req;                      \
+})
+
 #endif /* BLK_MQ_H */

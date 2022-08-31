@@ -204,4 +204,9 @@ static inline void dec_tlb_flush_pending(struct mm_struct *mm)
     atomic_dec(&mm->tlb_flush_pending);
 }
 
+static inline int page_is_file_lru(struct page *page)
+{
+    return folio_is_file_lru(page_folio(page));
+}
+
 #endif /* LINUX_MM_INLINE_H */

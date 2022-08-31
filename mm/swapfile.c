@@ -47,3 +47,15 @@
 
 static unsigned int nr_swapfiles;
 atomic_long_t nr_swap_pages;
+
+/* protected with swap_lock. reading in vm_swap_full() doesn't need lock */
+long total_swap_pages;
+
+/*
+ * If swap is getting full, or if there are no more mappings of this page,
+ * then try_to_free_swap is called to free its swap space.
+ */
+int try_to_free_swap(struct page *page)
+{
+    panic("%s: END!\n", __func__);
+}

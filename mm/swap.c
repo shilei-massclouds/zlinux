@@ -41,6 +41,18 @@
 
 #include "internal.h"
 
+/* How many pages do we try to swap or page in/out together? */
+int page_cluster;
+
+/* Protecting only lru_rotate.pvec which requires disabling interrupts */
+struct lru_rotate {
+    local_lock_t lock;
+    struct pagevec pvec;
+};
+static DEFINE_PER_CPU(struct lru_rotate, lru_rotate) = {
+    .lock = INIT_LOCAL_LOCK(lock),
+};
+
 /*
  * The following struct pagevec are grouped together because they are protected
  * by disabling preemption (and interrupts remain enabled).
@@ -318,7 +330,27 @@ static void pagevec_lru_move_fn(struct pagevec *pvec,
                                 void (*move_fn)(struct page *page,
                                                 struct lruvec *lruvec))
 {
-    panic("%s: END!\n", __func__);
+    int i;
+    struct lruvec *lruvec = NULL;
+    unsigned long flags = 0;
+
+    for (i = 0; i < pagevec_count(pvec); i++) {
+        struct page *page = pvec->pages[i];
+        struct folio *folio = page_folio(page);
+
+        /* block memcg migration during page moving between lru */
+        if (!TestClearPageLRU(page))
+            continue;
+
+        lruvec = folio_lruvec_relock_irqsave(folio, lruvec, &flags);
+        (*move_fn)(page, lruvec);
+
+        SetPageLRU(page);
+    }
+    if (lruvec)
+        unlock_page_lruvec_irqrestore(lruvec, flags);
+    release_pages(pvec->pages, pvec->nr);
+    pagevec_reinit(pvec);
 }
 
 static void folio_activate(struct folio *folio)
@@ -417,15 +449,158 @@ unsigned pagevec_lookup_range_tag(struct pagevec *pvec,
 }
 EXPORT_SYMBOL(pagevec_lookup_range_tag);
 
+static void pagevec_move_tail_fn(struct page *page, struct lruvec *lruvec)
+{
+    struct folio *folio = page_folio(page);
+
+    if (!folio_test_unevictable(folio)) {
+#if 0
+        lruvec_del_folio(lruvec, folio);
+        folio_clear_active(folio);
+        lruvec_add_folio_tail(lruvec, folio);
+        __count_vm_events(PGROTATED, folio_nr_pages(folio));
+#endif
+        panic("%s: !folio_test_unevictable!\n", __func__);
+    }
+}
+
+/*
+ * If the page can not be invalidated, it is moved to the
+ * inactive list to speed up its reclaim.  It is moved to the
+ * head of the list, rather than the tail, to give the flusher
+ * threads some time to write it out, as this is much more
+ * effective than the single-page writeout from reclaim.
+ *
+ * If the page isn't page_mapped and dirty/writeback, the page
+ * could reclaim asap using PG_reclaim.
+ *
+ * 1. active, mapped page -> none
+ * 2. active, dirty/writeback page -> inactive, head, PG_reclaim
+ * 3. inactive, mapped page -> none
+ * 4. inactive, dirty/writeback page -> inactive, head, PG_reclaim
+ * 5. inactive, clean -> inactive, tail
+ * 6. Others -> none
+ *
+ * In 4, why it moves inactive's head, the VM expects the page would
+ * be write it out by flusher threads as this is much more effective
+ * than the single-page writeout from reclaim.
+ */
+static void lru_deactivate_file_fn(struct page *page, struct lruvec *lruvec)
+{
+    bool active = PageActive(page);
+    int nr_pages = thp_nr_pages(page);
+
+    if (PageUnevictable(page))
+        return;
+
+    /* Some processes are using the page */
+    if (page_mapped(page))
+        return;
+
+    del_page_from_lru_list(page, lruvec);
+    ClearPageActive(page);
+    ClearPageReferenced(page);
+
+    panic("%s: NO implementation!\n", __func__);
+}
+
+static void lru_deactivate_fn(struct page *page, struct lruvec *lruvec)
+{
+    if (PageActive(page) && !PageUnevictable(page)) {
+#if 0
+        int nr_pages = thp_nr_pages(page);
+
+        del_page_from_lru_list(page, lruvec);
+        ClearPageActive(page);
+        ClearPageReferenced(page);
+        add_page_to_lru_list(page, lruvec);
+
+        __count_vm_events(PGDEACTIVATE, nr_pages);
+        __count_memcg_events(lruvec_memcg(lruvec), PGDEACTIVATE,
+                     nr_pages);
+#endif
+        panic("%s: 1!\n", __func__);
+    }
+}
+
+static void lru_lazyfree_fn(struct page *page, struct lruvec *lruvec)
+{
+    if (PageAnon(page) && PageSwapBacked(page) &&
+        !PageSwapCache(page) && !PageUnevictable(page)) {
+#if 0
+        int nr_pages = thp_nr_pages(page);
+
+        del_page_from_lru_list(page, lruvec);
+        ClearPageActive(page);
+        ClearPageReferenced(page);
+        /*
+         * Lazyfree pages are clean anonymous pages.  They have
+         * PG_swapbacked flag cleared, to distinguish them from normal
+         * anonymous pages
+         */
+        ClearPageSwapBacked(page);
+        add_page_to_lru_list(page, lruvec);
+
+        __count_vm_events(PGLAZYFREE, nr_pages);
+        __count_memcg_events(lruvec_memcg(lruvec), PGLAZYFREE,
+                     nr_pages);
+#endif
+        panic("%s: 1!\n", __func__);
+    }
+}
+
+static void activate_page_drain(int cpu)
+{
+    struct pagevec *pvec = &per_cpu(lru_pvecs.activate_page, cpu);
+
+    if (pagevec_count(pvec))
+        pagevec_lru_move_fn(pvec, __activate_page);
+}
+
+/*
+ * Drain pages out of the cpu's pagevecs.
+ * Either "cpu" is the current CPU, and preemption has already been
+ * disabled; or "cpu" is being hot-unplugged, and is already dead.
+ */
+void lru_add_drain_cpu(int cpu)
+{
+    struct pagevec *pvec = &per_cpu(lru_pvecs.lru_add, cpu);
+
+    if (pagevec_count(pvec))
+        __pagevec_lru_add(pvec);
+
+    pvec = &per_cpu(lru_rotate.pvec, cpu);
+    /* Disabling interrupts below acts as a compiler barrier. */
+    if (data_race(pagevec_count(pvec))) {
+        unsigned long flags;
+
+        /* No harm done if a racing interrupt already did this */
+        local_lock_irqsave(&lru_rotate.lock, flags);
+        pagevec_lru_move_fn(pvec, pagevec_move_tail_fn);
+        local_unlock_irqrestore(&lru_rotate.lock, flags);
+    }
+
+    pvec = &per_cpu(lru_pvecs.lru_deactivate_file, cpu);
+    if (pagevec_count(pvec))
+        pagevec_lru_move_fn(pvec, lru_deactivate_file_fn);
+
+    pvec = &per_cpu(lru_pvecs.lru_deactivate, cpu);
+    if (pagevec_count(pvec))
+        pagevec_lru_move_fn(pvec, lru_deactivate_fn);
+
+    pvec = &per_cpu(lru_pvecs.lru_lazyfree, cpu);
+    if (pagevec_count(pvec))
+        pagevec_lru_move_fn(pvec, lru_lazyfree_fn);
+
+    activate_page_drain(cpu);
+}
+
 void lru_add_drain(void)
 {
-#if 0
     local_lock(&lru_pvecs.lock);
     lru_add_drain_cpu(smp_processor_id());
     local_unlock(&lru_pvecs.lock);
     mlock_page_drain_local();
-#endif
-    pr_warn("%s: NO implementation!\n", __func__);
 }
 
 /*

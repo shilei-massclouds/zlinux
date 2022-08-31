@@ -1856,6 +1856,19 @@ static __latent_entropy void blk_done_softirq(struct softirq_action *h)
     blk_complete_reqs(this_cpu_ptr(&blk_cpu_done));
 }
 
+void blk_mq_flush_plug_list(struct blk_plug *plug, bool from_schedule)
+{
+    panic("%s: END!\n", __func__);
+}
+
+void blk_mq_free_plug_rqs(struct blk_plug *plug)
+{
+    struct request *rq;
+
+    while ((rq = rq_list_pop(&plug->cached_rq)) != NULL)
+        blk_mq_free_request(rq);
+}
+
 static int __init blk_mq_init(void)
 {
     int i;

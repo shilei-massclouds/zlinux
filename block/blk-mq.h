@@ -311,4 +311,7 @@ static inline void blk_mq_put_driver_tag(struct request *rq)
     __blk_mq_put_driver_tag(rq->mq_hctx, rq);
 }
 
+void blk_mq_free_plug_rqs(struct blk_plug *plug);
+void blk_mq_flush_plug_list(struct blk_plug *plug, bool from_schedule);
+
 #endif /* INT_BLK_MQ_H */

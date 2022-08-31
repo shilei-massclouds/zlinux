@@ -26,6 +26,8 @@ struct reclaim_state {
     unsigned long reclaimed_slab;
 };
 
+extern long total_swap_pages;
+
 /* Definition of global_zone_page_state not available yet */
 #define nr_free_pages() global_zone_page_state(NR_FREE_PAGES)
 
@@ -187,6 +189,18 @@ static inline bool node_reclaim_enabled(void)
     /* Is any node_reclaim_mode bit set? */
     return node_reclaim_mode & (RECLAIM_ZONE|RECLAIM_WRITE|RECLAIM_UNMAP);
 }
+
+static inline int mem_cgroup_swappiness(struct mem_cgroup *mem)
+{
+    return vm_swappiness;
+}
+
+static inline int current_is_kswapd(void)
+{
+    return current->flags & PF_KSWAPD;
+}
+
+extern int try_to_free_swap(struct page *);
 
 #endif /* __KERNEL__*/
 #endif /* _LINUX_SWAP_H */

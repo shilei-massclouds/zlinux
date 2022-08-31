@@ -330,4 +330,16 @@ static inline bool is_migrate_highatomic_page(struct page *page)
     return get_pageblock_migratetype(page) == MIGRATE_HIGHATOMIC;
 }
 
+static inline void wake_throttle_isolated(pg_data_t *pgdat)
+{
+    wait_queue_head_t *wqh;
+
+    wqh = &pgdat->reclaim_wait[VMSCAN_THROTTLE_ISOLATED];
+    if (waitqueue_active(wqh))
+        wake_up(wqh);
+}
+
+void mlock_page_drain_local(void);
+void mlock_page_drain_remote(int cpu);
+
 #endif  /* __MM_INTERNAL_H */

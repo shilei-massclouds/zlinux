@@ -407,9 +407,25 @@ int __bio_queue_enter(struct request_queue *q, struct bio *bio)
     panic("%s: END!\n", __func__);
 }
 
+static void flush_plug_callbacks(struct blk_plug *plug, bool from_schedule)
+{
+    LIST_HEAD(callbacks);
+
+    while (!list_empty(&plug->cb_list)) {
+        list_splice_init(&plug->cb_list, &callbacks);
+
+        while (!list_empty(&callbacks)) {
+            struct blk_plug_cb *cb = list_first_entry(&callbacks,
+                                                      struct blk_plug_cb,
+                                                      list);
+            list_del(&cb->list);
+            cb->callback(cb, from_schedule);
+        }
+    }
+}
+
 void __blk_flush_plug(struct blk_plug *plug, bool from_schedule)
 {
-#if 0
     if (!list_empty(&plug->cb_list))
         flush_plug_callbacks(plug, from_schedule);
     if (!rq_list_empty(plug->mq_list))
@@ -422,8 +438,6 @@ void __blk_flush_plug(struct blk_plug *plug, bool from_schedule)
      */
     if (unlikely(!rq_list_empty(plug->cached_rq)))
         blk_mq_free_plug_rqs(plug);
-#endif
-    panic("%s: END!\n", __func__);
 }
 
 /**
@@ -712,3 +726,77 @@ int __init blk_dev_init(void)
 
     return 0;
 }
+
+void blk_start_plug_nr_ios(struct blk_plug *plug, unsigned short nr_ios)
+{
+    struct task_struct *tsk = current;
+
+    /*
+     * If this is a nested plug, don't actually assign it.
+     */
+    if (tsk->plug)
+        return;
+
+    plug->mq_list = NULL;
+    plug->cached_rq = NULL;
+    plug->nr_ios = min_t(unsigned short, nr_ios, BLK_MAX_REQUEST_COUNT);
+    plug->rq_count = 0;
+    plug->multiple_queues = false;
+    plug->has_elevator = false;
+    plug->nowait = false;
+    INIT_LIST_HEAD(&plug->cb_list);
+
+    /*
+     * Store ordering should not be needed here, since a potential
+     * preempt will imply a full memory barrier
+     */
+    tsk->plug = plug;
+}
+
+/**
+ * blk_start_plug - initialize blk_plug and track it inside the task_struct
+ * @plug:   The &struct blk_plug that needs to be initialized
+ *
+ * Description:
+ *   blk_start_plug() indicates to the block layer an intent by the caller
+ *   to submit multiple I/O requests in a batch.  The block layer may use
+ *   this hint to defer submitting I/Os from the caller until blk_finish_plug()
+ *   is called.  However, the block layer may choose to submit requests
+ *   before a call to blk_finish_plug() if the number of queued I/Os
+ *   exceeds %BLK_MAX_REQUEST_COUNT, or if the size of the I/O is larger than
+ *   %BLK_PLUG_FLUSH_SIZE.  The queued I/Os may also be submitted early if
+ *   the task schedules (see below).
+ *
+ *   Tracking blk_plug inside the task_struct will help with auto-flushing the
+ *   pending I/O should the task end up blocking between blk_start_plug() and
+ *   blk_finish_plug(). This is important from a performance perspective, but
+ *   also ensures that we don't deadlock. For instance, if the task is blocking
+ *   for a memory allocation, memory reclaim could end up wanting to free a
+ *   page belonging to that request that is currently residing in our private
+ *   plug. By flushing the pending I/O when the process goes to sleep, we avoid
+ *   this kind of deadlock.
+ */
+void blk_start_plug(struct blk_plug *plug)
+{
+    blk_start_plug_nr_ios(plug, 1);
+}
+EXPORT_SYMBOL(blk_start_plug);
+
+/**
+ * blk_finish_plug - mark the end of a batch of submitted I/O
+ * @plug:   The &struct blk_plug passed to blk_start_plug()
+ *
+ * Description:
+ * Indicate that a batch of I/O submissions is complete.  This function
+ * must be paired with an initial call to blk_start_plug().  The intent
+ * is to allow the block layer to optimize I/O submission.  See the
+ * documentation for blk_start_plug() for more information.
+ */
+void blk_finish_plug(struct blk_plug *plug)
+{
+    if (plug == current->plug) {
+        __blk_flush_plug(plug, false);
+        current->plug = NULL;
+    }
+}
+EXPORT_SYMBOL(blk_finish_plug);

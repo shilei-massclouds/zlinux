@@ -250,4 +250,6 @@ alloc_page_buffers(struct page *page, unsigned long size, bool retry);
 
 void create_empty_buffers(struct page *, unsigned long, unsigned long b_state);
 
+extern int buffer_heads_over_limit;
+
 #endif /* _LINUX_BUFFER_HEAD_H */
