@@ -1553,7 +1553,6 @@ __rmqueue(struct zone *zone, unsigned int order,
 
 retry:
     page = __rmqueue_smallest(zone, order, migratetype);
-    pr_info("%s: page(%lx)\n", __func__, page);
     if (unlikely(!page)) {
         if (!page && __rmqueue_fallback(zone, order, migratetype, alloc_flags))
             goto retry;
@@ -1700,7 +1699,6 @@ rmqueue_bulk(struct zone *zone, unsigned int order,
     spin_lock(&zone->lock);
     for (i = 0; i < count; ++i) {
         struct page *page = __rmqueue(zone, order, migratetype, alloc_flags);
-        pr_info("%s: page(%lx)\n", __func__, page);
         if (unlikely(page == NULL))
             break;
 
@@ -1768,10 +1766,6 @@ __rmqueue_pcplist(struct zone *zone, unsigned int order,
         page = list_first_entry(list, struct page, lru);
         list_del(&page->lru);
         pcp->count -= 1 << order;
-        pr_info("%s: list(%lx) (%lx) PagePrivate(%d)\n",
-                __func__, list, page, page_has_buffers(page));
-        if (page_has_buffers(page))
-            pr_info("+++ %s: 2 buf(%lx)\n", __func__, page_buffers(page));
     } while (check_new_pcp(page));
 
     return page;
@@ -2158,7 +2152,20 @@ zone_watermark_fast(struct zone *z, unsigned int order,
                             free_pages))
         return true;
 
-    panic("%s: zone(%s) free_pages(%ld) END!\n", __func__, z->name, free_pages);
+    /*
+     * Ignore watermark boosting for GFP_ATOMIC order-0 allocations
+     * when checking the min watermark. The min watermark is the
+     * point where boosting is ignored so that kswapd is woken up
+     * when below the low watermark.
+     */
+    if (unlikely(!order && (gfp_mask & __GFP_ATOMIC) && z->watermark_boost &&
+                 ((alloc_flags & ALLOC_WMARK_MASK) == WMARK_MIN))) {
+        mark = z->_watermark[WMARK_MIN];
+        return __zone_watermark_ok(z, order, mark, highest_zoneidx,
+                                   alloc_flags, free_pages);
+    }
+
+    return false;
 }
 
 /*
@@ -2219,9 +2226,15 @@ retry:
         mark = wmark_pages(zone, alloc_flags & ALLOC_WMARK_MASK);
         if (!zone_watermark_fast(zone, order, mark, ac->highest_zoneidx,
                                  alloc_flags, gfp_mask)) {
-            panic("%s: mark(%u)\n", __func__, mark);
+            int ret;
+
+            /* Checked here to keep the fast path fast */
+            BUILD_BUG_ON(ALLOC_NO_WATERMARKS < NR_WMARK);
+            if (alloc_flags & ALLOC_NO_WATERMARKS)
+                goto try_this_zone;
         }
 
+     try_this_zone:
         page = rmqueue(ac->preferred_zoneref->zone, zone, order,
                        gfp_mask, alloc_flags, ac->migratetype);
         if (page) {
@@ -2741,6 +2754,30 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
         goto retry;
 #endif
 
+#if 0
+    /* Deal with possible cpuset update races before we start OOM killing */
+    if (check_retry_cpuset(cpuset_mems_cookie, ac))
+        goto retry_cpuset;
+#endif
+
+#if 0
+    /* Reclaim has failed us, start killing things */
+    page = __alloc_pages_may_oom(gfp_mask, order, ac, &did_some_progress);
+    if (page)
+        goto got_pg;
+#endif
+
+    /* Avoid allocations with no watermarks from looping endlessly */
+    if (tsk_is_oom_victim(current) &&
+        (alloc_flags & ALLOC_OOM || (gfp_mask & __GFP_NOMEMALLOC)))
+        goto nopage;
+
+    /* Retry as long as the OOM killer is making progress */
+    if (did_some_progress) {
+        no_progress_loops = 0;
+        goto retry;
+    }
+
     panic("%s: END 1!\n", __func__);
 
  nopage:
@@ -2808,12 +2845,6 @@ __alloc_pages(gfp_t gfp, unsigned int order, int preferred_nid,
 
     /* First allocation attempt */
     page = get_page_from_freelist(alloc_gfp, order, alloc_flags, &ac);
-    pr_info("%s: (%lx) PagePrivate(%d)\n",
-            __func__, page, page_has_buffers(page));
-
-    if (page_has_buffers(page))
-        pr_info("%s: buf(%lx)\n", __func__, page_buffers(page));
-
     if (likely(page))
         goto out;
 

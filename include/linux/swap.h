@@ -13,8 +13,10 @@
 #include <linux/pagemap.h>
 #include <linux/atomic.h>
 #include <linux/page-flags.h>
-//#include <uapi/linux/mempolicy.h>
+#include <uapi/linux/mempolicy.h>
 #include <asm/page.h>
+
+#define node_reclaim_mode 0
 
 /*
  * current->reclaim_state points to one of these when a task is running
@@ -178,6 +180,12 @@ static inline bool mem_cgroup_swap_full(struct page *page)
 {
     //return vm_swap_full();
     panic("%s: END!\n", __func__);
+}
+
+static inline bool node_reclaim_enabled(void)
+{
+    /* Is any node_reclaim_mode bit set? */
+    return node_reclaim_mode & (RECLAIM_ZONE|RECLAIM_WRITE|RECLAIM_UNMAP);
 }
 
 #endif /* __KERNEL__*/

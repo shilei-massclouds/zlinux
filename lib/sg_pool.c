@@ -24,6 +24,28 @@ static struct sg_pool sg_pools[] = {
 };
 #undef SP
 
+static inline unsigned int sg_pool_index(unsigned short nents)
+{
+    unsigned int index;
+
+    BUG_ON(nents > SG_CHUNK_SIZE);
+
+    if (nents <= 8)
+        index = 0;
+    else
+        index = get_count_order(nents) - 3;
+
+    return index;
+}
+
+static void sg_pool_free(struct scatterlist *sgl, unsigned int nents)
+{
+    struct sg_pool *sgp;
+
+    sgp = sg_pools + sg_pool_index(nents);
+    mempool_free(sgl, sgp->pool);
+}
+
 /**
  * sg_free_table_chained - Free a previously mapped sg table
  * @table:  The sg table header to use
@@ -43,30 +65,13 @@ void sg_free_table_chained(struct sg_table *table, unsigned nents_first_chunk)
     if (table->orig_nents <= nents_first_chunk)
         return;
 
-#if 0
     if (nents_first_chunk == 1)
         nents_first_chunk = 0;
 
     __sg_free_table(table, SG_CHUNK_SIZE, nents_first_chunk, sg_pool_free,
                     table->orig_nents);
-#endif
-    panic("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL_GPL(sg_free_table_chained);
-
-static inline unsigned int sg_pool_index(unsigned short nents)
-{
-    unsigned int index;
-
-    BUG_ON(nents > SG_CHUNK_SIZE);
-
-    if (nents <= 8)
-        index = 0;
-    else
-        index = get_count_order(nents) - 3;
-
-    return index;
-}
 
 static struct scatterlist *sg_pool_alloc(unsigned int nents, gfp_t gfp_mask)
 {

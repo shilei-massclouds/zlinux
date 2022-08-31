@@ -256,7 +256,15 @@ static bool allow_direct_reclaim(pg_data_t *pgdat)
         return true;
 
     wmark_ok = free_pages > pfmemalloc_reserve / 2;
-    panic("%s: END!\n", __func__);
+    /* kswapd must be awake if processes are being throttled */
+    if (!wmark_ok && waitqueue_active(&pgdat->kswapd_wait)) {
+        if (READ_ONCE(pgdat->kswapd_highest_zoneidx) > ZONE_NORMAL)
+            WRITE_ONCE(pgdat->kswapd_highest_zoneidx, ZONE_NORMAL);
+
+        wake_up_interruptible(&pgdat->kswapd_wait);
+    }
+
+    return wmark_ok;
 }
 
 /*
@@ -320,7 +328,35 @@ static bool throttle_direct_reclaim(gfp_t gfp_mask, struct zonelist *zonelist,
         break;
     }
 
-    panic("%s: END!\n", __func__);
+    /* If no zone was usable by the allocation flags then do not throttle */
+    if (!pgdat)
+        goto out;
+
+    /* Account for the throttling */
+    //count_vm_event(PGSCAN_DIRECT_THROTTLE);
+
+#if 0
+    /*
+     * If the caller cannot enter the filesystem, it's possible that it
+     * is due to the caller holding an FS lock or performing a journal
+     * transaction in the case of a filesystem like ext[3|4]. In this case,
+     * it is not safe to block on pfmemalloc_wait as kswapd could be
+     * blocked waiting on the same lock. Instead, throttle for up to a
+     * second before continuing.
+     */
+    if (!(gfp_mask & __GFP_FS))
+        wait_event_interruptible_timeout(pgdat->pfmemalloc_wait,
+                                         allow_direct_reclaim(pgdat), HZ);
+    else
+        /* Throttle until kswapd wakes the process */
+        wait_event_killable(zone->zone_pgdat->pfmemalloc_wait,
+                            allow_direct_reclaim(pgdat));
+#endif
+
+#if 0
+    if (fatal_signal_pending(current))
+        return true;
+#endif
 
  out:
     return false;

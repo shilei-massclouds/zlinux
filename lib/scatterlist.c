@@ -156,3 +156,61 @@ int __sg_alloc_table(struct sg_table *table, unsigned int nents,
 
     return 0;
 }
+
+/**
+ * __sg_free_table - Free a previously mapped sg table
+ * @table:  The sg table header to use
+ * @max_ents:   The maximum number of entries per single scatterlist
+ * @nents_first_chunk: Number of entries int the (preallocated) first
+ *  scatterlist chunk, 0 means no such preallocated first chunk
+ * @free_fn:    Free function
+ * @num_ents:   Number of entries in the table
+ *
+ *  Description:
+ *    Free an sg table previously allocated and setup with
+ *    __sg_alloc_table().  The @max_ents value must be identical to
+ *    that previously used with __sg_alloc_table().
+ *
+ **/
+void __sg_free_table(struct sg_table *table, unsigned int max_ents,
+                     unsigned int nents_first_chunk, sg_free_fn *free_fn,
+                     unsigned int num_ents)
+{
+    struct scatterlist *sgl, *next;
+    unsigned curr_max_ents = nents_first_chunk ?: max_ents;
+
+    if (unlikely(!table->sgl))
+        return;
+
+    sgl = table->sgl;
+    while (num_ents) {
+        unsigned int alloc_size = num_ents;
+        unsigned int sg_size;
+
+        /*
+         * If we have more than max_ents segments left,
+         * then assign 'next' to the sg table after the current one.
+         * sg_size is then one less than alloc size, since the last
+         * element is the chain pointer.
+         */
+        if (alloc_size > curr_max_ents) {
+            next = sg_chain_ptr(&sgl[curr_max_ents - 1]);
+            alloc_size = curr_max_ents;
+            sg_size = alloc_size - 1;
+        } else {
+            sg_size = alloc_size;
+            next = NULL;
+        }
+
+        num_ents -= sg_size;
+        if (nents_first_chunk)
+            nents_first_chunk = 0;
+        else
+            free_fn(sgl, alloc_size);
+        sgl = next;
+        curr_max_ents = max_ents;
+    }
+
+    table->sgl = NULL;
+}
+EXPORT_SYMBOL(__sg_free_table);

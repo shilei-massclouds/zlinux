@@ -774,7 +774,7 @@ static inline void put_page(struct page *page)
 {
     struct folio *folio = page_folio(page);
 
-    pr_info("%s: page(%lx)\n", __func__, &folio->page);
+    //pr_info("%s: page(%lx)\n", __func__, &folio->page);
     /*
      * For some devmap managed pages we need to catch refcount transition
      * from 2 to 1:
