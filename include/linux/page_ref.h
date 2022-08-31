@@ -57,8 +57,25 @@ static inline int page_ref_dec_and_test(struct page *page)
     return atomic_dec_and_test(&page->_refcount);
 }
 
+static inline bool page_ref_add_unless(struct page *page, int nr, int u)
+{
+    bool ret = atomic_add_unless(&page->_refcount, nr, u);
+
+    return ret;
+}
+
+static inline bool folio_ref_add_unless(struct folio *folio, int nr, int u)
+{
+    return page_ref_add_unless(&folio->page, nr, u);
+}
+
 static inline bool folio_ref_try_add_rcu(struct folio *folio, int count)
 {
+    if (unlikely(!folio_ref_add_unless(folio, count, 0))) {
+        /* Either the folio has been freed, or will be freed. */
+        return false;
+    }
+
     return true;
 }
 

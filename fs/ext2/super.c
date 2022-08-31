@@ -514,10 +514,12 @@ static int ext2_fill_super(struct super_block *sb, void *data, int silent)
         logic_sb_block = sb_block;
     }
 
+    pr_info("%s: before sb_bread !\n", __func__);
     if (!(bh = sb_bread(sb, logic_sb_block))) {
         ext2_msg(sb, KERN_ERR, "error: unable to read superblock");
         goto failed_sbi;
     }
+    pr_info("%s: after sb_bread bh(%lx) (%lx) !\n", __func__, bh, bh->b_page);
     /*
      * Note: s_es must be initialized as soon as possible because
      *       some ext2 macro-instructions depend on its value

@@ -193,9 +193,6 @@ static inline void __count_vm_event(enum vm_event_item item)
 static inline void __count_vm_events(enum vm_event_item item, long delta)
 {
     raw_cpu_add(vm_event_states.event[item], delta);
-    if (item == PGFREE)
-        pr_info("%s: PGFREE 1(%u)\n", __func__,
-                raw_cpu_read(vm_event_states.event[item]));
 }
 
 void refresh_zone_stat_thresholds(void);

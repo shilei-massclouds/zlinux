@@ -1553,6 +1553,7 @@ __rmqueue(struct zone *zone, unsigned int order,
 
 retry:
     page = __rmqueue_smallest(zone, order, migratetype);
+    pr_info("%s: page(%lx)\n", __func__, page);
     if (unlikely(!page)) {
         if (!page && __rmqueue_fallback(zone, order, migratetype, alloc_flags))
             goto retry;
@@ -1699,6 +1700,7 @@ rmqueue_bulk(struct zone *zone, unsigned int order,
     spin_lock(&zone->lock);
     for (i = 0; i < count; ++i) {
         struct page *page = __rmqueue(zone, order, migratetype, alloc_flags);
+        pr_info("%s: page(%lx)\n", __func__, page);
         if (unlikely(page == NULL))
             break;
 
@@ -1766,6 +1768,10 @@ __rmqueue_pcplist(struct zone *zone, unsigned int order,
         page = list_first_entry(list, struct page, lru);
         list_del(&page->lru);
         pcp->count -= 1 << order;
+        pr_info("%s: list(%lx) (%lx) PagePrivate(%d)\n",
+                __func__, list, page, page_has_buffers(page));
+        if (page_has_buffers(page))
+            pr_info("+++ %s: 2 buf(%lx)\n", __func__, page_buffers(page));
     } while (check_new_pcp(page));
 
     return page;
@@ -1877,7 +1883,7 @@ struct page *rmqueue(struct zone *preferred_zone, struct zone *zone,
 }
 
 static void
-kernel_init_free_pages(struct page *page, int numpages, bool zero_tags)
+kernel_init_free_pages(struct page *page, int numpages)
 {
     int i;
 
@@ -1885,14 +1891,23 @@ kernel_init_free_pages(struct page *page, int numpages, bool zero_tags)
         clear_highpage(page + i);
 }
 
+static inline bool should_skip_init(gfp_t flags)
+{
+    return false;
+}
+
 inline void
 post_alloc_hook(struct page *page, unsigned int order, gfp_t gfp_flags)
 {
+    bool init = !want_init_on_free() && want_init_on_alloc(gfp_flags) &&
+        !should_skip_init(gfp_flags);
+
     set_page_private(page, 0);
     set_page_refcounted(page);
 
-    if (want_init_on_alloc(gfp_flags))
-        kernel_init_free_pages(page, 1 << order, gfp_flags & __GFP_ZEROTAGS);
+    /* If memory is still not initialized, do it now. */
+    if (init)
+        kernel_init_free_pages(page, 1 << order);
 }
 
 void prep_compound_page(struct page *page, unsigned int order)
@@ -2793,6 +2808,12 @@ __alloc_pages(gfp_t gfp, unsigned int order, int preferred_nid,
 
     /* First allocation attempt */
     page = get_page_from_freelist(alloc_gfp, order, alloc_flags, &ac);
+    pr_info("%s: (%lx) PagePrivate(%d)\n",
+            __func__, page, page_has_buffers(page));
+
+    if (page_has_buffers(page))
+        pr_info("%s: buf(%lx)\n", __func__, page_buffers(page));
+
     if (likely(page))
         goto out;
 
@@ -3605,8 +3626,7 @@ static void free_pcppages_bulk(struct zone *zone, int count,
 }
 
 static void
-free_unref_page_commit(struct page *page, int migratetype,
-                       unsigned int order)
+free_unref_page_commit(struct page *page, int migratetype, unsigned int order)
 {
     struct zone *zone = page_zone(page);
     struct per_cpu_pages *pcp;
@@ -4264,6 +4284,10 @@ void free_unref_page_list(struct list_head *list)
             migratetype = MIGRATE_MOVABLE;
 
         free_unref_page_commit(page, migratetype, 0);
+
+        pr_info("%s: 2 formal page(%lx)\n", __func__, page);
+        if (page_has_buffers(page))
+            pr_info("+++ %s: 2 buf(%lx)\n", __func__, page_buffers(page));
 
         /*
          * Guard against excessive IRQ disabled times when we get

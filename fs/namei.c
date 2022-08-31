@@ -1469,7 +1469,45 @@ EXPORT_SYMBOL(inode_permission);
  */
 int do_unlinkat(int dfd, struct filename *name)
 {
-    pr_warn("%s: NO do_unlinkat!\n", __func__);
+#if 0
+    int error;
+    struct dentry *dentry;
+    struct path path;
+    struct qstr last;
+    int type;
+    struct inode *inode = NULL;
+    struct inode *delegated_inode = NULL;
+    unsigned int lookup_flags = 0;
+
+ retry:
+    error = filename_parentat(dfd, name, lookup_flags, &path, &last, &type);
+    if (error)
+        goto exit1;
+
+    error = -EISDIR;
+    if (type != LAST_NORM)
+        goto exit2;
+
+    error = mnt_want_write(path.mnt);
+    if (error)
+        goto exit2;
+
+    panic("%s: name(%s) NO do_unlinkat!\n", __func__, name->name);
+
+ exit2:
+    path_put(&path);
+    if (retry_estale(error, lookup_flags)) {
+        lookup_flags |= LOOKUP_REVAL;
+        inode = NULL;
+        goto retry;
+    }
+ exit1:
+    putname(name);
+    return error;
+#else
+    pr_warn("%s: no implementation!\n", __func__);
+    return 0;
+#endif
 }
 
 bool may_open_dev(const struct path *path)

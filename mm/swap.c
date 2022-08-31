@@ -227,6 +227,8 @@ void release_pages(struct page **pages, int nr)
             panic("%s: PageMlocked!\n", __func__);
         }
 
+        pr_info("====== %s: page(%lx) ref(%d)\n",
+                __func__, &folio->page, folio->page._refcount);
         list_add(&page->lru, &pages_to_free);
     }
     if (lruvec)
@@ -253,7 +255,9 @@ void __pagevec_lru_add(struct pagevec *pvec)
     }
     if (lruvec)
         unlock_page_lruvec_irqrestore(lruvec, flags);
+    pr_info("-------------- %s: 1\n", __func__);
     release_pages(pvec->pages, pvec->nr);
+    pr_info("-------------- %s: 2\n", __func__);
     pagevec_reinit(pvec);
 }
 
@@ -288,6 +292,7 @@ void folio_add_lru(struct folio *folio)
     folio_get(folio);
     local_lock(&lru_pvecs.lock);
     pvec = this_cpu_ptr(&lru_pvecs.lru_add);
+    pr_info("====== %s: %d\n", __func__, folio->page._refcount);
     if (pagevec_add_and_need_flush(pvec, &folio->page))
         __pagevec_lru_add(pvec);
     local_unlock(&lru_pvecs.lock);
@@ -442,6 +447,7 @@ void __pagevec_release(struct pagevec *pvec)
         lru_add_drain();
         pvec->percpu_pvec_drained = true;
     }
+
     release_pages(pvec->pages, pagevec_count(pvec));
     pagevec_reinit(pvec);
 }

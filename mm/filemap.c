@@ -773,6 +773,13 @@ __filemap_add_folio(struct address_space *mapping,
     int huge = folio_test_hugetlb(folio);
     long nr = 1;
 
+    pr_info("%s: 1\n", __func__);
+
+#if 0
+    pr_info("%s: PagePrivate(%d) (%lx)\n",
+            __func__, page_has_buffers(&folio->page),
+            page_buffers(&folio->page));
+#endif
     VM_BUG_ON_FOLIO(!folio_test_locked(folio), folio);
     VM_BUG_ON_FOLIO(folio_test_swapbacked(folio), folio);
     mapping_set_update(&xas, mapping);
@@ -838,6 +845,7 @@ int filemap_add_folio(struct address_space *mapping, struct folio *folio,
 
     __folio_set_locked(folio);
     ret = __filemap_add_folio(mapping, folio, index, gfp, &shadow);
+    pr_info("####### %s: 0 ref(%d)\n", __func__, folio->page._refcount);
     if (unlikely(ret)) {
         __folio_clear_locked(folio);
     } else {
@@ -852,7 +860,11 @@ int filemap_add_folio(struct address_space *mapping, struct folio *folio,
         WARN_ON_ONCE(folio_test_active(folio));
         if (!(gfp & __GFP_WRITE) && shadow)
             workingset_refault(folio, shadow);
+        pr_info("####### %s: 1 (%lx) ref(%d)\n",
+                __func__, &folio->page, folio->page._refcount);
         folio_add_lru(folio);
+        pr_info("####### %s: 2 (%lx) ref(%d)\n",
+                __func__, &folio->page, folio->page._refcount);
     }
     return ret;
 }
@@ -1071,7 +1083,10 @@ __filemap_get_folio(struct address_space *mapping, pgoff_t index,
         if (fgp_flags & FGP_ACCESSED)
             __folio_set_referenced(folio);
 
+        pr_info("####### %s: 1 ref(%d)\n", __func__, folio->page._refcount);
         err = filemap_add_folio(mapping, folio, index, gfp);
+        pr_info("####### %s: 2 page(%lx) ref(%d)\n",
+                __func__, &folio->page, folio->page._refcount);
         if (unlikely(err)) {
             folio_put(folio);
             folio = NULL;
@@ -2149,6 +2164,7 @@ ssize_t filemap_read(struct kiocb *iocb, struct iov_iter *iter,
 
     file_accessed(filp);
 
+    pr_info("####### %s: 3\n", __func__);
     return already_read ? already_read : error;
 }
 

@@ -59,4 +59,20 @@ static inline int user_path_at(int dfd, const char __user *name, unsigned flags,
 
 extern int kern_path(const char *, unsigned, struct path *);
 
+/**
+ * retry_estale - determine whether the caller should retry an operation
+ * @error: the error that would currently be returned
+ * @flags: flags being used for next lookup attempt
+ *
+ * Check to see if the error code was -ESTALE, and then determine whether
+ * to retry the call based on whether "flags" already has LOOKUP_REVAL set.
+ *
+ * Returns true if the caller should try the operation again.
+ */
+static inline bool
+retry_estale(const long error, const unsigned int flags)
+{
+    return error == -ESTALE && !(flags & LOOKUP_REVAL);
+}
+
 #endif /* _LINUX_NAMEI_H */

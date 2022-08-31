@@ -397,6 +397,7 @@ static void evict(struct inode *inode)
     if (op->evict_inode) {
         op->evict_inode(inode);
     } else {
+        pr_info("!!!!!! %s: __func__\n", __func__);
         truncate_inode_pages_final(&inode->i_data);
         clear_inode(inode);
     }

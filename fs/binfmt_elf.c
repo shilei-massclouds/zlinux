@@ -893,6 +893,8 @@ static int load_elf_binary(struct linux_binprm *bprm)
             panic("%s: (elf_brk > elf_bss)!\n", __func__);
         }
 
+        pr_info("%s: 2 filename(%s)\n", __func__, bprm->filename);
+
         elf_prot = make_prot(elf_ppnt->p_flags, &arch_state,
                              !!interpreter, false);
 
@@ -988,7 +990,7 @@ static int load_elf_binary(struct linux_binprm *bprm)
             }
         }
 
-        pr_info("%s: 2 filename(%s)\n", __func__, bprm->filename);
+        pr_info("%s: 3 filename(%s)\n", __func__, bprm->filename);
         error = elf_map(bprm->file, load_bias + vaddr, elf_ppnt,
                         elf_prot, elf_flags, total_size);
         if (BAD_ADDR(error)) {

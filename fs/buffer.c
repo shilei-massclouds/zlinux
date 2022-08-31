@@ -287,6 +287,7 @@ EXPORT_SYMBOL(alloc_buffer_head);
 
 void free_buffer_head(struct buffer_head *bh)
 {
+    pr_info("%s: bh(%lx)\n", __func__, bh);
     BUG_ON(!list_empty(&bh->b_assoc_buffers));
     kmem_cache_free(bh_cachep, bh);
     preempt_disable();
@@ -327,6 +328,7 @@ alloc_page_buffers(struct page *page, unsigned long size, bool retry)
     gfp_t gfp = GFP_NOFS | __GFP_ACCOUNT;
     long offset;
 
+    pr_info("%s: page(%lx)\n", __func__, page);
     if (retry)
         gfp |= __GFP_NOFAIL;
 
@@ -737,6 +739,7 @@ lookup_bh_lru(struct block_device *bdev, sector_t block, unsigned size)
     struct buffer_head *ret = NULL;
     unsigned int i;
 
+    pr_info("####### %s: 1\n", __func__);
     check_irqs_on();
     bh_lru_lock();
     for (i = 0; i < BH_LRU_SIZE; i++) {
@@ -795,6 +798,9 @@ __find_get_block_slow(struct block_device *bdev, sector_t block)
     page = find_get_page_flags(bd_mapping, index, FGP_ACCESSED);
     if (!page)
         goto out;
+
+    pr_info("####### %s: 1 (%lx) ref(%d)\n",
+            __func__, page, page->_refcount);
 
     spin_lock(&bd_mapping->private_lock);
     if (!page_has_buffers(page))
@@ -885,14 +891,19 @@ __find_get_block(struct block_device *bdev, sector_t block, unsigned size)
 {
     struct buffer_head *bh = lookup_bh_lru(bdev, block, size);
 
+    pr_info("####### %s: 1\n", __func__);
     if (bh == NULL) {
         /* __find_get_block_slow will mark the page accessed */
         bh = __find_get_block_slow(bdev, block);
+        if (bh && bh->b_page)
+            pr_info("####### %s: 1.5 (%lx) ref(%d)\n",
+                    __func__, bh->b_page, bh->b_page->_refcount);
         if (bh)
             bh_lru_install(bh);
     } else
         touch_buffer(bh);
 
+    pr_info("####### %s: 2\n", __func__);
     return bh;
 }
 EXPORT_SYMBOL(__find_get_block);
@@ -1064,6 +1075,8 @@ link_dev_buffers(struct page *page, struct buffer_head *head)
         bh = bh->b_this_page;
     } while (bh);
     tail->b_this_page = head;
+    pr_info("++++++ %s: page(%lx) head(%lx) ref(%d)\n",
+            __func__, page, head, page->_refcount);
     attach_page_private(page, head);
 }
 
@@ -1099,6 +1112,7 @@ grow_dev_page(struct block_device *bdev, sector_t block,
 
     if (page_has_buffers(page)) {
         bh = page_buffers(page);
+        pr_info("####### %s: bh(%lx)\n", __func__, bh);
         if (bh->b_size == size) {
             end_block = init_page_buffers(page, bdev,
                                           (sector_t)index << sizebits, size);
@@ -1112,6 +1126,8 @@ grow_dev_page(struct block_device *bdev, sector_t block,
      * Allocate some buffers for this page
      */
     bh = alloc_page_buffers(page, size, true);
+    pr_info("++++++ %s: 1 page(%lx) ref(%d)\n",
+            __func__, page, page->_refcount);
 
     /*
      * Link the page to the buffers and initialise them.  Take the
@@ -1123,6 +1139,8 @@ grow_dev_page(struct block_device *bdev, sector_t block,
     end_block = init_page_buffers(page, bdev,
                                   (sector_t)index << sizebits, size);
     spin_unlock(&inode->i_mapping->private_lock);
+    pr_info("++++++ %s: 2 page(%lx) ref(%d)\n",
+            __func__, page, page->_refcount);
  done:
     ret = (block < end_block) ? 1 : -ENXIO;
  failed:
@@ -1165,11 +1183,10 @@ __getblk_slow(struct block_device *bdev, sector_t block,
 {
     /* Size must be multiple of hard sectorsize */
     if (unlikely(size & (bdev_logical_block_size(bdev)-1) ||
-            (size < 512 || size > PAGE_SIZE))) {
-        printk(KERN_ERR "getblk(): invalid block size %d requested\n",
-                    size);
+                 (size < 512 || size > PAGE_SIZE))) {
+        printk(KERN_ERR "getblk(): invalid block size %d requested\n", size);
         printk(KERN_ERR "logical block size: %d\n",
-                    bdev_logical_block_size(bdev));
+               bdev_logical_block_size(bdev));
 
         //dump_stack();
         return NULL;
@@ -1183,7 +1200,9 @@ __getblk_slow(struct block_device *bdev, sector_t block,
         if (bh)
             return bh;
 
+        pr_info("++++++ %s: 1\n", __func__);
         ret = grow_buffers(bdev, block, size, gfp);
+        pr_info("++++++ %s: 2\n", __func__);
         if (ret < 0)
             return NULL;
     }
@@ -1203,9 +1222,11 @@ __getblk_gfp(struct block_device *bdev, sector_t block,
 {
     struct buffer_head *bh = __find_get_block(bdev, block, size);
 
+    pr_info("####### %s: 1\n", __func__);
     might_sleep();
     if (bh == NULL)
         bh = __getblk_slow(bdev, block, size, gfp);
+    pr_info("####### %s: 2\n", __func__);
     return bh;
 }
 EXPORT_SYMBOL(__getblk_gfp);
@@ -1275,8 +1296,10 @@ __bread_gfp(struct block_device *bdev, sector_t block, unsigned size, gfp_t gfp)
 {
     struct buffer_head *bh = __getblk_gfp(bdev, block, size, gfp);
 
+    pr_info("####### %s: 1\n", __func__);
     if (likely(bh) && !buffer_uptodate(bh))
         bh = __bread_slow(bh);
+    pr_info("####### %s: 2\n", __func__);
     return bh;
 }
 EXPORT_SYMBOL(__bread_gfp);
