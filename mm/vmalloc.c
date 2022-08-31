@@ -18,10 +18,10 @@
 #include <linux/interrupt.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
-#include <linux/set_memory.h>
 #include <linux/debugobjects.h>
 #include <linux/kallsyms.h>
 #endif
+#include <linux/set_memory.h>
 #include <linux/list.h>
 //#include <linux/notifier.h>
 #include <linux/rbtree.h>

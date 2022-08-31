@@ -12,16 +12,16 @@
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/sysfs.h>
-#if 0
 #include <linux/extable.h>
+#include <linux/vmalloc.h>
+#include <linux/elf.h>
+#if 0
 #include <linux/moduleloader.h>
 #include <linux/module_signature.h>
 #include <linux/kallsyms.h>
 #include <linux/buildid.h>
 #include <linux/file.h>
 #include <linux/kernel_read_file.h>
-#include <linux/vmalloc.h>
-#include <linux/elf.h>
 #include <linux/proc_fs.h>
 #include <linux/security.h>
 #include <linux/seq_file.h>
@@ -42,7 +42,6 @@
 #include <linux/rculist.h>
 #include <linux/uaccess.h>
 #include <asm/cacheflush.h>
-#include <linux/set_memory.h>
 #include <asm/mmu_context.h>
 #include <linux/license.h>
 #include <asm/sections.h>
@@ -52,14 +51,16 @@
 #include <linux/async.h>
 #include <linux/percpu.h>
 #include <linux/jump_label.h>
-#include <linux/pfn.h>
 #include <linux/bsearch.h>
 #include <linux/dynamic_debug.h>
 #include <linux/audit.h>
 #include <uapi/linux/module.h>
 #include "module-internal.h"
 #endif
+#include <linux/pfn.h>
 #include <linux/module.h>
+#include <linux/mm.h>
+#include <linux/set_memory.h>
 
 static struct mod_tree_root {
     struct latch_tree_root root;

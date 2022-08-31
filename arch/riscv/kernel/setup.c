@@ -15,6 +15,7 @@
 //#include <asm/cpu_ops.h>
 #include <asm/pgtable.h>
 #include <asm/setup.h>
+#include <asm/set_memory.h>
 #include <asm/sections.h>
 #include <asm/sbi.h>
 #include <asm/tlbflush.h>
@@ -82,4 +83,12 @@ void __init setup_arch(char **cmdline_p)
 #if 0
     riscv_fill_hwcap();
 #endif
+}
+
+void free_initmem(void)
+{
+    set_kernel_memory(lm_alias(__init_begin), lm_alias(__init_end),
+                      set_memory_rw);
+
+    free_initmem_default(POISON_FREE_INITMEM);
 }

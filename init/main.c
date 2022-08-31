@@ -361,6 +361,7 @@ static int __ref kernel_init(void *unused)
 #endif
 
     system_state = SYSTEM_FREEING_INITMEM;
+    free_initmem();
 
     /* */
 

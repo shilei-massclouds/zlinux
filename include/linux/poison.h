@@ -18,4 +18,7 @@
 
 #define TAIL_MAPPING    ((void *) 0x400 + POISON_POINTER_DELTA)
 
+/********** arch/$ARCH/mm/init.c **********/
+#define POISON_FREE_INITMEM 0xcc
+
 #endif /* _LINUX_POISON_H */

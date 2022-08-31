@@ -4572,3 +4572,46 @@ int __meminit init_per_zone_wmark_min(void)
     return 0;
 }
 postcore_initcall(init_per_zone_wmark_min)
+
+unsigned long free_reserved_area(void *start, void *end, int poison,
+                                 const char *s)
+{
+    void *pos;
+    unsigned long pages = 0;
+
+    start = (void *)PAGE_ALIGN((unsigned long)start);
+    end = (void *)((unsigned long)end & PAGE_MASK);
+    for (pos = start; pos < end; pos += PAGE_SIZE, pages++) {
+        struct page *page = virt_to_page(pos);
+        void *direct_map_addr;
+
+        /*
+         * 'direct_map_addr' might be different from 'pos'
+         * because some architectures' virt_to_page()
+         * work with aliases.  Getting the direct map
+         * address ensures that we get a _writeable_
+         * alias for the memset().
+         */
+        direct_map_addr = page_address(page);
+        /*
+         * Perform a kasan-unchecked memset() since this memory
+         * has not been initialized.
+         */
+        if ((unsigned int)poison <= 0xFF)
+            memset(direct_map_addr, poison, PAGE_SIZE);
+
+        free_reserved_page(page);
+    }
+
+    if (pages && s)
+        pr_info("Freeing %s memory: %ldK\n", s, K(pages));
+
+    return pages;
+}
+
+void adjust_managed_page_count(struct page *page, long count)
+{
+    atomic_long_add(count, &page_zone(page)->managed_pages);
+    totalram_pages_add(count);
+}
+EXPORT_SYMBOL(adjust_managed_page_count);

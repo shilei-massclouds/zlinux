@@ -37,10 +37,8 @@
 #include <linux/memblock.h>
 #include <linux/mm.h>
 #include <linux/pfn.h>
-#if 0
 #include <linux/scatterlist.h>
 #include <linux/set_memory.h>
-#endif
 #include <linux/spinlock.h>
 #include <linux/string.h>
 #include <linux/swiotlb.h>

@@ -10,8 +10,8 @@
 #include <linux/of_fdt.h>
 #include <linux/of_reserved_mem.h>
 #include <linux/libfdt.h>
-#if 0
 #include <linux/set_memory.h>
+#if 0
 #include <linux/dma-map-ops.h>
 #include <linux/crash_dump.h>
 #include <linux/hugetlb.h>

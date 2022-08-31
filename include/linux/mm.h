@@ -1512,4 +1512,41 @@ void free_pgd_range(struct mmu_gather *tlb,
 
 extern void __init mmap_init(void);
 
+extern void free_initmem(void);
+
+/*
+ * Free reserved pages within range [PAGE_ALIGN(start), end & PAGE_MASK)
+ * into the buddy system. The freed pages will be poisoned with pattern
+ * "poison" if it's within range [0, UCHAR_MAX].
+ * Return pages freed into the buddy system.
+ */
+extern unsigned long free_reserved_area(void *start, void *end,
+                                        int poison, const char *s);
+
+/*
+ * Default method to free all the __init memory into the buddy system.
+ * The freed pages will be poisoned with pattern "poison" if it's within
+ * range [0, UCHAR_MAX].
+ * Return pages freed into the buddy system.
+ */
+static inline unsigned long free_initmem_default(int poison)
+{
+    extern char __init_begin[], __init_end[];
+
+    return free_reserved_area(&__init_begin, &__init_end, poison,
+                              "unused kernel image (initmem)");
+}
+
+extern void adjust_managed_page_count(struct page *page, long count);
+
+/* Free the reserved page into the buddy system, so it gets managed. */
+static inline void free_reserved_page(struct page *page)
+{
+    ClearPageReserved(page);
+    init_page_count(page);
+    __free_page(page);
+    adjust_managed_page_count(page, 1);
+}
+#define free_highmem_page(page) free_reserved_page(page)
+
 #endif /* _LINUX_MM_H */

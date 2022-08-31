@@ -14,9 +14,9 @@
 //#include <linux/swapops.h>
 #include <linux/pagemap.h>
 #include <linux/pagevec.h>
-#if 0
 #include <linux/pagewalk.h>
 #include <linux/mempolicy.h>
+#if 0
 #include <linux/syscalls.h>
 #endif
 #include <linux/sched.h>
