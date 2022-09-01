@@ -942,9 +942,103 @@ static int too_many_isolated(struct pglist_data *pgdat, int file,
     return too_many;
 }
 
-void reclaim_throttle(pg_data_t *pgdat, enum vmscan_throttle_state reason)
+static bool skip_throttle_noprogress(pg_data_t *pgdat)
 {
-    panic("%s: END!\n", __func__);
+    int reclaimable = 0, write_pending = 0;
+    int i;
+
+    /*
+     * If kswapd is disabled, reschedule if necessary but do not
+     * throttle as the system is likely near OOM.
+     */
+    if (pgdat->kswapd_failures >= MAX_RECLAIM_RETRIES)
+        return true;
+
+    /*
+     * If there are a lot of dirty/writeback pages then do not
+     * throttle as throttling will occur when the pages cycle
+     * towards the end of the LRU if still under writeback.
+     */
+    for (i = 0; i < MAX_NR_ZONES; i++) {
+        struct zone *zone = pgdat->node_zones + i;
+
+        if (!populated_zone(zone))
+            continue;
+
+        reclaimable += zone_reclaimable_pages(zone);
+        write_pending +=
+            zone_page_state_snapshot(zone, NR_ZONE_WRITE_PENDING);
+    }
+    if (2 * write_pending <= reclaimable)
+        return true;
+
+    return false;
+}
+
+void reclaim_throttle(pg_data_t *pgdat,
+                      enum vmscan_throttle_state reason)
+{
+    wait_queue_head_t *wqh = &pgdat->reclaim_wait[reason];
+    long timeout, ret;
+    DEFINE_WAIT(wait);
+
+    /*
+     * Do not throttle IO workers, kthreads other than kswapd or
+     * workqueues. They may be required for reclaim to make
+     * forward progress (e.g. journalling workqueues or kthreads).
+     */
+    if (!current_is_kswapd() &&
+        current->flags & (PF_IO_WORKER|PF_KTHREAD)) {
+        cond_resched();
+        return;
+    }
+
+    /*
+     * These figures are pulled out of thin air.
+     * VMSCAN_THROTTLE_ISOLATED is a transient condition based on too many
+     * parallel reclaimers which is a short-lived event so the timeout is
+     * short. Failing to make progress or waiting on writeback are
+     * potentially long-lived events so use a longer timeout. This is shaky
+     * logic as a failure to make progress could be due to anything from
+     * writeback to a slow device to excessive references pages at the tail
+     * of the inactive LRU.
+     */
+    switch(reason) {
+    case VMSCAN_THROTTLE_WRITEBACK:
+        timeout = HZ/10;
+
+        if (atomic_inc_return(&pgdat->nr_writeback_throttled) == 1) {
+            WRITE_ONCE(pgdat->nr_reclaim_start,
+                       node_page_state(pgdat, NR_THROTTLED_WRITTEN));
+        }
+
+        break;
+    case VMSCAN_THROTTLE_CONGESTED:
+        fallthrough;
+    case VMSCAN_THROTTLE_NOPROGRESS:
+        if (skip_throttle_noprogress(pgdat)) {
+            cond_resched();
+            return;
+        }
+
+        timeout = 1;
+
+        break;
+    case VMSCAN_THROTTLE_ISOLATED:
+        timeout = HZ/50;
+        break;
+    default:
+        WARN_ON_ONCE(1);
+        timeout = HZ;
+        break;
+    }
+
+    prepare_to_wait(wqh, &wait, TASK_UNINTERRUPTIBLE);
+    ret = schedule_timeout(timeout);
+    finish_wait(wqh, &wait);
+
+    if (reason == VMSCAN_THROTTLE_WRITEBACK)
+        atomic_dec(&pgdat->nr_writeback_throttled);
 }
 
 enum page_references {
@@ -1240,7 +1334,12 @@ static unsigned int shrink_page_list(struct list_head *page_list,
                 flags |= TTU_SPLIT_HUGE_PMD;
 
             try_to_unmap(folio, flags);
-            panic("%s: page_mapped!\n", __func__);
+            if (page_mapped(page)) {
+                stat->nr_unmap_fail += nr_pages;
+                if (!was_swapbacked && PageSwapBacked(page))
+                    stat->nr_lazyfree_fail += nr_pages;
+                goto activate_locked;
+            }
         }
 
         if (PageDirty(page)) {

@@ -313,4 +313,24 @@ mmu_notifier_invalidate_range_start(struct mmu_notifier_range *range)
     }
 }
 
+static inline bool
+mmu_notifier_range_blockable(const struct mmu_notifier_range *range)
+{
+    return (range->flags & MMU_NOTIFIER_RANGE_BLOCKABLE);
+}
+
+extern void
+__mmu_notifier_invalidate_range_end(struct mmu_notifier_range *r,
+                                    bool only_end);
+
+static inline void
+mmu_notifier_invalidate_range_end(struct mmu_notifier_range *range)
+{
+    if (mmu_notifier_range_blockable(range))
+        might_sleep();
+
+    if (mm_has_notifiers(range->mm))
+        __mmu_notifier_invalidate_range_end(range, false);
+}
+
 #endif /* _LINUX_MMU_NOTIFIER_H */

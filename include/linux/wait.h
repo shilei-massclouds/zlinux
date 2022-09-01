@@ -66,6 +66,15 @@ int default_wake_function(struct wait_queue_entry *wq_entry,
 
 #define DECLARE_WAIT_QUEUE_HEAD_ONSTACK(name) DECLARE_WAIT_QUEUE_HEAD(name)
 
+#define DEFINE_WAIT_FUNC(name, function)                    \
+    struct wait_queue_entry name = {                    \
+        .private    = current,                  \
+        .func       = function,                 \
+        .entry      = LIST_HEAD_INIT((name).entry),         \
+    }
+
+#define DEFINE_WAIT(name) DEFINE_WAIT_FUNC(name, autoremove_wake_function)
+
 #define init_wait(wait)                             \
     do {                                            \
         (wait)->private = current;                  \

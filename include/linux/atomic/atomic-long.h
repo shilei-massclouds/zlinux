@@ -134,4 +134,10 @@ arch_atomic_long_inc_not_zero(atomic_long_t *v)
     return arch_atomic64_inc_not_zero(v);
 }
 
+static __always_inline long
+arch_atomic_long_dec_return(atomic_long_t *v)
+{
+    return arch_atomic64_dec_return(v);
+}
+
 #endif /* _LINUX_ATOMIC_LONG_H */

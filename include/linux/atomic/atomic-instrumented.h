@@ -306,4 +306,10 @@ atomic_set_release(atomic_t *v, int i)
     arch_atomic_set_release(v, i);
 }
 
+static __always_inline long
+atomic_long_dec_return(atomic_long_t *v)
+{
+    return arch_atomic_long_dec_return(v);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */

@@ -51,3 +51,17 @@ void pud_clear_bad(pud_t *pud)
     pud_ERROR(*pud);
     pud_clear(pud);
 }
+
+#ifndef __HAVE_ARCH_PTEP_CLEAR_FLUSH
+pte_t ptep_clear_flush(struct vm_area_struct *vma,
+                       unsigned long address,
+                       pte_t *ptep)
+{
+    struct mm_struct *mm = (vma)->vm_mm;
+    pte_t pte;
+    pte = ptep_get_and_clear(mm, address, ptep);
+    if (pte_accessible(mm, pte))
+        flush_tlb_page(vma, address);
+    return pte;
+}
+#endif

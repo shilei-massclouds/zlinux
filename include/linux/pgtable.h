@@ -408,6 +408,34 @@ static inline void update_mmu_tlb(struct vm_area_struct *vma,
 #define pmd_pgtable(pmd) pmd_page(pmd)
 #endif
 
+#ifndef pte_accessible
+# define pte_accessible(mm, pte)    ((void)(pte), 1)
+#endif
+
+#ifndef __HAVE_ARCH_PTEP_CLEAR_YOUNG_FLUSH
+int ptep_clear_flush_young(struct vm_area_struct *vma,
+                           unsigned long address, pte_t *ptep);
+#endif
+
+#ifndef __HAVE_ARCH_PTEP_CLEAR_FLUSH
+extern pte_t ptep_clear_flush(struct vm_area_struct *vma,
+                              unsigned long address,
+                              pte_t *ptep);
+#endif
+
+#ifndef __HAVE_ARCH_PTE_UNUSED
+/*
+ * Some architectures provide facilities to virtualization guests
+ * so that they can flag allocated pages as unused. This allows the
+ * host to transparently reclaim unused pages. This function returns
+ * whether the pte's page is unused.
+ */
+static inline int pte_unused(pte_t pte)
+{
+    return 0;
+}
+#endif
+
 #endif /* !__ASSEMBLY__ */
 
 /*

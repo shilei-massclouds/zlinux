@@ -36,6 +36,7 @@ static void __sbi_tlb_flush_range(struct mm_struct *mm, unsigned long start,
             local_flush_tlb_all_asid(asid);
         }
 #endif
+        panic("%s: END!\n", __func__);
     } else {
         if (broadcast) {
             sbi_remote_sfence_vma(cmask, start, size);
@@ -47,7 +48,6 @@ static void __sbi_tlb_flush_range(struct mm_struct *mm, unsigned long start,
     }
 
     put_cpu();
-    panic("%s: END!\n", __func__);
 }
 
 void flush_tlb_range(struct vm_area_struct *vma,
@@ -59,4 +59,9 @@ void flush_tlb_range(struct vm_area_struct *vma,
 void flush_tlb_mm(struct mm_struct *mm)
 {
     __sbi_tlb_flush_range(mm, 0, -1, PAGE_SIZE);
+}
+
+void flush_tlb_page(struct vm_area_struct *vma, unsigned long addr)
+{
+    __sbi_tlb_flush_range(vma->vm_mm, addr, PAGE_SIZE, PAGE_SIZE);
 }

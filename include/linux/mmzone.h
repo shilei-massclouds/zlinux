@@ -124,6 +124,7 @@ enum node_stat_item {
     NR_SHMEM_PMDMAPPED,
     NR_FILE_PMDMAPPED,
     NR_ANON_THPS,
+    NR_THROTTLED_WRITTEN,   /* NR_WRITTEN while reclaim throttled */
     NR_KERNEL_STACK_KB, /* measured in KiB */
     NR_PAGETABLE,       /* used for pagetables */
     NR_VM_NODE_STAT_ITEMS
@@ -447,6 +448,13 @@ typedef struct pglist_data {
     struct task_struct *kcompactd;
     bool proactive_compact_trigger;
 #endif
+
+    /* nr of writeback-throttled tasks */
+    atomic_t nr_writeback_throttled;
+
+    /* nr pages written while throttled
+     * when throttling started. */
+    unsigned long nr_reclaim_start;
 
     /*
      * This is a per-node reserve of pages that are not available

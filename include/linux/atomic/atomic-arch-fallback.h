@@ -409,4 +409,13 @@ arch_atomic_set_release(atomic_t *v, int i)
 #define arch_atomic_set_release arch_atomic_set_release
 #endif
 
+#ifndef arch_atomic64_dec_return
+static __always_inline s64
+arch_atomic64_dec_return(atomic64_t *v)
+{
+    return arch_atomic64_sub_return(1, v);
+}
+#define arch_atomic64_dec_return arch_atomic64_dec_return
+#endif
+
 #endif /* _LINUX_ATOMIC_FALLBACK_H */

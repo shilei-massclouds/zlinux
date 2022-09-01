@@ -767,9 +767,30 @@ static int page_not_mapped(struct folio *folio)
 }
 
 /*
+ * Returns true if the TLB flush should be deferred to the end of a batch of
+ * unmap operations to reduce IPIs.
+ */
+static bool should_defer_flush(struct mm_struct *mm,
+                               enum ttu_flags flags)
+{
+    bool should_defer = false;
+
+    if (!(flags & TTU_BATCH_FLUSH))
+        return false;
+
+    /* If remote CPUs need to be flushed then defer batch the flush */
+    if (cpumask_any_but(mm_cpumask(mm), get_cpu()) < nr_cpu_ids)
+        should_defer = true;
+    put_cpu();
+
+    return should_defer;
+}
+
+/*
  * @arg: enum ttu_flags will be passed to this argument
  */
-static bool try_to_unmap_one(struct folio *folio, struct vm_area_struct *vma,
+static bool try_to_unmap_one(struct folio *folio,
+                             struct vm_area_struct *vma,
                              unsigned long address, void *arg)
 {
     struct mm_struct *mm = vma->vm_mm;
@@ -816,10 +837,102 @@ static bool try_to_unmap_one(struct folio *folio, struct vm_area_struct *vma,
     mmu_notifier_invalidate_range_start(&range);
 
     while (page_vma_mapped_walk(&pvmw)) {
-        panic("%s: 1!\n", __func__);
+        /* Unexpected PMD-mapped THP? */
+        VM_BUG_ON_FOLIO(!pvmw.pte, folio);
+
+        /*
+         * If the folio is in an mlock()d vma, we must not swap it out.
+         */
+        if (!(flags & TTU_IGNORE_MLOCK) &&
+            (vma->vm_flags & VM_LOCKED)) {
+            /* Restore the mlock which got missed */
+            mlock_vma_folio(folio, vma, false);
+            page_vma_mapped_walk_done(&pvmw);
+            ret = false;
+            break;
+        }
+
+        subpage = folio_page(folio,
+                    pte_pfn(*pvmw.pte) - folio_pfn(folio));
+        address = pvmw.address;
+
+        if (folio_test_hugetlb(folio) && !folio_test_anon(folio)) {
+            /*
+             * To call huge_pmd_unshare, i_mmap_rwsem must be
+             * held in write mode.  Caller needs to explicitly
+             * do this outside rmap routines.
+             */
+            VM_BUG_ON(!(flags & TTU_RMAP_LOCKED));
+
+            panic("%s: 0!\n", __func__);
+        }
+
+        /* Nuke the page table entry. */
+        flush_cache_page(vma, address, pte_pfn(*pvmw.pte));
+        if (should_defer_flush(mm, flags)) {
+#if 0
+            /*
+             * We clear the PTE but do not flush so potentially
+             * a remote CPU could still be writing to the folio.
+             * If the entry was previously clean then the
+             * architecture must guarantee that a clear->dirty
+             * transition on a cached TLB entry is written through
+             * and traps if the PTE is unmapped.
+             */
+            pteval = ptep_get_and_clear(mm, address, pvmw.pte);
+
+            set_tlb_ubc_flush_pending(mm, pte_dirty(pteval));
+#endif
+            panic("%s: 1.1!\n", __func__);
+        } else {
+            pteval = ptep_clear_flush(vma, address, pvmw.pte);
+        }
+
+        /* Set the dirty flag on the folio now the pte is gone. */
+        if (pte_dirty(pteval))
+            folio_mark_dirty(folio);
+
+        /* Update high watermark before we lower rss */
+        update_hiwater_rss(mm);
+
+        if (PageHWPoison(subpage) && !(flags & TTU_IGNORE_HWPOISON)) {
+            panic("%s: 5.1!\n", __func__);
+        } else if (pte_unused(pteval)) {
+            panic("%s: 5.2!\n", __func__);
+        } else if (folio_test_anon(folio)) {
+            panic("%s: 5.3!\n", __func__);
+        } else {
+            /*
+             * This is a locked file-backed folio,
+             * so it cannot be removed from the page
+             * cache and replaced by a new folio before
+             * mmu_notifier_invalidate_range_end, so no
+             * concurrent thread might update its page table
+             * to point at a new folio while a device is
+             * still using this folio.
+             *
+             * See Documentation/vm/mmu_notifier.rst
+             */
+            dec_mm_counter(mm, mm_counter_file(&folio->page));
+        }
+
+     discard:
+        /*
+         * No need to call mmu_notifier_invalidate_range() it has be
+         * done above for all cases requiring it to happen under page
+         * table lock before mmu_notifier_invalidate_range_end()
+         *
+         * See Documentation/vm/mmu_notifier.rst
+         */
+        page_remove_rmap(subpage, vma, folio_test_hugetlb(folio));
+        if (vma->vm_flags & VM_LOCKED)
+            mlock_page_drain_local();
+        folio_put(folio);
     }
 
-    panic("%s: END!\n", __func__);
+    mmu_notifier_invalidate_range_end(&range);
+
+    return ret;
 }
 
 /**

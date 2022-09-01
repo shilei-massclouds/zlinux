@@ -1591,4 +1591,17 @@ vma_interval_tree_iter_next(struct vm_area_struct *node,
     for (vma = vma_interval_tree_iter_first(root, start, last); \
          vma; vma = vma_interval_tree_iter_next(vma, start, last))
 
+/* Optimized variant when page is already known not to be PageAnon */
+static inline int mm_counter_file(struct page *page)
+{
+    if (PageSwapBacked(page))
+        return MM_SHMEMPAGES;
+    return MM_FILEPAGES;
+}
+
+static inline void dec_mm_counter(struct mm_struct *mm, int member)
+{
+    atomic_long_dec_return(&mm->rss_stat.count[member]);
+}
+
 #endif /* _LINUX_MM_H */
