@@ -2213,7 +2213,6 @@ static unsigned long do_try_to_free_pages(struct zonelist *zonelist,
         goto retry;
     }
 
-    panic("%s: END!\n", __func__);
     return 0;
 }
 
