@@ -750,6 +750,104 @@ int folio_referenced(struct folio *folio, int is_locked,
     return pra.referenced;
 }
 
+/* Like rmap_walk, but caller holds relevant rmap lock */
+void rmap_walk_locked(struct folio *folio, const struct rmap_walk_control *rwc)
+{
+    /* no ksm support for now */
+    VM_BUG_ON_FOLIO(folio_test_ksm(folio), folio);
+    if (folio_test_anon(folio))
+        rmap_walk_anon(folio, rwc, true);
+    else
+        rmap_walk_file(folio, rwc, true);
+}
+
+static int page_not_mapped(struct folio *folio)
+{
+    return !folio_mapped(folio);
+}
+
+/*
+ * @arg: enum ttu_flags will be passed to this argument
+ */
+static bool try_to_unmap_one(struct folio *folio, struct vm_area_struct *vma,
+                             unsigned long address, void *arg)
+{
+    struct mm_struct *mm = vma->vm_mm;
+    DEFINE_FOLIO_VMA_WALK(pvmw, folio, vma, address, 0);
+    pte_t pteval;
+    struct page *subpage;
+    bool ret = true;
+    struct mmu_notifier_range range;
+    enum ttu_flags flags = (enum ttu_flags)(long)arg;
+
+    /*
+     * When racing against e.g. zap_pte_range() on another cpu,
+     * in between its ptep_get_and_clear_full() and page_remove_rmap(),
+     * try_to_unmap() may return before page_mapped() has become false,
+     * if page table locking is skipped: use TTU_SYNC to wait for that.
+     */
+    if (flags & TTU_SYNC)
+        pvmw.flags = PVMW_SYNC;
+
+    if (flags & TTU_SPLIT_HUGE_PMD) {
+        //split_huge_pmd_address(vma, address, false, folio);
+        panic("%s: TTU_SPLIT_HUGE_PMD!\n", __func__);
+    }
+
+    /*
+     * For THP, we have to assume the worse case ie pmd for invalidation.
+     * For hugetlb, it could be much worse if we need to do pud
+     * invalidation in the case of pmd sharing.
+     *
+     * Note that the folio can not be freed in this function as call of
+     * try_to_unmap() must hold a reference on the folio.
+     */
+    range.end = vma_address_end(&pvmw);
+    mmu_notifier_range_init(&range, MMU_NOTIFY_CLEAR, 0, vma, vma->vm_mm,
+                            address, range.end);
+    if (folio_test_hugetlb(folio)) {
+        /*
+         * If sharing is possible, start and end will be adjusted
+         * accordingly.
+         */
+        //adjust_range_if_pmd_sharing_possible(vma, &range.start, &range.end);
+        panic("%s: folio_test_hugetlb!\n", __func__);
+    }
+    mmu_notifier_invalidate_range_start(&range);
+
+    while (page_vma_mapped_walk(&pvmw)) {
+        panic("%s: 1!\n", __func__);
+    }
+
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * try_to_unmap - Try to remove all page table mappings to a folio.
+ * @folio: The folio to unmap.
+ * @flags: action and flags
+ *
+ * Tries to remove all the page table entries which are mapping this
+ * folio.  It is the caller's responsibility to check if the folio is
+ * still mapped if needed (use TTU_SYNC to prevent accounting races).
+ *
+ * Context: Caller must hold the folio lock.
+ */
+void try_to_unmap(struct folio *folio, enum ttu_flags flags)
+{
+    struct rmap_walk_control rwc = {
+        .rmap_one = try_to_unmap_one,
+        .arg = (void *)flags,
+        .done = page_not_mapped,
+        .anon_lock = folio_lock_anon_vma_read,
+    };
+
+    if (flags & TTU_RMAP_LOCKED)
+        rmap_walk_locked(folio, &rwc);
+    else
+        rmap_walk(folio, &rwc);
+}
+
 static void anon_vma_ctor(void *data)
 {
     struct anon_vma *anon_vma = data;

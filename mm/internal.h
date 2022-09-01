@@ -403,4 +403,8 @@ static inline unsigned long vma_address_end(struct page_vma_mapped_walk *pvmw)
     return address;
 }
 
+void folio_putback_lru(struct folio *folio);
+
+void putback_lru_page(struct page *page);
+
 #endif  /* __MM_INTERNAL_H */

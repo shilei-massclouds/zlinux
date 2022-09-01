@@ -66,3 +66,8 @@ int __mmu_notifier_clear_flush_young(struct mm_struct *mm,
 
     return young;
 }
+
+int __mmu_notifier_invalidate_range_start(struct mmu_notifier_range *range)
+{
+    panic("%s: END!\n", __func__);
+}

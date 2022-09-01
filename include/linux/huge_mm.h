@@ -11,4 +11,15 @@
 
 #define thp_get_unmapped_area   NULL
 
+#define HPAGE_PMD_ORDER (HPAGE_PMD_SHIFT-PAGE_SHIFT)
+#define HPAGE_PMD_NR (1<<HPAGE_PMD_ORDER)
+
+#define HPAGE_PMD_SHIFT ({ BUILD_BUG(); 0; })
+#define HPAGE_PMD_MASK ({ BUILD_BUG(); 0; })
+#define HPAGE_PMD_SIZE ({ BUILD_BUG(); 0; })
+
+#define HPAGE_PUD_SHIFT ({ BUILD_BUG(); 0; })
+#define HPAGE_PUD_MASK ({ BUILD_BUG(); 0; })
+#define HPAGE_PUD_SIZE ({ BUILD_BUG(); 0; })
+
 #endif /* _LINUX_HUGE_MM_H */

@@ -180,6 +180,18 @@ void page_remove_rmap(struct page *, struct vm_area_struct *, bool compound);
 int folio_referenced(struct folio *, int is_locked,
                      struct mem_cgroup *memcg, unsigned long *vm_flags);
 
+enum ttu_flags {
+    TTU_SPLIT_HUGE_PMD  = 0x4,  /* split huge PMD if any */
+    TTU_IGNORE_MLOCK    = 0x8,  /* ignore mlock */
+    TTU_SYNC            = 0x10, /* avoid racy checks with PVMW_SYNC */
+    TTU_IGNORE_HWPOISON = 0x20, /* corrupted page is recoverable */
+    TTU_BATCH_FLUSH     = 0x40, /* Batch TLB flushes where possible
+                     * and caller guarantees they will
+                     * do a final flush if necessary */
+    TTU_RMAP_LOCKED     = 0x80, /* do not grab rmap lock:
+                     * caller holds it */
+};
+
 struct page_vma_mapped_walk {
     unsigned long pfn;
     unsigned long nr_pages;
@@ -222,5 +234,7 @@ static inline void page_vma_mapped_walk_done(struct page_vma_mapped_walk *pvmw)
     if (pvmw->ptl)
         spin_unlock(pvmw->ptl);
 }
+
+void try_to_unmap(struct folio *, enum ttu_flags flags);
 
 #endif  /* _LINUX_RMAP_H */

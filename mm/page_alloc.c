@@ -2405,8 +2405,7 @@ __alloc_pages_direct_reclaim(gfp_t gfp_mask, unsigned int order,
     if (unlikely(!(*did_some_progress)))
         goto out;
 
-#if 0
-retry:
+ retry:
     page = get_page_from_freelist(gfp_mask, order, alloc_flags, ac);
 
     /*
@@ -2415,15 +2414,16 @@ retry:
      * Shrink them and try again
      */
     if (!page && !drained) {
+#if 0
         unreserve_highatomic_pageblock(ac, false);
         drain_all_pages(NULL);
         drained = true;
+#endif
+        panic("%s: END 0!\n", __func__);
         goto retry;
     }
-#endif
-    panic("%s: END!\n", __func__);
 
-out:
+ out:
     psi_memstall_leave(&pflags);
 
     return page;

@@ -165,6 +165,9 @@ struct scan_control {
 static LIST_HEAD(shrinker_list);
 static DECLARE_RWSEM(shrinker_rwsem);
 
+static unsigned int move_pages_to_lru(struct lruvec *lruvec,
+                                      struct list_head *list);
+
 /*
  * If a kernel thread (such as nfsd for loop-back mounts) services
  * a backing device by writing to the page cache it sets PF_LOCAL_THROTTLE.
@@ -662,79 +665,6 @@ static bool can_age_anon_pages(struct pglist_data *pgdat,
 }
 
 /*
- * shrink_active_list() moves pages from the active LRU to the inactive LRU.
- *
- * We move them the other way if the page is referenced by one or more
- * processes.
- *
- * If the pages are mostly unmapped, the processing is fast and it is
- * appropriate to hold lru_lock across the whole operation.  But if
- * the pages are mapped, the processing is slow (folio_referenced()), so
- * we should drop lru_lock around each page.  It's impossible to balance
- * this, so instead we remove the pages from the LRU while processing them.
- * It is safe to rely on PG_active against the non-LRU pages in here because
- * nobody will play with that bit on a non-LRU page.
- *
- * The downside is that we have to touch page->_refcount against each page.
- * But we had to alter page->flags anyway.
- */
-static void shrink_active_list(unsigned long nr_to_scan,
-                               struct lruvec *lruvec,
-                               struct scan_control *sc,
-                               enum lru_list lru)
-{
-    panic("%s: END!\n", __func__);
-}
-
-/*
- * A direct reclaimer may isolate SWAP_CLUSTER_MAX pages from the LRU list and
- * then get rescheduled. When there are massive number of tasks doing page
- * allocation, such sleeping direct reclaimers may keep piling up on each CPU,
- * the LRU list will go small and be scanned faster than necessary, leading to
- * unnecessary swapping, thrashing and OOM.
- */
-static int too_many_isolated(struct pglist_data *pgdat, int file,
-                             struct scan_control *sc)
-{
-    unsigned long inactive, isolated;
-    bool too_many;
-
-    if (current_is_kswapd())
-        return 0;
-
-    if (file) {
-        inactive = node_page_state(pgdat, NR_INACTIVE_FILE);
-        isolated = node_page_state(pgdat, NR_ISOLATED_FILE);
-    } else {
-        inactive = node_page_state(pgdat, NR_INACTIVE_ANON);
-        isolated = node_page_state(pgdat, NR_ISOLATED_ANON);
-    }
-
-    /*
-     * GFP_NOIO/GFP_NOFS callers are allowed to isolate more pages, so they
-     * won't get blocked by normal direct-reclaimers, forming a circular
-     * deadlock.
-     */
-    if ((sc->gfp_mask & (__GFP_IO | __GFP_FS)) == (__GFP_IO | __GFP_FS))
-        inactive >>= 3;
-
-    too_many = isolated > inactive;
-
-    /* Wake up tasks throttled due to too_many_isolated. */
-    if (!too_many)
-        wake_throttle_isolated(pgdat);
-
-    return too_many;
-}
-
-void reclaim_throttle(pg_data_t *pgdat, enum vmscan_throttle_state reason)
-{
-    panic("%s: END!\n", __func__);
-}
-
-#define prefetchw_prev_lru_page(_page, _base, _field) do { } while (0)
-
-/*
  * Update LRU sizes after isolating pages. The LRU size updates must
  * be complete before mem_cgroup_update_lru_size due to a sanity check.
  */
@@ -752,6 +682,8 @@ void update_lru_sizes(struct lruvec *lruvec,
     }
 
 }
+
+#define prefetchw_prev_lru_page(_page, _base, _field) do { } while (0)
 
 /*
  * Isolating page from the lruvec to fill in @dst list by nr_to_scan times.
@@ -866,6 +798,153 @@ static unsigned long isolate_lru_pages(unsigned long nr_to_scan,
     *nr_scanned = total_scan;
     update_lru_sizes(lruvec, lru, nr_zone_taken);
     return nr_taken;
+}
+
+/*
+ * shrink_active_list() moves pages from the active LRU to the inactive LRU.
+ *
+ * We move them the other way if the page is referenced by one or more
+ * processes.
+ *
+ * If the pages are mostly unmapped, the processing is fast and it is
+ * appropriate to hold lru_lock across the whole operation.  But if
+ * the pages are mapped, the processing is slow (folio_referenced()), so
+ * we should drop lru_lock around each page.  It's impossible to balance
+ * this, so instead we remove the pages from the LRU while processing them.
+ * It is safe to rely on PG_active against the non-LRU pages in here because
+ * nobody will play with that bit on a non-LRU page.
+ *
+ * The downside is that we have to touch page->_refcount against each page.
+ * But we had to alter page->flags anyway.
+ */
+static void shrink_active_list(unsigned long nr_to_scan,
+                               struct lruvec *lruvec,
+                               struct scan_control *sc,
+                               enum lru_list lru)
+{
+    unsigned long nr_taken;
+    unsigned long nr_scanned;
+    unsigned long vm_flags;
+    LIST_HEAD(l_hold);  /* The pages which were snipped off */
+    LIST_HEAD(l_active);
+    LIST_HEAD(l_inactive);
+    unsigned nr_deactivate, nr_activate;
+    unsigned nr_rotated = 0;
+    int file = is_file_lru(lru);
+    struct pglist_data *pgdat = lruvec_pgdat(lruvec);
+
+    lru_add_drain();
+
+    spin_lock_irq(&lruvec->lru_lock);
+
+    nr_taken = isolate_lru_pages(nr_to_scan, lruvec, &l_hold,
+                                 &nr_scanned, sc, lru);
+
+    __mod_node_page_state(pgdat, NR_ISOLATED_ANON + file, nr_taken);
+
+    if (!cgroup_reclaim(sc))
+        __count_vm_events(PGREFILL, nr_scanned);
+    //__count_memcg_events(lruvec_memcg(lruvec), PGREFILL, nr_scanned);
+
+    spin_unlock_irq(&lruvec->lru_lock);
+
+    while (!list_empty(&l_hold)) {
+        struct folio *folio;
+        struct page *page;
+
+        cond_resched();
+        folio = lru_to_folio(&l_hold);
+        list_del(&folio->lru);
+        page = &folio->page;
+
+        if (unlikely(!page_evictable(page))) {
+            putback_lru_page(page);
+            continue;
+        }
+
+        if (unlikely(buffer_heads_over_limit)) {
+#if 0
+            if (page_has_private(page) && trylock_page(page)) {
+                if (page_has_private(page))
+                    try_to_release_page(page, 0);
+                unlock_page(page);
+            }
+#endif
+            panic("%s: 0!\n", __func__);
+        }
+
+        if (folio_referenced(folio, 0, sc->target_mem_cgroup, &vm_flags)) {
+            panic("%s: 1!\n", __func__);
+        }
+
+        ClearPageActive(page);  /* we are de-activating */
+        SetPageWorkingset(page);
+        list_add(&page->lru, &l_inactive);
+    }
+
+    /*
+     * Move pages back to the lru list.
+     */
+    spin_lock_irq(&lruvec->lru_lock);
+
+    nr_activate = move_pages_to_lru(lruvec, &l_active);
+    nr_deactivate = move_pages_to_lru(lruvec, &l_inactive);
+    /* Keep all free pages in l_active list */
+    list_splice(&l_inactive, &l_active);
+
+    __count_vm_events(PGDEACTIVATE, nr_deactivate);
+    //__count_memcg_events(lruvec_memcg(lruvec), PGDEACTIVATE, nr_deactivate);
+
+    __mod_node_page_state(pgdat, NR_ISOLATED_ANON + file, -nr_taken);
+    spin_unlock_irq(&lruvec->lru_lock);
+
+    free_unref_page_list(&l_active);
+}
+
+/*
+ * A direct reclaimer may isolate SWAP_CLUSTER_MAX pages from the LRU list and
+ * then get rescheduled. When there are massive number of tasks doing page
+ * allocation, such sleeping direct reclaimers may keep piling up on each CPU,
+ * the LRU list will go small and be scanned faster than necessary, leading to
+ * unnecessary swapping, thrashing and OOM.
+ */
+static int too_many_isolated(struct pglist_data *pgdat, int file,
+                             struct scan_control *sc)
+{
+    unsigned long inactive, isolated;
+    bool too_many;
+
+    if (current_is_kswapd())
+        return 0;
+
+    if (file) {
+        inactive = node_page_state(pgdat, NR_INACTIVE_FILE);
+        isolated = node_page_state(pgdat, NR_ISOLATED_FILE);
+    } else {
+        inactive = node_page_state(pgdat, NR_INACTIVE_ANON);
+        isolated = node_page_state(pgdat, NR_ISOLATED_ANON);
+    }
+
+    /*
+     * GFP_NOIO/GFP_NOFS callers are allowed to isolate more pages, so they
+     * won't get blocked by normal direct-reclaimers, forming a circular
+     * deadlock.
+     */
+    if ((sc->gfp_mask & (__GFP_IO | __GFP_FS)) == (__GFP_IO | __GFP_FS))
+        inactive >>= 3;
+
+    too_many = isolated > inactive;
+
+    /* Wake up tasks throttled due to too_many_isolated. */
+    if (!too_many)
+        wake_throttle_isolated(pgdat);
+
+    return too_many;
+}
+
+void reclaim_throttle(pg_data_t *pgdat, enum vmscan_throttle_state reason)
+{
+    panic("%s: END!\n", __func__);
 }
 
 enum page_references {
@@ -1154,6 +1233,13 @@ static unsigned int shrink_page_list(struct list_head *page_list,
          * processes. Try to unmap it here.
          */
         if (page_mapped(page)) {
+            enum ttu_flags flags = TTU_BATCH_FLUSH;
+            bool was_swapbacked = PageSwapBacked(page);
+
+            if (PageTransHuge(page) && thp_order(page) >= HPAGE_PMD_ORDER)
+                flags |= TTU_SPLIT_HUGE_PMD;
+
+            try_to_unmap(folio, flags);
             panic("%s: page_mapped!\n", __func__);
         }
 
@@ -1183,6 +1269,9 @@ static unsigned int shrink_page_list(struct list_head *page_list,
          * Otherwise, leave the page on the LRU so it is swappable.
          */
         if (page_has_private(page)) {
+            if (!try_to_release_page(page, sc->gfp_mask))
+                goto activate_locked;
+
             panic("%s: page_has_private!\n", __func__);
         }
 
@@ -1925,6 +2014,18 @@ static void shrink_zones(struct zonelist *zonelist, struct scan_control *sc)
     sc->gfp_mask = orig_mask;
 }
 
+static void snapshot_refaults(struct mem_cgroup *target_memcg, pg_data_t *pgdat)
+{
+    struct lruvec *target_lruvec;
+    unsigned long refaults;
+
+    target_lruvec = mem_cgroup_lruvec(target_memcg, pgdat);
+    refaults = lruvec_page_state(target_lruvec, WORKINGSET_ACTIVATE_ANON);
+    target_lruvec->refaults[0] = refaults;
+    refaults = lruvec_page_state(target_lruvec, WORKINGSET_ACTIVATE_FILE);
+    target_lruvec->refaults[1] = refaults;
+}
+
 /*
  * This is the main entry point to direct page reclaim.
  *
@@ -1974,7 +2075,11 @@ static unsigned long do_try_to_free_pages(struct zonelist *zonelist,
     last_pgdat = NULL;
     for_each_zone_zonelist_nodemask(zone, z, zonelist, sc->reclaim_idx,
                                     sc->nodemask) {
-        panic("%s: 1!\n", __func__);
+        if (zone->zone_pgdat == last_pgdat)
+            continue;
+        last_pgdat = zone->zone_pgdat;
+
+        snapshot_refaults(sc->target_mem_cgroup, zone->zone_pgdat);
     }
 
     if (sc->nr_reclaimed)
@@ -1984,7 +2089,33 @@ static unsigned long do_try_to_free_pages(struct zonelist *zonelist,
     if (sc->compaction_ready)
         return 1;
 
+    /*
+     * We make inactive:active ratio decisions based on the node's
+     * composition of memory, but a restrictive reclaim_idx or a
+     * memory.low cgroup setting can exempt large amounts of
+     * memory from reclaim. Neither of which are very common, so
+     * instead of doing costly eligibility calculations of the
+     * entire cgroup subtree up front, we assume the estimates are
+     * good, and retry with forcible deactivation if that fails.
+     */
+    if (sc->skipped_deactivate) {
+        sc->priority = initial_priority;
+        sc->force_deactivate = 1;
+        sc->skipped_deactivate = 0;
+        goto retry;
+    }
+
+    /* Untapped cgroup reserves?  Don't OOM, retry. */
+    if (sc->memcg_low_skipped) {
+        sc->priority = initial_priority;
+        sc->force_deactivate = 0;
+        sc->memcg_low_reclaim = 1;
+        sc->memcg_low_skipped = 0;
+        goto retry;
+    }
+
     panic("%s: END!\n", __func__);
+    return 0;
 }
 
 unsigned long try_to_free_pages(struct zonelist *zonelist, int order,
@@ -2046,4 +2177,19 @@ void register_shrinker_prepared(struct shrinker *shrinker)
     list_add_tail(&shrinker->list, &shrinker_list);
     shrinker->flags |= SHRINKER_REGISTERED;
     up_write(&shrinker_rwsem);
+}
+
+/**
+ * folio_putback_lru - Put previously isolated folio onto appropriate LRU list.
+ * @folio: Folio to be returned to an LRU list.
+ *
+ * Add previously isolated @folio to appropriate LRU list.
+ * The folio may still be unevictable for other reasons.
+ *
+ * Context: lru_lock must not be held, interrupts must be enabled.
+ */
+void folio_putback_lru(struct folio *folio)
+{
+    folio_add_lru(folio);
+    folio_put(folio);       /* drop ref from isolate */
 }

@@ -239,8 +239,6 @@ void buffer_check_dirty_writeback(struct page *page,
 
         bh = bh->b_this_page;
     } while (bh != head);
-
-    panic("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL(buffer_check_dirty_writeback);
 

@@ -744,4 +744,6 @@ static inline pgoff_t page_to_pgoff(struct page *page)
     return page_to_index(page);
 }
 
+int try_to_release_page(struct page *page, gfp_t gfp);
+
 #endif /* _LINUX_PAGEMAP_H */
