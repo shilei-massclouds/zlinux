@@ -1945,3 +1945,23 @@ unsigned long try_to_free_pages(struct zonelist *zonelist, int order,
 
     return nr_reclaimed;
 }
+
+void free_prealloced_shrinker(struct shrinker *shrinker)
+{
+    if (shrinker->flags & SHRINKER_MEMCG_AWARE) {
+        down_write(&shrinker_rwsem);
+        up_write(&shrinker_rwsem);
+        return;
+    }
+
+    kfree(shrinker->nr_deferred);
+    shrinker->nr_deferred = NULL;
+}
+
+void register_shrinker_prepared(struct shrinker *shrinker)
+{
+    down_write(&shrinker_rwsem);
+    list_add_tail(&shrinker->list, &shrinker_list);
+    shrinker->flags |= SHRINKER_REGISTERED;
+    up_write(&shrinker_rwsem);
+}

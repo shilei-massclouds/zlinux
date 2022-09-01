@@ -156,8 +156,92 @@ void *workingset_eviction(struct folio *folio, struct mem_cgroup *target_memcg)
     return pack_shadow(memcgid, pgdat, eviction, folio_test_workingset(folio));
 }
 
+static unsigned long count_shadow_nodes(struct shrinker *shrinker,
+                                        struct shrink_control *sc)
+{
+    unsigned long max_nodes;
+    unsigned long nodes;
+    unsigned long pages;
+
+    panic("%s: END!\n", __func__);
+}
+
+static unsigned long scan_shadow_nodes(struct shrinker *shrinker,
+                                       struct shrink_control *sc)
+{
+    /* list_lru lock nests inside the IRQ-safe i_pages lock */
+#if 0
+    return list_lru_shrink_walk_irq(&shadow_nodes, sc, shadow_lru_isolate,
+                                    NULL);
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+static struct shrinker workingset_shadow_shrinker = {
+    .count_objects = count_shadow_nodes,
+    .scan_objects = scan_shadow_nodes,
+    .seeks = 0, /* ->count reports only fully expendable nodes */
+    .flags = SHRINKER_NUMA_AWARE | SHRINKER_MEMCG_AWARE,
+};
+
+/*
+ * Add a shrinker callback to be called from the vm.
+ */
+int prealloc_shrinker(struct shrinker *shrinker)
+{
+    unsigned int size;
+    int err;
+
+    if (shrinker->flags & SHRINKER_MEMCG_AWARE) {
+        shrinker->flags &= ~SHRINKER_MEMCG_AWARE;
+    }
+
+    size = sizeof(*shrinker->nr_deferred);
+    if (shrinker->flags & SHRINKER_NUMA_AWARE)
+        size *= nr_node_ids;
+
+    shrinker->nr_deferred = kzalloc(size, GFP_KERNEL);
+    if (!shrinker->nr_deferred)
+        return -ENOMEM;
+
+    return 0;
+}
+
+static struct lock_class_key shadow_nodes_key;
+
 static int __init workingset_init(void)
 {
-    pr_warn("############+++++++++++ %s: END!\n", __func__);
+    unsigned int timestamp_bits;
+    unsigned int max_order;
+    int ret;
+
+    BUILD_BUG_ON(BITS_PER_LONG < EVICTION_SHIFT);
+    /*
+     * Calculate the eviction bucket size to cover the longest
+     * actionable refault distance, which is currently half of
+     * memory (totalram_pages/2). However, memory hotplug may add
+     * some more pages at runtime, so keep working with up to
+     * double the initial memory by using totalram_pages as-is.
+     */
+    timestamp_bits = BITS_PER_LONG - EVICTION_SHIFT;
+    max_order = fls_long(totalram_pages() - 1);
+    if (max_order > timestamp_bits)
+        bucket_order = max_order - timestamp_bits;
+    pr_info("workingset: timestamp_bits=%d max_order=%d bucket_order=%u\n",
+            timestamp_bits, max_order, bucket_order);
+
+    ret = prealloc_shrinker(&workingset_shadow_shrinker);
+    if (ret)
+        goto err;
+    ret = __list_lru_init(&shadow_nodes, true, &shadow_nodes_key,
+                          &workingset_shadow_shrinker);
+    if (ret)
+        goto err_list_lru;
+    register_shrinker_prepared(&workingset_shadow_shrinker);
+    return 0;
+ err_list_lru:
+    free_prealloced_shrinker(&workingset_shadow_shrinker);
+ err:
+    return ret;
 }
 module_init(workingset_init);

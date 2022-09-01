@@ -74,3 +74,27 @@ bool list_lru_del(struct list_lru *lru, struct list_head *item)
     return false;
 }
 EXPORT_SYMBOL_GPL(list_lru_del);
+
+static void init_one_lru(struct list_lru_one *l)
+{
+    INIT_LIST_HEAD(&l->list);
+    l->nr_items = 0;
+}
+
+int __list_lru_init(struct list_lru *lru, bool memcg_aware,
+                    struct lock_class_key *key, struct shrinker *shrinker)
+{
+    int i;
+
+    lru->node = kcalloc(nr_node_ids, sizeof(*lru->node), GFP_KERNEL);
+    if (!lru->node)
+        return -ENOMEM;
+
+    for_each_node(i) {
+        spin_lock_init(&lru->node[i].lock);
+        init_one_lru(&lru->node[i].lru);
+    }
+
+    return 0;
+}
+EXPORT_SYMBOL_GPL(__list_lru_init);

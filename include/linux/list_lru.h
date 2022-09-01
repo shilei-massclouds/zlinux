@@ -64,4 +64,7 @@ bool list_lru_add(struct list_lru *lru, struct list_head *item);
  */
 bool list_lru_del(struct list_lru *lru, struct list_head *item);
 
+int __list_lru_init(struct list_lru *lru, bool memcg_aware,
+                    struct lock_class_key *key, struct shrinker *shrinker);
+
 #endif /* _LRU_LIST_H */
