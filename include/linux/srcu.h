@@ -18,10 +18,8 @@
 
 #include <linux/mutex.h>
 #include <linux/rcupdate.h>
-#if 0
 #include <linux/workqueue.h>
 #include <linux/rcu_segcblist.h>
-#endif
 
 struct srcu_struct;
 

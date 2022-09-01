@@ -310,9 +310,8 @@ struct mm_struct {
         /* store ref to file /proc/<pid>/exe symlink points to */
         struct file __rcu *exe_file;
 
-#if 0
         struct mmu_notifier_subscriptions *notifier_subscriptions;
-#endif
+
         /*
          * An operation with batched TLB flushing is going on. Anything
          * that can move process memory needs to flush the TLB when

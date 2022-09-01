@@ -209,4 +209,10 @@ static inline int page_is_file_lru(struct page *page)
     return folio_is_file_lru(page_folio(page));
 }
 
+static __always_inline void add_page_to_lru_list(struct page *page,
+                                                 struct lruvec *lruvec)
+{
+    lruvec_add_folio(lruvec, page_folio(page));
+}
+
 #endif /* LINUX_MM_INLINE_H */

@@ -923,7 +923,32 @@ static enum page_references folio_check_references(struct folio *folio,
         return PAGEREF_ACTIVATE;
 
     if (referenced_ptes) {
-        panic("%s: referenced_ptes!\n", __func__);
+        /*
+         * All mapped folios start out with page table
+         * references from the instantiating fault, so we need
+         * to look twice if a mapped file/anon folio is used more
+         * than once.
+         *
+         * Mark it and spare it for another trip around the
+         * inactive list.  Another page table reference will
+         * lead to its activation.
+         *
+         * Note: the mark is set for activated folios as well
+         * so that recently deactivated but used folios are
+         * quickly recovered.
+         */
+        folio_set_referenced(folio);
+
+        if (referenced_folio || referenced_ptes > 1)
+            return PAGEREF_ACTIVATE;
+
+        /*
+         * Activate file-backed executable folios after first usage.
+         */
+        if ((vm_flags & VM_EXEC) && !folio_test_swapbacked(folio))
+            return PAGEREF_ACTIVATE;
+
+        return PAGEREF_KEEP;
     }
 
     /* Reclaim if clean, defer dirty folios to writeback */
@@ -1262,7 +1287,42 @@ static unsigned int move_pages_to_lru(struct lruvec *lruvec,
             continue;
         }
 
-        panic("%s: 1!\n", __func__);
+        /*
+         * The SetPageLRU needs to be kept here for list integrity.
+         * Otherwise:
+         *   #0 move_pages_to_lru             #1 release_pages
+         *   if !put_page_testzero
+         *                    if (put_page_testzero())
+         *                      !PageLRU //skip lru_lock
+         *     SetPageLRU()
+         *     list_add(&page->lru,)
+         *                                        list_add(&page->lru,)
+         */
+        SetPageLRU(page);
+
+        if (unlikely(put_page_testzero(page))) {
+            __clear_page_lru_flags(page);
+
+            if (unlikely(PageCompound(page))) {
+                spin_unlock_irq(&lruvec->lru_lock);
+                destroy_compound_page(page);
+                spin_lock_irq(&lruvec->lru_lock);
+            } else
+                list_add(&page->lru, &pages_to_free);
+
+            continue;
+        }
+
+        /*
+         * All pages were isolated from the same lruvec (and isolation
+         * inhibits memcg migration).
+         */
+        VM_BUG_ON_PAGE(!folio_matches_lruvec(page_folio(page), lruvec), page);
+        add_page_to_lru_list(page, lruvec);
+        nr_pages = thp_nr_pages(page);
+        nr_moved += nr_pages;
+        if (PageActive(page))
+            workingset_age_nonresident(lruvec, nr_pages);
     }
 
     /*
@@ -1443,9 +1503,24 @@ static void shrink_lruvec(struct lruvec *lruvec, struct scan_control *sc)
         shrink_active_list(SWAP_CLUSTER_MAX, lruvec, sc, LRU_ACTIVE_ANON);
 }
 
+#define SHRINK_BATCH 128
+
 static unsigned long do_shrink_slab(struct shrink_control *shrinkctl,
                                     struct shrinker *shrinker, int priority)
 {
+    unsigned long freed = 0;
+    unsigned long long delta;
+    long total_scan;
+    long freeable;
+    long nr;
+    long new_nr;
+    long batch_size = shrinker->batch ? shrinker->batch : SHRINK_BATCH;
+    long scanned = 0, next_deferred;
+
+    freeable = shrinker->count_objects(shrinker, shrinkctl);
+    if (freeable == 0 || freeable == SHRINK_EMPTY)
+        return freeable;
+
     panic("%s: END!\n", __func__);
 }
 
@@ -1490,8 +1565,15 @@ static unsigned long shrink_slab(gfp_t gfp_mask, int nid,
         if (ret == SHRINK_EMPTY)
             ret = 0;
         freed += ret;
-
-        panic("%s: 1!\n", __func__);
+        /*
+         * Bail out if someone want to register a new shrinker to
+         * prevent the registration from being stalled for long periods
+         * by parallel ongoing shrinking.
+         */
+        if (rwsem_is_contended(&shrinker_rwsem)) {
+            freed = freed ? : 1;
+            break;
+        }
     }
 
     up_read(&shrinker_rwsem);

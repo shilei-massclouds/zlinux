@@ -67,4 +67,25 @@ bool list_lru_del(struct list_lru *lru, struct list_head *item);
 int __list_lru_init(struct list_lru *lru, bool memcg_aware,
                     struct lock_class_key *key, struct shrinker *shrinker);
 
+/**
+ * list_lru_count_one: return the number of objects currently held by @lru
+ * @lru: the lru pointer.
+ * @nid: the node id to count from.
+ * @memcg: the cgroup to count from.
+ *
+ * Always return a non-negative number, 0 for empty lists. There is no
+ * guarantee that the list is not updated while the count is being computed.
+ * Callers that want such a guarantee need to provide an outer lock.
+ */
+unsigned long list_lru_count_one(struct list_lru *lru,
+                                 int nid, struct mem_cgroup *memcg);
+unsigned long list_lru_count_node(struct list_lru *lru, int nid);
+
+static inline
+unsigned long list_lru_shrink_count(struct list_lru *lru,
+                                    struct shrink_control *sc)
+{
+    return list_lru_count_one(lru, sc->nid, sc->memcg);
+}
+
 #endif /* _LRU_LIST_H */

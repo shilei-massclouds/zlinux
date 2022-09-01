@@ -701,4 +701,47 @@ static inline int mapping_exiting(struct address_space *mapping)
     return test_bit(AS_EXITING, &mapping->flags);
 }
 
+extern pgoff_t hugetlb_basepage_index(struct page *page);
+
+/*
+ * Get the offset in PAGE_SIZE (even for hugetlb folios).
+ * (TODO: hugetlb folios should have ->index in PAGE_SIZE)
+ */
+static inline pgoff_t folio_pgoff(struct folio *folio)
+{
+    if (unlikely(folio_test_hugetlb(folio)))
+        return hugetlb_basepage_index(&folio->page);
+    return folio->index;
+}
+
+/*
+ * Get index of the page within radix-tree (but not for hugetlb pages).
+ * (TODO: remove once hugetlb pages will have ->index in PAGE_SIZE)
+ */
+static inline pgoff_t page_to_index(struct page *page)
+{
+    struct page *head;
+
+    if (likely(!PageTransTail(page)))
+        return page->index;
+
+    head = compound_head(page);
+    /*
+     *  We don't initialize ->index for tail pages: calculate based on
+     *  head page
+     */
+    return head->index + page - head;
+}
+
+/*
+ * Get the offset in PAGE_SIZE (even for hugetlb pages).
+ * (TODO: hugetlb pages should have ->index in PAGE_SIZE)
+ */
+static inline pgoff_t page_to_pgoff(struct page *page)
+{
+    if (unlikely(PageHuge(page)))
+        return hugetlb_basepage_index(page);
+    return page_to_index(page);
+}
+
 #endif /* _LINUX_PAGEMAP_H */

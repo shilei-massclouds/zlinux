@@ -13,6 +13,11 @@
 #include <linux/highmem.h>
 #include <linux/pagemap.h>
 
+/* Avoid racy checks */
+#define PVMW_SYNC           (1 << 0)
+/* Look for migration entries rather than present PTEs */
+#define PVMW_MIGRATION      (1 << 1)
+
 /*
  * The anon_vma heads a list of private "related" vmas, to scan if
  * an anonymous page pointing to this anon_vma needs to be unmapped:
@@ -174,5 +179,48 @@ void page_remove_rmap(struct page *, struct vm_area_struct *, bool compound);
  */
 int folio_referenced(struct folio *, int is_locked,
                      struct mem_cgroup *memcg, unsigned long *vm_flags);
+
+struct page_vma_mapped_walk {
+    unsigned long pfn;
+    unsigned long nr_pages;
+    pgoff_t pgoff;
+    struct vm_area_struct *vma;
+    unsigned long address;
+    pmd_t *pmd;
+    pte_t *pte;
+    spinlock_t *ptl;
+    unsigned int flags;
+};
+
+#define DEFINE_PAGE_VMA_WALK(name, _page, _vma, _address, _flags)   \
+    struct page_vma_mapped_walk name = {                \
+        .pfn = page_to_pfn(_page),              \
+        .nr_pages = compound_nr(page),              \
+        .pgoff = page_to_pgoff(page),               \
+        .vma = _vma,                        \
+        .address = _address,                    \
+        .flags = _flags,                    \
+    }
+
+#define DEFINE_FOLIO_VMA_WALK(name, _folio, _vma, _address, _flags) \
+    struct page_vma_mapped_walk name = {                \
+        .pfn = folio_pfn(_folio),               \
+        .nr_pages = folio_nr_pages(_folio),         \
+        .pgoff = folio_pgoff(_folio),               \
+        .vma = _vma,                        \
+        .address = _address,                    \
+        .flags = _flags,                    \
+    }
+
+bool page_vma_mapped_walk(struct page_vma_mapped_walk *pvmw);
+
+static inline void page_vma_mapped_walk_done(struct page_vma_mapped_walk *pvmw)
+{
+    /* HugeTLB pte is set to the relevant page table entry without pte_mapped. */
+    if (pvmw->pte && !is_vm_hugetlb_page(pvmw->vma))
+        pte_unmap(pvmw->pte);
+    if (pvmw->ptl)
+        spin_unlock(pvmw->ptl);
+}
 
 #endif  /* _LINUX_RMAP_H */

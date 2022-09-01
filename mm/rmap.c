@@ -56,15 +56,15 @@
 #include <linux/sched/task.h>
 #include <linux/pagemap.h>
 #include <linux/swap.h>
-//#include <linux/swapops.h>
+#include <linux/swapops.h>
 #include <linux/slab.h>
 #include <linux/init.h>
-//#include <linux/ksm.h>
+#include <linux/ksm.h>
 #include <linux/rmap.h>
 #include <linux/rcupdate.h>
 #include <linux/export.h>
 #include <linux/memcontrol.h>
-//#include <linux/mmu_notifier.h>
+#include <linux/mmu_notifier.h>
 #include <linux/migrate.h>
 #include <linux/hugetlb.h>
 //#include <linux/huge_mm.h>
@@ -551,7 +551,57 @@ static bool folio_referenced_one(struct folio *folio,
                                  struct vm_area_struct *vma,
                                  unsigned long address, void *arg)
 {
-    panic("%s: END!\n", __func__);
+    struct folio_referenced_arg *pra = arg;
+    DEFINE_FOLIO_VMA_WALK(pvmw, folio, vma, address, 0);
+    int referenced = 0;
+
+    while (page_vma_mapped_walk(&pvmw)) {
+        address = pvmw.address;
+
+        if ((vma->vm_flags & VM_LOCKED) &&
+            (!folio_test_large(folio) || !pvmw.pte)) {
+            /* Restore the mlock which got missed */
+            mlock_vma_folio(folio, vma, !pvmw.pte);
+            page_vma_mapped_walk_done(&pvmw);
+            pra->vm_flags |= VM_LOCKED;
+            return false; /* To break the loop */
+        }
+
+        if (pvmw.pte) {
+            if (ptep_clear_flush_young_notify(vma, address, pvmw.pte)) {
+                /*
+                 * Don't treat a reference through
+                 * a sequentially read mapping as such.
+                 * If the folio has been used in another mapping,
+                 * we will catch it; if this other mapping is
+                 * already gone, the unmap path will have set
+                 * the referenced flag or activated the folio.
+                 */
+                if (likely(!(vma->vm_flags & VM_SEQ_READ)))
+                    referenced++;
+            }
+        } else {
+            /* unexpected pmd-mapped folio? */
+            WARN_ON_ONCE(1);
+        }
+
+        pra->mapcount--;
+    }
+
+    if (referenced)
+        folio_clear_idle(folio);
+    if (folio_test_clear_young(folio))
+        referenced++;
+
+    if (referenced) {
+        pra->referenced++;
+        pra->vm_flags |= vma->vm_flags & ~VM_LOCKED;
+    }
+
+    if (!pra->mapcount)
+        return false; /* To break the loop */
+
+    return true;
 }
 
 /*
@@ -564,6 +614,81 @@ static bool folio_referenced_one(struct folio *folio,
 struct anon_vma *folio_lock_anon_vma_read(struct folio *folio)
 {
     panic("%s: END!\n", __func__);
+}
+
+/*
+ * rmap_walk_anon - do something to anonymous page using the object-based
+ * rmap method
+ * @page: the page to be handled
+ * @rwc: control variable according to each walk type
+ *
+ * Find all the mappings of a page using the mapping pointer and the vma chains
+ * contained in the anon_vma struct it points to.
+ */
+static void rmap_walk_anon(struct folio *folio,
+                           const struct rmap_walk_control *rwc, bool locked)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * rmap_walk_file - do something to file page using the object-based rmap method
+ * @page: the page to be handled
+ * @rwc: control variable according to each walk type
+ *
+ * Find all the mappings of a page using the mapping pointer and the vma chains
+ * contained in the address_space struct it points to.
+ */
+static void rmap_walk_file(struct folio *folio,
+                           const struct rmap_walk_control *rwc, bool locked)
+{
+    struct address_space *mapping = folio_mapping(folio);
+    pgoff_t pgoff_start, pgoff_end;
+    struct vm_area_struct *vma;
+
+    /*
+     * The page lock not only makes sure that page->mapping cannot
+     * suddenly be NULLified by truncation, it makes sure that the
+     * structure at mapping cannot be freed and reused yet,
+     * so we can safely take mapping->i_mmap_rwsem.
+     */
+    VM_BUG_ON_FOLIO(!folio_test_locked(folio), folio);
+
+    if (!mapping)
+        return;
+
+    pgoff_start = folio_pgoff(folio);
+    pgoff_end = pgoff_start + folio_nr_pages(folio) - 1;
+    if (!locked)
+        i_mmap_lock_read(mapping);
+    vma_interval_tree_foreach(vma, &mapping->i_mmap, pgoff_start, pgoff_end) {
+        unsigned long address = vma_address(&folio->page, vma);
+
+        VM_BUG_ON_VMA(address == -EFAULT, vma);
+        cond_resched();
+
+        if (rwc->invalid_vma && rwc->invalid_vma(vma, rwc->arg))
+            continue;
+
+        if (!rwc->rmap_one(folio, vma, address, rwc->arg))
+            goto done;
+        if (rwc->done && rwc->done(folio))
+            goto done;
+    }
+
+ done:
+    if (!locked)
+        i_mmap_unlock_read(mapping);
+}
+
+void rmap_walk(struct folio *folio, const struct rmap_walk_control *rwc)
+{
+    if (unlikely(folio_test_ksm(folio)))
+        rmap_walk_ksm(folio, rwc);
+    else if (folio_test_anon(folio))
+        rmap_walk_anon(folio, rwc, false);
+    else
+        rmap_walk_file(folio, rwc, false);
 }
 
 /**
@@ -604,7 +729,25 @@ int folio_referenced(struct folio *folio, int is_locked,
             return 1;
     }
 
-    panic("%s: END!\n", __func__);
+    /*
+     * If we are reclaiming on behalf of a cgroup, skip
+     * counting on behalf of references from different
+     * cgroups
+     */
+    if (memcg) {
+#if 0
+        rwc.invalid_vma = invalid_folio_referenced_vma;
+#endif
+        panic("%s: memcg!\n", __func__);
+    }
+
+    rmap_walk(folio, &rwc);
+    *vm_flags = pra.vm_flags;
+
+    if (we_locked)
+        folio_unlock(folio);
+
+    return pra.referenced;
 }
 
 static void anon_vma_ctor(void *data)

@@ -8,6 +8,8 @@
  *       PFN      reserved for SW   D   A   G   U   X   W   R   V
  */
 
+#define _PAGE_ACCESSED_OFFSET 6
+
 #define _PAGE_PRESENT   (1 << 0)
 #define _PAGE_READ      (1 << 1)    /* Readable */
 #define _PAGE_WRITE     (1 << 2)    /* Writable */

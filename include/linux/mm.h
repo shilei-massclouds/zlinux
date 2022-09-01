@@ -1580,4 +1580,15 @@ static inline int folio_entire_mapcount(struct folio *folio)
     return atomic_read(folio_mapcount_ptr(folio)) + 1;
 }
 
+struct vm_area_struct *
+vma_interval_tree_iter_first(struct rb_root_cached *root,
+                             unsigned long start, unsigned long last);
+struct vm_area_struct *
+vma_interval_tree_iter_next(struct vm_area_struct *node,
+                            unsigned long start, unsigned long last);
+
+#define vma_interval_tree_foreach(vma, root, start, last)       \
+    for (vma = vma_interval_tree_iter_first(root, start, last); \
+         vma; vma = vma_interval_tree_iter_next(vma, start, last))
+
 #endif /* _LINUX_MM_H */

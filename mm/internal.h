@@ -10,6 +10,9 @@
 #include <linux/fs.h>
 #include <linux/mm.h>
 #include <linux/pagemap.h>
+#include <linux/rmap.h>
+
+struct folio_batch;
 
 /*
  * The set of flags that only affect watermark checking and reclaim
@@ -347,6 +350,57 @@ static inline void *folio_raw_mapping(struct folio *folio)
     unsigned long mapping = (unsigned long)folio->mapping;
 
     return (void *)(mapping & ~PAGE_MAPPING_FLAGS);
+}
+
+/*
+ * At what user virtual address is page expected in vma?
+ * Returns -EFAULT if all of the page is outside the range of vma.
+ * If page is a compound head, the entire compound page is considered.
+ */
+static inline unsigned long
+vma_address(struct page *page, struct vm_area_struct *vma)
+{
+    pgoff_t pgoff;
+    unsigned long address;
+
+    VM_BUG_ON_PAGE(PageKsm(page), page);    /* KSM page->index unusable */
+    pgoff = page_to_pgoff(page);
+    if (pgoff >= vma->vm_pgoff) {
+        address = vma->vm_start +
+            ((pgoff - vma->vm_pgoff) << PAGE_SHIFT);
+        /* Check for address beyond vma (or wrapped through 0?) */
+        if (address < vma->vm_start || address >= vma->vm_end)
+            address = -EFAULT;
+    } else if (PageHead(page) &&
+               pgoff + compound_nr(page) - 1 >= vma->vm_pgoff) {
+        /* Test above avoids possibility of wrap to 0 on 32-bit */
+        address = vma->vm_start;
+    } else {
+        address = -EFAULT;
+    }
+    return address;
+}
+
+/*
+ * Then at what user virtual address will none of the range be found in vma?
+ * Assumes that vma_address() already returned a good starting address.
+ */
+static inline unsigned long vma_address_end(struct page_vma_mapped_walk *pvmw)
+{
+    struct vm_area_struct *vma = pvmw->vma;
+    pgoff_t pgoff;
+    unsigned long address;
+
+    /* Common case, plus ->pgoff is invalid for KSM */
+    if (pvmw->nr_pages == 1)
+        return pvmw->address + PAGE_SIZE;
+
+    pgoff = pvmw->pgoff + pvmw->nr_pages;
+    address = vma->vm_start + ((pgoff - vma->vm_pgoff) << PAGE_SHIFT);
+    /* Check for address beyond vma (or wrapped through 0?) */
+    if (address < vma->vm_start || address > vma->vm_end)
+        address = vma->vm_end;
+    return address;
 }
 
 #endif  /* __MM_INTERNAL_H */

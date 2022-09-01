@@ -163,6 +163,10 @@ static unsigned long count_shadow_nodes(struct shrinker *shrinker,
     unsigned long nodes;
     unsigned long pages;
 
+    nodes = list_lru_shrink_count(&shadow_nodes, sc);
+    if (!nodes)
+        return SHRINK_EMPTY;
+
     panic("%s: END!\n", __func__);
 }
 

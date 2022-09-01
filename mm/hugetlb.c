@@ -131,3 +131,8 @@ void free_huge_page(struct page *page)
 {
     panic("%s: END!\n", __func__);
 }
+
+pgoff_t hugetlb_basepage_index(struct page *page)
+{
+    panic("%s: END!\n", __func__);
+}

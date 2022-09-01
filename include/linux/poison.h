@@ -21,4 +21,7 @@
 /********** arch/$ARCH/mm/init.c **********/
 #define POISON_FREE_INITMEM 0xcc
 
+/********** include/linux/timer.h **********/
+#define TIMER_ENTRY_STATIC  ((void *) 0x300 + POISON_POINTER_DELTA)
+
 #endif /* _LINUX_POISON_H */

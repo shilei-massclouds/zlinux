@@ -208,5 +208,7 @@ void *workingset_eviction(struct folio *folio, struct mem_cgroup *target_memcg);
 extern void lru_note_cost(struct lruvec *lruvec, bool file,
                           unsigned int nr_pages);
 
+void workingset_age_nonresident(struct lruvec *lruvec, unsigned long nr_pages);
+
 #endif /* __KERNEL__*/
 #endif /* _LINUX_SWAP_H */

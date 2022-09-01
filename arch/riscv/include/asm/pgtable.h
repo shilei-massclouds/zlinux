@@ -362,6 +362,38 @@ static inline int ptep_set_access_flags(struct vm_area_struct *vma,
     return true;
 }
 
+#define __HAVE_ARCH_PTEP_TEST_AND_CLEAR_YOUNG
+static inline int ptep_test_and_clear_young(struct vm_area_struct *vma,
+                                            unsigned long address,
+                                            pte_t *ptep)
+{
+    if (!pte_young(*ptep))
+        return 0;
+    return test_and_clear_bit(_PAGE_ACCESSED_OFFSET, &pte_val(*ptep));
+}
+
+#define __HAVE_ARCH_PTEP_CLEAR_YOUNG_FLUSH
+static inline int ptep_clear_flush_young(struct vm_area_struct *vma,
+                     unsigned long address, pte_t *ptep)
+{
+    /*
+     * This comment is borrowed from x86, but applies equally to RISC-V:
+     *
+     * Clearing the accessed bit without a TLB flush
+     * doesn't cause data corruption. [ It could cause incorrect
+     * page aging and the (mistaken) reclaim of hot pages, but the
+     * chance of that should be relatively low. ]
+     *
+     * So as a performance optimization don't flush the TLB when
+     * clearing the accessed bit, it will eventually be flushed by
+     * a context switch or a VM operation anyway. [ In the rare
+     * event of it not getting flushed for a long time the delay
+     * shouldn't really matter because there's no real memory
+     * pressure for swapout to react to. ]
+     */
+    return ptep_test_and_clear_young(vma, address, ptep);
+}
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* _ASM_RISCV_PGTABLE_H */

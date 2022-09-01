@@ -114,4 +114,15 @@ extern int __must_check down_read_killable(struct rw_semaphore *sem);
 
 extern void downgrade_write(struct rw_semaphore *sem);
 
+/*
+ * This is the same regardless of which rwsem implementation that is being used.
+ * It is just a heuristic meant to be called by somebody already holding the
+ * rwsem to see if somebody from an incompatible type is wanting access to the
+ * lock.
+ */
+static inline int rwsem_is_contended(struct rw_semaphore *sem)
+{
+    return !list_empty(&sem->wait_list);
+}
+
 #endif /* _LINUX_RWSEM_H */

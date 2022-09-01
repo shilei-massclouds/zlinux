@@ -98,3 +98,27 @@ int __list_lru_init(struct list_lru *lru, bool memcg_aware,
     return 0;
 }
 EXPORT_SYMBOL_GPL(__list_lru_init);
+
+static inline struct list_lru_one *
+list_lru_from_memcg_idx(struct list_lru *lru, int nid, int idx)
+{
+    return &lru->node[nid].lru;
+}
+
+unsigned long list_lru_count_one(struct list_lru *lru,
+                                 int nid, struct mem_cgroup *memcg)
+{
+    struct list_lru_one *l;
+    long count;
+
+    rcu_read_lock();
+    l = list_lru_from_memcg_idx(lru, nid, -1);
+    count = l ? READ_ONCE(l->nr_items) : 0;
+    rcu_read_unlock();
+
+    if (unlikely(count < 0))
+        count = 0;
+
+    return count;
+}
+EXPORT_SYMBOL_GPL(list_lru_count_one);
