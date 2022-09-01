@@ -80,6 +80,13 @@
 static struct kmem_cache *anon_vma_cachep;
 static struct kmem_cache *anon_vma_chain_cachep;
 
+struct folio_referenced_arg {
+    int mapcount;
+    int referenced;
+    unsigned long vm_flags;
+    struct mem_cgroup *memcg;
+};
+
 /*
  * This is a useful helper function for locking the anon_vma root as
  * we traverse the vma->anon_vma_chain, looping over anon_vma's that
@@ -538,6 +545,66 @@ void unlink_anon_vmas(struct vm_area_struct *vma)
         list_del(&avc->same_vma);
         anon_vma_chain_free(avc);
     }
+}
+
+static bool folio_referenced_one(struct folio *folio,
+                                 struct vm_area_struct *vma,
+                                 unsigned long address, void *arg)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * Similar to page_get_anon_vma() except it locks the anon_vma.
+ *
+ * Its a little more complex as it tries to keep the fast path to a single
+ * atomic op -- the trylock. If we fail the trylock, we fall back to getting a
+ * reference like with page_get_anon_vma() and then block on the mutex.
+ */
+struct anon_vma *folio_lock_anon_vma_read(struct folio *folio)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * folio_referenced() - Test if the folio was referenced.
+ * @folio: The folio to test.
+ * @is_locked: Caller holds lock on the folio.
+ * @memcg: target memory cgroup
+ * @vm_flags: A combination of all the vma->vm_flags which referenced the folio.
+ *
+ * Quick test_and_clear_referenced for all mappings of a folio,
+ *
+ * Return: The number of mappings which referenced the folio.
+ */
+int folio_referenced(struct folio *folio, int is_locked,
+                     struct mem_cgroup *memcg, unsigned long *vm_flags)
+{
+    int we_locked = 0;
+    struct folio_referenced_arg pra = {
+        .mapcount = folio_mapcount(folio),
+        .memcg = memcg,
+    };
+    struct rmap_walk_control rwc = {
+        .rmap_one = folio_referenced_one,
+        .arg = (void *)&pra,
+        .anon_lock = folio_lock_anon_vma_read,
+    };
+
+    *vm_flags = 0;
+    if (!pra.mapcount)
+        return 0;
+
+    if (!folio_raw_mapping(folio))
+        return 0;
+
+    if (!is_locked && (!folio_test_anon(folio) || folio_test_ksm(folio))) {
+        we_locked = folio_trylock(folio);
+        if (!we_locked)
+            return 1;
+    }
+
+    panic("%s: END!\n", __func__);
 }
 
 static void anon_vma_ctor(void *data)

@@ -696,4 +696,9 @@ static inline bool wake_page_match(struct wait_page_queue *wait_page,
 
 void release_pages(struct page **pages, int nr);
 
+static inline int mapping_exiting(struct address_space *mapping)
+{
+    return test_bit(AS_EXITING, &mapping->flags);
+}
+
 #endif /* _LINUX_PAGEMAP_H */

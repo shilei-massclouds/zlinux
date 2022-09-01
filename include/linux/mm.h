@@ -1566,4 +1566,18 @@ static inline bool get_page_unless_zero(struct page *page)
     return page_ref_add_unless(page, 1, 0);
 }
 
+int folio_mapcount(struct folio *folio);
+
+/*
+ * How many times the entire folio is mapped as a single unit (eg by a
+ * PMD or PUD entry).  This is probably not what you want, except for
+ * debugging purposes; look at folio_mapcount() or page_mapcount()
+ * instead.
+ */
+static inline int folio_entire_mapcount(struct folio *folio)
+{
+    VM_BUG_ON_FOLIO(!folio_test_large(folio), folio);
+    return atomic_read(folio_mapcount_ptr(folio)) + 1;
+}
+
 #endif /* _LINUX_MM_H */

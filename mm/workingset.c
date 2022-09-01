@@ -17,6 +17,22 @@
 #include <linux/fs.h>
 #include <linux/mm.h>
 
+#define WORKINGSET_SHIFT 1
+#define EVICTION_SHIFT  ((BITS_PER_LONG - BITS_PER_XA_VALUE) +  \
+                         WORKINGSET_SHIFT + NODES_SHIFT + \
+                         MEM_CGROUP_ID_SHIFT)
+#define EVICTION_MASK   (~0UL >> EVICTION_SHIFT)
+
+/*
+ * Eviction timestamps need to be able to cover the full range of
+ * actionable refaults. However, bits are tight in the xarray
+ * entry, and after storing the identifier for the lruvec there might
+ * not be enough left to represent every single actionable refault. In
+ * that case, we have to sacrifice granularity for distance, and group
+ * evictions into coarser buckets by shaving off lower timestamp bits.
+ */
+static unsigned int bucket_order __read_mostly;
+
 /*
  * Shadow entries reflect the share of the working set that does not
  * fit into memory, so their number depends on the access pattern of
@@ -30,6 +46,18 @@
  */
 
 struct list_lru shadow_nodes;
+
+static void *pack_shadow(int memcgid, pg_data_t *pgdat, unsigned long eviction,
+                         bool workingset)
+{
+    eviction >>= bucket_order;
+    eviction &= EVICTION_MASK;
+    eviction = (eviction << MEM_CGROUP_ID_SHIFT) | memcgid;
+    eviction = (eviction << NODES_SHIFT) | pgdat->node_id;
+    eviction = (eviction << WORKINGSET_SHIFT) | workingset;
+
+    return xa_mk_value(eviction);
+}
 
 void workingset_update_node(struct xa_node *node)
 {
@@ -71,3 +99,65 @@ void workingset_refault(struct folio *folio, void *shadow)
 {
     panic("%s: END!\n", __func__);
 }
+
+/**
+ * workingset_age_nonresident - age non-resident entries as LRU ages
+ * @lruvec: the lruvec that was aged
+ * @nr_pages: the number of pages to count
+ *
+ * As in-memory pages are aged, non-resident pages need to be aged as
+ * well, in order for the refault distances later on to be comparable
+ * to the in-memory dimensions. This function allows reclaim and LRU
+ * operations to drive the non-resident aging along in parallel.
+ */
+void workingset_age_nonresident(struct lruvec *lruvec, unsigned long nr_pages)
+{
+    /*
+     * Reclaiming a cgroup means reclaiming all its children in a
+     * round-robin fashion. That means that each cgroup has an LRU
+     * order that is composed of the LRU orders of its child
+     * cgroups; and every page has an LRU position not just in the
+     * cgroup that owns it, but in all of that group's ancestors.
+     *
+     * So when the physical inactive list of a leaf cgroup ages,
+     * the virtual inactive lists of all its parents, including
+     * the root cgroup's, age as well.
+     */
+    do {
+        atomic_long_add(nr_pages, &lruvec->nonresident_age);
+    } while ((lruvec = parent_lruvec(lruvec)));
+}
+
+/**
+ * workingset_eviction - note the eviction of a folio from memory
+ * @target_memcg: the cgroup that is causing the reclaim
+ * @folio: the folio being evicted
+ *
+ * Return: a shadow entry to be stored in @folio->mapping->i_pages in place
+ * of the evicted @folio so that a later refault can be detected.
+ */
+void *workingset_eviction(struct folio *folio, struct mem_cgroup *target_memcg)
+{
+    struct pglist_data *pgdat = folio_pgdat(folio);
+    unsigned long eviction;
+    struct lruvec *lruvec;
+    int memcgid;
+
+    /* Folio is fully exclusive and pins folio's memory cgroup pointer */
+    VM_BUG_ON_FOLIO(folio_test_lru(folio), folio);
+    VM_BUG_ON_FOLIO(folio_ref_count(folio), folio);
+    VM_BUG_ON_FOLIO(!folio_test_locked(folio), folio);
+
+    lruvec = mem_cgroup_lruvec(target_memcg, pgdat);
+    /* XXX: target_memcg can be NULL, go through lruvec */
+    memcgid = 0;
+    eviction = atomic_long_read(&lruvec->nonresident_age);
+    workingset_age_nonresident(lruvec, folio_nr_pages(folio));
+    return pack_shadow(memcgid, pgdat, eviction, folio_test_workingset(folio));
+}
+
+static int __init workingset_init(void)
+{
+    pr_warn("############+++++++++++ %s: END!\n", __func__);
+}
+module_init(workingset_init);

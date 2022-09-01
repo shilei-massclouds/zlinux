@@ -1026,4 +1026,6 @@ static inline void xas_advance(struct xa_state *xas, unsigned long index)
     xas->xa_offset = (index >> shift) & XA_CHUNK_MASK;
 }
 
+void xas_init_marks(const struct xa_state *);
+
 #endif /* _LINUX_XARRAY_H */

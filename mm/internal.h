@@ -342,4 +342,11 @@ static inline void wake_throttle_isolated(pg_data_t *pgdat)
 void mlock_page_drain_local(void);
 void mlock_page_drain_remote(int cpu);
 
+static inline void *folio_raw_mapping(struct folio *folio)
+{
+    unsigned long mapping = (unsigned long)folio->mapping;
+
+    return (void *)(mapping & ~PAGE_MAPPING_FLAGS);
+}
+
 #endif  /* __MM_INTERNAL_H */

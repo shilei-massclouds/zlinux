@@ -251,12 +251,17 @@ static __always_inline int TestClearPage##uname(struct page *page)  \
     TESTCLEARFLAG(uname, lname, policy)
 
 #define TESTPAGEFLAG_FALSE(uname, lname) \
+    static inline bool folio_test_##lname(const struct folio *folio) { \
+        return false; \
+    } \
     static inline int Page##uname(const struct page *page) { return 0; }
 
 #define SETPAGEFLAG_NOOP(uname, lname) \
+    static inline void folio_set_##lname(struct folio *folio) { } \
     static inline void SetPage##uname(struct page *page) {  }
 
 #define CLEARPAGEFLAG_NOOP(uname, lname) \
+    static inline void folio_clear_##lname(struct folio *folio) { } \
     static inline void ClearPage##uname(struct page *page) {  }
 
 #define TESTSETFLAG_FALSE(uname, lname) \
@@ -329,6 +334,9 @@ TESTPAGEFLAG(Writeback, writeback, PF_NO_TAIL)
 
 PAGEFLAG(MappedToDisk, mappedtodisk, PF_NO_TAIL)
 
+/* PG_readahead is only used for reads; PG_reclaim is only for writes */
+PAGEFLAG(Reclaim, reclaim, PF_NO_TAIL)
+    TESTCLEARFLAG(Reclaim, reclaim, PF_NO_TAIL)
 PAGEFLAG(Readahead, readahead, PF_NO_COMPOUND)
     TESTCLEARFLAG(Readahead, readahead, PF_NO_COMPOUND)
 
@@ -601,6 +609,7 @@ static __always_inline bool PageAnon(struct page *page)
     return folio_test_anon(page_folio(page));
 }
 
+TESTPAGEFLAG_FALSE(Ksm, ksm)
 TESTPAGEFLAG_FALSE(TransHuge, transhuge)
 TESTPAGEFLAG_FALSE(TransCompound, transcompound)
 TESTPAGEFLAG_FALSE(TransCompoundMap, transcompoundmap)

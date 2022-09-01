@@ -96,6 +96,7 @@ enum zone_stat_item {
 enum node_stat_item {
     NR_LRU_BASE,
     NR_INACTIVE_ANON = NR_LRU_BASE, /* must match order of LRU_[IN]ACTIVE */
+    NR_ACTIVE_ANON,     /*  "     "     "   "       "         */
     NR_INACTIVE_FILE,   /*  "     "     "   "       "         */
     NR_ACTIVE_FILE,     /*  "     "     "   "       "         */
     NR_SLAB_RECLAIMABLE_B,

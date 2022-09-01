@@ -15,4 +15,6 @@ extern int migrate_page(struct address_space *mapping,
                         struct page *newpage, struct page *page,
                         enum migrate_mode mode);
 
+int next_demotion_node(int node);
+
 #endif /* _LINUX_MIGRATE_H */

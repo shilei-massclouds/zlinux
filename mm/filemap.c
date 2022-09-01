@@ -2274,3 +2274,92 @@ pgoff_t page_cache_next_miss(struct address_space *mapping,
     return xas.xa_index;
 }
 EXPORT_SYMBOL(page_cache_next_miss);
+
+/*
+ * Lock ordering:
+ *
+ *  ->i_mmap_rwsem      (truncate_pagecache)
+ *    ->private_lock        (__free_pte->block_dirty_folio)
+ *      ->swap_lock     (exclusive_swap_page, others)
+ *        ->i_pages lock
+ *
+ *  ->i_rwsem
+ *    ->invalidate_lock     (acquired by fs in truncate path)
+ *      ->i_mmap_rwsem      (truncate->unmap_mapping_range)
+ *
+ *  ->mmap_lock
+ *    ->i_mmap_rwsem
+ *      ->page_table_lock or pte_lock   (various, mainly in memory.c)
+ *        ->i_pages lock    (arch-dependent flush_dcache_mmap_lock)
+ *
+ *  ->mmap_lock
+ *    ->invalidate_lock     (filemap_fault)
+ *      ->lock_page     (filemap_fault, access_process_vm)
+ *
+ *  ->i_rwsem           (generic_perform_write)
+ *    ->mmap_lock       (fault_in_readable->do_page_fault)
+ *
+ *  bdi->wb.list_lock
+ *    sb_lock           (fs/fs-writeback.c)
+ *    ->i_pages lock        (__sync_single_inode)
+ *
+ *  ->i_mmap_rwsem
+ *    ->anon_vma.lock       (vma_adjust)
+ *
+ *  ->anon_vma.lock
+ *    ->page_table_lock or pte_lock (anon_vma_prepare and various)
+ *
+ *  ->page_table_lock or pte_lock
+ *    ->swap_lock       (try_to_unmap_one)
+ *    ->private_lock        (try_to_unmap_one)
+ *    ->i_pages lock        (try_to_unmap_one)
+ *    ->lruvec->lru_lock    (follow_page->mark_page_accessed)
+ *    ->lruvec->lru_lock    (check_pte_range->isolate_lru_page)
+ *    ->private_lock        (page_remove_rmap->set_page_dirty)
+ *    ->i_pages lock        (page_remove_rmap->set_page_dirty)
+ *    bdi.wb->list_lock     (page_remove_rmap->set_page_dirty)
+ *    ->inode->i_lock       (page_remove_rmap->set_page_dirty)
+ *    ->memcg->move_lock    (page_remove_rmap->lock_page_memcg)
+ *    bdi.wb->list_lock     (zap_pte_range->set_page_dirty)
+ *    ->inode->i_lock       (zap_pte_range->set_page_dirty)
+ *    ->private_lock        (zap_pte_range->block_dirty_folio)
+ *
+ * ->i_mmap_rwsem
+ *   ->tasklist_lock            (memory_failure, collect_procs_ao)
+ */
+static void page_cache_delete(struct address_space *mapping,
+                              struct folio *folio, void *shadow)
+{
+    XA_STATE(xas, &mapping->i_pages, folio->index);
+    long nr = 1;
+
+    mapping_set_update(&xas, mapping);
+
+    /* hugetlb pages are represented by a single entry in the xarray */
+    if (!folio_test_hugetlb(folio)) {
+        xas_set_order(&xas, folio->index, folio_order(folio));
+        nr = folio_nr_pages(folio);
+    }
+
+    VM_BUG_ON_FOLIO(!folio_test_locked(folio), folio);
+
+    xas_store(&xas, shadow);
+    xas_init_marks(&xas);
+
+    folio->mapping = NULL;
+    /* Leave page->index set: truncation lookup relies upon it */
+    mapping->nrpages -= nr;
+}
+
+/*
+ * Delete a page from the page cache and free it. Caller has to make
+ * sure the page is locked and that nobody else uses it - or that usage
+ * is safe.  The caller must hold the i_pages lock.
+ */
+void __filemap_remove_folio(struct folio *folio, void *shadow)
+{
+    struct address_space *mapping = folio->mapping;
+
+    filemap_unaccount_folio(mapping, folio);
+    page_cache_delete(mapping, folio, shadow);
+}

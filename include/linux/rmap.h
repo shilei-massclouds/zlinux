@@ -84,6 +84,28 @@ struct anon_vma_chain {
 };
 
 /*
+ * rmap_walk_control: To control rmap traversing for specific needs
+ *
+ * arg: passed to rmap_one() and invalid_vma()
+ * rmap_one: executed on each vma where page is mapped
+ * done: for checking traversing termination condition
+ * anon_lock: for getting anon_lock by optimized way rather than default
+ * invalid_vma: for skipping uninterested vma
+ */
+struct rmap_walk_control {
+    void *arg;
+    /*
+     * Return false if page table scanning in rmap_walk should be stopped.
+     * Otherwise, return true.
+     */
+    bool (*rmap_one)(struct folio *folio, struct vm_area_struct *vma,
+                     unsigned long addr, void *arg);
+    int (*done)(struct folio *folio);
+    struct anon_vma *(*anon_lock)(struct folio *folio);
+    bool (*invalid_vma)(struct vm_area_struct *vma, void *arg);
+};
+
+/*
  * anon_vma helper functions.
  */
 void anon_vma_init(void);   /* create anon_vma_cachep */
@@ -146,5 +168,11 @@ static inline void anon_vma_merge(struct vm_area_struct *vma,
 }
 
 void page_remove_rmap(struct page *, struct vm_area_struct *, bool compound);
+
+/*
+ * Called from mm/vmscan.c to handle paging out
+ */
+int folio_referenced(struct folio *, int is_locked,
+                     struct mem_cgroup *memcg, unsigned long *vm_flags);
 
 #endif  /* _LINUX_RMAP_H */

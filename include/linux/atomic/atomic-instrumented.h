@@ -300,4 +300,10 @@ atomic_add_negative(int i, atomic_t *v)
     return arch_atomic_add_negative(i, v);
 }
 
+static __always_inline void
+atomic_set_release(atomic_t *v, int i)
+{
+    arch_atomic_set_release(v, i);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */

@@ -323,4 +323,9 @@ static __always_inline int arch_atomic_read(const atomic_t *v)
     return READ_ONCE(v->counter);
 }
 
+static __always_inline void arch_atomic_set(atomic_t *v, int i)
+{
+    WRITE_ONCE(v->counter, i);
+}
+
 #endif /* _ASM_RISCV_ATOMIC_H */

@@ -24,6 +24,9 @@
 #include <linux/writeback.h>
 #include <linux/page-flags.h>
 
+#define MEM_CGROUP_ID_SHIFT 0
+#define MEM_CGROUP_ID_MAX   0
+
 /*
  * Bucket for arbitrarily byte-sized objects charged to a memory
  * cgroup. The bucket can be reparented in one piece when the cgroup
@@ -121,6 +124,11 @@ struct lruvec *mem_cgroup_lruvec(struct mem_cgroup *memcg,
                                  struct pglist_data *pgdat)
 {
     return &pgdat->__lruvec;
+}
+
+static inline struct lruvec *parent_lruvec(struct lruvec *lruvec)
+{
+    return NULL;
 }
 
 #endif /* _LINUX_MEMCONTROL_H */

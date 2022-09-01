@@ -48,7 +48,7 @@
 #include <linux/pagevec.h>
 #include <linux/prefetch.h>
 #include <linux/printk.h>
-//#include <linux/dax.h>
+#include <linux/dax.h>
 //#include <linux/psi.h>
 
 #include <asm/tlbflush.h>
@@ -204,6 +204,100 @@ static bool can_demote(int nid, struct scan_control *sc)
         return false;
 
     panic("%s: END!\n", __func__);
+}
+
+/*
+ * Same as remove_mapping, but if the page is removed from the mapping, it
+ * gets returned with a refcount of 0.
+ */
+static int __remove_mapping(struct address_space *mapping, struct folio *folio,
+                            bool reclaimed, struct mem_cgroup *target_memcg)
+{
+    int refcount;
+    void *shadow = NULL;
+
+    BUG_ON(!folio_test_locked(folio));
+    BUG_ON(mapping != folio_mapping(folio));
+
+    if (!folio_test_swapcache(folio))
+        spin_lock(&mapping->host->i_lock);
+    xa_lock_irq(&mapping->i_pages);
+    /*
+     * The non racy check for a busy page.
+     *
+     * Must be careful with the order of the tests. When someone has
+     * a ref to the page, it may be possible that they dirty it then
+     * drop the reference. So if PageDirty is tested before page_count
+     * here, then the following race may occur:
+     *
+     * get_user_pages(&page);
+     * [user mapping goes away]
+     * write_to(page);
+     *              !PageDirty(page)    [good]
+     * SetPageDirty(page);
+     * put_page(page);
+     *              !page_count(page)   [good, discard it]
+     *
+     * [oops, our write_to data is lost]
+     *
+     * Reversing the order of the tests ensures such a situation cannot
+     * escape unnoticed. The smp_rmb is needed to ensure the page->flags
+     * load is not satisfied before that of page->_refcount.
+     *
+     * Note that if SetPageDirty is always performed via set_page_dirty,
+     * and thus under the i_pages lock, then this ordering is not required.
+     */
+    refcount = 1 + folio_nr_pages(folio);
+    if (!folio_ref_freeze(folio, refcount))
+        goto cannot_free;
+    /* note: atomic_cmpxchg in page_ref_freeze provides the smp_rmb */
+    if (unlikely(folio_test_dirty(folio))) {
+        folio_ref_unfreeze(folio, refcount);
+        goto cannot_free;
+    }
+
+    if (folio_test_swapcache(folio)) {
+        panic("%s: folio_test_swapcache!\n", __func__);
+    } else {
+        void (*freepage)(struct page *);
+
+        freepage = mapping->a_ops->freepage;
+        /*
+         * Remember a shadow entry for reclaimed file cache in
+         * order to detect refaults, thus thrashing, later on.
+         *
+         * But don't store shadows in an address space that is
+         * already exiting.  This is not just an optimization,
+         * inode reclaim needs to empty out the radix tree or
+         * the nodes are lost.  Don't plant shadows behind its
+         * back.
+         *
+         * We also don't store shadows for DAX mappings because the
+         * only page cache pages found in these are zero pages
+         * covering holes, and because we don't want to mix DAX
+         * exceptional entries and shadow exceptional entries in the
+         * same address_space.
+         */
+        if (reclaimed && folio_is_file_lru(folio) &&
+            !mapping_exiting(mapping) && !dax_mapping(mapping))
+            shadow = workingset_eviction(folio, target_memcg);
+        __filemap_remove_folio(folio, shadow);
+        xa_unlock_irq(&mapping->i_pages);
+        if (mapping_shrinkable(mapping))
+            inode_add_lru(mapping->host);
+        spin_unlock(&mapping->host->i_lock);
+
+        if (freepage != NULL)
+            freepage(&folio->page);
+    }
+
+    return 1;
+
+ cannot_free:
+    xa_unlock_irq(&mapping->i_pages);
+    if (!folio_test_swapcache(folio))
+        spin_unlock(&mapping->host->i_lock);
+    return 0;
 }
 
 static inline bool can_reclaim_anon_pages(struct mem_cgroup *memcg,
@@ -781,6 +875,81 @@ enum page_references {
     PAGEREF_ACTIVATE,
 };
 
+/* Check if a page is dirty or under writeback */
+static void folio_check_dirty_writeback(struct folio *folio,
+                                        bool *dirty, bool *writeback)
+{
+    struct address_space *mapping;
+
+    /*
+     * Anonymous pages are not handled by flushers and must be written
+     * from reclaim context. Do not stall reclaim based on them
+     */
+    if (!folio_is_file_lru(folio) ||
+        (folio_test_anon(folio) && !folio_test_swapbacked(folio))) {
+        *dirty = false;
+        *writeback = false;
+        return;
+    }
+
+    /* By default assume that the folio flags are accurate */
+    *dirty = folio_test_dirty(folio);
+    *writeback = folio_test_writeback(folio);
+
+    /* Verify dirty/writeback state if the filesystem supports it */
+    if (!folio_test_private(folio))
+        return;
+
+    mapping = folio_mapping(folio);
+    if (mapping && mapping->a_ops->is_dirty_writeback)
+        mapping->a_ops->is_dirty_writeback(&folio->page, dirty, writeback);
+}
+
+static enum page_references folio_check_references(struct folio *folio,
+                                                   struct scan_control *sc)
+{
+    int referenced_ptes, referenced_folio;
+    unsigned long vm_flags;
+
+    referenced_ptes =
+        folio_referenced(folio, 1, sc->target_mem_cgroup, &vm_flags);
+    referenced_folio = folio_test_clear_referenced(folio);
+
+    /*
+     * The supposedly reclaimable folio was found to be in a VM_LOCKED vma.
+     * Let the folio, now marked Mlocked, be moved to the unevictable list.
+     */
+    if (vm_flags & VM_LOCKED)
+        return PAGEREF_ACTIVATE;
+
+    if (referenced_ptes) {
+        panic("%s: referenced_ptes!\n", __func__);
+    }
+
+    /* Reclaim if clean, defer dirty folios to writeback */
+    if (referenced_folio && !folio_test_swapbacked(folio))
+        return PAGEREF_RECLAIM_CLEAN;
+
+    return PAGEREF_RECLAIM;
+}
+
+/*
+ * Take pages on @demote_list and attempt to demote them to
+ * another node.  Pages which are not demoted are left on
+ * @demote_pages.
+ */
+static unsigned int demote_page_list(struct list_head *demote_pages,
+                                     struct pglist_data *pgdat)
+{
+    int target_nid = next_demotion_node(pgdat->node_id);
+    unsigned int nr_succeeded;
+
+    if (list_empty(demote_pages))
+        return 0;
+
+    panic("%s: END!\n", __func__);
+}
+
 /*
  * shrink_page_list() returns the number of reclaimed pages
  */
@@ -844,7 +1013,188 @@ static unsigned int shrink_page_list(struct list_head *page_list,
         if (dirty || writeback)
             stat->nr_dirty += nr_pages;
 
-        panic("%s: 1!\n", __func__);
+        if (dirty && !writeback)
+            stat->nr_unqueued_dirty += nr_pages;
+
+        /*
+         * Treat this page as congested if the underlying BDI is or if
+         * pages are cycling through the LRU so quickly that the
+         * pages marked for immediate reclaim are making it to the
+         * end of the LRU a second time.
+         */
+        mapping = page_mapping(page);
+        if (writeback && PageReclaim(page))
+            stat->nr_congested += nr_pages;
+
+        /*
+         * If a page at the tail of the LRU is under writeback, there
+         * are three cases to consider.
+         *
+         * 1) If reclaim is encountering an excessive number of pages
+         *    under writeback and this page is both under writeback and
+         *    PageReclaim then it indicates that pages are being queued
+         *    for IO but are being recycled through the LRU before the
+         *    IO can complete. Waiting on the page itself risks an
+         *    indefinite stall if it is impossible to writeback the
+         *    page due to IO error or disconnected storage so instead
+         *    note that the LRU is being scanned too quickly and the
+         *    caller can stall after page list has been processed.
+         *
+         * 2) Global or new memcg reclaim encounters a page that is
+         *    not marked for immediate reclaim, or the caller does not
+         *    have __GFP_FS (or __GFP_IO if it's simply going to swap,
+         *    not to fs). In this case mark the page for immediate
+         *    reclaim and continue scanning.
+         *
+         *    Require may_enter_fs because we would wait on fs, which
+         *    may not have submitted IO yet. And the loop driver might
+         *    enter reclaim, and deadlock if it waits on a page for
+         *    which it is needed to do the write (loop masks off
+         *    __GFP_IO|__GFP_FS for this reason); but more thought
+         *    would probably show more reasons.
+         *
+         * 3) Legacy memcg encounters a page that is already marked
+         *    PageReclaim. memcg does not have any dirty pages
+         *    throttling so we could easily OOM just because too many
+         *    pages are in writeback and there is nothing else to
+         *    reclaim. Wait for the writeback to complete.
+         *
+         * In cases 1) and 2) we activate the pages to get them out of
+         * the way while we continue scanning for clean pages on the
+         * inactive list and refilling from the active list. The
+         * observation here is that waiting for disk writes is more
+         * expensive than potentially causing reloads down the line.
+         * Since they're marked for immediate reclaim, they won't put
+         * memory pressure on the cache working set any longer than it
+         * takes to write them to disk.
+         */
+        if (PageWriteback(page)) {
+            panic("%s: PageWriteback!\n", __func__);
+        }
+
+        if (!ignore_references)
+            references = folio_check_references(folio, sc);
+
+        switch (references) {
+        case PAGEREF_ACTIVATE:
+            goto activate_locked;
+        case PAGEREF_KEEP:
+            stat->nr_ref_keep += nr_pages;
+            goto keep_locked;
+        case PAGEREF_RECLAIM:
+        case PAGEREF_RECLAIM_CLEAN:
+            ; /* try to reclaim the page below */
+        }
+
+        /*
+         * Before reclaiming the page, try to relocate
+         * its contents to another node.
+         */
+        if (do_demote_pass && !PageTransHuge(page)) {
+            list_add(&page->lru, &demote_pages);
+            unlock_page(page);
+            continue;
+        }
+
+        /*
+         * Anonymous process memory has backing store?
+         * Try to allocate it some swap space here.
+         * Lazyfree page could be freed directly
+         */
+        if (PageAnon(page) && PageSwapBacked(page)) {
+            panic("%s: PageAnon && PageSwapBacked!\n", __func__);
+        } else if (PageSwapBacked(page) && PageTransHuge(page)) {
+#if 0
+            /* Split shmem THP */
+            if (split_folio_to_list(folio, page_list))
+                goto keep_locked;
+#endif
+            panic("%s: PageSwapBacked && PageTransHuge!\n", __func__);
+        }
+
+        /*
+         * THP may get split above, need minus tail pages and update
+         * nr_pages to avoid accounting tail pages twice.
+         *
+         * The tail pages that are added into swap cache successfully
+         * reach here.
+         */
+        if ((nr_pages > 1) && !PageTransHuge(page)) {
+            sc->nr_scanned -= (nr_pages - 1);
+            nr_pages = 1;
+        }
+
+        /*
+         * The page is mapped into the page tables of one or more
+         * processes. Try to unmap it here.
+         */
+        if (page_mapped(page)) {
+            panic("%s: page_mapped!\n", __func__);
+        }
+
+        if (PageDirty(page)) {
+            panic("%s: PageDirty!\n", __func__);
+        }
+
+        /*
+         * If the page has buffers, try to free the buffer mappings
+         * associated with this page. If we succeed we try to free
+         * the page as well.
+         *
+         * We do this even if the page is PageDirty().
+         * try_to_release_page() does not perform I/O, but it is
+         * possible for a page to have PageDirty set, but it is actually
+         * clean (all its buffers are clean).  This happens if the
+         * buffers were written out directly, with submit_bh(). ext3
+         * will do this, as well as the blockdev mapping.
+         * try_to_release_page() will discover that cleanness and will
+         * drop the buffers and mark the page clean - it can be freed.
+         *
+         * Rarely, pages can have buffers and no ->mapping.  These are
+         * the pages which were not successfully invalidated in
+         * truncate_cleanup_page().  We try to drop those buffers here
+         * and if that worked, and the page is no longer mapped into
+         * process address space (page_count == 1) it can be freed.
+         * Otherwise, leave the page on the LRU so it is swappable.
+         */
+        if (page_has_private(page)) {
+            panic("%s: page_has_private!\n", __func__);
+        }
+
+        if (PageAnon(page) && !PageSwapBacked(page)) {
+            panic("%s: PageAnon && !PageSwapBacked!\n", __func__);
+        } else if (!mapping || !__remove_mapping(mapping, folio, true,
+                                                 sc->target_mem_cgroup))
+            goto keep_locked;
+
+        unlock_page(page);
+
+     free_it:
+        /*
+         * THP may get swapped out in a whole, need account
+         * all base pages.
+         */
+        nr_reclaimed += nr_pages;
+
+        /*
+         * Is there need to periodically free_page_list? It would
+         * appear not as the counts should be low
+         */
+        if (unlikely(PageTransHuge(page)))
+            destroy_compound_page(page);
+        else
+            list_add(&page->lru, &free_pages);
+        continue;
+
+     activate_locked_split:
+        /*
+         * The tail pages that are failed to add into swap cache
+         * reach here.  Fixup nr_scanned and nr_pages.
+         */
+        if (nr_pages > 1) {
+            sc->nr_scanned -= (nr_pages - 1);
+            nr_pages = 1;
+        }
 
      activate_locked:
         /* Not a candidate for swapping, so reclaim swap space. */
@@ -863,8 +1213,64 @@ static unsigned int shrink_page_list(struct list_head *page_list,
         list_add(&page->lru, &ret_pages);
         VM_BUG_ON_PAGE(PageLRU(page) || PageUnevictable(page), page);
     }
+    /* 'page_list' is always empty here */
 
-    panic("%s: END!\n", __func__);
+    /* Migrate pages selected for demotion */
+    nr_reclaimed += demote_page_list(&demote_pages, pgdat);
+    /* Pages that could not be demoted are still in @demote_pages */
+    if (!list_empty(&demote_pages)) {
+        /* Pages which failed to demoted go back on @page_list for retry: */
+        list_splice_init(&demote_pages, page_list);
+        do_demote_pass = false;
+        goto retry;
+    }
+
+    pgactivate = stat->nr_activate[0] + stat->nr_activate[1];
+
+    free_unref_page_list(&free_pages);
+
+    list_splice(&ret_pages, page_list);
+    //count_vm_events(PGACTIVATE, pgactivate);
+
+    return nr_reclaimed;
+}
+
+/*
+ * move_pages_to_lru() moves pages from private @list to appropriate LRU list.
+ * On return, @list is reused as a list of pages to be freed by the caller.
+ *
+ * Returns the number of pages moved to the given lruvec.
+ */
+static unsigned int move_pages_to_lru(struct lruvec *lruvec,
+                                      struct list_head *list)
+{
+    int nr_pages, nr_moved = 0;
+    LIST_HEAD(pages_to_free);
+    struct page *page;
+
+    while (!list_empty(list)) {
+        page = lru_to_page(list);
+        VM_BUG_ON_PAGE(PageLRU(page), page);
+        list_del(&page->lru);
+        if (unlikely(!page_evictable(page))) {
+#if 0
+            spin_unlock_irq(&lruvec->lru_lock);
+            putback_lru_page(page);
+            spin_lock_irq(&lruvec->lru_lock);
+#endif
+            panic("%s: !page_evictable!\n", __func__);
+            continue;
+        }
+
+        panic("%s: 1!\n", __func__);
+    }
+
+    /*
+     * To save our caller's stack, now use input list for pages to free.
+     */
+    list_splice(&pages_to_free, list);
+
+    return nr_moved;
 }
 
 /*
@@ -921,8 +1327,42 @@ shrink_inactive_list(unsigned long nr_to_scan, struct lruvec *lruvec,
     nr_reclaimed = shrink_page_list(&page_list, pgdat, sc, &stat, false);
 
     spin_lock_irq(&lruvec->lru_lock);
+    move_pages_to_lru(lruvec, &page_list);
 
-    panic("%s: END!\n", __func__);
+    __mod_node_page_state(pgdat, NR_ISOLATED_ANON + file, -nr_taken);
+    item = current_is_kswapd() ? PGSTEAL_KSWAPD : PGSTEAL_DIRECT;
+    if (!cgroup_reclaim(sc))
+        __count_vm_events(item, nr_reclaimed);
+    __count_vm_events(PGSTEAL_ANON + file, nr_reclaimed);
+    spin_unlock_irq(&lruvec->lru_lock);
+
+    lru_note_cost(lruvec, file, stat.nr_pageout);
+    free_unref_page_list(&page_list);
+
+    /*
+     * If dirty pages are scanned that are not queued for IO, it
+     * implies that flushers are not doing their job. This can
+     * happen when memory pressure pushes dirty pages to the end of
+     * the LRU before the dirty limits are breached and the dirty
+     * data has expired. It can also happen when the proportion of
+     * dirty pages grows not through writes but through memory
+     * pressure reclaiming all the clean cache. And in some cases,
+     * the flushers simply cannot keep up with the allocation
+     * rate. Nudge the flusher threads in case they are asleep.
+     */
+    if (stat.nr_unqueued_dirty == nr_taken)
+        wakeup_flusher_threads(WB_REASON_VMSCAN);
+
+    sc->nr.dirty += stat.nr_dirty;
+    sc->nr.congested += stat.nr_congested;
+    sc->nr.unqueued_dirty += stat.nr_unqueued_dirty;
+    sc->nr.writeback += stat.nr_writeback;
+    sc->nr.immediate += stat.nr_immediate;
+    sc->nr.taken += nr_taken;
+    if (file)
+        sc->nr.file_taken += nr_taken;
+
+    return nr_reclaimed;
 }
 
 static unsigned long shrink_list(enum lru_list lru, unsigned long nr_to_scan,
@@ -983,6 +1423,11 @@ static void shrink_lruvec(struct lruvec *lruvec, struct scan_control *sc)
                 nr_reclaimed += shrink_list(lru, nr_to_scan, lruvec, sc);
             }
         }
+
+        cond_resched();
+
+        if (nr_reclaimed < nr_to_reclaim || scan_adjusted)
+            continue;
 
         panic("%s: 1!\n", __func__);
     }

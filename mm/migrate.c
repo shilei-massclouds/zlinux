@@ -103,3 +103,26 @@ int buffer_migrate_page(struct address_space *mapping,
     //return __buffer_migrate_page(mapping, newpage, page, mode, false);
 }
 EXPORT_SYMBOL(buffer_migrate_page);
+
+static struct demotion_nodes *node_demotion __read_mostly;
+
+/**
+ * next_demotion_node() - Get the next node in the demotion path
+ * @node: The starting node to lookup the next node
+ *
+ * Return: node id for next memory node in the demotion path hierarchy
+ * from @node; NUMA_NO_NODE if @node is terminal.  This does not keep
+ * @node online or guarantee that it *continues* to be the next demotion
+ * target.
+ */
+int next_demotion_node(int node)
+{
+    struct demotion_nodes *nd;
+    unsigned short target_nr, index;
+    int target;
+
+    if (!node_demotion)
+        return NUMA_NO_NODE;
+
+    panic("%s: END!\n", __func__);
+}

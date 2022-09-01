@@ -106,3 +106,11 @@ void inode_wait_for_writeback(struct inode *inode)
     __inode_wait_for_writeback(inode);
     spin_unlock(&inode->i_lock);
 }
+
+/*
+ * Wakeup the flusher threads to start writeback of all currently dirty pages
+ */
+void wakeup_flusher_threads(enum wb_reason reason)
+{
+    panic("%s: END!\n", __func__);
+}

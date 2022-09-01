@@ -395,4 +395,18 @@ arch_atomic_add_negative(int i, atomic_t *v)
 #define arch_atomic_add_negative arch_atomic_add_negative
 #endif
 
+#ifndef arch_atomic_set_release
+static __always_inline void
+arch_atomic_set_release(atomic_t *v, int i)
+{
+    if (__native_word(atomic_t)) {
+        smp_store_release(&(v)->counter, i);
+    } else {
+        __atomic_release_fence();
+        arch_atomic_set(v, i);
+    }
+}
+#define arch_atomic_set_release arch_atomic_set_release
+#endif
+
 #endif /* _LINUX_ATOMIC_FALLBACK_H */

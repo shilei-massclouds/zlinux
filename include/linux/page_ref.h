@@ -137,4 +137,29 @@ static inline int folio_ref_sub_and_test(struct folio *folio, int nr)
     return page_ref_sub_and_test(&folio->page, nr);
 }
 
+static inline int page_ref_freeze(struct page *page, int count)
+{
+    int ret = likely(atomic_cmpxchg(&page->_refcount, count, 0) == count);
+
+    return ret;
+}
+
+static inline int folio_ref_freeze(struct folio *folio, int count)
+{
+    return page_ref_freeze(&folio->page, count);
+}
+
+static inline void page_ref_unfreeze(struct page *page, int count)
+{
+    VM_BUG_ON_PAGE(page_count(page) != 0, page);
+    VM_BUG_ON(count == 0);
+
+    atomic_set_release(&page->_refcount, count);
+}
+
+static inline void folio_ref_unfreeze(struct folio *folio, int count)
+{
+    page_ref_unfreeze(&folio->page, count);
+}
+
 #endif /* _LINUX_PAGE_REF_H */

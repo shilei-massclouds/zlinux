@@ -90,4 +90,6 @@ void inode_wait_for_writeback(struct inode *inode);
 
 extern int laptop_mode;
 
+void wakeup_flusher_threads(enum wb_reason reason);
+
 #endif  /* WRITEBACK_H */
