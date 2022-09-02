@@ -15,10 +15,8 @@
 #endif
 #include <linux/spinlock.h>
 #include <linux/wait.h>
-#if 0
 #include <linux/timer.h>
 #include <linux/hrtimer.h>
-#endif
 #include <linux/completion.h>
 
 struct device;

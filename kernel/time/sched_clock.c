@@ -139,7 +139,7 @@ sched_clock_register(u64 (*read)(void), int bits, unsigned long rate)
 
     if (sched_clock_timer.function != NULL) {
         /* update timeout for clock wrap */
-        //hrtimer_start(&sched_clock_timer, cd.wrap_kt, HRTIMER_MODE_REL_HARD);
+        hrtimer_start(&sched_clock_timer, cd.wrap_kt, HRTIMER_MODE_REL_HARD);
         panic("%s: 1!\n", __func__);
     }
 
@@ -170,4 +170,55 @@ sched_clock_register(u64 (*read)(void), int bits, unsigned long rate)
     local_irq_restore(flags);
 
     pr_info("Registered %pS as sched_clock source\n", read);
+}
+
+/*
+ * Atomically update the sched_clock() epoch.
+ */
+static void update_sched_clock(void)
+{
+    u64 cyc;
+    u64 ns;
+    struct clock_read_data rd;
+
+    rd = cd.read_data[0];
+
+    cyc = cd.actual_read_sched_clock();
+    ns = rd.epoch_ns + cyc_to_ns((cyc - rd.epoch_cyc) &
+                                 rd.sched_clock_mask,
+                                 rd.mult, rd.shift);
+
+    rd.epoch_ns = ns;
+    rd.epoch_cyc = cyc;
+
+    update_clock_read_data(&rd);
+}
+
+static enum hrtimer_restart sched_clock_poll(struct hrtimer *hrt)
+{
+    update_sched_clock();
+    hrtimer_forward_now(hrt, cd.wrap_kt);
+
+    return HRTIMER_RESTART;
+}
+
+void __init generic_sched_clock_init(void)
+{
+    /*
+     * If no sched_clock() function has been provided at that point,
+     * make it the final one.
+     */
+    if (cd.actual_read_sched_clock == jiffy_sched_clock_read)
+        sched_clock_register(jiffy_sched_clock_read, BITS_PER_LONG, HZ);
+
+    update_sched_clock();
+
+    /*
+     * Start the timer to keep sched_clock() properly updated and
+     * sets the initial epoch.
+     */
+    hrtimer_init(&sched_clock_timer, CLOCK_MONOTONIC,
+                 HRTIMER_MODE_REL_HARD);
+    sched_clock_timer.function = sched_clock_poll;
+    hrtimer_start(&sched_clock_timer, cd.wrap_kt, HRTIMER_MODE_REL_HARD);
 }

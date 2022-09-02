@@ -27,7 +27,7 @@
 //#include <linux/ptrace.h>
 #include <linux/uaccess.h>
 #include <linux/numa.h>
-//#include <linux/sched/isolation.h>
+#include <linux/sched/isolation.h>
 
 static DEFINE_SPINLOCK(kthread_create_lock);
 static LIST_HEAD(kthread_create_list);
@@ -153,6 +153,14 @@ struct task_struct *__kthread_create_on_node(int (*threadfn)(void *data),
     spin_unlock(&kthread_create_lock);
 
     wake_up_process(kthreadd_task);
+    /*
+     * Wait for completion in killable state, for I might be chosen by
+     * the OOM killer while kthreadd is trying to allocate memory for
+     * new kernel thread.
+     */
+    if (unlikely(wait_for_completion_killable(&done))) {
+        panic("%s: 1!\n", __func__);
+    }
 
     panic("%s: END!\n", __func__);
 }
@@ -310,3 +318,16 @@ void kthread_unpark(struct task_struct *k)
     wake_up_state(k, TASK_PARKED);
 }
 EXPORT_SYMBOL_GPL(kthread_unpark);
+
+int kthreadd(void *unused)
+{
+    struct task_struct *tsk = current;
+
+    /* Setup a clean context for our children to inherit. */
+    set_task_comm(tsk, "kthreadd");
+    //ignore_signals(tsk);
+    set_cpus_allowed_ptr(tsk, housekeeping_cpumask(HK_TYPE_KTHREAD));
+
+    panic("%s: END!\n", __func__);
+    return 0;
+}

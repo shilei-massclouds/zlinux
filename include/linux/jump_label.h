@@ -2,6 +2,8 @@
 #ifndef _LINUX_JUMP_LABEL_H
 #define _LINUX_JUMP_LABEL_H
 
+//#include <asm/jump_label.h>
+
 #ifndef __ASSEMBLY__
 
 #include <linux/types.h>
@@ -9,8 +11,78 @@
 #include <linux/atomic.h>
 #include <linux/bug.h>
 
+#define JUMP_TYPE_FALSE     0UL
+#define JUMP_TYPE_TRUE      1UL
+#define JUMP_TYPE_LINKED    2UL
+#define JUMP_TYPE_MASK      3UL
+
+extern bool static_key_initialized;
+
+enum jump_label_type {
+    JUMP_LABEL_NOP = 0,
+    JUMP_LABEL_JMP,
+};
+
+struct jump_entry {
+    s32 code;
+    s32 target;
+    long key;   // key may be far away from the core kernel under KASLR
+};
+
+static inline bool jump_entry_is_branch(const struct jump_entry *entry)
+{
+    return (unsigned long)entry->key & 1UL;
+}
+
+static inline bool jump_entry_is_init(const struct jump_entry *entry)
+{
+    return (unsigned long)entry->key & 2UL;
+}
+
+static inline
+unsigned long jump_entry_code(const struct jump_entry *entry)
+{
+    return (unsigned long)&entry->code + entry->code;
+}
+
+static inline
+unsigned long jump_entry_target(const struct jump_entry *entry)
+{
+    return (unsigned long)&entry->target + entry->target;
+}
+
+static inline
+struct static_key *jump_entry_key(const struct jump_entry *entry)
+{
+    long offset = entry->key & ~3L;
+
+    return (struct static_key *)((unsigned long)&entry->key + offset);
+}
+
+#define STATIC_KEY_CHECK_USE(key) WARN(!static_key_initialized,           \
+                    "%s(): static key '%pS' used before call to jump_label_init()", \
+                    __func__, (key))
+
 struct static_key {
     atomic_t enabled;
+/*
+ * Note:
+ *   To make anonymous unions work with old compilers, the static
+ *   initialization of them requires brackets. This creates a dependency
+ *   on the order of the struct with the initializers. If any fields
+ *   are added, STATIC_KEY_INIT_TRUE and STATIC_KEY_INIT_FALSE may need
+ *   to be modified.
+ *
+ * bit 0 => 1 if key is initially true
+ *      0 if initially false
+ * bit 1 => 1 if points to struct static_key_mod
+ *      0 if points to struct jump_entry
+ */
+    union {
+        unsigned long type;
+        struct jump_entry *entries;
+        struct static_key_mod *next;
+    };
 };
 
 /*
@@ -27,6 +99,9 @@ struct static_key_true {
 struct static_key_false {
     struct static_key key;
 };
+
+extern void static_key_slow_inc(struct static_key *key);
+extern void static_key_slow_dec(struct static_key *key);
 
 #define STATIC_KEY_INIT_TRUE    { .enabled = ATOMIC_INIT(1) }
 #define STATIC_KEY_INIT_FALSE   { .enabled = ATOMIC_INIT(0) }
@@ -84,6 +159,36 @@ static inline int static_key_count(struct static_key *key)
 
 #define static_branch_maybe(config, x) \
     (IS_ENABLED(config) ? static_branch_likely(x) : static_branch_unlikely(x))
+
+#define static_branch_maybe(config, x)                  \
+    (IS_ENABLED(config) ? static_branch_likely(x)           \
+                : static_branch_unlikely(x))
+
+/*
+ * Advanced usage; refcount, branch is enabled when: count != 0
+ */
+
+#define static_branch_inc(x)        static_key_slow_inc(&(x)->key)
+#define static_branch_dec(x)        static_key_slow_dec(&(x)->key)
+#define static_branch_inc_cpuslocked(x) static_key_slow_inc_cpuslocked(&(x)->key)
+#define static_branch_dec_cpuslocked(x) static_key_slow_dec_cpuslocked(&(x)->key)
+
+/*
+ * Normal usage; boolean enable/disable.
+ */
+
+#define static_branch_enable(x)         static_key_enable(&(x)->key)
+#define static_branch_disable(x)        static_key_disable(&(x)->key)
+#define static_branch_enable_cpuslocked(x)  static_key_enable_cpuslocked(&(x)->key)
+#define static_branch_disable_cpuslocked(x) static_key_disable_cpuslocked(&(x)->key)
+
+extern void jump_label_init(void);
+
+extern struct jump_entry __start___jump_table[];
+extern struct jump_entry __stop___jump_table[];
+
+extern void arch_jump_label_transform(struct jump_entry *entry,
+                                      enum jump_label_type type);
 
 #endif /* __ASSEMBLY__ */
 

@@ -2291,3 +2291,55 @@ void folio_putback_lru(struct folio *folio)
     folio_add_lru(folio);
     folio_put(folio);       /* drop ref from isolate */
 }
+
+/*
+ * The background pageout daemon, started as a kernel thread
+ * from the init process.
+ *
+ * This basically trickles out pages so that we have _some_
+ * free memory available even if there is no other activity
+ * that frees anything up. This is needed for things like routing
+ * etc, where we otherwise might have all activity going on in
+ * asynchronous contexts that cannot page things out.
+ *
+ * If there are applications that are active memory-allocators
+ * (most normal use), this basically shouldn't matter.
+ */
+static int kswapd(void *p)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * This kswapd start function will be called by init and node-hot-add.
+ * On node-hot-add, kswapd will moved to proper cpus if cpus are hot-added.
+ */
+void kswapd_run(int nid)
+{
+    pg_data_t *pgdat = NODE_DATA(nid);
+
+    if (pgdat->kswapd)
+        return;
+
+    printk("%s: 1\n", __func__);
+    pgdat->kswapd = kthread_run(kswapd, pgdat, "kswapd%d", nid);
+    printk("%s: 2\n", __func__);
+    if (IS_ERR(pgdat->kswapd)) {
+        /* failure at boot is fatal */
+        BUG_ON(system_state < SYSTEM_RUNNING);
+        pr_err("Failed to start kswapd on node %d\n", nid);
+        pgdat->kswapd = NULL;
+    }
+}
+
+static int __init kswapd_init(void)
+{
+    int nid;
+
+    swap_setup();
+    for_each_node_state(nid, N_MEMORY)
+        kswapd_run(nid);
+    return 0;
+}
+
+module_init(kswapd_init)

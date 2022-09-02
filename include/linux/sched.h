@@ -17,9 +17,9 @@
 #endif
 #include <linux/shm.h>
 #include <linux/mutex.h>
+#include <linux/hrtimer.h>
 #if 0
 #include <linux/plist.h>
-#include <linux/hrtimer.h>
 #include <linux/irqflags.h>
 #include <linux/seccomp.h>
 #endif
@@ -43,6 +43,10 @@
 #include <linux/seqlock.h>
 #include <asm/kmap_size.h>
 #endif
+
+/* Increase resolution of cpu_capacity calculations */
+# define SCHED_CAPACITY_SHIFT       SCHED_FIXEDPOINT_SHIFT
+# define SCHED_CAPACITY_SCALE       (1L << SCHED_CAPACITY_SHIFT)
 
 /* Used in tsk->state: */
 #define TASK_RUNNING            0x0000
@@ -145,6 +149,18 @@ static inline int _cond_resched(void) { return 0; }
         smp_store_mb(current->__state, (state_value));      \
     } while (0)
 
+/*
+ * Utilization clamp constraints.
+ * @UCLAMP_MIN: Minimum utilization
+ * @UCLAMP_MAX: Maximum utilization
+ * @UCLAMP_CNT: Utilization clamp constraints count
+ */
+enum uclamp_id {
+    UCLAMP_MIN = 0,
+    UCLAMP_MAX,
+    UCLAMP_CNT
+};
+
 struct load_weight {
     unsigned long   weight;
     u32             inv_weight;
@@ -154,7 +170,97 @@ struct wake_q_node {
     struct wake_q_node *next;
 };
 
+/**
+ * struct util_est - Estimation utilization of FAIR tasks
+ * @enqueued: instantaneous estimated utilization of a task/cpu
+ * @ewma:     the Exponential Weighted Moving Average (EWMA)
+ *            utilization of a task
+ *
+ * Support data structure to track an Exponential Weighted Moving Average
+ * (EWMA) of a FAIR task's utilization. New samples are added to the moving
+ * average each time a task completes an activation. Sample's weight is chosen
+ * so that the EWMA will be relatively insensitive to transient changes to the
+ * task's workload.
+ *
+ * The enqueued attribute has a slightly different meaning for tasks and cpus:
+ * - task:   the task's util_avg at last task dequeue time
+ * - cfs_rq: the sum of util_est.enqueued for each RUNNABLE task on that CPU
+ * Thus, the util_est.enqueued of a task represents the contribution on the
+ * estimated utilization of the CPU where that task is currently enqueued.
+ *
+ * Only for tasks we track a moving average of the past instantaneous
+ * estimated utilization. This allows to absorb sporadic drops in utilization
+ * of an otherwise almost periodic task.
+ *
+ * The UTIL_AVG_UNCHANGED flag is used to synchronize util_est with util_avg
+ * updates. When a task is dequeued, its util_est should not be updated if its
+ * util_avg has not been updated in the meantime.
+ * This information is mapped into the MSB bit of util_est.enqueued at dequeue
+ * time. Since max value of util_est.enqueued for a task is 1024 (PELT util_avg
+ * for a task) it is safe to use MSB.
+ */
+struct util_est {
+    unsigned int            enqueued;
+    unsigned int            ewma;
+#define UTIL_EST_WEIGHT_SHIFT       2
+#define UTIL_AVG_UNCHANGED      0x80000000
+} __attribute__((__aligned__(sizeof(u64))));
+
+/*
+ * The load/runnable/util_avg accumulates an infinite geometric series
+ * (see __update_load_avg_cfs_rq() in kernel/sched/pelt.c).
+ *
+ * [load_avg definition]
+ *
+ *   load_avg = runnable% * scale_load_down(load)
+ *
+ * [runnable_avg definition]
+ *
+ *   runnable_avg = runnable% * SCHED_CAPACITY_SCALE
+ *
+ * [util_avg definition]
+ *
+ *   util_avg = running% * SCHED_CAPACITY_SCALE
+ *
+ * where runnable% is the time ratio that a sched_entity is runnable and
+ * running% the time ratio that a sched_entity is running.
+ *
+ * For cfs_rq, they are the aggregated values of all runnable and blocked
+ * sched_entities.
+ *
+ * The load/runnable/util_avg doesn't directly factor frequency scaling and CPU
+ * capacity scaling. The scaling is done through the rq_clock_pelt that is used
+ * for computing those signals (see update_rq_clock_pelt())
+ *
+ * N.B., the above ratios (runnable% and running%) themselves are in the
+ * range of [0, 1]. To do fixed point arithmetics, we therefore scale them
+ * to as large a range as necessary. This is for example reflected by
+ * util_avg's SCHED_CAPACITY_SCALE.
+ *
+ * [Overflow issue]
+ *
+ * The 64-bit load_sum can have 4353082796 (=2^64/47742/88761) entities
+ * with the highest load (=88761), always runnable on a single cfs_rq,
+ * and should not overflow as the number already hits PID_MAX_LIMIT.
+ *
+ * For all other cases (including 32-bit kernels), struct load_weight's
+ * weight will overflow first before we do, because:
+ *
+ *    Max(load_avg) <= Max(load.weight)
+ *
+ * Then it is the load_weight's responsibility to consider overflow
+ * issues.
+ */
 struct sched_avg {
+    u64             last_update_time;
+    u64             load_sum;
+    u64             runnable_sum;
+    u32             util_sum;
+    u32             period_contrib;
+    unsigned long           load_avg;
+    unsigned long           runnable_avg;
+    unsigned long           util_avg;
+    struct util_est         util_est;
 } ____cacheline_aligned;
 
 struct sched_entity {
@@ -675,5 +781,14 @@ static inline int test_tsk_thread_flag(struct task_struct *tsk, int flag)
 extern int wake_up_state(struct task_struct *tsk, unsigned int state);
 
 asmlinkage void schedule(void);
+
+extern void
+__set_task_comm(struct task_struct *tsk, const char *from, bool exec);
+
+static inline
+void set_task_comm(struct task_struct *tsk, const char *from)
+{
+    __set_task_comm(tsk, from, false);
+}
 
 #endif /* _LINUX_SCHED_H */

@@ -81,11 +81,19 @@ static inline ktime_t timespec64_to_ktime(struct timespec64 ts)
  */
 #define ktime_sub_ns(kt, nsval)     ((kt) - (nsval))
 
+/*
+ * Same as ktime_add(), but avoids undefined behaviour on overflow; however,
+ * this means that you must check the result for overflow yourself.
+ */
+#define ktime_add_unsafe(lhs, rhs)  ((u64) (lhs) + (rhs))
+
 /* Convert ktime_t to nanoseconds */
 static inline s64 ktime_to_ns(const ktime_t kt)
 {
     return kt;
 }
+
+extern ktime_t ktime_add_safe(const ktime_t lhs, const ktime_t rhs);
 
 #include <linux/timekeeping.h>
 

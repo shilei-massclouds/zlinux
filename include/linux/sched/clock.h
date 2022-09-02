@@ -22,4 +22,10 @@ static inline u64 local_clock(void)
     return sched_clock();
 }
 
+extern void sched_clock_init(void);
+
+extern void generic_sched_clock_init(void);
+
+extern u64 sched_clock_cpu(int cpu);
+
 #endif /* _LINUX_SCHED_CLOCK_H */

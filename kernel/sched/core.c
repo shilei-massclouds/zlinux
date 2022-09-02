@@ -29,13 +29,13 @@
 #include <linux/refcount_api.h>
 #endif
 #include <linux/topology.h>
-#if 0
 #include <linux/sched/clock.h>
+#if 0
 #include <linux/sched/cond_resched.h>
-#include <linux/sched/isolation.h>
-#include <linux/sched/nohz.h>
 #include <linux/sched/rseq_api.h>
 #endif
+#include <linux/sched/nohz.h>
+#include <linux/sched/isolation.h>
 #include <linux/sched/debug.h>
 #include <linux/sched/loadavg.h>
 #include <linux/sched/mm.h>
@@ -81,17 +81,20 @@
 #endif
 
 #include "sched.h"
-#if 0
 #include "stats.h"
+#include "pelt.h"
+#if 0
 #include "autogroup.h"
 
-#include "pelt.h"
 #include "smp.h"
 
 #include "../workqueue_internal.h"
 #include "../../fs/io-wq.h"
 #endif
 #include "../smpboot.h"
+
+#define for_each_clamp_id(clamp_id) \
+    for ((clamp_id) = 0; (clamp_id) < UCLAMP_CNT; (clamp_id)++)
 
 struct migration_arg {
     struct task_struct      *task;
@@ -110,6 +113,26 @@ struct set_affinity_pending {
     struct cpu_stop_work    stop_work;
     struct migration_arg    arg;
 };
+
+/*
+ * This static key is used to reduce the uclamp overhead in the fast path. It
+ * primarily disables the call to uclamp_rq_{inc, dec}() in
+ * enqueue/dequeue_task().
+ *
+ * This allows users to continue to enable uclamp in their kernel config with
+ * minimum uclamp overhead in the fast path.
+ *
+ * As soon as userspace modifies any of the uclamp knobs, the static key is
+ * enabled, since we have an actual users that make use of uclamp
+ * functionality.
+ *
+ * The knobs that would enable this static key are:
+ *
+ *   * A task modifying its uclamp value with sched_setattr().
+ *   * An admin modifying the sysctl_sched_uclamp_{min, max} via procfs.
+ *   * An admin modifying the cgroup cpu.uclamp.{min, max}
+ */
+DEFINE_STATIC_KEY_FALSE(sched_uclamp_used);
 
 DEFINE_PER_CPU(struct kernel_stat, kstat);
 DEFINE_PER_CPU(struct kernel_cpustat, kernel_cpustat);
@@ -168,6 +191,15 @@ struct callback_head balance_push_callback = {
     .next = NULL,
     .func = (void (*)(struct callback_head *))balance_push,
 };
+
+static inline struct cpumask *clear_user_cpus_ptr(struct task_struct *p)
+{
+    struct cpumask *user_mask = NULL;
+
+    swap(p->user_cpus_ptr, user_mask);
+
+    return user_mask;
+}
 
 static inline void prepare_task(struct task_struct *next)
 {
@@ -272,8 +304,6 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
         WRITE_ONCE(p->__state, TASK_RUNNING);
         goto out;
     }
-
-    printk("%s: step1 p(%lx)\n", __func__, p);
 
     /*
      * If we are going to wake up a thread waiting for CONDITION we
@@ -1015,6 +1045,42 @@ struct rq *__task_rq_lock(struct task_struct *p, struct rq_flags *rf)
     }
 }
 
+static inline void sched_core_enqueue(struct rq *rq,
+                                      struct task_struct *p)
+{
+}
+static inline void
+sched_core_dequeue(struct rq *rq, struct task_struct *p, int flags)
+{
+}
+
+static void update_rq_clock_task(struct rq *rq, s64 delta)
+{
+/*
+ * In theory, the compile should just see 0 here, and optimize out the call
+ * to sched_rt_avg_update. But I don't trust it...
+ */
+    s64 __maybe_unused steal = 0, irq_delta = 0;
+
+    rq->clock_task += delta;
+
+    update_rq_clock_pelt(rq, delta);
+}
+
+void update_rq_clock(struct rq *rq)
+{
+    s64 delta;
+
+    if (rq->clock_update_flags & RQCF_ACT_SKIP)
+        return;
+
+    delta = sched_clock_cpu(cpu_of(rq)) - rq->clock;
+    if (delta < 0)
+        return;
+    rq->clock += delta;
+    update_rq_clock_task(rq, delta);
+}
+
 static inline void enqueue_task(struct rq *rq, struct task_struct *p, int flags)
 {
 #if 0
@@ -1069,8 +1135,8 @@ void wake_up_new_task(struct task_struct *p)
     __set_task_cpu(p, select_task_rq(p, task_cpu(p), WF_FORK));
 
     rq = __task_rq_lock(p, &rf);
-#if 0
     update_rq_clock(rq);
+#if 0
     post_init_entity_util_avg(p);
 #endif
 
@@ -1471,7 +1537,8 @@ void set_rq_offline(struct rq *rq)
  * smp_call_function() if an IPI is sent by the same process we are
  * waiting to become inactive.
  */
-unsigned long wait_task_inactive(struct task_struct *p, unsigned int match_state)
+unsigned long wait_task_inactive(struct task_struct *p,
+                                 unsigned int match_state)
 {
     int running, queued;
     struct rq_flags rf;
@@ -1481,11 +1548,76 @@ unsigned long wait_task_inactive(struct task_struct *p, unsigned int match_state
     panic("%s: NOT-implemented!\n", __func__);
 }
 
+static inline void uclamp_rq_inc(struct rq *rq, struct task_struct *p)
+{ }
+static inline void uclamp_rq_dec(struct rq *rq, struct task_struct *p)
+{ }
+static inline int uclamp_validate(struct task_struct *p,
+                                  const struct sched_attr *attr)
+{
+    return -EOPNOTSUPP;
+}
+static void __setscheduler_uclamp(struct task_struct *p,
+                                  const struct sched_attr *attr)
+{ }
+static inline void uclamp_fork(struct task_struct *p) { }
+static inline void uclamp_post_fork(struct task_struct *p) { }
+static inline void init_uclamp(void) { }
+
+static inline void dequeue_task(struct rq *rq, struct task_struct *p,
+                                int flags)
+{
+    if (sched_core_enabled(rq))
+        sched_core_dequeue(rq, p, flags);
+
+    if (!(flags & DEQUEUE_NOCLOCK))
+        update_rq_clock(rq);
+
+    if (!(flags & DEQUEUE_SAVE)) {
+        sched_info_dequeue(rq, p);
+        psi_dequeue(p, flags & DEQUEUE_SLEEP);
+    }
+
+    uclamp_rq_dec(rq, p);
+    p->sched_class->dequeue_task(rq, p, flags);
+}
+
 static void
 __do_set_cpus_allowed(struct task_struct *p,
                       const struct cpumask *new_mask,
                       u32 flags)
 {
+    struct rq *rq = task_rq(p);
+    bool queued, running;
+
+    /*
+     * This here violates the locking rules for affinity, since we're only
+     * supposed to change these variables while holding both rq->lock and
+     * p->pi_lock.
+     *
+     * HOWEVER, it magically works, because ttwu() is the only code that
+     * accesses these variables under p->pi_lock and only does so after
+     * smp_cond_load_acquire(&p->on_cpu, !VAL), and we're in __schedule()
+     * before finish_task().
+     *
+     * XXX do further audits, this smells like something putrid.
+     */
+    if (flags & SCA_MIGRATE_DISABLE)
+        SCHED_WARN_ON(!p->on_cpu);
+
+    queued = task_on_rq_queued(p);
+    running = task_current(rq, p);
+
+    if (queued) {
+        /*
+         * Because __kthread_bind() calls this on blocked tasks without
+         * holding rq->lock.
+         */
+        dequeue_task(rq, p, DEQUEUE_SAVE | DEQUEUE_NOCLOCK);
+    }
+    if (running)
+        put_prev_task(rq, p);
+
     panic("%s: NOT-implemented!\n", __func__);
 }
 
@@ -1512,7 +1644,7 @@ static int __set_cpus_allowed_ptr_locked(struct task_struct *p,
     unsigned int dest_cpu;
     int ret = 0;
 
-    //update_rq_clock(rq);
+    update_rq_clock(rq);
 
     if (kthread || is_migration_disabled(p)) {
         /*
@@ -1553,7 +1685,6 @@ static int __set_cpus_allowed_ptr_locked(struct task_struct *p,
         }
     }
 
-#if 0
     /*
      * Picking a ~random cpu helps in cases where we are changing affinity
      * for groups of tasks (ie. cpuset), so that load balancing is not
@@ -1564,7 +1695,11 @@ static int __set_cpus_allowed_ptr_locked(struct task_struct *p,
         ret = -EINVAL;
         goto out;
     }
-#endif
+
+    __do_set_cpus_allowed(p, new_mask, flags);
+
+    if (flags & SCA_USER)
+        user_mask = clear_user_cpus_ptr(p);
 
     panic("%s: NOT-implemented!\n", __func__);
 
@@ -1692,6 +1827,19 @@ int wake_up_state(struct task_struct *p, unsigned int state)
 }
 
 void sched_set_stop_task(int cpu, struct task_struct *stop)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
+/*
+ * In the semi idle case, use the nearest busy CPU for migrating timers
+ * from an idle CPU.  This is good for power-savings.
+ *
+ * We don't do similar optimization for completely idle system, as
+ * selecting an idle CPU will add more delays to the timers than intended
+ * (as that CPU's timer base may not be uptodate wrt jiffies etc).
+ */
+int get_nohz_timer_target(void)
 {
     panic("%s: NO implementation!\n", __func__);
 }

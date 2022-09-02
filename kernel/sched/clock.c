@@ -54,6 +54,8 @@
  *
  */
 
+static DEFINE_STATIC_KEY_FALSE(sched_clock_running);
+
 /*
  * Scheduler clock - returns current time in nanosec units.
  * This is default implementation.
@@ -65,3 +67,19 @@ notrace unsigned long long __weak sched_clock(void)
         * (NSEC_PER_SEC / HZ);
 }
 EXPORT_SYMBOL_GPL(sched_clock);
+
+void __init sched_clock_init(void)
+{
+    static_branch_inc(&sched_clock_running);
+    local_irq_disable();
+    generic_sched_clock_init();
+    local_irq_enable();
+}
+
+notrace u64 sched_clock_cpu(int cpu)
+{
+    if (!static_branch_likely(&sched_clock_running))
+        return 0;
+
+    return sched_clock();
+}

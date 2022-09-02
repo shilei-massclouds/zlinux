@@ -7,6 +7,8 @@
 #include <linux/memblock.h>
 #include <linux/numa.h>
 
+static DEFINE_PER_CPU(int, distribute_cpu_mask_prev);
+
 /**
  * cpumask_next - get the next cpu in a cpumask
  * @n: the cpu prior to the place to search (ie. return will be > @n)
@@ -34,7 +36,6 @@ EXPORT_SYMBOL(cpumask_next);
 int cpumask_any_and_distribute(const struct cpumask *src1p,
                    const struct cpumask *src2p)
 {
-#if 0
     int next, prev;
 
     /* NOTE: our first selection will skip 0. */
@@ -48,8 +49,6 @@ int cpumask_any_and_distribute(const struct cpumask *src1p,
         __this_cpu_write(distribute_cpu_mask_prev, next);
 
     return next;
-#endif
-    panic("%s: NOT-implemented!\n", __func__);
 }
 EXPORT_SYMBOL(cpumask_any_and_distribute);
 

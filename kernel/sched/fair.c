@@ -306,13 +306,64 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
     //hrtick_update(rq);
 }
 
+/* Runqueue only has SCHED_IDLE tasks enqueued */
+static int sched_idle_rq(struct rq *rq)
+{
+    return unlikely(rq->nr_running ==
+                    rq->cfs.idle_h_nr_running && rq->nr_running);
+}
+
+static inline unsigned long _task_util_est(struct task_struct *p)
+{
+    struct util_est ue = READ_ONCE(p->se.avg.util_est);
+
+    return max(ue.ewma, (ue.enqueued & ~UTIL_AVG_UNCHANGED));
+}
+
+static inline
+void util_est_dequeue(struct cfs_rq *cfs_rq, struct task_struct *p)
+{
+    unsigned int enqueued;
+
+    if (!sched_feat(UTIL_EST))
+        return;
+
+    /* Update root cfs_rq's estimated utilization */
+    enqueued  = cfs_rq->avg.util_est.enqueued;
+    enqueued -= min_t(unsigned int, enqueued, _task_util_est(p));
+    WRITE_ONCE(cfs_rq->avg.util_est.enqueued, enqueued);
+}
+
+static void
+dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se,
+               int flags)
+{
+    panic("%s: NO implementation!", __func__);
+}
+
 /*
  * The dequeue_task method is called before nr_running is
  * decreased. We remove the task from the rbtree and
  * update the fair scheduling stats:
  */
-static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
+static void dequeue_task_fair(struct rq *rq, struct task_struct *p,
+                              int flags)
 {
+    struct cfs_rq *cfs_rq;
+    struct sched_entity *se = &p->se;
+    int task_sleep = flags & DEQUEUE_SLEEP;
+    int idle_h_nr_running = task_has_idle_policy(p);
+    bool was_sched_idle = sched_idle_rq(rq);
+
+    util_est_dequeue(&rq->cfs, p);
+
+    for_each_sched_entity(se) {
+        cfs_rq = cfs_rq_of(se);
+        dequeue_entity(cfs_rq, se, flags);
+
+        panic("%s: 1!", __func__);
+    }
+
     panic("%s: NO implementation!", __func__);
 }
 

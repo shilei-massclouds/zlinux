@@ -18,8 +18,35 @@
 #include <linux/list.h>
 #include <linux/percpu.h>
 #include <linux/seqlock.h>
-//#include <linux/timer.h>
+#include <linux/timer.h>
 #include <linux/timerqueue.h>
+
+/*
+ * Values to track state of the timer
+ *
+ * Possible states:
+ *
+ * 0x00     inactive
+ * 0x01     enqueued into rbtree
+ *
+ * The callback state is not part of the timer->state because clearing it would
+ * mean touching the timer after the callback, this makes it impossible to free
+ * the timer from the callback function.
+ *
+ * Therefore we track the callback state in:
+ *
+ *  timer->base->cpu_base->running == timer
+ *
+ * On SMP it is possible to have a "callback function running and enqueued"
+ * status. It happens for example when a posix timer expired and the callback
+ * queued a signal. Between dropping the lock which protects the posix timer
+ * and reacquiring the base lock of the hrtimer, another CPU can deliver the
+ * signal and rearm the timer.
+ *
+ * All state transitions are protected by cpu_base->lock.
+ */
+#define HRTIMER_STATE_INACTIVE  0x00
+#define HRTIMER_STATE_ENQUEUED  0x01
 
 struct hrtimer_clock_base;
 struct hrtimer_cpu_base;
@@ -194,5 +221,74 @@ extern void hrtimer_init(struct hrtimer *timer, clockid_t which_clock,
 
 /* Bootup initialization: */
 extern void __init hrtimers_init(void);
+
+/* Basic timer operations: */
+extern void
+hrtimer_start_range_ns(struct hrtimer *timer, ktime_t tim,
+                       u64 range_ns, const enum hrtimer_mode mode);
+
+/**
+ * hrtimer_start - (re)start an hrtimer
+ * @timer:  the timer to be added
+ * @tim:    expiry time
+ * @mode:   timer mode: absolute (HRTIMER_MODE_ABS) or
+ *      relative (HRTIMER_MODE_REL), and pinned (HRTIMER_MODE_PINNED);
+ *      softirq based mode is considered for debug purpose only!
+ */
+static inline
+void hrtimer_start(struct hrtimer *timer, ktime_t tim,
+                   const enum hrtimer_mode mode)
+{
+    hrtimer_start_range_ns(timer, tim, 0, mode);
+}
+
+/**
+ * hrtimer_forward_now - forward the timer expiry so it expires after now
+ * @timer:  hrtimer to forward
+ * @interval:   the interval to forward
+ *
+ * Forward the timer expiry so it will expire after the current time
+ * of the hrtimer clock base. Returns the number of overruns.
+ *
+ * Can be safely called from the callback function of @timer. If
+ * called from other contexts @timer must neither be enqueued nor
+ * running the callback and the caller needs to take care of
+ * serialization.
+ *
+ * Note: This only updates the timer expiry value and does not requeue
+ * the timer.
+ */
+static inline u64 hrtimer_forward_now(struct hrtimer *timer,
+                                      ktime_t interval)
+{
+    //return hrtimer_forward(timer, timer->base->get_time(), interval);
+    panic("%s: END!\n", __func__);
+}
+
+int hrtimers_prepare_cpu(unsigned int cpu);
+int hrtimers_dead_cpu(unsigned int cpu);
+
+static inline
+void hrtimer_set_expires_range_ns(struct hrtimer *timer, ktime_t time,
+                                  u64 delta)
+{
+    timer->_softexpires = time;
+    timer->node.expires = ktime_add_safe(time, ns_to_ktime(delta));
+}
+
+static inline ktime_t hrtimer_get_expires(const struct hrtimer *timer)
+{
+    return timer->node.expires;
+}
+
+static inline s64 hrtimer_get_expires_tv64(const struct hrtimer *timer)
+{
+    return timer->node.expires;
+}
+static inline
+s64 hrtimer_get_softexpires_tv64(const struct hrtimer *timer)
+{
+    return timer->_softexpires;
+}
 
 #endif /* _LINUX_HRTIMER_H */

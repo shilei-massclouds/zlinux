@@ -17,6 +17,7 @@
 #include <linux/pid_namespace.h>
 #include <linux/sched.h>
 #include <linux/sched/init.h>
+#include <linux/sched/clock.h>
 #include <linux/sched/task.h>
 #include <linux/sched/task_stack.h>
 #include <linux/mm.h>
@@ -54,6 +55,13 @@ extern const struct obs_kernel_param __setup_start[], __setup_end[];
 
 enum system_states system_state __read_mostly;
 EXPORT_SYMBOL(system_state);
+
+/*
+ * Used to generate warnings if static_key manipulation functions are used
+ * before jump_label_init is called.
+ */
+bool static_key_initialized __read_mostly;
+EXPORT_SYMBOL_GPL(static_key_initialized);
 
 /* Untouched command line saved by arch-specific code. */
 char __initdata boot_command_line[COMMAND_LINE_SIZE];
@@ -407,12 +415,10 @@ noinline void __ref rest_init(void)
     //set_cpus_allowed_ptr(tsk, cpumask_of(smp_processor_id()));
     rcu_read_unlock();
 
-#if 0
     pid = kernel_thread(kthreadd, NULL, CLONE_FS | CLONE_FILES);
     rcu_read_lock();
     kthreadd_task = find_task_by_pid_ns(pid, &init_pid_ns);
     rcu_read_unlock();
-#endif
 
     /*
      * Enable might_sleep() and smp_processor_id() checks.
@@ -722,11 +728,8 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
 #endif
 
     pr_notice("Kernel command line: %s\n", saved_command_line);
-
-#if 0
     /* parameters may set static keys */
     jump_label_init();
-#endif
     parse_early_param();
     after_dashes = parse_args("Booting kernel",
                               static_command_line, __start___param,
@@ -772,6 +775,7 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
     printk("############## %s: step2\n", __func__);
 
     init_IRQ();
+    hrtimers_init();
     //softirq_init();
     timekeeping_init();
     time_init();
@@ -782,6 +786,8 @@ asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
     local_irq_enable();
 
     kmem_cache_init_late();
+
+    sched_clock_init();
 
     pid_idr_init();
     anon_vma_init();

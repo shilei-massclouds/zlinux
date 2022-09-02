@@ -61,4 +61,9 @@ static inline void init_completion(struct completion *x)
 extern void complete(struct completion *);
 extern void complete_all(struct completion *);
 
+extern int wait_for_completion_killable(struct completion *x);
+
+static inline void complete_acquire(struct completion *x) {}
+static inline void complete_release(struct completion *x) {}
+
 #endif /* __LINUX_COMPLETION_H */

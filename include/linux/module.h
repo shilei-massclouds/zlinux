@@ -69,6 +69,9 @@ struct module {
     /* Destruction function. */
     void (*exit)(void);
 
+    struct jump_entry *jump_entries;
+    unsigned int num_jump_entries;
+
     atomic_t refcnt;
 } ____cacheline_aligned __randomize_layout;
 

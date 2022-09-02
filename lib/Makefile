@@ -8,7 +8,8 @@
 # "optimize" them into calls to themselves.
 CFLAGS_string.o := -ffreestanding
 
-lib-y := ctype.o string.o vsprintf.o cmdline.o siphash.o rbtree.o radix-tree.o
+lib-y := ctype.o string.o vsprintf.o cmdline.o siphash.o
+lib-y += rbtree.o radix-tree.o timerqueue.o
 lib-y += kobject.o klist.o refcount.o idr.o xarray.o random32.o llist.o
 obj-y += kstrtox.o percpu_counter.o irq_regs.o iov_iter.o bust_spinlocks.o
 obj-y += hexdump.o percpu-refcount.o extable.o
@@ -17,7 +18,7 @@ obj-y += hweight.o bitmap.o sbitmap.o bsearch.o
 obj-y += kasprintf.o string_helpers.o usercopy.o
 
 obj-y += devres.o
-obj-y += sg_pool.o
+obj-y += sg_pool.o sort.o
 obj-y += strnlen_user.o strncpy_from_user.o
 
 libfdt_files = fdt.o fdt_ro.o find_bit.o

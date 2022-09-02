@@ -56,6 +56,14 @@ struct swait_queue {
     .task_list  = LIST_HEAD_INIT((name).task_list),     \
 }
 
+#define __SWAITQUEUE_INITIALIZER(name) {                \
+    .task       = current,                  \
+    .task_list  = LIST_HEAD_INIT((name).task_list),     \
+}
+
+#define DECLARE_SWAITQUEUE(name)                    \
+    struct swait_queue name = __SWAITQUEUE_INITIALIZER(name)
+
 extern void
 __init_swait_queue_head(struct swait_queue_head *q,
                         const char *name,

@@ -7,9 +7,7 @@
 #include <linux/bitops.h>
 #include <linux/cpumask.h>
 #include <linux/irqreturn.h>
-#if 0
 #include <linux/hrtimer.h>
-#endif
 #include <linux/hardirq.h>
 #include <linux/irqnr.h>
 #include <linux/irqflags.h>

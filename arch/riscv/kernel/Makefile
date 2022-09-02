@@ -23,6 +23,7 @@ obj-y	+= cpu_ops_sbi.o
 obj-y	+= cpu_ops_spinwait.o
 obj-y   += ptrace.o
 obj-y   += syscall_table.o
+obj-y	+= jump_label.o
 
 obj-$(CONFIG_RISCV_SBI)	+= sbi.o
 

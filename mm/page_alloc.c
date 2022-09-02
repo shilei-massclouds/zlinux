@@ -4615,3 +4615,16 @@ void adjust_managed_page_count(struct page *page, long count)
     totalram_pages_add(count);
 }
 EXPORT_SYMBOL(adjust_managed_page_count);
+
+#if 0
+void __init page_alloc_init(void)
+{
+    int ret;
+
+    ret = cpuhp_setup_state_nocalls(CPUHP_PAGE_ALLOC,
+                                    "mm/page_alloc:pcp",
+                                    page_alloc_cpu_online,
+                                    page_alloc_cpu_dead);
+    WARN_ON(ret < 0);
+}
+#endif

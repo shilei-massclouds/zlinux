@@ -456,6 +456,9 @@ typedef struct pglist_data {
      * when throttling started. */
     unsigned long nr_reclaim_start;
 
+    /* Protected by mem_hotplug_begin/end() */
+    struct task_struct *kswapd;
+
     /*
      * This is a per-node reserve of pages that are not available
      * to userspace allocations.

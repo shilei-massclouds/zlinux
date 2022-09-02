@@ -210,5 +210,7 @@ extern void lru_note_cost(struct lruvec *lruvec, bool file,
 
 void workingset_age_nonresident(struct lruvec *lruvec, unsigned long nr_pages);
 
+extern void swap_setup(void);
+
 #endif /* __KERNEL__*/
 #endif /* _LINUX_SWAP_H */

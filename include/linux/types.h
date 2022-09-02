@@ -169,6 +169,15 @@ typedef unsigned long       ulong;
 
 typedef __kernel_clockid_t  clockid_t;
 
+typedef void (*rcu_callback_t)(struct rcu_head *head);
+typedef void (*call_rcu_func_t)(struct rcu_head *head, rcu_callback_t func);
+
+typedef void (*swap_r_func_t)(void *a, void *b, int size,
+                              const void *priv);
+typedef void (*swap_func_t)(void *a, void *b, int size);
+
+typedef int (*cmp_r_func_t)(const void *a, const void *b,
+                            const void *priv);
 typedef int (*cmp_func_t)(const void *a, const void *b);
 
 #endif /* __ASSEMBLY__ */

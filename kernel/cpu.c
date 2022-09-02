@@ -602,10 +602,8 @@ static struct cpuhp_step cpuhp_hp_states[] = {
     },
     [CPUHP_HRTIMERS_PREPARE] = {
         .name           = "hrtimers:prepare",
-#if 0
         .startup.single     = hrtimers_prepare_cpu,
         .teardown.single    = hrtimers_dead_cpu,
-#endif
     },
     [CPUHP_SMPCFD_PREPARE] = {
         .name           = "smpcfd:prepare",

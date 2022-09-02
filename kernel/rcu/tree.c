@@ -137,7 +137,15 @@ EXPORT_SYMBOL_GPL(rcu_scheduler_active);
  */
 void call_rcu(struct rcu_head *head, rcu_callback_t func)
 {
-    pr_warn("%s: END\n", __func__);
+    static atomic_t doublefrees;
+    unsigned long flags;
+    struct rcu_data *rdp;
+    bool was_alldone;
+
+    /* Misaligned rcu_head! */
+    WARN_ON_ONCE((unsigned long)head & (sizeof(void *) - 1));
+
+    panic("%s: END\n", __func__);
 }
 EXPORT_SYMBOL_GPL(call_rcu);
 

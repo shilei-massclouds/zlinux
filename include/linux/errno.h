@@ -4,6 +4,13 @@
 
 #include <uapi/linux/errno.h>
 
+/*
+ * These should never be seen by user programs.  To return one of ERESTART*
+ * codes, signal_pending() MUST be set.  Note that ptrace can observe these
+ * at syscall exit tracing, but they will never be left for the debugged user
+ * process to see.
+ */
+#define ERESTARTSYS     512
 #define ERESTARTNOINTR  513
 #define EPROBE_DEFER    517 /* Driver requests probe retry */
 #define EOPENSTALE      518 /* open found a stale dentry */

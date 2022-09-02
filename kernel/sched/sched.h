@@ -84,6 +84,8 @@
 #include "cpupri.h"
 #include "cpudeadline.h"
 
+#define cap_scale(v, s) ((v)*(s) >> SCHED_CAPACITY_SHIFT)
+
 #define SCA_CHECK           0x01
 #define SCA_MIGRATE_DISABLE 0x02
 #define SCA_MIGRATE_ENABLE  0x04
@@ -104,7 +106,34 @@ DECLARE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
 #define this_rq()       this_cpu_ptr(&runqueues)
 #define task_rq(p)      cpu_rq(task_cpu(p))
 
+#define SCHED_FEAT(name, enabled)   \
+    __SCHED_FEAT_##name ,
+
+enum {
+#include "features.h"
+    __SCHED_FEAT_NR,
+};
+
+#undef SCHED_FEAT
+
+/*
+ * Each translation unit has its own copy of sysctl_sched_features to allow
+ * constants propagation at compile time and compiler optimization based on
+ * features default.
+ */
+#define SCHED_FEAT(name, enabled)   \
+    (1UL << __SCHED_FEAT_##name) * enabled |
+static const __maybe_unused unsigned int sysctl_sched_features =
+#include "features.h"
+    0;
+#undef SCHED_FEAT
+
 #define sched_feat(x) !!(sysctl_sched_features & (1UL << __SCHED_FEAT_##x))
+
+#define DEQUEUE_SLEEP       0x01
+#define DEQUEUE_SAVE        0x02 /* Matches ENQUEUE_RESTORE */
+#define DEQUEUE_MOVE        0x04 /* Matches ENQUEUE_MOVE */
+#define DEQUEUE_NOCLOCK     0x08 /* Matches ENQUEUE_NOCLOCK */
 
 #define ENQUEUE_WAKEUP      0x01
 #define ENQUEUE_RESTORE     0x02
@@ -963,5 +992,54 @@ static inline void add_nr_running(struct rq *rq, unsigned count)
             WRITE_ONCE(rq->rd->overload, 1);
     }
 }
+
+extern void __prepare_to_swait(struct swait_queue_head *q,
+                               struct swait_queue *wait);
+
+static inline int task_current(struct rq *rq, struct task_struct *p)
+{
+    return rq->curr == p;
+}
+
+static inline int cpu_of(struct rq *rq)
+{
+    return rq->cpu;
+}
+
+extern void update_rq_clock(struct rq *rq);
+
+static inline void assert_clock_updated(struct rq *rq)
+{
+    /*
+     * The only reason for not seeing a clock update since the
+     * last rq_pin_lock() is if we're currently skipping updates.
+     */
+    SCHED_WARN_ON(rq->clock_update_flags < RQCF_ACT_SKIP);
+}
+
+static inline u64 rq_clock_task(struct rq *rq)
+{
+    assert_clock_updated(rq);
+
+    return rq->clock_task;
+}
+
+#ifndef arch_scale_freq_capacity
+/**
+ * arch_scale_freq_capacity - get the frequency scale factor of a given CPU.
+ * @cpu: the CPU in question.
+ *
+ * Return: the frequency scale factor normalized against SCHED_CAPACITY_SCALE, i.e.
+ *
+ *     f_curr
+ *     ------ * SCHED_CAPACITY_SCALE
+ *     f_max
+ */
+static __always_inline
+unsigned long arch_scale_freq_capacity(int cpu)
+{
+    return SCHED_CAPACITY_SCALE;
+}
+#endif
 
 #endif /* _KERNEL_SCHED_SCHED_H */
