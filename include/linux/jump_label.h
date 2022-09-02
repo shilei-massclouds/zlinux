@@ -2,7 +2,7 @@
 #ifndef _LINUX_JUMP_LABEL_H
 #define _LINUX_JUMP_LABEL_H
 
-//#include <asm/jump_label.h>
+#include <asm/jump_label.h>
 
 #ifndef __ASSEMBLY__
 
@@ -189,6 +189,34 @@ extern struct jump_entry __stop___jump_table[];
 
 extern void arch_jump_label_transform(struct jump_entry *entry,
                                       enum jump_label_type type);
+
+static __always_inline bool static_key_false(struct static_key *key)
+{
+    return arch_static_branch(key, false);
+}
+
+static __always_inline bool static_key_true(struct static_key *key)
+{
+    return !arch_static_branch(key, true);
+}
+
+extern void
+arch_jump_label_transform_static(struct jump_entry *entry,
+                                 enum jump_label_type type);
+extern bool
+arch_jump_label_transform_queue(struct jump_entry *entry,
+                                enum jump_label_type type);
+
+extern void arch_jump_label_transform_apply(void);
+
+static inline void jump_entry_set_init(struct jump_entry *entry,
+                                       bool set)
+{
+    if (set)
+        entry->key |= 2;
+    else
+        entry->key &= ~2;
+}
 
 #endif /* __ASSEMBLY__ */
 

@@ -15,6 +15,7 @@
 #include <linux/sched/isolation.h>
 #include <linux/sched/task_stack.h>
 #include <linux/sched/clock.h>
+#include <linux/cpuset.h>
 #if 0
 #include <linux/sched/cputime.h>
 #include <linux/sched/loadavg.h>
@@ -22,7 +23,6 @@
 
 #include <linux/cpufreq.h>
 #include <linux/cpumask_api.h>
-#include <linux/cpuset.h>
 #include <linux/ctype.h>
 #include <linux/debugfs.h>
 #include <linux/energy_model.h>

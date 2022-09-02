@@ -86,4 +86,6 @@ static inline int num_node_state(enum node_states state)
     return 1;
 }
 
+extern nodemask_t node_states[NR_NODE_STATES];
+
 #endif /* __LINUX_NODEMASK_H */

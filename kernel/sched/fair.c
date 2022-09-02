@@ -57,8 +57,8 @@
 #include <linux/ratelimit.h>
 
 #include "sched.h"
-#if 0
 #include "stats.h"
+#if 0
 #include "autogroup.h"
 #endif
 
@@ -334,10 +334,279 @@ void util_est_dequeue(struct cfs_rq *cfs_rq, struct task_struct *p)
     WRITE_ONCE(cfs_rq->avg.util_est.enqueued, enqueued);
 }
 
+/*
+ * delta_exec * weight / lw.weight
+ *   OR
+ * (delta_exec * (weight * lw->inv_weight)) >> WMULT_SHIFT
+ *
+ * Either weight := NICE_0_LOAD and lw \e sched_prio_to_wmult[], in which case
+ * we're guaranteed shift stays positive because inv_weight is guaranteed to
+ * fit 32 bits, and NICE_0_LOAD gives another 10 bits; therefore shift >= 22.
+ *
+ * Or, weight =< lw.weight (because lw.weight is the runqueue weight), thus
+ * weight/lw.weight <= 1, and therefore our shift will also be positive.
+ */
+static u64 __calc_delta(u64 delta_exec, unsigned long weight,
+                        struct load_weight *lw)
+{
+    panic("%s: NO implementation!", __func__);
+}
+
+/*
+ * delta /= w
+ */
+static inline u64 calc_delta_fair(u64 delta, struct sched_entity *se)
+{
+    if (unlikely(se->load.weight != NICE_0_LOAD))
+        delta = __calc_delta(delta, NICE_0_LOAD, &se->load);
+
+    return delta;
+}
+
+/**************************************************************
+ * Scheduling class tree data structure manipulation methods:
+ */
+
+static inline u64 max_vruntime(u64 max_vruntime, u64 vruntime)
+{
+    s64 delta = (s64)(vruntime - max_vruntime);
+    if (delta > 0)
+        max_vruntime = vruntime;
+
+    return max_vruntime;
+}
+
+static inline u64 min_vruntime(u64 min_vruntime, u64 vruntime)
+{
+    s64 delta = (s64)(vruntime - min_vruntime);
+    if (delta < 0)
+        min_vruntime = vruntime;
+
+    return min_vruntime;
+}
+
+static void update_min_vruntime(struct cfs_rq *cfs_rq)
+{
+    struct sched_entity *curr = cfs_rq->curr;
+    struct rb_node *leftmost = rb_first_cached(&cfs_rq->tasks_timeline);
+
+    u64 vruntime = cfs_rq->min_vruntime;
+
+    if (curr) {
+        if (curr->on_rq)
+            vruntime = curr->vruntime;
+        else
+            curr = NULL;
+    }
+
+    if (leftmost) { /* non-empty tree */
+        struct sched_entity *se = __node_2_se(leftmost);
+
+        if (!curr)
+            vruntime = se->vruntime;
+        else
+            vruntime = min_vruntime(vruntime, se->vruntime);
+    }
+
+    /* ensure we never gain time by being placed backwards. */
+    cfs_rq->min_vruntime = max_vruntime(cfs_rq->min_vruntime, vruntime);
+}
+
+/*
+ * Update the current task's runtime statistics.
+ */
+static void update_curr(struct cfs_rq *cfs_rq)
+{
+    struct sched_entity *curr = cfs_rq->curr;
+    u64 now = rq_clock_task(rq_of(cfs_rq));
+    u64 delta_exec;
+
+    if (unlikely(!curr))
+        return;
+
+    delta_exec = now - curr->exec_start;
+    if (unlikely((s64)delta_exec <= 0))
+        return;
+
+    curr->exec_start = now;
+
+    curr->sum_exec_runtime += delta_exec;
+    schedstat_add(cfs_rq->exec_clock, delta_exec);
+
+    curr->vruntime += calc_delta_fair(delta_exec, curr);
+    update_min_vruntime(cfs_rq);
+
+    if (entity_is_task(curr)) {
+        struct task_struct *curtask = task_of(curr);
+
+        //cgroup_account_cputime(curtask, delta_exec);
+        //account_group_exec_runtime(curtask, delta_exec);
+    }
+    //account_cfs_rq_runtime(cfs_rq, delta_exec);
+}
+
+static void __clear_buddies_last(struct sched_entity *se)
+{
+    for_each_sched_entity(se) {
+        struct cfs_rq *cfs_rq = cfs_rq_of(se);
+        if (cfs_rq->last != se)
+            break;
+
+        cfs_rq->last = NULL;
+    }
+}
+
+static void __clear_buddies_next(struct sched_entity *se)
+{
+    for_each_sched_entity(se) {
+        struct cfs_rq *cfs_rq = cfs_rq_of(se);
+        if (cfs_rq->next != se)
+            break;
+
+        cfs_rq->next = NULL;
+    }
+}
+
+static void __clear_buddies_skip(struct sched_entity *se)
+{
+    for_each_sched_entity(se) {
+        struct cfs_rq *cfs_rq = cfs_rq_of(se);
+        if (cfs_rq->skip != se)
+            break;
+
+        cfs_rq->skip = NULL;
+    }
+}
+
+static void clear_buddies(struct cfs_rq *cfs_rq,
+                          struct sched_entity *se)
+{
+    if (cfs_rq->last == se)
+        __clear_buddies_last(se);
+
+    if (cfs_rq->next == se)
+        __clear_buddies_next(se);
+
+    if (cfs_rq->skip == se)
+        __clear_buddies_skip(se);
+}
+
+static void update_cfs_group(struct sched_entity *se)
+{
+    struct cfs_rq *gcfs_rq = group_cfs_rq(se);
+    long shares;
+
+    if (!gcfs_rq)
+        return;
+
+#if 0
+    if (throttled_hierarchy(gcfs_rq))
+        return;
+
+    shares = calc_group_shares(gcfs_rq);
+
+    reweight_entity(cfs_rq_of(se), se, shares);
+#endif
+    panic("%s: NO implementation!", __func__);
+}
+
 static void
 dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se,
                int flags)
 {
+    /*
+     * Update run-time statistics of the 'current'.
+     */
+    update_curr(cfs_rq);
+
+    /*
+     * When dequeuing a sched_entity, we must:
+     *   - Update loads to have both entity and cfs_rq synced with now.
+     *   - Subtract its load from the cfs_rq->runnable_avg.
+     *   - Subtract its previous weight from cfs_rq->load.weight.
+     *   - For group entity, update its weight to reflect the new share
+     *     of its group cfs_rq.
+     */
+#if 0
+    update_load_avg(cfs_rq, se, UPDATE_TG);
+#endif
+    se_update_runnable(se);
+
+#if 0
+    update_stats_dequeue_fair(cfs_rq, se, flags);
+#endif
+
+    clear_buddies(cfs_rq, se);
+
+    if (se != cfs_rq->curr)
+        __dequeue_entity(cfs_rq, se);
+
+    se->on_rq = 0;
+#if 0
+    account_entity_dequeue(cfs_rq, se);
+#endif
+
+    /*
+     * Normalize after update_curr(); which will also have moved
+     * min_vruntime if @se is the one holding it back. But before doing
+     * update_min_vruntime() again, which will discount @se's position and
+     * can move min_vruntime forward still more.
+     */
+    if (!(flags & DEQUEUE_SLEEP))
+        se->vruntime -= cfs_rq->min_vruntime;
+
+#if 0
+    /* return excess runtime on last dequeue */
+    return_cfs_rq_runtime(cfs_rq);
+#endif
+
+    update_cfs_group(se);
+
+    /*
+     * Now advance min_vruntime if @se was the entity holding it back,
+     * except when: DEQUEUE_SAVE && !DEQUEUE_MOVE, in this case we'll be
+     * put back on, and if we advance min_vruntime, we'll be placed back
+     * further than we started -- ie. we'll be penalized.
+     */
+    if ((flags & (DEQUEUE_SAVE | DEQUEUE_MOVE)) != DEQUEUE_SAVE)
+        update_min_vruntime(cfs_rq);
+}
+
+static struct static_key __cfs_bandwidth_used;
+
+static inline bool cfs_bandwidth_used(void)
+{
+    return static_key_false(&__cfs_bandwidth_used);
+}
+
+static inline int cfs_rq_throttled(struct cfs_rq *cfs_rq)
+{
+    return cfs_bandwidth_used() && cfs_rq->throttled;
+}
+
+static inline void util_est_update(struct cfs_rq *cfs_rq,
+                                   struct task_struct *p,
+                                   bool task_sleep)
+{
+    panic("%s: NO implementation!", __func__);
+}
+
+/*
+ * called from enqueue/dequeue and updates the hrtick when the
+ * current task is from our class and nr_running is low enough
+ * to matter.
+ */
+static void hrtick_update(struct rq *rq)
+{
+    struct task_struct *curr = rq->curr;
+
+    if (!hrtick_enabled_fair(rq) || curr->sched_class != &fair_sched_class)
+        return;
+
+#if 0
+    if (cfs_rq_of(&curr->se)->nr_running < sched_nr_latency)
+        hrtick_start_fair(rq, curr);
+#endif
     panic("%s: NO implementation!", __func__);
 }
 
@@ -361,10 +630,54 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p,
         cfs_rq = cfs_rq_of(se);
         dequeue_entity(cfs_rq, se, flags);
 
-        panic("%s: 1!", __func__);
+        cfs_rq->h_nr_running--;
+        cfs_rq->idle_h_nr_running -= idle_h_nr_running;
+
+        if (cfs_rq_is_idle(cfs_rq))
+            idle_h_nr_running = 1;
+
+        /* end evaluation on encountering a throttled cfs_rq */
+        if (cfs_rq_throttled(cfs_rq))
+            goto dequeue_throttle;
+
+        /* Don't dequeue parent if it has other entities besides us */
+        if (cfs_rq->load.weight) {
+            panic("%s: load.weight!", __func__);
+        }
+        flags |= DEQUEUE_SLEEP;
     }
 
-    panic("%s: NO implementation!", __func__);
+    for_each_sched_entity(se) {
+        cfs_rq = cfs_rq_of(se);
+
+#if 0
+        update_load_avg(cfs_rq, se, UPDATE_TG);
+#endif
+        se_update_runnable(se);
+        update_cfs_group(se);
+
+        cfs_rq->h_nr_running--;
+        cfs_rq->idle_h_nr_running -= idle_h_nr_running;
+
+        if (cfs_rq_is_idle(cfs_rq))
+            idle_h_nr_running = 1;
+
+        /* end evaluation on encountering a throttled cfs_rq */
+        if (cfs_rq_throttled(cfs_rq))
+            goto dequeue_throttle;
+
+    }
+
+    /* At this point se is NULL and we are at root level*/
+    sub_nr_running(rq, 1);
+
+    /* balance early to pull high priority tasks */
+    if (unlikely(!was_sched_idle && sched_idle_rq(rq)))
+        rq->next_balance = jiffies;
+
+ dequeue_throttle:
+    //util_est_update(&rq->cfs, p, task_sleep);
+    hrtick_update(rq);
 }
 
 /*
@@ -549,16 +862,6 @@ static void put_prev_task_fair(struct rq *rq, struct task_struct *prev)
     }
 }
 
-/* Account for a task changing its policy or group.
- *
- * This routine is mostly called to set cfs_rq->curr field when a task
- * migrates between groups/classes.
- */
-static void set_next_task_fair(struct rq *rq, struct task_struct *p, bool first)
-{
-    panic("%s: END!\n", __func__);
-}
-
 static void
 set_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
@@ -580,6 +883,33 @@ set_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 
     //update_stats_curr_start(cfs_rq, se);
     cfs_rq->curr = se;
+}
+
+/* Account for a task changing its policy or group.
+ *
+ * This routine is mostly called to set cfs_rq->curr field when a task
+ * migrates between groups/classes.
+ */
+static void set_next_task_fair(struct rq *rq, struct task_struct *p,
+                               bool first)
+{
+    struct sched_entity *se = &p->se;
+
+    if (task_on_rq_queued(p)) {
+        /*
+         * Move the next running task to the front of the list, so our
+         * cfs_tasks list becomes MRU one.
+         */
+        list_move(&se->group_node, &rq->cfs_tasks);
+    }
+
+    for_each_sched_entity(se) {
+        struct cfs_rq *cfs_rq = cfs_rq_of(se);
+
+        set_next_entity(cfs_rq, se);
+        /* ensure bandwidth has been allocated on our new cfs_rq */
+        //account_cfs_rq_runtime(cfs_rq, 0);
+    }
 }
 
 struct sched_entity *__pick_first_entity(struct cfs_rq *cfs_rq)
@@ -720,6 +1050,8 @@ DEFINE_SCHED_CLASS(fair) = {
     .pick_next_task     = __pick_next_task_fair,
     .put_prev_task      = put_prev_task_fair,
     .set_next_task      = set_next_task_fair,
+
+    .set_cpus_allowed   = set_cpus_allowed_common,
 
     .select_task_rq     = select_task_rq_fair,
 };

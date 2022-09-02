@@ -64,6 +64,17 @@
 #define __diag_str(s)       __diag_str1(s)
 #define __diag(s)           _Pragma(__diag_str(GCC diagnostic s))
 
+/*
+ * GCC 'asm goto' miscompiles certain code sequences:
+ *
+ *   http://gcc.gnu.org/bugzilla/show_bug.cgi?id=58670
+ *
+ * Work it around via a compiler barrier quirk suggested by Jakub Jelinek.
+ *
+ * (asm goto is automatically volatile - the naming reflects this.)
+ */
+#define asm_volatile_goto(x...) do { asm goto(x); asm (""); } while (0)
+
 #if GCC_VERSION >= 80000
 #define __diag_GCC_8(s)     __diag(s)
 #else

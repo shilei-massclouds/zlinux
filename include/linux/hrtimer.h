@@ -291,4 +291,9 @@ s64 hrtimer_get_softexpires_tv64(const struct hrtimer *timer)
     return timer->_softexpires;
 }
 
+static inline int hrtimer_is_hres_active(struct hrtimer *timer)
+{
+    return timer->base->cpu_base->hres_active;
+}
+
 #endif /* _LINUX_HRTIMER_H */

@@ -33,4 +33,5 @@ DEFINE_SCHED_CLASS(idle) = {
     .pick_next_task     = pick_next_task_idle,
     .put_prev_task      = put_prev_task_idle,
     .set_next_task      = set_next_task_idle,
+    .set_cpus_allowed   = set_cpus_allowed_common,
 };

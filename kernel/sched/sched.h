@@ -265,7 +265,6 @@ struct cfs_rq {
     /* Locally cached copy of our task_group's idle value */
     int         idle;
 
-#if 0
     int         runtime_enabled;
     s64         runtime_remaining;
 
@@ -275,7 +274,6 @@ struct cfs_rq {
     int         throttled;
     int         throttle_count;
     struct list_head    throttled_list;
-#endif
 };
 
 /* Real-Time classes' related field in a runqueue: */
@@ -458,7 +456,7 @@ struct rq {
     long                calc_load_active;
 
     call_single_data_t  hrtick_csd;
-    //struct hrtimer      hrtick_timer;
+    struct hrtimer      hrtick_timer;
     ktime_t             hrtick_time;
 
     /* Must be inspected within a rcu lock section */
@@ -466,7 +464,7 @@ struct rq {
 
     unsigned int        nr_pinned;
     unsigned int        push_busy;
-    //struct cpu_stop_work    push_work;
+    struct cpu_stop_work    push_work;
 };
 
 struct rq_flags {
@@ -778,10 +776,11 @@ rq_lock(struct rq *rq, struct rq_flags *rf)
     raw_spin_rq_lock(rq);
 }
 
-static inline void put_prev_task(struct rq *rq, struct task_struct *prev)
+static inline void
+rq_unlock(struct rq *rq, struct rq_flags *rf)
+    __releases(rq->lock)
 {
-    WARN_ON_ONCE(rq->curr != prev);
-    prev->sched_class->put_prev_task(rq, prev);
+    raw_spin_rq_unlock(rq);
 }
 
 /* Defined in include/asm-generic/vmlinux.lds.h */
@@ -1041,5 +1040,74 @@ unsigned long arch_scale_freq_capacity(int cpu)
     return SCHED_CAPACITY_SCALE;
 }
 #endif
+
+/* CPU runqueue to which this cfs_rq is attached */
+static inline struct rq *rq_of(struct cfs_rq *cfs_rq)
+{
+    return cfs_rq->rq;
+}
+
+/*
+ * Use hrtick when:
+ *  - enabled by features
+ *  - hrtimer is actually high res
+ */
+static inline int hrtick_enabled(struct rq *rq)
+{
+    if (!cpu_active(cpu_of(rq)))
+        return 0;
+    return hrtimer_is_hres_active(&rq->hrtick_timer);
+}
+
+static inline int hrtick_enabled_fair(struct rq *rq)
+{
+    if (!sched_feat(HRTICK))
+        return 0;
+    return hrtick_enabled(rq);
+}
+
+static inline int hrtick_enabled_dl(struct rq *rq)
+{
+    if (!sched_feat(HRTICK_DL))
+        return 0;
+    return hrtick_enabled(rq);
+}
+
+void hrtick_start(struct rq *rq, u64 delay);
+
+static inline int sched_tick_offload_init(void) { return 0; }
+static inline void sched_update_tick_dependency(struct rq *rq) { }
+
+static inline void sub_nr_running(struct rq *rq, unsigned count)
+{
+    rq->nr_running -= count;
+
+    /* Check if we still need preemption */
+    sched_update_tick_dependency(rq);
+}
+
+static inline void put_prev_task(struct rq *rq,
+                                 struct task_struct *prev)
+{
+    WARN_ON_ONCE(rq->curr != prev);
+    prev->sched_class->put_prev_task(rq, prev);
+}
+
+static inline void set_next_task(struct rq *rq,
+                                 struct task_struct *next)
+{
+    next->sched_class->set_next_task(rq, next, false);
+}
+
+extern void set_cpus_allowed_common(struct task_struct *p,
+                                    const struct cpumask *new_mask,
+                                    u32 flags);
+
+static inline void rq_clock_skip_update(struct rq *rq)
+{
+    rq->clock_update_flags |= RQCF_REQ_SKIP;
+}
+
+#define MDF_PUSH    0x01
 
 #endif /* _KERNEL_SCHED_SCHED_H */

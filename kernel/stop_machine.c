@@ -204,3 +204,36 @@ static int __init cpu_stop_init(void)
     return 0;
 }
 early_initcall(cpu_stop_init);
+
+/* queue @work to @stopper.  if offline, @work is completed immediately */
+static bool
+cpu_stop_queue_work(unsigned int cpu, struct cpu_stop_work *work)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
+/**
+ * stop_one_cpu_nowait - stop a cpu but don't wait for completion
+ * @cpu: cpu to stop
+ * @fn: function to execute
+ * @arg: argument to @fn
+ * @work_buf: pointer to cpu_stop_work structure
+ *
+ * Similar to stop_one_cpu() but doesn't wait for completion.  The
+ * caller is responsible for ensuring @work_buf is currently unused
+ * and will remain untouched until stopper starts executing @fn.
+ *
+ * CONTEXT:
+ * Don't care.
+ *
+ * RETURNS:
+ * true if cpu_stop_work was queued successfully and @fn will be called,
+ * false otherwise.
+ */
+bool stop_one_cpu_nowait(unsigned int cpu, cpu_stop_fn_t fn, void *arg,
+                         struct cpu_stop_work *work_buf)
+{
+    *work_buf = (struct cpu_stop_work){ .fn = fn, .arg = arg,
+        .caller = _RET_IP_, };
+    return cpu_stop_queue_work(cpu, work_buf);
+}

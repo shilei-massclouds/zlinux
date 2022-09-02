@@ -36,8 +36,8 @@
 #include <linux/slab.h>
 //#include <linux/scs.h>
 #include <linux/percpu-rwsem.h>
-#if 0
 #include <linux/cpuset.h>
+#if 0
 #include <linux/random.h>
 
 #include "smpboot.h"

@@ -47,4 +47,7 @@ int stop_one_cpu(unsigned int cpu, cpu_stop_fn_t fn, void *arg);
  */
 int stop_machine(cpu_stop_fn_t fn, void *data, const struct cpumask *cpus);
 
+bool stop_one_cpu_nowait(unsigned int cpu, cpu_stop_fn_t fn, void *arg,
+                         struct cpu_stop_work *work_buf);
+
 #endif  /* _LINUX_STOP_MACHINE */

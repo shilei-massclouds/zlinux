@@ -71,6 +71,21 @@ static struct task_struct *pick_next_task_dl(struct rq *rq)
     return p;
 }
 
+static void set_cpus_allowed_dl(struct task_struct *p,
+                                const struct cpumask *new_mask,
+                                u32 flags)
+{
+    struct root_domain *src_rd;
+    struct rq *rq;
+
+    BUG_ON(!dl_task(p));
+
+    rq = task_rq(p);
+    src_rd = rq->rd;
+
+    panic("%s: NO implementation!\n", __func__);
+}
+
 void init_dl_rq(struct dl_rq *dl_rq)
 {
     dl_rq->root = RB_ROOT_CACHED;
@@ -92,5 +107,6 @@ DEFINE_SCHED_CLASS(dl) = {
     .put_prev_task      = put_prev_task_dl,
     .set_next_task      = set_next_task_dl,
 
+    .set_cpus_allowed   = set_cpus_allowed_dl,
     .pick_task          = pick_task_dl,
 };

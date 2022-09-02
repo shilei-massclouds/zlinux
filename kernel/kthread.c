@@ -16,8 +16,8 @@
 #include <linux/kthread.h>
 #include <linux/completion.h>
 #include <linux/err.h>
-//#include <linux/cgroup.h>
-//#include <linux/cpuset.h>
+#include <linux/cgroup.h>
+#include <linux/cpuset.h>
 //#include <linux/unistd.h>
 //#include <linux/file.h>
 #include <linux/export.h>
@@ -327,6 +327,19 @@ int kthreadd(void *unused)
     set_task_comm(tsk, "kthreadd");
     //ignore_signals(tsk);
     set_cpus_allowed_ptr(tsk, housekeeping_cpumask(HK_TYPE_KTHREAD));
+    set_mems_allowed(node_states[N_MEMORY]);
+
+    current->flags |= PF_NOFREEZE;
+    cgroup_init_kthreadd();
+
+    for (;;) {
+        set_current_state(TASK_INTERRUPTIBLE);
+        if (list_empty(&kthread_create_list))
+            schedule();
+        __set_current_state(TASK_RUNNING);
+
+        panic("%s: 1!\n", __func__);
+    }
 
     panic("%s: END!\n", __func__);
     return 0;

@@ -47,4 +47,5 @@ DEFINE_SCHED_CLASS(stop) = {
     .pick_next_task     = pick_next_task_stop,
     .put_prev_task      = put_prev_task_stop,
     .set_next_task      = set_next_task_stop,
+    .set_cpus_allowed   = set_cpus_allowed_common,
 };

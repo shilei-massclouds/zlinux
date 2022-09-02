@@ -494,8 +494,6 @@ struct task_struct {
     /* VM state: */
     struct reclaim_state *reclaim_state;
 
-    unsigned short migration_disabled;
-
     struct sched_entity     se;
     struct sched_dl_entity  dl;
     const struct sched_class *sched_class;
@@ -504,6 +502,11 @@ struct task_struct {
     const cpumask_t *cpus_ptr;
     cpumask_t *user_cpus_ptr;
     cpumask_t cpus_mask;
+
+    void *migration_pending;
+
+    unsigned short migration_disabled;
+    unsigned short migration_flags;
 
     struct io_context   *io_context;
 
@@ -540,6 +543,11 @@ struct task_struct {
     /* Bit to tell LSMs we're in execve(): */
     unsigned            in_execve:1;
     unsigned            in_iowait:1;
+
+        /* disallow userland-initiated cgroup migration */
+    unsigned            no_cgroup_migration:1;
+    /* task is frozen/stopped (used by the cgroup freezer) */
+    unsigned            frozen:1;
 
     /* CLONE_CHILD_SETTID: */
     int __user          *set_child_tid;
@@ -789,6 +797,11 @@ static inline
 void set_task_comm(struct task_struct *tsk, const char *from)
 {
     __set_task_comm(tsk, from, false);
+}
+
+static inline int test_tsk_need_resched(struct task_struct *tsk)
+{
+    return unlikely(test_tsk_thread_flag(tsk,TIF_NEED_RESCHED));
 }
 
 #endif /* _LINUX_SCHED_H */
