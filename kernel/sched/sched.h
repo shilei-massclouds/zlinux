@@ -1108,6 +1108,8 @@ static inline void rq_clock_skip_update(struct rq *rq)
     rq->clock_update_flags |= RQCF_REQ_SKIP;
 }
 
+extern void resched_curr(struct rq *rq);
+
 #define MDF_PUSH    0x01
 
 #endif /* _KERNEL_SCHED_SCHED_H */

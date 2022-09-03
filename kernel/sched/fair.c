@@ -1040,18 +1040,163 @@ __init void init_sched_fair_class(void)
     panic("%s: NO implementation!", __func__);
 }
 
+static void task_change_group_fair(struct task_struct *p, int type)
+{
+    panic("%s: NO implementation!", __func__);
+}
+
+static void update_curr_fair(struct rq *rq)
+{
+    update_curr(cfs_rq_of(&rq->curr->se));
+}
+
+static void rq_online_fair(struct rq *rq)
+{
+    panic("%s: NO implementation!", __func__);
+}
+
+static void task_dead_fair(struct task_struct *p)
+{
+    panic("%s: NO implementation!", __func__);
+}
+
+/*
+ * sched_yield() is very simple
+ *
+ * The magic of dealing with the ->skip buddy is in pick_next_entity.
+ */
+static void yield_task_fair(struct rq *rq)
+{
+    panic("%s: NO implementation!", __func__);
+}
+
+static bool yield_to_task_fair(struct rq *rq, struct task_struct *p)
+{
+    panic("%s: NO implementation!", __func__);
+}
+
+
+/*
+ * Called immediately before a task is migrated to a new CPU; task_cpu(p) and
+ * cfs_rq_of(p) references at time of call are still valid and identify the
+ * previous CPU. The caller guarantees p->pi_lock or task_rq(p)->lock is held.
+ */
+static void migrate_task_rq_fair(struct task_struct *p, int new_cpu)
+{
+    panic("%s: NO implementation!", __func__);
+}
+
+static struct task_struct *pick_task_fair(struct rq *rq)
+{
+    panic("%s: NO implementation!", __func__);
+}
+
+static int
+balance_fair(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
+{
+    panic("%s: NO implementation!", __func__);
+}
+
+/*
+ * Preempt the current task with a newly woken task if needed:
+ */
+static void
+check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_flags)
+{
+    panic("%s: NO implementation!", __func__);
+}
+
+static void rq_offline_fair(struct rq *rq)
+{
+    panic("%s: NO implementation!", __func__);
+}
+
+/*
+ * scheduler tick hitting a task of our scheduling class.
+ *
+ * NOTE: This function can be called remotely by the tick offload that
+ * goes along full dynticks. Therefore no local assumption can be made
+ * and everything must be accessed through the @rq and @curr passed in
+ * parameters.
+ */
+static void task_tick_fair(struct rq *rq, struct task_struct *curr, int queued)
+{
+    panic("%s: NO implementation!", __func__);
+}
+
+static void switched_from_fair(struct rq *rq, struct task_struct *p)
+{
+    panic("%s: NO implementation!", __func__);
+}
+
+/*
+ * called on fork with the child task as argument from the parent's context
+ *  - child not yet on the tasklist
+ *  - preemption disabled
+ */
+static void task_fork_fair(struct task_struct *p)
+{
+    panic("%s: NO implementation!", __func__);
+}
+
+/*
+ * Priority of the task has changed. Check to see if we preempt
+ * the current task.
+ */
+static void
+prio_changed_fair(struct rq *rq, struct task_struct *p, int oldprio)
+{
+    panic("%s: NO implementation!", __func__);
+}
+
+static void switched_to_fair(struct rq *rq, struct task_struct *p)
+{
+    panic("%s: NO implementation!", __func__);
+}
+
+static unsigned int
+get_rr_interval_fair(struct rq *rq, struct task_struct *task)
+{
+    panic("%s: NO implementation!", __func__);
+}
+
 /*
  * All the scheduling class methods:
  */
 DEFINE_SCHED_CLASS(fair) = {
+
     .enqueue_task       = enqueue_task_fair,
     .dequeue_task       = dequeue_task_fair,
+    .yield_task         = yield_task_fair,
+    .yield_to_task      = yield_to_task_fair,
+
+    .check_preempt_curr = check_preempt_wakeup,
 
     .pick_next_task     = __pick_next_task_fair,
     .put_prev_task      = put_prev_task_fair,
     .set_next_task      = set_next_task_fair,
 
+    .balance            = balance_fair,
+    .pick_task          = pick_task_fair,
+    .select_task_rq     = select_task_rq_fair,
+    .migrate_task_rq    = migrate_task_rq_fair,
+
+    .rq_online          = rq_online_fair,
+    .rq_offline         = rq_offline_fair,
+
+    .task_dead          = task_dead_fair,
     .set_cpus_allowed   = set_cpus_allowed_common,
 
-    .select_task_rq     = select_task_rq_fair,
+    .task_tick          = task_tick_fair,
+    .task_fork          = task_fork_fair,
+
+    .prio_changed       = prio_changed_fair,
+    .switched_from      = switched_from_fair,
+    .switched_to        = switched_to_fair,
+
+    .get_rr_interval    = get_rr_interval_fair,
+
+    .update_curr        = update_curr_fair,
+
+    .task_change_group  = task_change_group_fair,
 };

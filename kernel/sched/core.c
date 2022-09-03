@@ -256,11 +256,13 @@ void resched_curr(struct rq *rq)
 
 void check_preempt_curr(struct rq *rq, struct task_struct *p, int flags)
 {
+    printk("%s: 1 (%lx, %lx)\n", __func__, p->sched_class, rq->curr);
     if (p->sched_class == rq->curr->sched_class)
         rq->curr->sched_class->check_preempt_curr(rq, p, flags);
     else if (p->sched_class > rq->curr->sched_class)
         resched_curr(rq);
 
+    printk("%s: 2\n", __func__);
     /*
      * A queue event has occurred, and we're going to schedule.  In
      * this case, we can save a useless back to back clock update.
@@ -332,13 +334,10 @@ static int ttwu_runnable(struct task_struct *p, int wake_flags)
 
     rq = __task_rq_lock(p, &rf);
     if (task_on_rq_queued(p)) {
-#if 0
         /* check_preempt_curr() may use rq clock */
         update_rq_clock(rq);
         ttwu_do_wakeup(rq, p, wake_flags, &rf);
         ret = 1;
-#endif
-        panic("%s: 1!\n", __func__);
     }
     __task_rq_unlock(rq, &rf);
 
