@@ -685,6 +685,12 @@ struct task_struct {
     unsigned long           nvcsw;
     unsigned long           nivcsw;
 
+    /* Monotonic time in nsecs: */
+    u64             start_time;
+
+    /* Boot based time in nsecs: */
+    u64             start_boottime;
+
     /* MM fault and swap info:
      * this can arguably be seen as either mm-specific or thread-specific: */
     unsigned long           min_flt;

@@ -624,7 +624,6 @@ copy_process(struct pid *pid, int trace, int node,
             return ERR_PTR(-EINVAL);
     }
 
-#if 0
     /*
      * If the new process will be in a different time namespace
      * do not allow it to share VM or a thread group with the forking task.
@@ -633,7 +632,6 @@ copy_process(struct pid *pid, int trace, int node,
         if (nsp->time_ns != nsp->time_ns_for_children)
             return ERR_PTR(-EINVAL);
     }
-#endif
 
     if (clone_flags & CLONE_PIDFD) {
         /*
@@ -728,19 +726,15 @@ copy_process(struct pid *pid, int trace, int node,
     p->utime = p->stime = p->gtime = 0;
 #endif
 
-#if 0
     p->io_uring = NULL;
-    memset(&p->rss_stat, 0, sizeof(p->rss_stat));
-#endif
+    //memset(&p->rss_stat, 0, sizeof(p->rss_stat));
 
     p->default_timer_slack_ns = current->timer_slack_ns;
 
-#if 0
     posix_cputimers_init(&p->posix_cputimers);
-#endif
 
-#if 0
     p->io_context = NULL;
+#if 0
     cgroup_fork(p);
 #endif
     if (p->flags & PF_KTHREAD) {
@@ -789,14 +783,12 @@ copy_process(struct pid *pid, int trace, int node,
     retval = copy_mm(clone_flags, p);
     if (retval)
         goto bad_fork_cleanup_signal;
-#if 0
     retval = copy_namespaces(clone_flags, p);
     if (retval)
         goto bad_fork_cleanup_mm;
     retval = copy_io(clone_flags, p);
     if (retval)
         goto bad_fork_cleanup_namespaces;
-#endif
 
     retval = copy_thread(clone_flags, args->stack, args->stack_size,
                          p, args->tls);
@@ -859,10 +851,10 @@ copy_process(struct pid *pid, int trace, int node,
      * stalling fork(2) after we recorded the start_time but before it is
      * visible to the system.
      */
+#endif
 
     p->start_time = ktime_get_ns();
     p->start_boottime = ktime_get_boottime_ns();
-#endif
 
     /*
      * Make it visible to the rest of the system, but dont wake it up yet.
@@ -964,11 +956,9 @@ copy_process(struct pid *pid, int trace, int node,
  bad_fork_cleanup_thread:
     //exit_thread(p);
  bad_fork_cleanup_io:
-#if 0
     if (p->io_context)
         exit_io_context(p);
-#endif
-//bad_fork_cleanup_namespaces:
+ bad_fork_cleanup_namespaces:
     //exit_task_namespaces(p);
  bad_fork_cleanup_mm:
     if (p->mm) {

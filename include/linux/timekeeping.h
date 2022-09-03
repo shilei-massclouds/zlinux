@@ -50,4 +50,14 @@ static inline ktime_t ktime_get_clocktai(void)
     return ktime_get_with_offset(TK_OFFS_TAI);
 }
 
+static inline u64 ktime_get_ns(void)
+{
+    return ktime_to_ns(ktime_get());
+}
+
+static inline u64 ktime_get_boottime_ns(void)
+{
+    return ktime_to_ns(ktime_get_boottime());
+}
+
 #endif /* _LINUX_TIMEKEEPING_H */

@@ -11,7 +11,18 @@
 /*
  * Default IO priority.
  */
-#define IOPRIO_DEFAULT  IOPRIO_PRIO_VALUE(IOPRIO_CLASS_BE, IOPRIO_BE_NORM)
+#define IOPRIO_DEFAULT \
+    IOPRIO_PRIO_VALUE(IOPRIO_CLASS_BE, IOPRIO_BE_NORM)
+
+/*
+ * Check that a priority value has a valid class.
+ */
+static inline bool ioprio_valid(unsigned short ioprio)
+{
+    unsigned short class = IOPRIO_PRIO_CLASS(ioprio);
+
+    return class > IOPRIO_CLASS_NONE && class <= IOPRIO_CLASS_IDLE;
+}
 
 /*
  * If the calling process has set an I/O priority, use that. Otherwise, return

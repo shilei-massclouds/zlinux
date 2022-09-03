@@ -140,4 +140,10 @@ arch_atomic_long_dec_return(atomic_long_t *v)
     return arch_atomic64_dec_return(v);
 }
 
+static __always_inline bool
+arch_atomic_long_dec_and_test(atomic_long_t *v)
+{
+    return arch_atomic64_dec_and_test(v);
+}
+
 #endif /* _LINUX_ATOMIC_LONG_H */

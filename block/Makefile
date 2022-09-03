@@ -3,7 +3,7 @@
 # Makefile for the kernel block layer
 #
 
-obj-y	:= bdev.o blk-core.o blk-settings.o
+obj-y	:= bdev.o blk-core.o blk-settings.o blk-ioc.o
 obj-y   += fops.o bio.o blk-mq-sched.o elevator.o #blk-sysfs.o
 obj-y 	+= blk-mq.o blk-mq-tag.o blk-mq-cpumap.o
 obj-y 	+= blk-mq-virtio.o ioctl.o blk-flush.o

@@ -17,4 +17,15 @@ struct io_context {
     unsigned short  ioprio;
 };
 
+void put_io_context(struct io_context *ioc);
+void exit_io_context(struct task_struct *task);
+int __copy_io(unsigned long clone_flags, struct task_struct *tsk);
+static inline int copy_io(unsigned long clone_flags,
+                          struct task_struct *tsk)
+{
+    if (!current->io_context)
+        return 0;
+    return __copy_io(clone_flags, tsk);
+}
+
 #endif /* IOCONTEXT_H */

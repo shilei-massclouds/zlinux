@@ -418,4 +418,21 @@ arch_atomic64_dec_return(atomic64_t *v)
 #define arch_atomic64_dec_return arch_atomic64_dec_return
 #endif
 
+#ifndef arch_atomic64_dec_and_test
+/**
+ * arch_atomic64_dec_and_test - decrement and test
+ * @v: pointer of type atomic64_t
+ *
+ * Atomically decrements @v by 1 and
+ * returns true if the result is 0, or false for all other
+ * cases.
+ */
+static __always_inline bool
+arch_atomic64_dec_and_test(atomic64_t *v)
+{
+    return arch_atomic64_dec_return(v) == 0;
+}
+#define arch_atomic64_dec_and_test arch_atomic64_dec_and_test
+#endif
+
 #endif /* _LINUX_ATOMIC_FALLBACK_H */

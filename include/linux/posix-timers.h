@@ -78,4 +78,12 @@ struct posix_cputimers {
         .bases = INIT_CPU_TIMERBASES(s.posix_cputimers.bases),  \
     },
 
+static inline void posix_cputimers_init(struct posix_cputimers *pct)
+{
+    memset(pct, 0, sizeof(*pct));
+    pct->bases[0].nextevt = U64_MAX;
+    pct->bases[1].nextevt = U64_MAX;
+    pct->bases[2].nextevt = U64_MAX;
+}
+
 #endif /* _linux_POSIX_TIMERS_H */

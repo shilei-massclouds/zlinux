@@ -415,11 +415,13 @@ noinline void __ref rest_init(void)
     set_cpus_allowed_ptr(tsk, cpumask_of(smp_processor_id()));
     rcu_read_unlock();
 
+    printk("%s: 1\n", __func__);
     pid = kernel_thread(kthreadd, NULL, CLONE_FS | CLONE_FILES);
     rcu_read_lock();
     kthreadd_task = find_task_by_pid_ns(pid, &init_pid_ns);
     rcu_read_unlock();
 
+    printk("%s: 2\n", __func__);
     /*
      * Enable might_sleep() and smp_processor_id() checks.
      * They cannot be enabled earlier because with CONFIG_PREEMPTION=y
