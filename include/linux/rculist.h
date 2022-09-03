@@ -140,6 +140,46 @@ static inline void hlist_del_init_rcu(struct hlist_node *n)
          pos = hlist_entry_safe(rcu_dereference_raw(hlist_next_rcu(\
             &(pos)->member)), typeof(*(pos)), member))
 
+/*
+ * Check during list traversal that we are within an RCU reader
+ */
+
+#define check_arg_count_one(dummy)
+
+#define __list_check_rcu(dummy, cond, extra...) \
+    ({ check_arg_count_one(extra); })
+
+#define __list_check_srcu(cond) ({ })
+
+/**
+ * list_entry_rcu - get the struct for this entry
+ * @ptr:        the &struct list_head pointer.
+ * @type:       the type of the struct this is embedded in.
+ * @member:     the name of the list_head within the struct.
+ *
+ * This primitive may safely run concurrently with the _rcu list-mutation
+ * primitives such as list_add_rcu() as long as it's guarded by rcu_read_lock().
+ */
+#define list_entry_rcu(ptr, type, member) \
+    container_of(READ_ONCE(ptr), type, member)
+
+/**
+ * list_for_each_entry_rcu  -   iterate over rcu list of given type
+ * @pos:    the type * to use as a loop cursor.
+ * @head:   the head for your list.
+ * @member: the name of the list_head within the struct.
+ * @cond:   optional lockdep expression if called from non-RCU protection.
+ *
+ * This list-traversal primitive may safely run concurrently with
+ * the _rcu list-mutation primitives such as list_add_rcu()
+ * as long as the traversal is guarded by rcu_read_lock().
+ */
+#define list_for_each_entry_rcu(pos, head, member, cond...)     \
+    for (__list_check_rcu(dummy, ## cond, 0),           \
+         pos = list_entry_rcu((head)->next, typeof(*pos), member);  \
+        &pos->member != (head);                 \
+        pos = list_entry_rcu(pos->member.next, typeof(*pos), member))
+
 #endif  /* __KERNEL__ */
 
 #endif /* _LINUX_RCULIST_H */

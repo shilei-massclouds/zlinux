@@ -44,10 +44,10 @@
 #include <linux/workqueue_api.h>
 
 #include <uapi/linux/prctl.h>
-#include <uapi/linux/sched/types.h>
 
 #include <asm/switch_to.h>
 #endif
+#include <uapi/linux/sched/types.h>
 
 #include <linux/swait_api.h>
 #include <linux/spinlock_api.h>

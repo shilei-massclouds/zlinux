@@ -30,9 +30,9 @@
 #include <linux/suspend.h>
 #include <linux/tsacct_kern.h>
 #include <linux/vtime.h>
+#endif
 
 #include <uapi/linux/sched/types.h>
-#endif
 
 #include "sched.h"
 

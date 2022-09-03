@@ -148,18 +148,20 @@ static void task_woken_dl(struct rq *rq, struct task_struct *p)
     panic("%s: NO implementation!\n", __func__);
 }
 
+static inline void dl_set_overload(struct rq *rq)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
 /* Assumes rq->lock is held */
 static void rq_online_dl(struct rq *rq)
 {
-#if 0
     if (rq->dl.overloaded)
         dl_set_overload(rq);
 
     cpudl_set_freecpu(&rq->rd->cpudl, rq->cpu);
     if (rq->dl.dl_nr_running > 0)
         cpudl_set(&rq->rd->cpudl, rq->cpu, rq->dl.earliest_dl.curr);
-#endif
-    panic("%s: NO implementation!\n", __func__);
 }
 
 /* Assumes rq->lock is held */
@@ -252,6 +254,34 @@ static void task_tick_dl(struct rq *rq, struct task_struct *p, int queued)
 static void prio_changed_dl(struct rq *rq, struct task_struct *p, int oldprio)
 {
     panic("%s: NO implementation!\n", __func__);
+}
+
+/*
+ * This function validates the new parameters of a -deadline task.
+ * We ask for the deadline not being zero, and greater or equal
+ * than the runtime, as well as the period of being zero or
+ * greater than deadline. Furthermore, we have to be sure that
+ * user parameters are above the internal resolution of 1us (we
+ * check sched_runtime only since it is always the smaller one) and
+ * below 2^63 ns (we have to check both sched_deadline and
+ * sched_period, as the latter can be zero).
+ */
+bool __checkparam_dl(const struct sched_attr *attr)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
+bool dl_param_changed(struct task_struct *p, const struct sched_attr *attr)
+{
+    struct sched_dl_entity *dl_se = &p->dl;
+
+    if (dl_se->dl_runtime != attr->sched_runtime ||
+        dl_se->dl_deadline != attr->sched_deadline ||
+        dl_se->dl_period != attr->sched_period ||
+        dl_se->flags != (attr->sched_flags & SCHED_DL_FLAGS))
+        return true;
+
+    return false;
 }
 
 DEFINE_SCHED_CLASS(dl) = {

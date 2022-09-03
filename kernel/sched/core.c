@@ -74,11 +74,9 @@
 #include <linux/kernel_stat.h>
 
 #include <asm/switch_to.h>
-#if 0
 #include <uapi/linux/sched/types.h>
 
 #include <asm/tlb.h>
-#endif
 
 #include "sched.h"
 #include "stats.h"
@@ -95,6 +93,12 @@
 
 #define for_each_clamp_id(clamp_id) \
     for ((clamp_id) = 0; (clamp_id) < UCLAMP_CNT; (clamp_id)++)
+
+/*
+ * sched_setparam() passes in -1 for its policy, to let the functions
+ * it calls know not to change it.
+ */
+#define SETPARAM_POLICY -1
 
 struct migration_arg {
     struct task_struct      *task;
@@ -113,6 +117,9 @@ struct set_affinity_pending {
     struct cpu_stop_work    stop_work;
     struct migration_arg    arg;
 };
+
+static struct rq *
+finish_task_switch(struct task_struct *prev) __releases(rq->lock);
 
 /*
  * This static key is used to reduce the uclamp overhead in the fast path. It
@@ -251,18 +258,30 @@ ttwu_stat(struct task_struct *p, int cpu, int wake_flags)
  */
 void resched_curr(struct rq *rq)
 {
+    struct task_struct *curr = rq->curr;
+    int cpu;
+
+    if (test_tsk_need_resched(curr))
+        return;
+
+    cpu = cpu_of(rq);
+
+    if (cpu == smp_processor_id()) {
+        set_tsk_need_resched(curr);
+        set_preempt_need_resched();
+        return;
+    }
+
     panic("%s: END!\n", __func__);
 }
 
 void check_preempt_curr(struct rq *rq, struct task_struct *p, int flags)
 {
-    printk("%s: 1 (%lx, %lx)\n", __func__, p->sched_class, rq->curr);
     if (p->sched_class == rq->curr->sched_class)
         rq->curr->sched_class->check_preempt_curr(rq, p, flags);
     else if (p->sched_class > rq->curr->sched_class)
         resched_curr(rq);
 
-    printk("%s: 2\n", __func__);
     /*
      * A queue event has occurred, and we're going to schedule.  In
      * this case, we can save a useless back to back clock update.
@@ -279,11 +298,8 @@ static void ttwu_do_wakeup(struct rq *rq,
                            int wake_flags,
                            struct rq_flags *rf)
 {
-    printk("%s: 1\n", __func__);
     check_preempt_curr(rq, p, wake_flags);
-    printk("%s: 2\n", __func__);
     WRITE_ONCE(p->__state, TASK_RUNNING);
-    printk("%s: 3\n", __func__);
 
     if (p->sched_class->task_woken) {
 #if 0
@@ -298,7 +314,9 @@ static void ttwu_do_wakeup(struct rq *rq,
         panic("%s: 1!\n", __func__);
     }
 
-    panic("%s: NO implementation!\n", __func__);
+    if (rq->idle_stamp) {
+        panic("%s: 2!\n", __func__);
+    }
 }
 
 /*
@@ -651,7 +669,7 @@ context_switch(struct rq *rq, struct task_struct *prev,
     switch_to(prev, next, prev);
     barrier();
 
-    panic("%s: mm(%p) END!\n", __func__, next->mm);
+    return finish_task_switch(prev);
 }
 
 /*
@@ -2160,4 +2178,157 @@ void set_cpus_allowed_common(struct task_struct *p,
 
     cpumask_copy(&p->cpus_mask, new_mask);
     p->nr_cpus_allowed = cpumask_weight(new_mask);
+}
+
+static int __sched_setscheduler(struct task_struct *p,
+                                const struct sched_attr *attr,
+                                bool user, bool pi)
+{
+    int oldpolicy = -1, policy = attr->sched_policy;
+    int retval, oldprio, newprio, queued, running;
+    const struct sched_class *prev_class;
+    struct callback_head *head;
+    struct rq_flags rf;
+    int reset_on_fork;
+    int queue_flags = DEQUEUE_SAVE | DEQUEUE_MOVE | DEQUEUE_NOCLOCK;
+    struct rq *rq;
+
+    /* The pi code expects interrupts enabled */
+    BUG_ON(pi && in_interrupt());
+
+ recheck:
+    /* Double check policy once rq lock held: */
+    if (policy < 0) {
+        reset_on_fork = p->sched_reset_on_fork;
+        policy = oldpolicy = p->policy;
+    } else {
+        reset_on_fork = !!(attr->sched_flags & SCHED_FLAG_RESET_ON_FORK);
+
+        if (!valid_policy(policy))
+            return -EINVAL;
+    }
+
+    if (attr->sched_flags & ~(SCHED_FLAG_ALL | SCHED_FLAG_SUGOV))
+        return -EINVAL;
+
+    /*
+     * Valid priorities for SCHED_FIFO and SCHED_RR are
+     * 1..MAX_RT_PRIO-1, valid priority for SCHED_NORMAL,
+     * SCHED_BATCH and SCHED_IDLE is 0.
+     */
+    if (attr->sched_priority > MAX_RT_PRIO-1)
+        return -EINVAL;
+    if ((dl_policy(policy) && !__checkparam_dl(attr)) ||
+        (rt_policy(policy) != (attr->sched_priority != 0)))
+        return -EINVAL;
+
+#if 0
+    /*
+     * Allow unprivileged RT tasks to decrease priority:
+     */
+    if (user && !capable(CAP_SYS_NICE)) {
+        panic("%s: 1!\n", __func__);
+    }
+#endif
+
+    if (user) {
+        if (attr->sched_flags & SCHED_FLAG_SUGOV)
+            return -EINVAL;
+    }
+
+    /* Update task specific "requested" clamps */
+    if (attr->sched_flags & SCHED_FLAG_UTIL_CLAMP) {
+        retval = uclamp_validate(p, attr);
+        if (retval)
+            return retval;
+    }
+
+    if (pi)
+        cpuset_read_lock();
+
+    /*
+     * Make sure no PI-waiters arrive (or leave) while we are
+     * changing the priority of the task:
+     *
+     * To be able to change p->policy safely, the appropriate
+     * runqueue lock must be held.
+     */
+    rq = task_rq_lock(p, &rf);
+    update_rq_clock(rq);
+
+    /*
+     * Changing the policy of the stop threads its a very bad idea:
+     */
+    if (p == rq->stop) {
+        retval = -EINVAL;
+        goto unlock;
+    }
+
+    /*
+     * If not changing anything there's no need to proceed further,
+     * but store a possible modification of reset_on_fork.
+     */
+    if (unlikely(policy == p->policy)) {
+        if (fair_policy(policy) && attr->sched_nice != task_nice(p))
+            goto change;
+        if (rt_policy(policy) && attr->sched_priority != p->rt_priority)
+            goto change;
+        if (dl_policy(policy) && dl_param_changed(p, attr))
+            goto change;
+        if (attr->sched_flags & SCHED_FLAG_UTIL_CLAMP)
+            goto change;
+
+        p->sched_reset_on_fork = reset_on_fork;
+        retval = 0;
+        goto unlock;
+    }
+
+ change:
+
+    panic("%s: END!\n", __func__);
+    return 0;
+
+ unlock:
+    task_rq_unlock(rq, p, &rf);
+    if (pi)
+        cpuset_read_unlock();
+    return retval;
+}
+
+static int _sched_setscheduler(struct task_struct *p, int policy,
+                               const struct sched_param *param, bool check)
+{
+    struct sched_attr attr = {
+        .sched_policy   = policy,
+        .sched_priority = param->sched_priority,
+        .sched_nice = PRIO_TO_NICE(p->static_prio),
+    };
+
+    /* Fixup the legacy SCHED_RESET_ON_FORK hack. */
+    if ((policy != SETPARAM_POLICY) && (policy & SCHED_RESET_ON_FORK)) {
+        attr.sched_flags |= SCHED_FLAG_RESET_ON_FORK;
+        policy &= ~SCHED_RESET_ON_FORK;
+        attr.sched_policy = policy;
+    }
+
+    return __sched_setscheduler(p, &attr, check, true);
+}
+
+/**
+ * sched_setscheduler_nocheck - change the scheduling policy and/or RT priority of a thread from kernelspace.
+ * @p: the task in question.
+ * @policy: new policy.
+ * @param: structure containing the new RT priority.
+ *
+ * Just like sched_setscheduler, only don't bother checking if the
+ * current context has permission.  For example, this is needed in
+ * stop_machine(): we create temporary high priority worker threads,
+ * but our caller might not have that capability.
+ *
+ * Return: 0 on success. An error code otherwise.
+ */
+int sched_setscheduler_nocheck(struct task_struct *p, int policy,
+                               const struct sched_param *param)
+{
+    return _sched_setscheduler(p, policy, param, false);
 }

@@ -15,6 +15,15 @@
 
 #define MAX_RT_PRIO 100
 
-#define MAX_PRIO    (MAX_RT_PRIO + NICE_WIDTH)
+#define MAX_PRIO        (MAX_RT_PRIO + NICE_WIDTH)
+#define DEFAULT_PRIO    (MAX_RT_PRIO + NICE_WIDTH / 2)
+
+/*
+ * Convert user-nice values [ -20 ... 0 ... 19 ]
+ * to static priority [ MAX_RT_PRIO..MAX_PRIO-1 ],
+ * and back.
+ */
+#define NICE_TO_PRIO(nice)  ((nice) + DEFAULT_PRIO)
+#define PRIO_TO_NICE(prio)  ((prio) - DEFAULT_PRIO)
 
 #endif /* _LINUX_SCHED_PRIO_H */

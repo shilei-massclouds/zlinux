@@ -125,3 +125,8 @@ int rcuwait_wake_up(struct rcuwait *w)
     return ret;
 }
 EXPORT_SYMBOL_GPL(rcuwait_wake_up);
+
+void __noreturn do_exit(long code)
+{
+    panic("%s: NOT-implemented!\n", __func__);
+}

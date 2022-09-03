@@ -44,6 +44,38 @@
 #include <asm/kmap_size.h>
 #endif
 
+/* task_struct member predeclarations (sorted alphabetically): */
+struct audit_context;
+struct backing_dev_info;
+struct bio_list;
+struct blk_plug;
+struct bpf_local_storage;
+struct bpf_run_ctx;
+struct capture_control;
+struct cfs_rq;
+struct fs_struct;
+struct futex_pi_state;
+struct io_context;
+struct io_uring_task;
+struct mempolicy;
+struct nameidata;
+struct nsproxy;
+struct perf_event_context;
+struct pid_namespace;
+struct pipe_inode_info;
+struct rcu_node;
+struct reclaim_state;
+struct robust_list_head;
+struct root_domain;
+struct rq;
+struct sched_attr;
+struct sched_param;
+struct seq_file;
+struct sighand_struct;
+struct signal_struct;
+struct task_delay_info;
+struct task_group;
+
 /* Increase resolution of cpu_capacity calculations */
 # define SCHED_CAPACITY_SHIFT       SCHED_FIXEDPOINT_SHIFT
 # define SCHED_CAPACITY_SCALE       (1L << SCHED_CAPACITY_SHIFT)
@@ -704,12 +736,6 @@ static __always_inline bool need_resched(void)
     return unlikely(tif_need_resched());
 }
 
-/* runqueue "owned" by this group */
-static inline struct cfs_rq *group_cfs_rq(struct sched_entity *grp)
-{
-    return grp->my_q;
-}
-
 extern void io_schedule(void);
 
 extern struct root_domain def_root_domain;
@@ -802,6 +828,34 @@ void set_task_comm(struct task_struct *tsk, const char *from)
 static inline int test_tsk_need_resched(struct task_struct *tsk)
 {
     return unlikely(test_tsk_thread_flag(tsk,TIF_NEED_RESCHED));
+}
+
+/*
+ * Set thread flags in other task's structures.
+ * See asm/thread_info.h for TIF_xxxx flags available:
+ */
+static inline void set_tsk_thread_flag(struct task_struct *tsk, int flag)
+{
+    set_ti_thread_flag(task_thread_info(tsk), flag);
+}
+
+static inline void set_tsk_need_resched(struct task_struct *tsk)
+{
+    set_tsk_thread_flag(tsk, TIF_NEED_RESCHED);
+}
+
+extern int sched_setscheduler_nocheck(struct task_struct *, int,
+                                      const struct sched_param *);
+
+/**
+ * task_nice - return the nice value of a given task.
+ * @p: the task in question.
+ *
+ * Return: The nice value [ -20 ... 0 ... 19 ].
+ */
+static inline int task_nice(const struct task_struct *p)
+{
+    return PRIO_TO_NICE((p)->static_prio);
 }
 
 #endif /* _LINUX_SCHED_H */

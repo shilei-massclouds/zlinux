@@ -11,10 +11,8 @@
 #include <linux/stddef.h>
 #include <linux/errno.h>
 #include <linux/compiler.h>
-#if 0
 #include <linux/workqueue.h>
 #include <linux/sysctl.h>
-#endif
 
 #define KMOD_PATH_LEN 256
 

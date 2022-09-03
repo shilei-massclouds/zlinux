@@ -25,7 +25,7 @@
 #include <linux/refcount.h>
 #include <linux/kernel_stat.h>
 
-//#include <linux/cgroup-defs.h>
+#include <linux/cgroup-defs.h>
 
 struct kernel_clone_args;
 

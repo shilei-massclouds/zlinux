@@ -164,4 +164,6 @@ int vsscanf(const char *, const char *, va_list);
 
 static inline void might_fault(void) { }
 
+void do_exit(long error_code) __noreturn;
+
 #endif /* _LINUX_KERNEL_H */

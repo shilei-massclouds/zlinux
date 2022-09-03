@@ -93,6 +93,14 @@ struct delayed_work {
     int cpu;
 };
 
+struct rcu_work {
+    struct work_struct work;
+    struct rcu_head rcu;
+
+    /* target workqueue ->rcu uses to queue ->work */
+    struct workqueue_struct *wq;
+};
+
 #define WORK_DATA_INIT()    ATOMIC_LONG_INIT((unsigned long)WORK_STRUCT_NO_POOL)
 #define WORK_DATA_STATIC_INIT() \
     ATOMIC_LONG_INIT((unsigned long)(WORK_STRUCT_NO_POOL | WORK_STRUCT_STATIC))

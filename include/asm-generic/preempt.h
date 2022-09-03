@@ -46,4 +46,8 @@ static __always_inline void __preempt_count_sub(int val)
     task_thread_info(p)->preempt_count = PREEMPT_DISABLED; \
 } while (0)
 
+static __always_inline void set_preempt_need_resched(void)
+{
+}
+
 #endif /* __ASM_PREEMPT_H */

@@ -8,7 +8,7 @@
 #include <linux/sched.h>
 //#include <linux/workqueue.h>
 #include <linux/rwsem.h>
-//#include <linux/sysctl.h>
+#include <linux/sysctl.h>
 #include <linux/err.h>
 #include <linux/uidgid.h>
 

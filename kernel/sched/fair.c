@@ -71,6 +71,36 @@
 
 const_debug unsigned int sysctl_sched_migration_cost = 500000UL;
 
+/*
+ * SCHED_OTHER wake-up granularity.
+ *
+ * This option delays the preemption effects of decoupled workloads
+ * and reduces their over-scheduling. Synchronous workloads will still
+ * have immediate wakeup/sleep latencies.
+ *
+ * (default: 1 msec * (1 + ilog(ncpus)), units: nanoseconds)
+ */
+unsigned int sysctl_sched_wakeup_granularity = 1000000UL;
+static unsigned int normalized_sysctl_sched_wakeup_granularity  = 1000000UL;
+
+/*
+ * The initial- and re-scaling of tunables is configurable
+ *
+ * Options are:
+ *
+ *   SCHED_TUNABLESCALING_NONE - unscaled, always *1
+ *   SCHED_TUNABLESCALING_LOG - scaled logarithmical, *1+ilog(ncpus)
+ *   SCHED_TUNABLESCALING_LINEAR - scaled linear, *ncpus
+ *
+ * (default SCHED_TUNABLESCALING_LOG = *(1+ilog(ncpus))
+ */
+unsigned int sysctl_sched_tunable_scaling = SCHED_TUNABLESCALING_LOG;
+
+/*
+ * This value is kept at sysctl_sched_latency/sysctl_sched_min_granularity
+ */
+static unsigned int sched_nr_latency = 8;
+
 static inline bool entity_before(struct sched_entity *a, struct sched_entity *b)
 {
     return (s64)(a->vruntime - b->vruntime) < 0;
@@ -92,6 +122,23 @@ static void __enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 static void __dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
     rb_erase_cached(&se->run_node, &cfs_rq->tasks_timeline);
+}
+
+static int tg_is_idle(struct task_group *tg)
+{
+    return tg->idle > 0;
+}
+
+static int cfs_rq_is_idle(struct cfs_rq *cfs_rq)
+{
+    return cfs_rq->idle > 0;
+}
+
+static int se_is_idle(struct sched_entity *se)
+{
+    if (entity_is_task(se))
+        return task_has_idle_policy(task_of(se));
+    return cfs_rq_is_idle(group_cfs_rq(se));
 }
 
 static void
@@ -145,11 +192,6 @@ enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
     if (cfs_rq->nr_running == 1)
         check_enqueue_throttle(cfs_rq);
 #endif
-}
-
-static int cfs_rq_is_idle(struct cfs_rq *cfs_rq)
-{
-    return cfs_rq->idle > 0;
 }
 
 static unsigned long capacity_of(int cpu)
@@ -1050,9 +1092,73 @@ static void update_curr_fair(struct rq *rq)
     update_curr(cfs_rq_of(&rq->curr->se));
 }
 
+/*
+ * Increase the granularity value when there are more CPUs,
+ * because with more CPUs the 'effective latency' as visible
+ * to users decreases. But the relationship is not linear,
+ * so pick a second-best guess by going with the log2 of the
+ * number of CPUs.
+ *
+ * This idea comes from the SD scheduler of Con Kolivas:
+ */
+static unsigned int get_update_sysctl_factor(void)
+{
+    unsigned int cpus = min_t(unsigned int, num_online_cpus(), 8);
+    unsigned int factor;
+
+    switch (sysctl_sched_tunable_scaling) {
+    case SCHED_TUNABLESCALING_NONE:
+        factor = 1;
+        break;
+    case SCHED_TUNABLESCALING_LINEAR:
+        factor = cpus;
+        break;
+    case SCHED_TUNABLESCALING_LOG:
+    default:
+        factor = 1 + ilog2(cpus);
+        break;
+    }
+
+    return factor;
+}
+
+/* cpu online callback */
+static void __maybe_unused update_runtime_enabled(struct rq *rq)
+{
+    struct task_group *tg;
+
+    rcu_read_lock();
+    list_for_each_entry_rcu(tg, &task_groups, list) {
+        struct cfs_bandwidth *cfs_b = &tg->cfs_bandwidth;
+        struct cfs_rq *cfs_rq = tg->cfs_rq[cpu_of(rq)];
+
+        raw_spin_lock(&cfs_b->lock);
+        cfs_rq->runtime_enabled = cfs_b->quota != RUNTIME_INF;
+        raw_spin_unlock(&cfs_b->lock);
+    }
+    rcu_read_unlock();
+}
+
+static void update_sysctl(void)
+{
+#if 0
+    unsigned int factor = get_update_sysctl_factor();
+
+#define SET_SYSCTL(name) \
+    (sysctl_##name = (factor) * normalized_sysctl_##name)
+    SET_SYSCTL(sched_min_granularity);
+    SET_SYSCTL(sched_latency);
+    SET_SYSCTL(sched_wakeup_granularity);
+#undef SET_SYSCTL
+#endif
+    panic("%s: NO implementation!", __func__);
+}
+
 static void rq_online_fair(struct rq *rq)
 {
-    panic("%s: NO implementation!", __func__);
+    //update_sysctl();
+
+    update_runtime_enabled(rq);
 }
 
 static void task_dead_fair(struct task_struct *p)
@@ -1097,13 +1203,235 @@ balance_fair(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
     panic("%s: NO implementation!", __func__);
 }
 
+/* check whether cfs_rq, or any parent, is throttled */
+static inline int throttled_hierarchy(struct cfs_rq *cfs_rq)
+{
+    return cfs_bandwidth_used() && cfs_rq->throttle_count;
+}
+
+static void set_last_buddy(struct sched_entity *se)
+{
+#if 0
+    for_each_sched_entity(se) {
+        if (SCHED_WARN_ON(!se->on_rq))
+            return;
+        if (se_is_idle(se))
+            return;
+        cfs_rq_of(se)->last = se;
+    }
+#endif
+    panic("%s: END!", __func__);
+}
+
+static void set_next_buddy(struct sched_entity *se)
+{
+    for_each_sched_entity(se) {
+        if (SCHED_WARN_ON(!se->on_rq))
+            return;
+        if (se_is_idle(se))
+            return;
+        cfs_rq_of(se)->next = se;
+    }
+}
+
+/* Do the two (enqueued) entities belong to the same group ? */
+static inline struct cfs_rq *
+is_same_group(struct sched_entity *se, struct sched_entity *pse)
+{
+    if (se->cfs_rq == pse->cfs_rq)
+        return se->cfs_rq;
+
+    return NULL;
+}
+
+static inline struct sched_entity *parent_entity(struct sched_entity *se)
+{
+    return se->parent;
+}
+
+static void
+find_matching_se(struct sched_entity **se, struct sched_entity **pse)
+{
+    int se_depth, pse_depth;
+
+    /*
+     * preemption test can be made between sibling entities who are in the
+     * same cfs_rq i.e who have a common parent. Walk up the hierarchy of
+     * both tasks until we find their ancestors who are siblings of common
+     * parent.
+     */
+
+    /* First walk up until both entities are at same depth */
+    se_depth = (*se)->depth;
+    pse_depth = (*pse)->depth;
+
+    while (se_depth > pse_depth) {
+        se_depth--;
+        *se = parent_entity(*se);
+    }
+
+    while (pse_depth > se_depth) {
+        pse_depth--;
+        *pse = parent_entity(*pse);
+    }
+
+    while (!is_same_group(*se, *pse)) {
+        *se = parent_entity(*se);
+        *pse = parent_entity(*pse);
+    }
+}
+
+static unsigned long wakeup_gran(struct sched_entity *se)
+{
+    unsigned long gran = sysctl_sched_wakeup_granularity;
+
+    /*
+     * Since its curr running now, convert the gran from real-time
+     * to virtual-time in his units.
+     *
+     * By using 'se' instead of 'curr' we penalize light tasks, so
+     * they get preempted easier. That is, if 'se' < 'curr' then
+     * the resulting gran will be larger, therefore penalizing the
+     * lighter, if otoh 'se' > 'curr' then the resulting gran will
+     * be smaller, again penalizing the lighter task.
+     *
+     * This is especially important for buddies when the leftmost
+     * task is higher priority than the buddy.
+     */
+    return calc_delta_fair(gran, se);
+}
+
+/*
+ * Should 'se' preempt 'curr'.
+ *
+ *             |s1
+ *        |s2
+ *   |s3
+ *         g
+ *      |<--->|c
+ *
+ *  w(c, s1) = -1
+ *  w(c, s2) =  0
+ *  w(c, s3) =  1
+ *
+ */
+static int
+wakeup_preempt_entity(struct sched_entity *curr, struct sched_entity *se)
+{
+    s64 gran, vdiff = curr->vruntime - se->vruntime;
+
+    if (vdiff <= 0)
+        return -1;
+
+    gran = wakeup_gran(se);
+    if (vdiff > gran)
+        return 1;
+
+    return 0;
+}
+
 /*
  * Preempt the current task with a newly woken task if needed:
  */
 static void
 check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_flags)
 {
-    panic("%s: NO implementation!", __func__);
+    struct task_struct *curr = rq->curr;
+    struct sched_entity *se = &curr->se, *pse = &p->se;
+    struct cfs_rq *cfs_rq = task_cfs_rq(curr);
+    int scale = cfs_rq->nr_running >= sched_nr_latency;
+    int next_buddy_marked = 0;
+    int cse_is_idle, pse_is_idle;
+
+    if (unlikely(se == pse))
+        return;
+
+    /*
+     * This is possible from callers such as attach_tasks(), in which we
+     * unconditionally check_preempt_curr() after an enqueue (which may have
+     * lead to a throttle).  This both saves work and prevents false
+     * next-buddy nomination below.
+     */
+    if (unlikely(throttled_hierarchy(cfs_rq_of(pse))))
+        return;
+
+    if (sched_feat(NEXT_BUDDY) && scale && !(wake_flags & WF_FORK)) {
+#if 0
+        set_next_buddy(pse);
+        next_buddy_marked = 1;
+#endif
+        panic("%s: 1!", __func__);
+    }
+
+    /*
+     * We can come here with TIF_NEED_RESCHED already set from new task
+     * wake up path.
+     *
+     * Note: this also catches the edge-case of curr being in a throttled
+     * group (e.g. via set_curr_task), since update_curr() (in the
+     * enqueue of curr) will have resulted in resched being set.  This
+     * prevents us from potentially nominating it as a false LAST_BUDDY
+     * below.
+     */
+    if (test_tsk_need_resched(curr))
+        return;
+
+    /* Idle tasks are by definition preempted by non-idle tasks. */
+    if (unlikely(task_has_idle_policy(curr)) &&
+        likely(!task_has_idle_policy(p)))
+        goto preempt;
+
+    /*
+     * Batch and idle tasks do not preempt non-idle tasks (their preemption
+     * is driven by the tick):
+     */
+    if (unlikely(p->policy != SCHED_NORMAL) || !sched_feat(WAKEUP_PREEMPTION))
+        return;
+
+    find_matching_se(&se, &pse);
+    BUG_ON(!pse);
+
+    cse_is_idle = se_is_idle(se);
+    pse_is_idle = se_is_idle(pse);
+
+    /*
+     * Preempt an idle group in favor of a non-idle group (and don't preempt
+     * in the inverse case).
+     */
+    if (cse_is_idle && !pse_is_idle)
+        goto preempt;
+    if (cse_is_idle != pse_is_idle)
+        return;
+
+    update_curr(cfs_rq_of(se));
+    if (wakeup_preempt_entity(se, pse) == 1) {
+        /*
+         * Bias pick_next to pick the sched entity that is
+         * triggering this preemption.
+         */
+        if (!next_buddy_marked)
+            set_next_buddy(pse);
+        goto preempt;
+    }
+
+    return;
+
+ preempt:
+    resched_curr(rq);
+    /*
+     * Only set the backward buddy when the current task is still
+     * on the rq. This can happen when a wakeup gets interleaved
+     * with schedule on the ->pre_schedule() or idle_balance()
+     * point, either of which can * drop the rq lock.
+     *
+     * Also, during early boot the idle thread is in the fair class,
+     * for obvious reasons its a bad idea to schedule back to it.
+     */
+    if (unlikely(!se->on_rq || curr == rq->idle))
+        return;
+
+    if (sched_feat(LAST_BUDDY) && scale && entity_is_task(se))
+        set_last_buddy(se);
 }
 
 static void rq_offline_fair(struct rq *rq)

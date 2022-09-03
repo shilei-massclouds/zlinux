@@ -8,6 +8,13 @@ int sched_rr_timeslice = RR_TIMESLICE;
 
 struct rt_bandwidth def_rt_bandwidth;
 
+typedef struct rt_rq *rt_rq_iter_t;
+
+static inline struct rt_rq *group_rt_rq(struct sched_rt_entity *rt_se)
+{
+    return NULL;
+}
+
 static struct task_struct *_pick_next_task_rt(struct rq *rq)
 {
     panic("%s: END!\n", __func__);
@@ -179,10 +186,31 @@ static void task_woken_rt(struct rq *rq, struct task_struct *p)
     panic("%s: END!\n", __func__);
 }
 
+static inline void rt_set_overload(struct rq *rq)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static void __enable_runtime(struct rq *rq)
+{
+    rt_rq_iter_t iter;
+    struct rt_rq *rt_rq;
+
+    if (unlikely(!scheduler_running))
+        return;
+
+    panic("%s: END!\n", __func__);
+}
+
 /* Assumes rq->lock is held */
 static void rq_online_rt(struct rq *rq)
 {
-    panic("%s: END!\n", __func__);
+    if (rq->rt.overloaded)
+        rt_set_overload(rq);
+
+    __enable_runtime(rq);
+
+    cpupri_set(&rq->rd->cpupri, rq->cpu, rq->rt.highest_prio.curr);
 }
 
 /* Assumes rq->lock is held */

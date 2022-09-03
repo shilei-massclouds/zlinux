@@ -44,3 +44,28 @@ void cpudl_cleanup(struct cpudl *cp)
     free_cpumask_var(cp->free_cpus);
     kfree(cp->elements);
 }
+
+/*
+ * cpudl_set_freecpu - Set the cpudl.free_cpus
+ * @cp: the cpudl max-heap context
+ * @cpu: rd attached CPU
+ */
+void cpudl_set_freecpu(struct cpudl *cp, int cpu)
+{
+    cpumask_set_cpu(cpu, cp->free_cpus);
+}
+
+/*
+ * cpudl_set - update the cpudl max-heap
+ * @cp: the cpudl max-heap context
+ * @cpu: the target CPU
+ * @dl: the new earliest deadline for this CPU
+ *
+ * Notes: assumes cpu_rq(cpu)->lock is locked
+ *
+ * Returns: (void)
+ */
+void cpudl_set(struct cpudl *cp, int cpu, u64 dl)
+{
+    panic("%s: END!\n", __func__);
+}

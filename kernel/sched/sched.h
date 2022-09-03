@@ -18,9 +18,9 @@
 #include <linux/sched/signal.h>
 #include <linux/sched/smt.h>
 #include <linux/sched/stat.h>
-#include <linux/sched/sysctl.h>
 #include <linux/sched/task_flags.h>
 #endif
+#include <linux/sched/sysctl.h>
 #include <linux/sched.h>
 #include <linux/sched/debug.h>
 #include <linux/sched/wake_q.h>
@@ -33,11 +33,11 @@
 #include <linux/minmax.h>
 #include <linux/rcupdate.h>
 #include <linux/rcuwait.h>
+#include <linux/cgroup.h>
 #if 0
 #include <linux/atomic.h>
 #include <linux/capability.h>
 #include <linux/cgroup_api.h>
-#include <linux/cgroup.h>
 #include <linux/cpufreq.h>
 #include <linux/cpumask_api.h>
 #include <linux/file.h>
@@ -92,6 +92,11 @@
 #define SCA_USER            0x08
 
 #define SCHED_WARN_ON(x)   ({ (void)(x), 0; })
+
+/*
+ * Single value that denotes runtime == period, ie unlimited time.
+ */
+#define RUNTIME_INF     ((u64)~0ULL)
 
 /* An entity is a task if it doesn't "own" a runqueue */
 #define entity_is_task(se)  (!se->my_q)
@@ -191,6 +196,31 @@ struct rt_bandwidth {
     //struct hrtimer      rt_period_timer;
     unsigned int        rt_period_active;
 };
+
+struct cfs_bandwidth {
+    raw_spinlock_t      lock;
+    ktime_t         period;
+    u64         quota;
+    u64         runtime;
+    u64         burst;
+    u64         runtime_snap;
+    s64         hierarchical_quota;
+
+    u8          idle;
+    u8          period_active;
+    u8          slack_started;
+    struct hrtimer      period_timer;
+    struct hrtimer      slack_timer;
+    struct list_head    throttled_cfs_rq;
+
+    /* Statistics: */
+    int         nr_periods;
+    int         nr_throttled;
+    int         nr_burst;
+    u64         throttled_time;
+    u64         burst_time;
+};
+
 
 /*
  * This is the priority-queue data structure of the RT scheduling class:
@@ -530,17 +560,33 @@ struct sched_class {
 
 /* Task group related information */
 struct task_group {
+    struct cgroup_subsys_state css;
+
     /* schedulable entities of this group on each CPU */
     struct sched_entity **se;
     /* runqueue "owned" by this group on each CPU */
     struct cfs_rq       **cfs_rq;
     unsigned long       shares;
 
+    /* A positive value indicates that this is a SCHED_IDLE group. */
+    int         idle;
+
+    /*
+     * load_avg can be heavily contended at clock tick time, so put
+     * it in its own cacheline separated from the fields above which
+     * will also be accessed at each tick.
+     */
+    atomic_long_t       load_avg ____cacheline_aligned;
+
+    struct rcu_head     rcu;
     struct list_head    list;
 
     struct task_group   *parent;
     struct list_head    siblings;
     struct list_head    children;
+
+    struct cfs_bandwidth    cfs_bandwidth;
+
 };
 
 /*
@@ -1111,5 +1157,61 @@ static inline void rq_clock_skip_update(struct rq *rq)
 extern void resched_curr(struct rq *rq);
 
 #define MDF_PUSH    0x01
+
+extern struct list_head task_groups;
+
+static inline struct cfs_rq *task_cfs_rq(struct task_struct *p)
+{
+    return p->se.cfs_rq;
+}
+
+/* runqueue "owned" by this group */
+static inline struct cfs_rq *group_cfs_rq(struct sched_entity *grp)
+{
+    return grp->my_q;
+}
+
+static inline int fair_policy(int policy)
+{
+    return policy == SCHED_NORMAL || policy == SCHED_BATCH;
+}
+
+static inline int rt_policy(int policy)
+{
+    return policy == SCHED_FIFO || policy == SCHED_RR;
+}
+
+static inline int dl_policy(int policy)
+{
+    return policy == SCHED_DEADLINE;
+}
+
+static inline bool valid_policy(int policy)
+{
+    return idle_policy(policy) || fair_policy(policy) ||
+        rt_policy(policy) || dl_policy(policy);
+}
+
+/*
+ * !! For sched_setattr_nocheck() (kernel) only !!
+ *
+ * This is actually gross. :(
+ *
+ * It is used to make schedutil kworker(s) higher priority than SCHED_DEADLINE
+ * tasks, but still be able to sleep. We need this on platforms that cannot
+ * atomically change clock frequency. Remove once fast switching will be
+ * available on such platforms.
+ *
+ * SUGOV stands for SchedUtil GOVernor.
+ */
+#define SCHED_FLAG_SUGOV    0x10000000
+
+#define SCHED_DL_FLAGS \
+    (SCHED_FLAG_RECLAIM | SCHED_FLAG_DL_OVERRUN | SCHED_FLAG_SUGOV)
+
+extern bool __checkparam_dl(const struct sched_attr *attr);
+
+extern bool dl_param_changed(struct task_struct *p,
+                             const struct sched_attr *attr);
 
 #endif /* _KERNEL_SCHED_SCHED_H */
