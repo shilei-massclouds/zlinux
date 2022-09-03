@@ -864,4 +864,19 @@ static inline int task_nice(const struct task_struct *p)
     return PRIO_TO_NICE((p)->static_prio);
 }
 
+/*
+ * set_special_state() should be used for those states when the blocking task
+ * can not use the regular condition based wait-loop. In that case we must
+ * serialize against wakeups such that any possible in-flight TASK_RUNNING
+ * stores will not collide with our state change.
+ */
+#define set_special_state(state_value)                  \
+    do {                                \
+        unsigned long flags; /* may shadow */           \
+                                    \
+        raw_spin_lock_irqsave(&current->pi_lock, flags);    \
+        WRITE_ONCE(current->__state, (state_value));        \
+        raw_spin_unlock_irqrestore(&current->pi_lock, flags);   \
+    } while (0)
+
 #endif /* _LINUX_SCHED_H */

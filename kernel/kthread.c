@@ -336,6 +336,35 @@ void __noreturn kthread_exit(long result)
     do_exit(0);
 }
 
+static void __kthread_parkme(struct kthread *self)
+{
+    for (;;) {
+        /*
+         * TASK_PARKED is a special state; we must serialize against
+         * possible pending wakeups to avoid store-store collisions on
+         * task->state.
+         *
+         * Such a collision might possibly result in the task state
+         * changin from TASK_PARKED and us failing the
+         * wait_task_inactive() in kthread_park().
+         */
+        set_special_state(TASK_PARKED);
+        if (!test_bit(KTHREAD_SHOULD_PARK, &self->flags))
+            break;
+
+        /*
+         * Thread is going to call schedule(), do not preempt it,
+         * or the caller of kthread_park() may spend more time in
+         * wait_task_inactive().
+         */
+        preempt_disable();
+        complete(&self->parked);
+        schedule_preempt_disabled();
+        preempt_enable();
+    }
+    __set_current_state(TASK_RUNNING);
+}
+
 static int kthread(void *_create)
 {
     static const struct sched_param param = { .sched_priority = 0 };
@@ -383,12 +412,9 @@ static int kthread(void *_create)
 
     ret = -EINTR;
     if (!test_bit(KTHREAD_SHOULD_STOP, &self->flags)) {
-#if 0
         cgroup_kthread_ready();
         __kthread_parkme(self);
         ret = threadfn(data);
-#endif
-        panic("%s: KTHREAD_SHOULD_STOP!\n", __func__);
     }
     kthread_exit(ret);
 }
@@ -408,6 +434,7 @@ int kthreadd(void *unused)
 {
     struct task_struct *tsk = current;
 
+    pr_info("################# %s: \n", __func__);
     /* Setup a clean context for our children to inherit. */
     set_task_comm(tsk, "kthreadd");
     //ignore_signals(tsk);
@@ -432,6 +459,7 @@ int kthreadd(void *unused)
             list_del_init(&create->list);
             spin_unlock(&kthread_create_lock);
 
+            pr_info("%s: 1\n", __func__);
             create_kthread(create);
 
             spin_lock(&kthread_create_lock);

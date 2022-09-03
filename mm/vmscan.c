@@ -2321,7 +2321,9 @@ void kswapd_run(int nid)
     if (pgdat->kswapd)
         return;
 
+    pr_info("####### %s: 1\n", __func__);
     pgdat->kswapd = kthread_run(kswapd, pgdat, "kswapd%d", nid);
+    pr_info("####### %s: 2\n", __func__);
     if (IS_ERR(pgdat->kswapd)) {
         /* failure at boot is fatal */
         BUG_ON(system_state < SYSTEM_RUNNING);

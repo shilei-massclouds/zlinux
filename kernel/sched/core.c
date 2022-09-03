@@ -941,6 +941,7 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
         panic("%s: sched_reset_on_fork!\n", __func__);
     }
 
+    pr_info("%s: prio(%d)\n", __func__, p->prio);
     if (dl_prio(p->prio))
         return -EAGAIN;
     else if (rt_prio(p->prio))
@@ -1286,9 +1287,7 @@ void wake_up_new_task(struct task_struct *p)
 
     printk("%s: 1 \n", __func__);
     activate_task(rq, p, ENQUEUE_NOCLOCK);
-#if 0
     check_preempt_curr(rq, p, WF_FORK);
-#endif
     if (p->sched_class->task_woken) {
         panic("%s: no task_woken for sched_class.\n", __func__);
     }

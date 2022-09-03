@@ -39,4 +39,13 @@ static inline void cgroup_init_kthreadd(void)
     current->no_cgroup_migration = 1;
 }
 
+static inline void cgroup_kthread_ready(void)
+{
+    /*
+     * This kthread finished initialization.  The creator should have
+     * set PF_NO_SETAFFINITY if this kthread should stay in the root.
+     */
+    current->no_cgroup_migration = 0;
+}
+
 #endif /* _LINUX_CGROUP_H */

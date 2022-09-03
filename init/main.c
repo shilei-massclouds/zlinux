@@ -431,13 +431,14 @@ noinline void __ref rest_init(void)
      */
     system_state = SYSTEM_SCHEDULING;
 
+    printk("%s: 3\n", __func__);
     /*
      * The boot idle thread must execute schedule()
      * at least once to get things moving:
      */
     schedule_preempt_disabled();
 
-    pr_info("###################### %s: 3\n", __func__);
+    pr_info("###################### %s: !\n", __func__);
     panic("%s: pid(%d) END!\n", __func__, pid);
 }
 
