@@ -362,6 +362,8 @@ static inline struct folio *folio_alloc(gfp_t gfp, unsigned int order)
     return __folio_alloc_node(gfp, order, numa_node_id());
 }
 
+void page_alloc_init(void);
+
 void page_alloc_init_late(void);
 
 #define alloc_pages_vma(gfp_mask, order, vma, addr, hugepage) \

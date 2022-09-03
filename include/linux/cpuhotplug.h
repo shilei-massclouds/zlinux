@@ -292,4 +292,25 @@ static inline int cpuhp_setup_state_multi(enum cpuhp_state state,
                                (void *) teardown, true);
 }
 
+/**
+ * cpuhp_setup_state_nocalls - Setup hotplug state callbacks without calling the
+ *                 @startup callback
+ * @state:  The state for which the calls are installed
+ * @name:   Name of the callback.
+ * @startup:    startup callback function or NULL if not required
+ * @teardown:   teardown callback function or NULL if not required
+ *
+ * Same as cpuhp_setup_state() except that the @startup callback is not
+ * invoked during installation. NOP if SMP=n or HOTPLUG_CPU=n.
+ */
+static inline
+int cpuhp_setup_state_nocalls(enum cpuhp_state state,
+                              const char *name,
+                              int (*startup)(unsigned int cpu),
+                              int (*teardown)(unsigned int cpu))
+{
+    return __cpuhp_setup_state(state, name, false, startup, teardown,
+                               false);
+}
+
 #endif /* __CPUHOTPLUG_H */

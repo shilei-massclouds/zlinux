@@ -4616,7 +4616,20 @@ void adjust_managed_page_count(struct page *page, long count)
 }
 EXPORT_SYMBOL(adjust_managed_page_count);
 
-#if 0
+static int page_alloc_cpu_online(unsigned int cpu)
+{
+    struct zone *zone;
+
+    for_each_populated_zone(zone)
+        zone_pcp_update(zone, 1);
+    return 0;
+}
+
+static int page_alloc_cpu_dead(unsigned int cpu)
+{
+    panic("%s: END!\n", __func__);
+}
+
 void __init page_alloc_init(void)
 {
     int ret;
@@ -4627,4 +4640,3 @@ void __init page_alloc_init(void)
                                     page_alloc_cpu_dead);
     WARN_ON(ret < 0);
 }
-#endif
