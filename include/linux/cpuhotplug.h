@@ -268,4 +268,28 @@ int cpuhp_setup_state(enum cpuhp_state state,
     return __cpuhp_setup_state(state, name, true, startup, teardown, false);
 }
 
+/**
+ * cpuhp_setup_state_multi - Add callbacks for multi state
+ * @state:  The state for which the calls are installed
+ * @name:   Name of the callback.
+ * @startup:    startup callback function or NULL if not required
+ * @teardown:   teardown callback function or NULL if not required
+ *
+ * Sets the internal multi_instance flag and prepares a state to work as a multi
+ * instance callback. No callbacks are invoked at this point. The callbacks are
+ * invoked once an instance for this state are registered via
+ * cpuhp_state_add_instance() or cpuhp_state_add_instance_nocalls()
+ */
+static inline int cpuhp_setup_state_multi(enum cpuhp_state state,
+                      const char *name,
+                      int (*startup)(unsigned int cpu,
+                             struct hlist_node *node),
+                      int (*teardown)(unsigned int cpu,
+                              struct hlist_node *node))
+{
+    return __cpuhp_setup_state(state, name, false,
+                               (void *) startup,
+                               (void *) teardown, true);
+}
+
 #endif /* __CPUHOTPLUG_H */

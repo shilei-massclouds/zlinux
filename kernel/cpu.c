@@ -398,7 +398,39 @@ static int cpuhp_cb_check(enum cpuhp_state state)
     return 0;
 }
 
-static int cpuhp_store_callbacks(enum cpuhp_state state, const char *name,
+/*
+ * Returns a free for dynamic slot assignment of the Online state. The states
+ * are protected by the cpuhp_slot_states mutex and an empty slot is identified
+ * by having no name assigned.
+ */
+static int cpuhp_reserve_state(enum cpuhp_state state)
+{
+    enum cpuhp_state i, end;
+    struct cpuhp_step *step;
+
+    switch (state) {
+    case CPUHP_AP_ONLINE_DYN:
+        step = cpuhp_hp_states + CPUHP_AP_ONLINE_DYN;
+        end = CPUHP_AP_ONLINE_DYN_END;
+        break;
+    case CPUHP_BP_PREPARE_DYN:
+        step = cpuhp_hp_states + CPUHP_BP_PREPARE_DYN;
+        end = CPUHP_BP_PREPARE_DYN_END;
+        break;
+    default:
+        return -EINVAL;
+    }
+
+    for (i = state; i <= end; i++, step++) {
+        if (!step->name)
+            return i;
+    }
+    WARN(1, "No more dynamic states available for CPU hotplug\n");
+    return -ENOSPC;
+}
+
+static int cpuhp_store_callbacks(enum cpuhp_state state,
+                                 const char *name,
                                  int (*startup)(unsigned int cpu),
                                  int (*teardown)(unsigned int cpu),
                                  bool multi_instance)
@@ -418,13 +450,10 @@ static int cpuhp_store_callbacks(enum cpuhp_state state, const char *name,
      */
     if (name && (state == CPUHP_AP_ONLINE_DYN ||
                  state == CPUHP_BP_PREPARE_DYN)) {
-#if 0
         ret = cpuhp_reserve_state(state);
         if (ret < 0)
             return ret;
         state = ret;
-#endif
-        panic("%s: DYN!\n", __func__);
     }
     sp = cpuhp_get_step(state);
     if (name && sp->name)

@@ -11,6 +11,7 @@ obj-y += namespace.o file.o stat.o fs-writeback.o
 obj-y += fs_context.o fs_parser.o fs_struct.o namei.o init.o exec.o
 obj-y += char_dev.o splice.o buffer.o bad_inode.o mpage.o file_table.o
 obj-y += binfmt_elf.o
+obj-y += io-wq.o
 
 obj-y += ramfs/
 obj-y += ext2/

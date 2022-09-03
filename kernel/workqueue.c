@@ -69,3 +69,14 @@ void delayed_work_timer_fn(struct timer_list *t)
     panic("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL(delayed_work_timer_fn);
+
+/**
+ * wq_worker_running - a worker is running again
+ * @task: task waking up
+ *
+ * This function is called when a worker returns from schedule()
+ */
+void wq_worker_running(struct task_struct *task)
+{
+    panic("%s: END!\n", __func__);
+}

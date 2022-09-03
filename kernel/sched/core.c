@@ -85,10 +85,10 @@
 #include "autogroup.h"
 
 #include "smp.h"
+#endif
 
 #include "../workqueue_internal.h"
 #include "../../fs/io-wq.h"
-#endif
 #include "../smpboot.h"
 
 #define for_each_clamp_id(clamp_id) \
@@ -526,15 +526,12 @@ static inline void sched_submit_work(struct task_struct *tsk)
 
 static void sched_update_worker(struct task_struct *tsk)
 {
-#if 0
     if (tsk->flags & (PF_WQ_WORKER | PF_IO_WORKER)) {
         if (tsk->flags & PF_WQ_WORKER)
             wq_worker_running(tsk);
         else
             io_wq_worker_running(tsk);
     }
-#endif
-    panic("%s: NO implementation!\n", __func__);
 }
 
 /*
@@ -797,7 +794,7 @@ asmlinkage __visible void __sched schedule(void)
         __schedule(SM_NONE);
         sched_preempt_enable_no_resched();
     } while (need_resched());
-    //sched_update_worker(tsk);
+    sched_update_worker(tsk);
 }
 EXPORT_SYMBOL(schedule);
 
