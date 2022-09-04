@@ -63,4 +63,55 @@ struct timer_list {
         .flags = (_flags),              \
     }
 
+#define from_timer(var, callback_timer, timer_fieldname) \
+    container_of(callback_timer, typeof(*var), timer_fieldname)
+
+/*
+ * LOCKDEP and DEBUG timer interfaces.
+ */
+void init_timer_key(struct timer_list *timer,
+                    void (*func)(struct timer_list *),
+                    unsigned int flags,
+                    const char *name,
+                    struct lock_class_key *key);
+
+static inline
+void init_timer_on_stack_key(struct timer_list *timer,
+                             void (*func)(struct timer_list *),
+                             unsigned int flags,
+                             const char *name,
+                             struct lock_class_key *key)
+{
+    init_timer_key(timer, func, flags, name, key);
+}
+
+#define __init_timer(_timer, _fn, _flags)               \
+    init_timer_key((_timer), (_fn), (_flags), NULL, NULL)
+#define __init_timer_on_stack(_timer, _fn, _flags)          \
+    init_timer_on_stack_key((_timer), (_fn), (_flags), NULL, NULL)
+
+#define timer_setup_on_stack(timer, callback, flags)        \
+    __init_timer_on_stack((timer), (callback), (flags))
+
+extern int del_timer_sync(struct timer_list *timer);
+
+#define del_singleshot_timer_sync(t) del_timer_sync(t)
+
+/**
+ * timer_pending - is a timer pending?
+ * @timer: the timer in question
+ *
+ * timer_pending will tell whether a given timer is currently pending,
+ * or not. Callers must ensure serialization wrt. other operations done
+ * to this timer, eg. interrupt contexts, or other CPUs on SMP.
+ *
+ * return value: 1 if the timer is pending, 0 if not.
+ */
+static inline int timer_pending(const struct timer_list * timer)
+{
+    return !hlist_unhashed_lockless(&timer->entry);
+}
+
+static inline void destroy_timer_on_stack(struct timer_list *timer) { }
+
 #endif /* _LINUX_TIMER_H */

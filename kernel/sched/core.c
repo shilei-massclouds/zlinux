@@ -1228,24 +1228,19 @@ void update_rq_clock(struct rq *rq)
 
 static inline void enqueue_task(struct rq *rq, struct task_struct *p, int flags)
 {
-#if 0
     if (!(flags & ENQUEUE_NOCLOCK))
         update_rq_clock(rq);
 
     if (!(flags & ENQUEUE_RESTORE)) {
         sched_info_enqueue(rq, p);
     }
-#endif
 
-    printk("%s: 1 \n", __func__);
     p->sched_class->enqueue_task(rq, p, flags);
-    printk("%s: 2 \n", __func__);
 }
 
 void activate_task(struct rq *rq, struct task_struct *p, int flags)
 {
     enqueue_task(rq, p, flags);
-    printk("%s: 2 \n", __func__);
 
     p->on_rq = TASK_ON_RQ_QUEUED;
 }
@@ -1285,13 +1280,11 @@ void wake_up_new_task(struct task_struct *p)
     post_init_entity_util_avg(p);
 #endif
 
-    printk("%s: 1 \n", __func__);
     activate_task(rq, p, ENQUEUE_NOCLOCK);
     check_preempt_curr(rq, p, WF_FORK);
     if (p->sched_class->task_woken) {
         panic("%s: no task_woken for sched_class.\n", __func__);
     }
-    printk("%s: 2 \n", __func__);
     task_rq_unlock(rq, p, &rf);
 }
 

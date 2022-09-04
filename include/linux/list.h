@@ -546,4 +546,31 @@ static inline int list_is_singular(const struct list_head *head)
     return !list_empty(head) && (head->next == head->prev);
 }
 
+/**
+ * hlist_unhashed_lockless - Version of hlist_unhashed for lockless use
+ * @h: Node to be checked
+ *
+ * This variant of hlist_unhashed() must be used in lockless contexts
+ * to avoid potential load-tearing.  The READ_ONCE() is paired with the
+ * various WRITE_ONCE() in hlist helpers that are defined below.
+ */
+static inline int hlist_unhashed_lockless(const struct hlist_node *h)
+{
+    return !READ_ONCE(h->pprev);
+}
+
+/**
+ * hlist_is_singular_node - is node the only element of the specified hlist?
+ * @n: Node to check for singularity.
+ * @h: Header for potentially singular list.
+ *
+ * Check whether the node is the only node of the head without
+ * accessing head, thus avoiding unnecessary cache misses.
+ */
+static inline bool
+hlist_is_singular_node(struct hlist_node *n, struct hlist_head *h)
+{
+    return !n->next && n->pprev == &h->first;
+}
+
 #endif /* _LINUX_LIST_H */

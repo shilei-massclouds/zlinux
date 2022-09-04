@@ -11,6 +11,10 @@
 #define TICK_DO_TIMER_NONE -1
 #define TICK_DO_TIMER_BOOT -2
 
+extern unsigned long tick_nohz_active;
+extern void timers_update_nohz(void);
+extern struct static_key_false timers_migration_enabled;
+
 extern int tick_do_timer_cpu __read_mostly;
 
 DECLARE_PER_CPU(struct tick_device, tick_cpu_device);

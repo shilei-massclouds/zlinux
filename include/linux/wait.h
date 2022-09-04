@@ -139,9 +139,11 @@ static inline int waitqueue_active(struct wait_queue_head *wq_head)
 void __wake_up(struct wait_queue_head *wq_head,
                unsigned int mode, int nr, void *key);
 
-#define wake_up(x)  __wake_up(x, TASK_NORMAL, 1, NULL)
+#define wake_up(x)      __wake_up(x, TASK_NORMAL, 1, NULL)
+#define wake_up_all(x)  __wake_up(x, TASK_NORMAL, 0, NULL)
 
-#define wake_up_interruptible(x)    __wake_up(x, TASK_INTERRUPTIBLE, 1, NULL)
+#define wake_up_interruptible(x) \
+    __wake_up(x, TASK_INTERRUPTIBLE, 1, NULL)
 
 static inline void __add_wait_queue(struct wait_queue_head *wq_head, struct wait_queue_entry *wq_entry)
 {

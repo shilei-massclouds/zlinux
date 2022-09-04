@@ -469,3 +469,16 @@ int kthreadd(void *unused)
 
     return 0;
 }
+
+/**
+ * kthread_should_stop - should this kthread return now?
+ *
+ * When someone calls kthread_stop() on your kthread, it will be woken
+ * and this will return true.  You should then return, and your return
+ * value will be passed through to kthread_stop().
+ */
+bool kthread_should_stop(void)
+{
+    return test_bit(KTHREAD_SHOULD_STOP, &to_kthread(current)->flags);
+}
+EXPORT_SYMBOL(kthread_should_stop);

@@ -70,6 +70,17 @@ enum migratetype {
 #define is_migrate_cma(migratetype) false
 #define is_migrate_cma_page(_page)  false
 
+enum pgdat_flags {
+    PGDAT_DIRTY,    /* reclaim scanning has recently found
+                     * many dirty file pages at the tail
+                     * of the LRU.
+                     */
+    PGDAT_WRITEBACK,        /* reclaim scanning has recently found
+                             * many pages under writeback
+                             */
+    PGDAT_RECLAIM_LOCKED,   /* prevents concurrent reclaim */
+};
+
 enum zone_flags {
     ZONE_BOOSTED_WATERMARK, /* zone recently boosted watermarks.
                              * Cleared when kswapd is woken. */
@@ -353,6 +364,11 @@ struct zone {
     /* Write-intensive fields used by compaction and vmstats. */
     ZONE_PADDING(_pad2_)
 
+    /* Set to true when the PG_migrate_skip bits should be cleared */
+    bool compact_blockskip_flush;
+
+    bool contiguous;
+
     ZONE_PADDING(_pad3_)
     /* Zone statistics */
     atomic_long_t       vm_stat[NR_VM_ZONE_STAT_ITEMS];
@@ -437,6 +453,7 @@ typedef struct pglist_data {
     /* workqueues for throttling reclaim for different reasons. */
     wait_queue_head_t reclaim_wait[NR_VMSCAN_THROTTLE];
 
+    int kswapd_order;
     enum zone_type kswapd_highest_zoneidx;
 
     int kswapd_failures;        /* Number of 'reclaimed == 0' runs */
@@ -758,6 +775,9 @@ static inline bool is_active_lru(enum lru_list lru)
 {
     return (lru == LRU_ACTIVE_ANON || lru == LRU_ACTIVE_FILE);
 }
+
+bool zone_watermark_ok_safe(struct zone *z, unsigned int order,
+                            unsigned long mark, int highest_zoneidx);
 
 #endif /* !__GENERATING_BOUNDS_H */
 #endif /* !__ASSEMBLY__ */

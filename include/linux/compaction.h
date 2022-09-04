@@ -55,4 +55,9 @@ enum compact_result {
     COMPACT_SUCCESS,
 };
 
+extern void reset_isolation_suitable(pg_data_t *pgdat);
+
+extern void wakeup_kcompactd(pg_data_t *pgdat, int order,
+                             int highest_zoneidx);
+
 #endif /* _LINUX_COMPACTION_H */

@@ -46,10 +46,6 @@
 
 #include "tick-internal.h"
 
-unsigned int sysctl_timer_migration = 1;
-
-DEFINE_STATIC_KEY_FALSE(timers_migration_enabled);
-
 static inline void
 hrtimer_cpu_base_init_expiry_lock(struct hrtimer_cpu_base *base) { }
 static inline void

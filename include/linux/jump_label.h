@@ -182,6 +182,9 @@ static inline int static_key_count(struct static_key *key)
 #define static_branch_enable_cpuslocked(x)  static_key_enable_cpuslocked(&(x)->key)
 #define static_branch_disable_cpuslocked(x) static_key_disable_cpuslocked(&(x)->key)
 
+extern void static_key_enable(struct static_key *key);
+extern void static_key_disable(struct static_key *key);
+
 extern void jump_label_init(void);
 
 extern struct jump_entry __start___jump_table[];

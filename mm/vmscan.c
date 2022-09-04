@@ -43,7 +43,7 @@
 #include <linux/memcontrol.h>
 #include <linux/migrate.h>
 //#include <linux/delayacct.h>
-//#include <linux/sysctl.h>
+#include <linux/sysctl.h>
 #include <linux/oom.h>
 #include <linux/pagevec.h>
 #include <linux/prefetch.h>
@@ -56,7 +56,7 @@
 
 #include <linux/swapops.h>
 //#include <linux/balloon_compaction.h>
-//#include <linux/sched/sysctl.h>
+#include <linux/sched/sysctl.h>
 
 #include "internal.h"
 
@@ -2293,6 +2293,191 @@ void folio_putback_lru(struct folio *folio)
 }
 
 /*
+ * The pgdat->kswapd_highest_zoneidx is used to pass the highest zone index to
+ * be reclaimed by kswapd from the waker. If the value is MAX_NR_ZONES which is
+ * not a valid index then either kswapd runs for first time or kswapd couldn't
+ * sleep after previous reclaim attempt (node is still unbalanced). In that
+ * case return the zone index of the previous kswapd reclaim cycle.
+ */
+static enum zone_type
+kswapd_highest_zoneidx(pg_data_t *pgdat,
+                       enum zone_type prev_highest_zoneidx)
+{
+    enum zone_type curr_idx = READ_ONCE(pgdat->kswapd_highest_zoneidx);
+
+    return curr_idx == MAX_NR_ZONES ? prev_highest_zoneidx : curr_idx;
+}
+
+/*
+ * Returns true if there is an eligible zone balanced for the request order
+ * and highest_zoneidx
+ */
+static bool pgdat_balanced(pg_data_t *pgdat, int order,
+                           int highest_zoneidx)
+{
+    int i;
+    unsigned long mark = -1;
+    struct zone *zone;
+
+    /*
+     * Check watermarks bottom-up as lower zones are more likely to
+     * meet watermarks.
+     */
+    for (i = 0; i <= highest_zoneidx; i++) {
+        zone = pgdat->node_zones + i;
+
+        if (!managed_zone(zone))
+            continue;
+
+        if (sysctl_numa_balancing_mode & NUMA_BALANCING_MEMORY_TIERING)
+            mark = wmark_pages(zone, WMARK_PROMO);
+        else
+            mark = high_wmark_pages(zone);
+        if (zone_watermark_ok_safe(zone, order, mark, highest_zoneidx))
+            return true;
+    }
+
+    /*
+     * If a node has no populated zone within highest_zoneidx, it does not
+     * need balancing by definition. This can happen if a zone-restricted
+     * allocation tries to wake a remote kswapd.
+     */
+    if (mark == -1)
+        return true;
+
+    panic("%s: END!\n", __func__);
+    return false;
+}
+
+/* Clear pgdat state for congested, dirty or under writeback. */
+static void clear_pgdat_congested(pg_data_t *pgdat)
+{
+    struct lruvec *lruvec = mem_cgroup_lruvec(NULL, pgdat);
+
+    clear_bit(LRUVEC_CONGESTED, &lruvec->flags);
+    clear_bit(PGDAT_DIRTY, &pgdat->flags);
+    clear_bit(PGDAT_WRITEBACK, &pgdat->flags);
+}
+
+/*
+ * Prepare kswapd for sleeping. This verifies that there are no processes
+ * waiting in throttle_direct_reclaim() and that watermarks have been met.
+ *
+ * Returns true if kswapd is ready to sleep
+ */
+static bool prepare_kswapd_sleep(pg_data_t *pgdat, int order,
+                                 int highest_zoneidx)
+{
+    /*
+     * The throttled processes are normally woken up in balance_pgdat() as
+     * soon as allow_direct_reclaim() is true. But there is a potential
+     * race between when kswapd checks the watermarks and a process gets
+     * throttled. There is also a potential race if processes get
+     * throttled, kswapd wakes, a large process exits thereby balancing the
+     * zones, which causes kswapd to exit balance_pgdat() before reaching
+     * the wake up checks. If kswapd is going to sleep, no process should
+     * be sleeping on pfmemalloc_wait, so wake them now if necessary. If
+     * the wake up is premature, processes will wake kswapd and get
+     * throttled again. The difference from wake ups in balance_pgdat() is
+     * that here we are under prepare_to_wait().
+     */
+    if (waitqueue_active(&pgdat->pfmemalloc_wait))
+        wake_up_all(&pgdat->pfmemalloc_wait);
+
+    /* Hopeless node, leave it to direct reclaim */
+    if (pgdat->kswapd_failures >= MAX_RECLAIM_RETRIES)
+        return true;
+
+    if (pgdat_balanced(pgdat, order, highest_zoneidx)) {
+        clear_pgdat_congested(pgdat);
+        return true;
+    }
+
+    return false;
+}
+
+static void kswapd_try_to_sleep(pg_data_t *pgdat,
+                                int alloc_order,
+                                int reclaim_order,
+                                unsigned int highest_zoneidx)
+{
+    long remaining = 0;
+    DEFINE_WAIT(wait);
+
+    if (kthread_should_stop())
+        return;
+
+    prepare_to_wait(&pgdat->kswapd_wait, &wait, TASK_INTERRUPTIBLE);
+
+    /*
+     * Try to sleep for a short interval. Note that kcompactd will only be
+     * woken if it is possible to sleep for a short interval. This is
+     * deliberate on the assumption that if reclaim cannot keep an
+     * eligible zone balanced that it's also unlikely that compaction will
+     * succeed.
+     */
+    if (prepare_kswapd_sleep(pgdat, reclaim_order, highest_zoneidx)) {
+        /*
+         * Compaction records what page blocks it recently failed to
+         * isolate pages from and skips them in the future scanning.
+         * When kswapd is going to sleep, it is reasonable to assume
+         * that pages and compaction may succeed so reset the cache.
+         */
+        reset_isolation_suitable(pgdat);
+
+        /*
+         * We have freed the memory, now we should compact it to make
+         * allocation of the requested order possible.
+         */
+        wakeup_kcompactd(pgdat, alloc_order, highest_zoneidx);
+
+        remaining = schedule_timeout(HZ/10);
+
+        /*
+         * If woken prematurely then reset kswapd_highest_zoneidx and
+         * order. The values will either be from a wakeup request or
+         * the previous request that slept prematurely.
+         */
+        if (remaining) {
+            WRITE_ONCE(pgdat->kswapd_highest_zoneidx,
+                       kswapd_highest_zoneidx(pgdat, highest_zoneidx));
+
+            if (READ_ONCE(pgdat->kswapd_order) < reclaim_order)
+                WRITE_ONCE(pgdat->kswapd_order, reclaim_order);
+        }
+
+        finish_wait(&pgdat->kswapd_wait, &wait);
+        prepare_to_wait(&pgdat->kswapd_wait, &wait, TASK_INTERRUPTIBLE);
+    }
+
+    /*
+     * After a short sleep, check if it was a premature sleep. If not, then
+     * go fully to sleep until explicitly woken up.
+     */
+    if (!remaining &&
+        prepare_kswapd_sleep(pgdat, reclaim_order, highest_zoneidx)) {
+
+        /*
+         * vmstat counters are not perfectly accurate and the estimated
+         * value for counters such as NR_FREE_PAGES can deviate from the
+         * true value by nr_online_cpus * threshold. To avoid the zone
+         * watermarks being breached while under pressure, we reduce the
+         * per-cpu vmstat threshold while kswapd is awake and restore
+         * them before going back to sleep.
+         */
+        set_pgdat_percpu_threshold(pgdat, calculate_normal_threshold);
+
+        if (!kthread_should_stop())
+            schedule();
+
+        set_pgdat_percpu_threshold(pgdat, calculate_pressure_threshold);
+    } else {
+        panic("%s: 2!\n", __func__);
+    }
+    finish_wait(&pgdat->kswapd_wait, &wait);
+}
+
+/*
  * The background pageout daemon, started as a kernel thread
  * from the init process.
  *
@@ -2307,6 +2492,47 @@ void folio_putback_lru(struct folio *folio)
  */
 static int kswapd(void *p)
 {
+    unsigned int alloc_order, reclaim_order;
+    unsigned int highest_zoneidx = MAX_NR_ZONES - 1;
+    pg_data_t *pgdat = (pg_data_t *)p;
+    struct task_struct *tsk = current;
+    const struct cpumask *cpumask = cpumask_of_node(pgdat->node_id);
+
+    if (!cpumask_empty(cpumask))
+        set_cpus_allowed_ptr(tsk, cpumask);
+
+    /*
+     * Tell the memory management that we're a "memory allocator",
+     * and that if we need more memory we should get access to it
+     * regardless (see "__alloc_pages()"). "kswapd" should
+     * never get caught in the normal page freeing logic.
+     *
+     * (Kswapd normally doesn't need memory anyway, but sometimes
+     * you need a small amount of memory in order to be able to
+     * page out something else, and this flag essentially protects
+     * us from recursively trying to free more memory as we're
+     * trying to free the first piece of memory in the first place).
+     */
+    tsk->flags |= PF_MEMALLOC | PF_KSWAPD;
+
+    WRITE_ONCE(pgdat->kswapd_order, 0);
+    WRITE_ONCE(pgdat->kswapd_highest_zoneidx, MAX_NR_ZONES);
+    atomic_set(&pgdat->nr_writeback_throttled, 0);
+    for ( ; ; ) {
+        bool ret;
+
+        alloc_order = reclaim_order = READ_ONCE(pgdat->kswapd_order);
+        highest_zoneidx =
+            kswapd_highest_zoneidx(pgdat, highest_zoneidx);
+
+
+     kswapd_try_sleep:
+        kswapd_try_to_sleep(pgdat, alloc_order, reclaim_order,
+                            highest_zoneidx);
+
+        panic("%s: 1!\n", __func__);
+    }
+
     panic("%s: END!\n", __func__);
 }
 

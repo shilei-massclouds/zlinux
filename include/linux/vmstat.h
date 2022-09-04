@@ -207,6 +207,13 @@ static inline void __count_vm_events(enum vm_event_item item, long delta)
 
 void refresh_zone_stat_thresholds(void);
 
+int calculate_pressure_threshold(struct zone *zone);
+int calculate_normal_threshold(struct zone *zone);
+
+void
+set_pgdat_percpu_threshold(pg_data_t *pgdat,
+                           int (*calculate_pressure)(struct zone *));
+
 #define __count_zid_vm_events(item, zid, delta) \
     __count_vm_events(item##_NORMAL - ZONE_NORMAL + zid, delta)
 
