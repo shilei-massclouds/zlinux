@@ -2,9 +2,7 @@
 #ifndef _LINUX_BH_H
 #define _LINUX_BH_H
 
-#if 0
 #include <linux/instruction_pointer.h>
-#endif
 #include <linux/preempt.h>
 
 static __always_inline void

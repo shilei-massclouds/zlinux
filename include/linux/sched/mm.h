@@ -194,4 +194,9 @@ static inline void memalloc_noreclaim_restore(unsigned int flags)
     current->flags = (current->flags & ~PF_MEMALLOC) | flags;
 }
 
+static inline void __fs_reclaim_acquire(unsigned long ip) { }
+static inline void __fs_reclaim_release(unsigned long ip) { }
+static inline void fs_reclaim_acquire(gfp_t gfp_mask) { }
+static inline void fs_reclaim_release(gfp_t gfp_mask) { }
+
 #endif /* _LINUX_SCHED_MM_H */

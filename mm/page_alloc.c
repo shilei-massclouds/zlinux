@@ -1383,6 +1383,16 @@ static void change_pageblock_range(struct page *pageblock_page,
     }
 }
 
+static inline bool boost_watermark(struct zone *zone)
+{
+    unsigned long max_boost;
+
+    if (!watermark_boost_factor)
+        return false;
+
+    panic("%s: NO implementation!\n", __func__);
+}
+
 /*
  * This function implements actual steal behaviour. If order is large enough,
  * we can steal whole pageblock. If not, we first move freepages in this
@@ -1415,7 +1425,6 @@ steal_suitable_fallback(struct zone *zone, struct page *page,
         goto single_page;
     }
 
-#if 0
     /*
      * Boost watermarks to increase reclaim pressure to reduce the
      * likelihood of future fallbacks. Wake kswapd now as the node
@@ -1423,7 +1432,7 @@ steal_suitable_fallback(struct zone *zone, struct page *page,
      */
     if (boost_watermark(zone) && (alloc_flags & ALLOC_KSWAPD))
         set_bit(ZONE_BOOSTED_WATERMARK, &zone->flags);
-#endif
+
     /* We are not allowed to try stealing from the whole block */
     if (!whole_block)
         goto single_page;

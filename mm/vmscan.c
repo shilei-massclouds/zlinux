@@ -49,7 +49,7 @@
 #include <linux/prefetch.h>
 #include <linux/printk.h>
 #include <linux/dax.h>
-//#include <linux/psi.h>
+#include <linux/psi.h>
 
 #include <asm/tlbflush.h>
 #include <asm/div64.h>
@@ -2477,6 +2477,175 @@ static void kswapd_try_to_sleep(pg_data_t *pgdat,
     finish_wait(&pgdat->kswapd_wait, &wait);
 }
 
+/* Page allocator PCP high watermark is lowered if reclaim is active. */
+static inline void
+update_reclaim_active(pg_data_t *pgdat, int highest_zoneidx,
+                      bool active)
+{
+    int i;
+    struct zone *zone;
+
+    for (i = 0; i <= highest_zoneidx; i++) {
+        zone = pgdat->node_zones + i;
+
+        if (!managed_zone(zone))
+            continue;
+
+        if (active)
+            set_bit(ZONE_RECLAIM_ACTIVE, &zone->flags);
+        else
+            clear_bit(ZONE_RECLAIM_ACTIVE, &zone->flags);
+    }
+}
+
+static inline void
+set_reclaim_active(pg_data_t *pgdat, int highest_zoneidx)
+{
+    update_reclaim_active(pgdat, highest_zoneidx, true);
+}
+
+static inline void
+clear_reclaim_active(pg_data_t *pgdat, int highest_zoneidx)
+{
+    update_reclaim_active(pgdat, highest_zoneidx, false);
+}
+
+/*
+ * For kswapd, balance_pgdat() will reclaim pages across a node from zones
+ * that are eligible for use by the caller until at least one zone is
+ * balanced.
+ *
+ * Returns the order kswapd finished reclaiming at.
+ *
+ * kswapd scans the zones in the highmem->normal->dma direction.  It skips
+ * zones which have free_pages > high_wmark_pages(zone), but once a zone is
+ * found to have free_pages <= high_wmark_pages(zone), any page in that zone
+ * or lower is eligible for reclaim until at least one usable zone is
+ * balanced.
+ */
+static int balance_pgdat(pg_data_t *pgdat, int order,
+                         int highest_zoneidx)
+{
+    int i;
+    unsigned long nr_soft_reclaimed;
+    unsigned long nr_soft_scanned;
+    unsigned long pflags;
+    unsigned long nr_boost_reclaim;
+    unsigned long zone_boosts[MAX_NR_ZONES] = { 0, };
+    bool boosted;
+    struct zone *zone;
+    struct scan_control sc = {
+        .gfp_mask = GFP_KERNEL,
+        .order = order,
+        .may_unmap = 1,
+    };
+
+    set_task_reclaim_state(current, &sc.reclaim_state);
+    psi_memstall_enter(&pflags);
+    __fs_reclaim_acquire(_THIS_IP_);
+
+    //count_vm_event(PAGEOUTRUN);
+
+    /*
+     * Account for the reclaim boost. Note that the zone boost is left in
+     * place so that parallel allocations that are near the watermark will
+     * stall or direct reclaim until kswapd is finished.
+     */
+    nr_boost_reclaim = 0;
+    for (i = 0; i <= highest_zoneidx; i++) {
+        zone = pgdat->node_zones + i;
+        if (!managed_zone(zone))
+            continue;
+
+        nr_boost_reclaim += zone->watermark_boost;
+        zone_boosts[i] = zone->watermark_boost;
+    }
+    boosted = nr_boost_reclaim;
+
+ restart:
+    set_reclaim_active(pgdat, highest_zoneidx);
+    sc.priority = DEF_PRIORITY;
+    do {
+        unsigned long nr_reclaimed = sc.nr_reclaimed;
+        bool raise_priority = true;
+        bool balanced;
+        bool ret;
+
+        sc.reclaim_idx = highest_zoneidx;
+
+        /*
+         * If the number of buffer_heads exceeds the maximum allowed
+         * then consider reclaiming from all zones. This has a dual
+         * purpose -- on 64-bit systems it is expected that
+         * buffer_heads are stripped during active rotation. On 32-bit
+         * systems, highmem pages can pin lowmem memory and shrinking
+         * buffers can relieve lowmem pressure. Reclaim may still not
+         * go ahead if all eligible zones for the original allocation
+         * request are balanced to avoid excessive reclaim from kswapd.
+         */
+        if (buffer_heads_over_limit) {
+            for (i = MAX_NR_ZONES - 1; i >= 0; i--) {
+                zone = pgdat->node_zones + i;
+                if (!managed_zone(zone))
+                    continue;
+
+                sc.reclaim_idx = i;
+                break;
+            }
+        }
+
+        /*
+         * If the pgdat is imbalanced then ignore boosting and preserve
+         * the watermarks for a later time and restart. Note that the
+         * zone watermarks will be still reset at the end of balancing
+         * on the grounds that the normal reclaim should be enough to
+         * re-evaluate if boosting is required when kswapd next wakes.
+         */
+        balanced = pgdat_balanced(pgdat, sc.order, highest_zoneidx);
+        if (!balanced && nr_boost_reclaim) {
+            nr_boost_reclaim = 0;
+            goto restart;
+        }
+
+        /*
+         * If boosting is not active then only reclaim if there are no
+         * eligible zones. Note that sc.reclaim_idx is not used as
+         * buffer_heads_over_limit may have adjusted it.
+         */
+        if (!nr_boost_reclaim && balanced)
+            goto out;
+
+        /* Limit the priority of boosting to avoid reclaim writeback */
+        if (nr_boost_reclaim && sc.priority == DEF_PRIORITY - 2)
+            raise_priority = false;
+
+        panic("%s: 1!\n", __func__);
+    } while (sc.priority >= 1);
+
+    panic("%s: END!\n", __func__);
+
+out:
+    clear_reclaim_active(pgdat, highest_zoneidx);
+
+    /* If reclaim was boosted, account for the reclaim done in this pass */
+    if (boosted) {
+        panic("%s: boosted!\n", __func__);
+    }
+
+    snapshot_refaults(NULL, pgdat);
+    __fs_reclaim_release(_THIS_IP_);
+    psi_memstall_leave(&pflags);
+    set_task_reclaim_state(current, NULL);
+
+    /*
+     * Return the order kswapd stopped reclaiming at as
+     * prepare_kswapd_sleep() takes it into account. If another caller
+     * entered the allocator slow path while kswapd was awake, order will
+     * remain at the higher level.
+     */
+    return sc.order;
+}
+
 /*
  * The background pageout daemon, started as a kernel thread
  * from the init process.
@@ -2530,10 +2699,34 @@ static int kswapd(void *p)
         kswapd_try_to_sleep(pgdat, alloc_order, reclaim_order,
                             highest_zoneidx);
 
-        panic("%s: 1!\n", __func__);
+        /* Read the new order and highest_zoneidx */
+        alloc_order = READ_ONCE(pgdat->kswapd_order);
+        highest_zoneidx =
+            kswapd_highest_zoneidx(pgdat, highest_zoneidx);
+        WRITE_ONCE(pgdat->kswapd_order, 0);
+        WRITE_ONCE(pgdat->kswapd_highest_zoneidx, MAX_NR_ZONES);
+
+        if (kthread_should_stop())
+            break;
+
+        /*
+         * Reclaim begins at the requested order but if a high-order
+         * reclaim fails then kswapd falls back to reclaiming for
+         * order-0. If that happens, kswapd will consider sleeping
+         * for the order it finished reclaiming at (reclaim_order)
+         * but kcompactd is woken to compact for the original
+         * request (alloc_order).
+         */
+        reclaim_order = balance_pgdat(pgdat, alloc_order,
+                                      highest_zoneidx);
+        if (reclaim_order < alloc_order)
+            goto kswapd_try_sleep;
     }
 
+    tsk->flags &= ~(PF_MEMALLOC | PF_KSWAPD);
+
     panic("%s: END!\n", __func__);
+    return 0;
 }
 
 /*
