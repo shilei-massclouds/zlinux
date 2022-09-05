@@ -164,6 +164,9 @@ static inline int static_key_count(struct static_key *key)
     (IS_ENABLED(config) ? static_branch_likely(x)           \
                 : static_branch_unlikely(x))
 
+extern void static_key_slow_inc_cpuslocked(struct static_key *key);
+extern void static_key_slow_dec_cpuslocked(struct static_key *key);
+
 /*
  * Advanced usage; refcount, branch is enabled when: count != 0
  */

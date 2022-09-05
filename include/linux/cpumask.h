@@ -117,6 +117,25 @@ static inline bool cpu_dying(unsigned int cpu)
 #define for_each_online_cpu(cpu)   for_each_cpu((cpu), cpu_online_mask)
 #define for_each_present_cpu(cpu)  for_each_cpu((cpu), cpu_present_mask)
 
+/**
+ * for_each_cpu_and - iterate over every cpu in both masks
+ * @cpu: the (optionally unsigned) integer iterator
+ * @mask1: the first cpumask pointer
+ * @mask2: the second cpumask pointer
+ *
+ * This saves a temporary CPU mask in many places.  It is equivalent to:
+ *  struct cpumask tmp;
+ *  cpumask_and(&tmp, &mask1, &mask2);
+ *  for_each_cpu(cpu, &tmp)
+ *      ...
+ *
+ * After the loop, cpu is >= nr_cpu_ids.
+ */
+#define for_each_cpu_and(cpu, mask1, mask2)             \
+    for ((cpu) = -1;                        \
+        (cpu) = cpumask_next_and((cpu), (mask1), (mask2)),  \
+        (cpu) < nr_cpu_ids;)
+
 #define CPU_BITS_NONE \
 {                     \
     [0 ... BITS_TO_LONGS(NR_CPUS)-1] = 0UL \
@@ -368,12 +387,37 @@ static inline unsigned int num_online_cpus(void)
 
 typedef struct cpumask cpumask_var_t[1];
 
+static inline bool alloc_cpumask_var(cpumask_var_t *mask, gfp_t flags)
+{
+    return true;
+}
+
+static inline
+bool alloc_cpumask_var_node(cpumask_var_t *mask, gfp_t flags, int node)
+{
+    return true;
+}
+
 static inline bool
 zalloc_cpumask_var_node(cpumask_var_t *mask, gfp_t flags, int node)
 {
     cpumask_clear(*mask);
     return true;
 }
+
+static inline void alloc_bootmem_cpumask_var(cpumask_var_t *mask)
+{
+}
+
+static inline void free_bootmem_cpumask_var(cpumask_var_t mask)
+{
+}
+
+static inline bool cpumask_available(cpumask_var_t mask)
+{
+    return true;
+}
+
 
 /**
  * cpumask_and - *dstp = *src1p & *src2p
@@ -473,5 +517,29 @@ extern const DECLARE_BITMAP(cpu_all_bits, NR_CPUS);
 {                       \
     [BITS_TO_LONGS(NR_CPUS)-1] = BITMAP_LAST_WORD_MASK(NR_CPUS) \
 }
+
+static __always_inline
+void __cpumask_set_cpu(unsigned int cpu, struct cpumask *dstp)
+{
+    __set_bit(cpumask_check(cpu), cpumask_bits(dstp));
+}
+
+extern int cpumask_next_wrap(int n, const struct cpumask *mask,
+                             int start, bool wrap);
+
+/**
+ * for_each_cpu_wrap - iterate over every cpu in a mask, starting at a specified location
+ * @cpu: the (optionally unsigned) integer iterator
+ * @mask: the cpumask pointer
+ * @start: the start location
+ *
+ * The implementation does not assume any bit in @mask is set (including @start).
+ *
+ * After the loop, cpu is >= nr_cpu_ids.
+ */
+#define for_each_cpu_wrap(cpu, mask, start)                 \
+    for ((cpu) = cpumask_next_wrap((start)-1, (mask), (start), false);  \
+         (cpu) < nr_cpumask_bits;                       \
+         (cpu) = cpumask_next_wrap((cpu), (mask), (start), true))
 
 #endif /* __LINUX_CPUMASK_H */

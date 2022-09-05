@@ -69,3 +69,13 @@ void cpudl_set(struct cpudl *cp, int cpu, u64 dl)
 {
     panic("%s: END!\n", __func__);
 }
+
+/*
+ * cpudl_clear_freecpu - Clear the cpudl.free_cpus
+ * @cp: the cpudl max-heap context
+ * @cpu: rd attached CPU
+ */
+void cpudl_clear_freecpu(struct cpudl *cp, int cpu)
+{
+    cpumask_clear_cpu(cpu, cp->free_cpus);
+}

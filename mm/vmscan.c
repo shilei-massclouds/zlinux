@@ -2467,6 +2467,7 @@ static void kswapd_try_to_sleep(pg_data_t *pgdat,
          */
         set_pgdat_percpu_threshold(pgdat, calculate_normal_threshold);
 
+        printk("########################## %s: 1\n", __func__);
         if (!kthread_should_stop())
             schedule();
 

@@ -78,6 +78,8 @@ static char *extra_command_line;
 /* Extra init arguments */
 static char *extra_init_args;
 
+static __initdata DECLARE_COMPLETION(kthreadd_done);
+
 /*
  * Boot command-line arguments
  */
@@ -284,9 +286,9 @@ static noinline void __init kernel_init_freeable(void)
 #endif
 
     smp_init();
-#if 0
     sched_init_smp();
 
+#if 0
     padata_init();
 #endif
     page_alloc_init_late();
@@ -355,12 +357,10 @@ static int __ref kernel_init(void *unused)
     int ret;
 
     printk("############## %s: ...\n", __func__);
-#if 0
     /*
      * Wait until kthreadd is all set-up.
      */
     wait_for_completion(&kthreadd_done);
-#endif
 
     kernel_init_freeable();
 #if 0
@@ -377,6 +377,7 @@ static int __ref kernel_init(void *unused)
 
     z_tests();
 
+    printk("############## %s: before /sbin/init \n", __func__);
     if (!try_to_run_init_process("/sbin/init") ||
         !try_to_run_init_process("/etc/init") ||
         !try_to_run_init_process("/bin/init") ||
@@ -430,6 +431,8 @@ noinline void __ref rest_init(void)
      * already, but it's stuck on the kthreadd_done completion.
      */
     system_state = SYSTEM_SCHEDULING;
+
+    complete(&kthreadd_done);
 
     printk("%s: 3\n", __func__);
     /*

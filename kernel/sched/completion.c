@@ -61,8 +61,9 @@ do_wait_for_common(struct completion *x,
 
         panic("%s: 1!\n", __func__);
     }
-
-    panic("%s: END!\n", __func__);
+    if (x->done != UINT_MAX)
+        x->done--;
+    return timeout ?: 1;
 }
 
 static inline long __sched
@@ -135,3 +136,19 @@ void complete_all(struct completion *x)
     panic("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL(complete_all);
+
+/**
+ * wait_for_completion: - waits for completion of a task
+ * @x:  holds the state of this particular completion
+ *
+ * This waits to be signaled for completion of a specific task. It is NOT
+ * interruptible and there is no timeout.
+ *
+ * See also similar routines (i.e. wait_for_completion_timeout()) with timeout
+ * and interrupt capability. Also see complete().
+ */
+void __sched wait_for_completion(struct completion *x)
+{
+    wait_for_common(x, MAX_SCHEDULE_TIMEOUT, TASK_UNINTERRUPTIBLE);
+}
+EXPORT_SYMBOL(wait_for_completion);

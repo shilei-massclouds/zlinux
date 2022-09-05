@@ -58,6 +58,7 @@
 
 #include "sched.h"
 #include "stats.h"
+#include "pelt.h"
 #if 0
 #include "autogroup.h"
 #endif
@@ -70,6 +71,8 @@
     rb_entry((node), struct sched_entity, run_node)
 
 const_debug unsigned int sysctl_sched_migration_cost = 500000UL;
+
+static unsigned long __read_mostly max_load_balance_interval = HZ/10;
 
 /*
  * SCHED_OTHER wake-up granularity.
@@ -1434,9 +1437,46 @@ check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_flags)
         set_last_buddy(se);
 }
 
-static void rq_offline_fair(struct rq *rq)
+void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 {
     panic("%s: NO implementation!", __func__);
+}
+
+/* cpu offline callback */
+static void __maybe_unused unthrottle_offline_cfs_rqs(struct rq *rq)
+{
+    struct task_group *tg;
+
+    rcu_read_lock();
+    list_for_each_entry_rcu(tg, &task_groups, list) {
+        struct cfs_rq *cfs_rq = tg->cfs_rq[cpu_of(rq)];
+
+        if (!cfs_rq->runtime_enabled)
+            continue;
+
+        /*
+         * clock_task is not advancing so we just need to make sure
+         * there's some valid quota amount
+         */
+        cfs_rq->runtime_remaining = 1;
+        /*
+         * Offline rq is schedulable till CPU is completely disabled
+         * in take_cpu_down(), so we prevent new cfs throttling here.
+         */
+        cfs_rq->runtime_enabled = 0;
+
+        if (cfs_rq_throttled(cfs_rq))
+            unthrottle_cfs_rq(cfs_rq);
+    }
+    rcu_read_unlock();
+}
+
+static void rq_offline_fair(struct rq *rq)
+{
+    //update_sysctl();
+
+    /* Ensure any throttled groups are reachable by pick_next_task */
+    unthrottle_offline_cfs_rqs(rq);
 }
 
 /*
@@ -1486,6 +1526,85 @@ static unsigned int
 get_rr_interval_fair(struct rq *rq, struct task_struct *task)
 {
     panic("%s: NO implementation!", __func__);
+}
+
+/*
+ * For asym packing, by default the lower numbered CPU has higher priority.
+ */
+int __weak arch_asym_cpu_priority(int cpu)
+{
+    return -cpu;
+}
+
+static unsigned long scale_rt_capacity(int cpu)
+{
+    struct rq *rq = cpu_rq(cpu);
+    unsigned long max = arch_scale_cpu_capacity(cpu);
+    unsigned long used, free;
+    unsigned long irq;
+
+    irq = cpu_util_irq(rq);
+
+    if (unlikely(irq >= max))
+        return 1;
+
+    /*
+     * avg_rt.util_avg and avg_dl.util_avg track binary signals
+     * (running and not running) with weights 0 and 1024 respectively.
+     * avg_thermal.load_avg tracks thermal pressure and the weighted
+     * average uses the actual delta max capacity(load).
+     */
+    used = READ_ONCE(rq->avg_rt.util_avg);
+    used += READ_ONCE(rq->avg_dl.util_avg);
+    used += thermal_load_avg(rq);
+
+    if (unlikely(used >= max))
+        return 1;
+
+    free = max - used;
+
+    return scale_irq_capacity(free, irq, max);
+}
+
+static void update_cpu_capacity(struct sched_domain *sd, int cpu)
+{
+    unsigned long capacity = scale_rt_capacity(cpu);
+    struct sched_group *sdg = sd->groups;
+
+    cpu_rq(cpu)->cpu_capacity_orig = arch_scale_cpu_capacity(cpu);
+
+    if (!capacity)
+        capacity = 1;
+
+    cpu_rq(cpu)->cpu_capacity = capacity;
+
+    sdg->sgc->capacity = capacity;
+    sdg->sgc->min_capacity = capacity;
+    sdg->sgc->max_capacity = capacity;
+}
+
+void update_group_capacity(struct sched_domain *sd, int cpu)
+{
+    struct sched_domain *child = sd->child;
+    struct sched_group *group, *sdg = sd->groups;
+    unsigned long capacity, min_capacity, max_capacity;
+    unsigned long interval;
+
+    interval = msecs_to_jiffies(sd->balance_interval);
+    interval = clamp(interval, 1UL, max_load_balance_interval);
+    sdg->sgc->next_update = jiffies + interval;
+
+    if (!child) {
+        update_cpu_capacity(sd, cpu);
+        return;
+    }
+
+    panic("%s: NO implementation!", __func__);
+}
+
+void __init sched_init_granularity(void)
+{
+    //update_sysctl();
 }
 
 /*

@@ -10,9 +10,65 @@ struct rt_bandwidth def_rt_bandwidth;
 
 typedef struct rt_rq *rt_rq_iter_t;
 
+typedef struct rt_rq *rt_rq_iter_t;
+
+static DEFINE_PER_CPU(cpumask_var_t, local_cpu_mask);
+
+#define for_each_rt_rq(rt_rq, iter, rq) \
+    for ((void) iter, rt_rq = &rq->rt; rt_rq; rt_rq = NULL)
+
+#define for_each_sched_rt_entity(rt_se) \
+    for (; rt_se; rt_se = NULL)
+
 static inline struct rt_rq *group_rt_rq(struct sched_rt_entity *rt_se)
 {
     return NULL;
+}
+
+static inline struct rq *rq_of_rt_rq(struct rt_rq *rt_rq)
+{
+    return container_of(rt_rq, struct rq, rt);
+}
+
+static void
+enqueue_top_rt_rq(struct rt_rq *rt_rq)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static inline void sched_rt_rq_enqueue(struct rt_rq *rt_rq)
+{
+    struct rq *rq = rq_of_rt_rq(rt_rq);
+
+    if (!rt_rq->rt_nr_running)
+        return;
+
+    enqueue_top_rt_rq(rt_rq);
+    resched_curr(rq);
+}
+
+static void
+dequeue_top_rt_rq(struct rt_rq *rt_rq)
+{
+    struct rq *rq = rq_of_rt_rq(rt_rq);
+
+    BUG_ON(&rq->rt != rt_rq);
+
+    if (!rt_rq->rt_queued)
+        return;
+#if 0
+
+    BUG_ON(!rq->nr_running);
+
+    sub_nr_running(rq, rt_rq->rt_nr_running);
+    rt_rq->rt_queued = 0;
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+static inline void sched_rt_rq_dequeue(struct rt_rq *rt_rq)
+{
+    dequeue_top_rt_rq(rt_rq);
 }
 
 static struct task_struct *_pick_next_task_rt(struct rq *rq)
@@ -191,6 +247,12 @@ static inline void rt_set_overload(struct rq *rq)
     panic("%s: END!\n", __func__);
 }
 
+static inline
+struct rt_bandwidth *sched_rt_bandwidth(struct rt_rq *rt_rq)
+{
+    return &def_rt_bandwidth;
+}
+
 static void __enable_runtime(struct rq *rq)
 {
     rt_rq_iter_t iter;
@@ -199,7 +261,20 @@ static void __enable_runtime(struct rq *rq)
     if (unlikely(!scheduler_running))
         return;
 
-    panic("%s: END!\n", __func__);
+    /*
+     * Reset each runqueue's bandwidth settings
+     */
+    for_each_rt_rq(rt_rq, iter, rq) {
+        struct rt_bandwidth *rt_b = sched_rt_bandwidth(rt_rq);
+
+        raw_spin_lock(&rt_b->rt_runtime_lock);
+        raw_spin_lock(&rt_rq->rt_runtime_lock);
+        rt_rq->rt_runtime = rt_b->rt_runtime;
+        rt_rq->rt_time = 0;
+        rt_rq->rt_throttled = 0;
+        raw_spin_unlock(&rt_rq->rt_runtime_lock);
+        raw_spin_unlock(&rt_b->rt_runtime_lock);
+    }
 }
 
 /* Assumes rq->lock is held */
@@ -213,10 +288,80 @@ static void rq_online_rt(struct rq *rq)
     cpupri_set(&rq->rd->cpupri, rq->cpu, rq->rt.highest_prio.curr);
 }
 
+static inline void rt_clear_overload(struct rq *rq)
+{
+    if (!rq->online)
+        return;
+
+    /* the order here really doesn't matter */
+    atomic_dec(&rq->rd->rto_count);
+    cpumask_clear_cpu(rq->cpu, rq->rd->rto_mask);
+}
+
+static inline u64 sched_rt_runtime(struct rt_rq *rt_rq)
+{
+    return rt_rq->rt_runtime;
+}
+
+static inline u64 sched_rt_period(struct rt_rq *rt_rq)
+{
+    return ktime_to_ns(def_rt_bandwidth.rt_period);
+}
+
+/*
+ * Ensure this RQ takes back all the runtime it lend to its neighbours.
+ */
+static void __disable_runtime(struct rq *rq)
+{
+    struct root_domain *rd = rq->rd;
+    rt_rq_iter_t iter;
+    struct rt_rq *rt_rq;
+
+    if (unlikely(!scheduler_running))
+        return;
+
+    for_each_rt_rq(rt_rq, iter, rq) {
+        struct rt_bandwidth *rt_b = sched_rt_bandwidth(rt_rq);
+        s64 want;
+        int i;
+
+        raw_spin_lock(&rt_b->rt_runtime_lock);
+        raw_spin_lock(&rt_rq->rt_runtime_lock);
+        /*
+         * Either we're all inf and nobody needs to borrow, or we're
+         * already disabled and thus have nothing to do, or we have
+         * exactly the right amount of runtime to take out.
+         */
+        if (rt_rq->rt_runtime == RUNTIME_INF ||
+            rt_rq->rt_runtime == rt_b->rt_runtime)
+            goto balanced;
+
+        panic("%s: 1!\n", __func__);
+
+     balanced:
+        /*
+         * Disable all the borrow logic by pretending we have inf
+         * runtime - in which case borrowing doesn't make sense.
+         */
+        rt_rq->rt_runtime = RUNTIME_INF;
+        rt_rq->rt_throttled = 0;
+        raw_spin_unlock(&rt_rq->rt_runtime_lock);
+        raw_spin_unlock(&rt_b->rt_runtime_lock);
+
+        /* Make rt_rq available for pick_next_task() */
+        sched_rt_rq_enqueue(rt_rq);
+    }
+}
+
 /* Assumes rq->lock is held */
 static void rq_offline_rt(struct rq *rq)
 {
-    panic("%s: END!\n", __func__);
+    if (rq->rt.overloaded)
+        rt_clear_overload(rq);
+
+    __disable_runtime(rq);
+
+    cpupri_set(&rq->rd->cpupri, rq->cpu, CPUPRI_INVALID);
 }
 
 /*
@@ -236,9 +381,20 @@ static void switched_from_rt(struct rq *rq, struct task_struct *p)
  * and everything must be accessed through the @rq and @curr passed in
  * parameters.
  */
-static void task_tick_rt(struct rq *rq, struct task_struct *p, int queued)
+static void task_tick_rt(struct rq *rq, struct task_struct *p,
+                         int queued)
 {
     panic("%s: END!\n", __func__);
+}
+
+void __init init_sched_rt_class(void)
+{
+    unsigned int i;
+
+    for_each_possible_cpu(i) {
+        zalloc_cpumask_var_node(&per_cpu(local_cpu_mask, i),
+                                GFP_KERNEL, cpu_to_node(i));
+    }
 }
 
 DEFINE_SCHED_CLASS(rt) = {

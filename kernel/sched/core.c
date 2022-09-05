@@ -121,6 +121,8 @@ struct set_affinity_pending {
 static struct rq *
 finish_task_switch(struct task_struct *prev) __releases(rq->lock);
 
+bool sched_smp_initialized __read_mostly;
+
 /*
  * This static key is used to reduce the uclamp overhead in the fast path. It
  * primarily disables the call to uclamp_rq_{inc, dec}() in
@@ -2320,4 +2322,29 @@ int sched_setscheduler_nocheck(struct task_struct *p, int policy,
                                const struct sched_param *param)
 {
     return _sched_setscheduler(p, policy, param, false);
+}
+
+void __init sched_init_smp(void)
+{
+    /*
+     * There's no userspace yet to cause hotplug operations; hence all the
+     * CPU masks are stable and all blatant races in the below code cannot
+     * happen.
+     */
+    mutex_lock(&sched_domains_mutex);
+    sched_init_domains(cpu_active_mask);
+    mutex_unlock(&sched_domains_mutex);
+
+    /* Move init over to a non-isolated CPU */
+    if (set_cpus_allowed_ptr(current,
+                             housekeeping_cpumask(HK_TYPE_DOMAIN)) < 0)
+        BUG();
+
+    current->flags &= ~PF_NO_SETAFFINITY;
+    sched_init_granularity();
+
+    init_sched_rt_class();
+    init_sched_dl_class();
+
+    sched_smp_initialized = true;
 }

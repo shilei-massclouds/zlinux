@@ -19,6 +19,20 @@
  */
 #define INITIAL_JIFFIES ((unsigned long)(unsigned int) (-300*HZ))
 
+/*
+ * Change timeval to jiffies, trying to avoid the
+ * most obvious overflows..
+ *
+ * And some not so obvious.
+ *
+ * Note that we don't want to return LONG_MAX, because
+ * for various timeout reasons we often end up having
+ * to wait "jiffies+1" in order to guarantee that we wait
+ * at _least_ "jiffies" - so "jiffies+1" had better still
+ * be positive.
+ */
+#define MAX_JIFFY_OFFSET ((LONG_MAX >> 1)-1)
+
 #ifndef __jiffy_arch_data
 #define __jiffy_arch_data
 #endif
@@ -30,6 +44,66 @@
  */
 extern u64 __cacheline_aligned_in_smp jiffies_64;
 extern unsigned long volatile __cacheline_aligned_in_smp __jiffy_arch_data jiffies;
+
+/*
+ *  These inlines deal with timer wrapping correctly. You are
+ *  strongly encouraged to use them
+ *  1. Because people otherwise forget
+ *  2. Because if the timer wrap changes in future you won't have to
+ *     alter your driver code.
+ *
+ * time_after(a,b) returns true if the time a is after time b.
+ *
+ * Do this with "<0" and ">=0" to only test the sign of the result. A
+ * good compiler would generate better code (and a really good compiler
+ * wouldn't care). Gcc is currently neither.
+ */
+#define time_after(a,b) \
+    (typecheck(unsigned long, a) && \
+     typecheck(unsigned long, b) && \
+     ((long)((b) - (a)) < 0))
+#define time_before(a,b)    time_after(b,a)
+
+/* USER_TICK_USEC is the time between ticks in usec assuming fake USER_HZ */
+#define USER_TICK_USEC ((1000000UL + USER_HZ/2) / USER_HZ)
+
+extern unsigned long __msecs_to_jiffies(const unsigned int m);
+#if HZ <= MSEC_PER_SEC && !(MSEC_PER_SEC % HZ)
+/*
+ * HZ is equal to or smaller than 1000, and 1000 is a nice round
+ * multiple of HZ, divide with the factor between them, but round
+ * upwards:
+ */
+static inline unsigned long _msecs_to_jiffies(const unsigned int m)
+{
+    return (m + (MSEC_PER_SEC / HZ) - 1) / (MSEC_PER_SEC / HZ);
+}
+#elif HZ > MSEC_PER_SEC && !(HZ % MSEC_PER_SEC)
+/*
+ * HZ is larger than 1000, and HZ is a nice round multiple of 1000 -
+ * simply multiply with the factor between them.
+ *
+ * But first make sure the multiplication result cannot overflow:
+ */
+static inline unsigned long _msecs_to_jiffies(const unsigned int m)
+{
+    if (m > jiffies_to_msecs(MAX_JIFFY_OFFSET))
+        return MAX_JIFFY_OFFSET;
+    return m * (HZ / MSEC_PER_SEC);
+}
+#else
+/*
+ * Generic case - multiply, round and divide. But first check that if
+ * we are doing a net multiplication, that we wouldn't overflow:
+ */
+static inline unsigned long _msecs_to_jiffies(const unsigned int m)
+{
+    if (HZ > MSEC_PER_SEC && m > jiffies_to_msecs(MAX_JIFFY_OFFSET))
+        return MAX_JIFFY_OFFSET;
+
+    return (MSEC_TO_HZ_MUL32 * m + MSEC_TO_HZ_ADJ32) >> MSEC_TO_HZ_SHR32;
+}
+#endif
 
 /**
  * msecs_to_jiffies: - convert milliseconds to jiffies
@@ -56,8 +130,8 @@ extern unsigned long volatile __cacheline_aligned_in_smp __jiffy_arch_data jiffi
  * directly here and from __msecs_to_jiffies() in the case where
  * constant folding is not possible.
  */
-#if 0
-static __always_inline unsigned long msecs_to_jiffies(const unsigned int m)
+static __always_inline
+unsigned long msecs_to_jiffies(const unsigned int m)
 {
     if (__builtin_constant_p(m)) {
         if ((int)m < 0)
@@ -67,28 +141,5 @@ static __always_inline unsigned long msecs_to_jiffies(const unsigned int m)
         return __msecs_to_jiffies(m);
     }
 }
-#endif
-
-/*
- *  These inlines deal with timer wrapping correctly. You are
- *  strongly encouraged to use them
- *  1. Because people otherwise forget
- *  2. Because if the timer wrap changes in future you won't have to
- *     alter your driver code.
- *
- * time_after(a,b) returns true if the time a is after time b.
- *
- * Do this with "<0" and ">=0" to only test the sign of the result. A
- * good compiler would generate better code (and a really good compiler
- * wouldn't care). Gcc is currently neither.
- */
-#define time_after(a,b) \
-    (typecheck(unsigned long, a) && \
-     typecheck(unsigned long, b) && \
-     ((long)((b) - (a)) < 0))
-#define time_before(a,b)    time_after(b,a)
-
-/* USER_TICK_USEC is the time between ticks in usec assuming fake USER_HZ */
-#define USER_TICK_USEC ((1000000UL + USER_HZ/2) / USER_HZ)
 
 #endif /* _LINUX_JIFFIES_H */

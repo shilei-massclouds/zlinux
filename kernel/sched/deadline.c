@@ -16,6 +16,8 @@
  *                    Fabio Checconi <fchecconi@gmail.com>
  */
 
+static DEFINE_PER_CPU(cpumask_var_t, local_cpu_mask_dl);
+
 static inline struct task_struct *dl_task_of(struct sched_dl_entity *dl_se)
 {
     return container_of(dl_se, struct task_struct, dl);
@@ -164,17 +166,74 @@ static void rq_online_dl(struct rq *rq)
         cpudl_set(&rq->rd->cpudl, rq->cpu, rq->dl.earliest_dl.curr);
 }
 
+static inline void dl_clear_overload(struct rq *rq)
+{
+    if (!rq->online)
+        return;
+
+    atomic_dec(&rq->rd->dlo_count);
+    cpumask_clear_cpu(rq->cpu, rq->rd->dlo_mask);
+}
+
+static void cpudl_heapify(struct cpudl *cp, int idx)
+{
+#if 0
+    if (idx > 0 && dl_time_before(cp->elements[parent(idx)].dl,
+                                  cp->elements[idx].dl))
+        cpudl_heapify_up(cp, idx);
+    else
+        cpudl_heapify_down(cp, idx);
+#endif
+    panic("%s: NO implementation!\n", __func__);
+}
+
+/*
+ * cpudl_clear - remove a CPU from the cpudl max-heap
+ * @cp: the cpudl max-heap context
+ * @cpu: the target CPU
+ *
+ * Notes: assumes cpu_rq(cpu)->lock is locked
+ *
+ * Returns: (void)
+ */
+void cpudl_clear(struct cpudl *cp, int cpu)
+{
+    int old_idx, new_cpu;
+    unsigned long flags;
+
+    WARN_ON(!cpu_present(cpu));
+
+    raw_spin_lock_irqsave(&cp->lock, flags);
+
+    old_idx = cp->elements[cpu].idx;
+    if (old_idx == IDX_INVALID) {
+        /*
+         * Nothing to remove if old_idx was invalid.
+         * This could happen if a rq_offline_dl is
+         * called for a CPU without -dl tasks running.
+         */
+    } else {
+        new_cpu = cp->elements[cp->size - 1].cpu;
+        cp->elements[old_idx].dl = cp->elements[cp->size - 1].dl;
+        cp->elements[old_idx].cpu = new_cpu;
+        cp->size--;
+        cp->elements[new_cpu].idx = old_idx;
+        cp->elements[cpu].idx = IDX_INVALID;
+        cpudl_heapify(cp, old_idx);
+
+        cpumask_set_cpu(cpu, cp->free_cpus);
+    }
+    raw_spin_unlock_irqrestore(&cp->lock, flags);
+}
+
 /* Assumes rq->lock is held */
 static void rq_offline_dl(struct rq *rq)
 {
-#if 0
     if (rq->dl.overloaded)
         dl_clear_overload(rq);
 
     cpudl_clear(&rq->rd->cpudl, rq->cpu);
     cpudl_clear_freecpu(&rq->rd->cpudl, rq->cpu);
-#endif
-    panic("%s: NO implementation!\n", __func__);
 }
 
 static void migrate_task_rq_dl(struct task_struct *p,
@@ -282,6 +341,15 @@ bool dl_param_changed(struct task_struct *p, const struct sched_attr *attr)
         return true;
 
     return false;
+}
+
+void __init init_sched_dl_class(void)
+{
+    unsigned int i;
+
+    for_each_possible_cpu(i)
+        zalloc_cpumask_var_node(&per_cpu(local_cpu_mask_dl, i),
+                                GFP_KERNEL, cpu_to_node(i));
 }
 
 DEFINE_SCHED_CLASS(dl) = {

@@ -172,7 +172,30 @@ void cpupri_set(struct cpupri *cp, int cpu, int newpri)
         do_mb = 1;
     }
     if (likely(oldpri != CPUPRI_INVALID)) {
-        panic("%s: 1!\n", __func__);
+        struct cpupri_vec *vec  = &cp->pri_to_cpu[oldpri];
+
+        /*
+         * Because the order of modification of the vec->count
+         * is important, we must make sure that the update
+         * of the new prio is seen before we decrement the
+         * old prio. This makes sure that the loop sees
+         * one or the other when we raise the priority of
+         * the run queue. We don't care about when we lower the
+         * priority, as that will trigger an rt pull anyway.
+         *
+         * We only need to do a memory barrier if we updated
+         * the new priority vec.
+         */
+        if (do_mb)
+            smp_mb__after_atomic();
+
+        /*
+         * When removing from the vector, we decrement the counter first
+         * do a memory barrier and then clear the mask.
+         */
+        atomic_dec(&(vec)->count);
+        smp_mb__after_atomic();
+        cpumask_clear_cpu(cpu, vec->mask);
     }
 
     *currpri = newpri;

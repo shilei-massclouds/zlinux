@@ -41,3 +41,14 @@ static inline void update_rq_clock_pelt(struct rq *rq, s64 delta)
 
     rq->clock_pelt += delta;
 }
+
+static inline int
+update_thermal_load_avg(u64 now, struct rq *rq, u64 capacity)
+{
+    return 0;
+}
+
+static inline u64 thermal_load_avg(struct rq *rq)
+{
+    return 0;
+}

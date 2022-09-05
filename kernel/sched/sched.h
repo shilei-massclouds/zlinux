@@ -111,6 +111,40 @@ DECLARE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
 #define this_rq()       this_cpu_ptr(&runqueues)
 #define task_rq(p)      cpu_rq(task_cpu(p))
 
+struct sched_group_capacity {
+    atomic_t        ref;
+    /*
+     * CPU capacity of this group, SCHED_CAPACITY_SCALE being max capacity
+     * for a single CPU.
+     */
+    unsigned long       capacity;
+    unsigned long       min_capacity;       /* Min per-CPU capacity in group */
+    unsigned long       max_capacity;       /* Max per-CPU capacity in group */
+    unsigned long       next_update;
+    int                 imbalance;      /* XXX unrelated to capacity but shared group state */
+
+    unsigned long       cpumask[];      /* Balance mask */
+};
+
+struct sched_group {
+    struct sched_group  *next;          /* Must be a circular list */
+    atomic_t            ref;
+
+    unsigned int        group_weight;
+    struct sched_group_capacity *sgc;
+    int                 asym_prefer_cpu;    /* CPU of highest priority in group */
+    int                 flags;
+
+    /*
+     * The CPUs this group covers.
+     *
+     * NOTE: this field is variable length. (Allocated dynamically
+     * by attaching extra space to the end of the structure,
+     * depending on how many CPUs the kernel has booted up with)
+     */
+    unsigned long       cpumask[];
+};
+
 #define SCHED_FEAT(name, enabled)   \
     __SCHED_FEAT_##name ,
 
@@ -1213,5 +1247,79 @@ extern bool __checkparam_dl(const struct sched_attr *attr);
 
 extern bool dl_param_changed(struct task_struct *p,
                              const struct sched_attr *attr);
+
+extern int sched_init_domains(const struct cpumask *cpu_map);
+
+static inline struct cpumask *sched_group_span(struct sched_group *sg)
+{
+    return to_cpumask(sg->cpumask);
+}
+
+/*
+ * See build_balance_mask().
+ */
+static inline struct cpumask *group_balance_mask(struct sched_group *sg)
+{
+    return to_cpumask(sg->sgc->cpumask);
+}
+
+static inline bool sched_asym_prefer(int a, int b)
+{
+    return arch_asym_cpu_priority(a) > arch_asym_cpu_priority(b);
+}
+
+extern void update_group_capacity(struct sched_domain *sd, int cpu);
+
+static inline unsigned long cpu_util_irq(struct rq *rq)
+{
+    return 0;
+}
+
+static inline
+unsigned long scale_irq_capacity(unsigned long util, unsigned long irq, unsigned long max)
+{
+    return util;
+}
+
+/**
+ * highest_flag_domain - Return highest sched_domain containing flag.
+ * @cpu:    The CPU whose highest level of sched domain is to
+ *      be returned.
+ * @flag:   The flag to check for the highest sched_domain
+ *      for the given CPU.
+ *
+ * Returns the highest sched_domain of a CPU which contains the given flag.
+ */
+static inline
+struct sched_domain *highest_flag_domain(int cpu, int flag)
+{
+    struct sched_domain *sd, *hsd = NULL;
+
+    for_each_domain(cpu, sd) {
+        if (!(sd->flags & flag))
+            break;
+        hsd = sd;
+    }
+
+    return hsd;
+}
+
+static inline struct sched_domain *lowest_flag_domain(int cpu, int flag)
+{
+    struct sched_domain *sd;
+
+    for_each_domain(cpu, sd) {
+        if (sd->flags & flag)
+            break;
+    }
+
+    return sd;
+}
+
+extern void sched_init_granularity(void);
+
+extern void init_sched_dl_class(void);
+extern void init_sched_rt_class(void);
+extern void init_sched_fair_class(void);
 
 #endif /* _KERNEL_SCHED_SCHED_H */
