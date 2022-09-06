@@ -91,7 +91,8 @@ struct task_group;
 #define TASK_PARKED             0x0040
 #define TASK_DEAD               0x0080
 #define TASK_WAKEKILL           0x0100
-
+#define TASK_WAKING             0x0200
+#define TASK_NOLOAD             0x0400
 #define TASK_NEW                0x0800
 
 #define TASK_KILLABLE           (TASK_WAKEKILL | TASK_UNINTERRUPTIBLE)
@@ -125,6 +126,7 @@ struct task_group;
 #define PF_MEMALLOC         0x00000800  /* Allocating memory */
 #define PF_NPROC_EXCEEDED   0x00001000  /* set_user() noticed that RLIMIT_NPROC was exceeded */
 #define PF_NOFREEZE         0x00008000  /* This thread should not be frozen */
+#define PF_FROZEN           0x00010000  /* Frozen for system suspend */
 #define PF_KSWAPD           0x00020000  /* I am kswapd */
 #define PF_MEMALLOC_NOFS    0x00040000  /* All allocation requests will inherit GFP_NOFS */
 #define PF_MEMALLOC_NOIO    0x00080000  /* All allocation requests will inherit GFP_NOIO */
@@ -132,6 +134,7 @@ struct task_group;
 #define PF_LOCAL_THROTTLE   0x00100000  /* Throttle writes only against the bdi
                                            I write to, I am cleaning dirty
                                            pages from some other bdi. */
+
 #define PF_KTHREAD          0x00200000  /* I am a kernel thread */
 #define PF_RANDOMIZE        0x00400000  /* Randomize virtual address space */
 #define PF_NO_SETAFFINITY   0x04000000  /* Userland is not allowed to meddle with cpus_mask */

@@ -37,3 +37,11 @@ void __prepare_to_swait(struct swait_queue_head *q,
     if (list_empty(&wait->task_list))
         list_add_tail(&wait->task_list, &q->task_list);
 }
+
+void __finish_swait(struct swait_queue_head *q,
+                    struct swait_queue *wait)
+{
+    __set_current_state(TASK_RUNNING);
+    if (!list_empty(&wait->task_list))
+        list_del_init(&wait->task_list);
+}

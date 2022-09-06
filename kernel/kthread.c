@@ -376,6 +376,7 @@ static int kthread(void *_create)
     struct kthread *self;
     int ret;
 
+    printk("###### %s: step1\n", __func__);
     self = to_kthread(current);
 
     /* If user was SIGKILLed, I release the structure. */

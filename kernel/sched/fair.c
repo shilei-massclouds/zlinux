@@ -315,21 +315,23 @@ static unsigned long capacity_of(int cpu)
     return cpu_rq(cpu)->cpu_capacity;
 }
 
-#if 0
+/*
+ * The margin used when comparing utilization with CPU capacity.
+ *
+ * (default: ~20%)
+ */
+#define fits_capacity(cap, max) ((cap) * 1280 < (max) * 1024)
+
 static inline bool cpu_overutilized(int cpu)
 {
     return !fits_capacity(cpu_util_cfs(cpu), capacity_of(cpu));
 }
-#endif
 
 static inline void update_overutilized_status(struct rq *rq)
 {
-#if 0
     if (!READ_ONCE(rq->rd->overutilized) && cpu_overutilized(rq->cpu)) {
         WRITE_ONCE(rq->rd->overutilized, SG_OVERUTILIZED);
     }
-#endif
-    panic("%s: NO implementation!", __func__);
 }
 
 static inline void assert_list_leaf_cfs_rq(struct rq *rq)
@@ -805,6 +807,26 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se,
         update_min_vruntime(cfs_rq);
 }
 
+static inline unsigned long task_util(struct task_struct *p)
+{
+    return READ_ONCE(p->se.avg.util_avg);
+}
+
+#define UTIL_EST_MARGIN (SCHED_CAPACITY_SCALE / 100)
+
+/*
+ * Check if a (signed) value is within a specified (unsigned) margin,
+ * based on the observation that:
+ *
+ *     abs(x) < y := (unsigned)(x + y - 1) < (2 * y - 1)
+ *
+ * NOTE: this only works when value + margin < INT_MAX.
+ */
+static inline bool within_margin(int value, int margin)
+{
+    return ((unsigned int)(value + margin - 1) < (2 * margin - 1));
+}
+
 static inline void util_est_update(struct cfs_rq *cfs_rq,
                                    struct task_struct *p,
                                    bool task_sleep)
@@ -822,7 +844,74 @@ static inline void util_est_update(struct cfs_rq *cfs_rq,
     if (!task_sleep)
         return;
 
+    /*
+     * If the PELT values haven't changed since enqueue time,
+     * skip the util_est update.
+     */
+    ue = p->se.avg.util_est;
+    if (ue.enqueued & UTIL_AVG_UNCHANGED)
+        return;
+
+    last_enqueued_diff = ue.enqueued;
+
+    /*
+     * Reset EWMA on utilization increases, the moving average is used only
+     * to smooth utilization decreases.
+     */
+    ue.enqueued = task_util(p);
+    if (sched_feat(UTIL_EST_FASTUP)) {
+        if (ue.ewma < ue.enqueued) {
+            ue.ewma = ue.enqueued;
+            goto done;
+        }
+    }
+
+    /*
+     * Skip update of task's estimated utilization when its members are
+     * already ~1% close to its last activation value.
+     */
+    last_ewma_diff = ue.enqueued - ue.ewma;
+    last_enqueued_diff -= ue.enqueued;
+    if (within_margin(last_ewma_diff, UTIL_EST_MARGIN)) {
+        if (!within_margin(last_enqueued_diff, UTIL_EST_MARGIN))
+            goto done;
+
+        return;
+    }
+
+    /*
+     * To avoid overestimation of actual task utilization, skip updates if
+     * we cannot grant there is idle time in this CPU.
+     */
+    if (task_util(p) > capacity_orig_of(cpu_of(rq_of(cfs_rq))))
+        return;
+
+    /*
+     * Update Task's estimated utilization
+     *
+     * When *p completes an activation we can consolidate another sample
+     * of the task size. This is done by storing the current PELT value
+     * as ue.enqueued and by using this value to update the Exponential
+     * Weighted Moving Average (EWMA):
+     *
+     *  ewma(t) = w *  task_util(p) + (1-w) * ewma(t-1)
+     *          = w *  task_util(p) +         ewma(t-1)  - w * ewma(t-1)
+     *          = w * (task_util(p) -         ewma(t-1)) +     ewma(t-1)
+     *          = w * (      last_ewma_diff            ) +     ewma(t-1)
+     *          = w * (last_ewma_diff  +  ewma(t-1) / w)
+     *
+     * Where 'w' is the weight of new samples, which is configured to be
+     * 0.25, thus making w=1/4 ( >>= UTIL_EST_WEIGHT_SHIFT)
+     */
+    ue.ewma <<= UTIL_EST_WEIGHT_SHIFT;
+    ue.ewma  += last_ewma_diff;
+    ue.ewma >>= UTIL_EST_WEIGHT_SHIFT;
+
     panic("%s: NO implementation!", __func__);
+
+ done:
+    ue.enqueued |= UTIL_AVG_UNCHANGED;
+    WRITE_ONCE(p->se.avg.util_est, ue);
 }
 
 static void set_next_buddy(struct sched_entity *se)

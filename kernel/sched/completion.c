@@ -58,8 +58,9 @@ do_wait_for_common(struct completion *x,
             timeout = action(timeout);
             raw_spin_lock_irq(&x->wait.lock);
         } while (!x->done && timeout);
-
-        panic("%s: 1!\n", __func__);
+        __finish_swait(&x->wait, &wait);
+        if (!x->done)
+            return timeout;
     }
     if (x->done != UINT_MAX)
         x->done--;

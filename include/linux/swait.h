@@ -79,4 +79,7 @@ extern void swake_up_one(struct swait_queue_head *q);
 extern void swake_up_all(struct swait_queue_head *q);
 extern void swake_up_locked(struct swait_queue_head *q);
 
+extern void __finish_swait(struct swait_queue_head *q,
+                           struct swait_queue *wait);
+
 #endif /* _LINUX_SWAIT_H */
