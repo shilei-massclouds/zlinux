@@ -1,5 +1,12 @@
 #include "sched-pelt.h"
 
+int __update_load_avg_blocked_se(u64 now, struct sched_entity *se);
+int __update_load_avg_se(u64 now, struct cfs_rq *cfs_rq,
+                         struct sched_entity *se);
+int __update_load_avg_cfs_rq(u64 now, struct cfs_rq *cfs_rq);
+int update_rt_rq_load_avg(u64 now, struct rq *rq, int running);
+int update_dl_rq_load_avg(u64 now, struct rq *rq, int running);
+
 /*
  * The clock_pelt scales the time to reflect the effective amount of
  * computation done during the running delta time but then sync back to
@@ -51,4 +58,29 @@ update_thermal_load_avg(u64 now, struct rq *rq, u64 capacity)
 static inline u64 thermal_load_avg(struct rq *rq)
 {
     return 0;
+}
+
+static inline u64 rq_clock_pelt(struct rq *rq)
+{
+    assert_clock_updated(rq);
+
+    return rq->clock_pelt - rq->lost_idle_time;
+}
+
+/* rq->task_clock normalized against any time this cfs_rq has spent throttled */
+static inline u64 cfs_rq_clock_pelt(struct cfs_rq *cfs_rq)
+{
+    if (unlikely(cfs_rq->throttle_count))
+        return cfs_rq->throttled_clock_task -
+            cfs_rq->throttled_clock_task_time;
+
+    return rq_clock_pelt(rq_of(cfs_rq)) -
+        cfs_rq->throttled_clock_task_time;
+}
+
+#define PELT_MIN_DIVIDER    (LOAD_AVG_MAX - 1024)
+
+static inline u32 get_pelt_divider(struct sched_avg *avg)
+{
+    return PELT_MIN_DIVIDER + avg->period_contrib;
 }

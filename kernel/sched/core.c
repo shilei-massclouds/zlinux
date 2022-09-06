@@ -548,10 +548,10 @@ static void sched_update_worker(struct task_struct *tsk)
 #define SM_PREEMPT          0x1
 #define SM_RTLOCK_WAIT      0x2
 
-static void put_prev_task_balance(struct rq *rq, struct task_struct *prev,
+static void put_prev_task_balance(struct rq *rq,
+                                  struct task_struct *prev,
                                   struct rq_flags *rf)
 {
-#if 0
     const struct sched_class *class;
     /*
      * We must do the balancing pass before put_prev_task(), such
@@ -565,7 +565,6 @@ static void put_prev_task_balance(struct rq *rq, struct task_struct *prev,
         if (class->balance(rq, prev, rf))
             break;
     }
-#endif
 
     put_prev_task(rq, prev);
 }
@@ -574,7 +573,8 @@ static void put_prev_task_balance(struct rq *rq, struct task_struct *prev,
  * Pick up the highest-prio task:
  */
 static inline struct task_struct *
-__pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
+__pick_next_task(struct rq *rq, struct task_struct *prev,
+                 struct rq_flags *rf)
 {
     const struct sched_class *class;
     struct task_struct *p;
@@ -591,7 +591,8 @@ __pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 }
 
 static struct task_struct *
-pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
+pick_next_task(struct rq *rq, struct task_struct *prev,
+               struct rq_flags *rf)
 {
     return __pick_next_task(rq, prev, rf);
 }
@@ -669,6 +670,38 @@ context_switch(struct rq *rq, struct task_struct *prev,
     barrier();
 
     return finish_task_switch(prev);
+}
+
+static void do_balance_callbacks(struct rq *rq,
+                                 struct callback_head *head)
+{
+    void (*func)(struct rq *rq);
+    struct callback_head *next;
+
+    while (head) {
+        func = (void (*)(struct rq *))head->func;
+        next = head->next;
+        head->next = NULL;
+        head = next;
+
+        func(rq);
+    }
+}
+
+static inline
+struct callback_head *splice_balance_callbacks(struct rq *rq)
+{
+    struct callback_head *head = rq->balance_callback;
+
+    if (head)
+        rq->balance_callback = NULL;
+
+    return head;
+}
+
+static void __balance_callbacks(struct rq *rq)
+{
+    do_balance_callbacks(rq, splice_balance_callbacks(rq));
 }
 
 /*
@@ -781,7 +814,7 @@ static void __sched notrace __schedule(unsigned int sched_mode)
         rq->clock_update_flags &= ~(RQCF_ACT_SKIP|RQCF_REQ_SKIP);
 
         rq_unpin_lock(rq, &rf);
-        //__balance_callbacks(rq);
+        __balance_callbacks(rq);
         raw_spin_rq_unlock_irq(rq);
     }
 }
@@ -990,7 +1023,7 @@ static inline void finish_lock_switch(struct rq *rq)
      * fix up the runqueue lock - which gets 'carried over' from
      * prev into current:
      */
-    //__balance_callbacks(rq);
+    __balance_callbacks(rq);
     raw_spin_rq_unlock_irq(rq);
 }
 

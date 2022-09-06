@@ -8,9 +8,9 @@
 #include <linux/sched/deadline.h>
 #include <linux/sched/rt.h>
 #include <linux/sched/topology.h>
+#include <linux/sched/autogroup.h>
 #if 0
 #include <linux/sched/affinity.h>
-#include <linux/sched/autogroup.h>
 #include <linux/sched/cpufreq.h>
 #include <linux/sched/loadavg.h>
 #include <linux/sched/mm.h>
@@ -1321,5 +1321,7 @@ extern void sched_init_granularity(void);
 extern void init_sched_dl_class(void);
 extern void init_sched_rt_class(void);
 extern void init_sched_fair_class(void);
+
+extern struct static_key_false sched_asym_cpucapacity;
 
 #endif /* _KERNEL_SCHED_SCHED_H */

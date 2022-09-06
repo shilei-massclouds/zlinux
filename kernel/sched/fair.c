@@ -59,9 +59,7 @@
 #include "sched.h"
 #include "stats.h"
 #include "pelt.h"
-#if 0
-#include "autogroup.h"
-#endif
+//#include "autogroup.h"
 
 /* Walk up scheduling entities hierarchy */
 #define for_each_sched_entity(se) \
@@ -104,6 +102,10 @@ unsigned int sysctl_sched_tunable_scaling = SCHED_TUNABLESCALING_LOG;
  */
 static unsigned int sched_nr_latency = 8;
 
+static inline
+void update_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *se,
+                     int flags);
+
 static inline bool entity_before(struct sched_entity *a, struct sched_entity *b)
 {
     return (s64)(a->vruntime - b->vruntime) < 0;
@@ -122,7 +124,8 @@ static void __enqueue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
     rb_add_cached(&se->run_node, &cfs_rq->tasks_timeline, __entity_less);
 }
 
-static void __dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
+static void __dequeue_entity(struct cfs_rq *cfs_rq,
+                             struct sched_entity *se)
 {
     rb_erase_cached(&se->run_node, &cfs_rq->tasks_timeline);
 }
@@ -224,6 +227,13 @@ static inline void assert_list_leaf_cfs_rq(struct rq *rq)
 }
 
 /*
+ * Optional action to be done while updating the load average
+ */
+#define UPDATE_TG       0x1
+#define SKIP_AGE_LOAD   0x2
+#define DO_ATTACH       0x4
+
+/*
  * The enqueue_task method is called before nr_running is
  * increased. Here we update the fair scheduling stats and
  * then put the task into the rbtree:
@@ -281,7 +291,7 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
         cfs_rq = cfs_rq_of(se);
 
         printk("%s: 1 \n", __func__);
-        //update_load_avg(cfs_rq, se, UPDATE_TG);
+        update_load_avg(cfs_rq, se, UPDATE_TG);
         se_update_runnable(se);
         //update_cfs_group(se);
 
@@ -572,9 +582,7 @@ dequeue_entity(struct cfs_rq *cfs_rq, struct sched_entity *se,
      *   - For group entity, update its weight to reflect the new share
      *     of its group cfs_rq.
      */
-#if 0
     update_load_avg(cfs_rq, se, UPDATE_TG);
-#endif
     se_update_runnable(se);
 
 #if 0
@@ -695,9 +703,7 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p,
     for_each_sched_entity(se) {
         cfs_rq = cfs_rq_of(se);
 
-#if 0
         update_load_avg(cfs_rq, se, UPDATE_TG);
-#endif
         se_update_runnable(se);
         update_cfs_group(se);
 
@@ -885,10 +891,8 @@ static void put_prev_entity(struct cfs_rq *cfs_rq, struct sched_entity *prev)
 #endif
         /* Put 'current' back into the tree. */
         __enqueue_entity(cfs_rq, prev);
-#if 0
         /* in !on_rq case, update occurred at dequeue */
         update_load_avg(cfs_rq, prev, 0);
-#endif
     }
     cfs_rq->curr = NULL;
 }
@@ -907,12 +911,180 @@ static void put_prev_task_fair(struct rq *rq, struct task_struct *prev)
     }
 }
 
+static inline void
+update_stats_wait_end_fair(struct cfs_rq *cfs_rq,
+                           struct sched_entity *se)
+{
+    struct sched_statistics *stats;
+    struct task_struct *p = NULL;
+
+    if (!schedstat_enabled())
+        return;
+
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * update_cfs_rq_load_avg - update the cfs_rq's load/util averages
+ * @now: current time, as per cfs_rq_clock_pelt()
+ * @cfs_rq: cfs_rq to update
+ *
+ * The cfs_rq avg is the direct sum of all its entities (blocked and runnable)
+ * avg. The immediate corollary is that all (fair) tasks must be attached, see
+ * post_init_entity_util_avg().
+ *
+ * cfs_rq->avg is used for task_h_load() and update_cfs_share() for example.
+ *
+ * Return: true if the load decayed or we removed load.
+ *
+ * Since both these conditions indicate a changed cfs_rq->avg.load we should
+ * call update_tg_load_avg() when this function returns true.
+ */
+static inline int
+update_cfs_rq_load_avg(u64 now, struct cfs_rq *cfs_rq)
+{
+    unsigned long removed_load = 0, removed_util = 0,
+                  removed_runnable = 0;
+    struct sched_avg *sa = &cfs_rq->avg;
+    int decayed = 0;
+
+    if (cfs_rq->removed.nr) {
+        panic("%s: 1!\n", __func__);
+    }
+
+    decayed |= __update_load_avg_cfs_rq(now, cfs_rq);
+
+    return decayed;
+}
+
+/* Update task and its cfs_rq load average */
+static inline int propagate_entity_load_avg(struct sched_entity *se)
+{
+    struct cfs_rq *cfs_rq, *gcfs_rq;
+
+    if (entity_is_task(se))
+        return 0;
+
+    panic("%s: END!\n", __func__);
+}
+
+static inline void cpufreq_update_util(struct rq *rq, unsigned int flags){
+}
+
+static inline void cfs_rq_util_change(struct cfs_rq *cfs_rq, int flags)
+{
+    struct rq *rq = rq_of(cfs_rq);
+
+    if (&rq->cfs == cfs_rq) {
+        /*
+         * There are a few boundary cases this might miss but it should
+         * get called often enough that that should (hopefully) not be
+         * a real problem.
+         *
+         * It will not get called when we go idle, because the idle
+         * thread is a different class (!fair), nor will the utilization
+         * number include things like RT tasks.
+         *
+         * As is, the util number is not freq-invariant (we'd have to
+         * implement arch_scale_freq_capacity() for that).
+         *
+         * See cpu_util_cfs().
+         */
+        cpufreq_update_util(rq, flags);
+    }
+}
+
+/**
+ * update_tg_load_avg - update the tg's load avg
+ * @cfs_rq: the cfs_rq whose avg changed
+ *
+ * This function 'ensures': tg->load_avg := \Sum tg->cfs_rq[]->avg.load.
+ * However, because tg->load_avg is a global value there are performance
+ * considerations.
+ *
+ * In order to avoid having to look at the other cfs_rq's, we use a
+ * differential update where we store the last value we propagated. This in
+ * turn allows skipping updates if the differential is 'small'.
+ *
+ * Updating tg's load_avg is necessary before update_cfs_share().
+ */
+static inline void update_tg_load_avg(struct cfs_rq *cfs_rq)
+{
+    long delta = cfs_rq->avg.load_avg - cfs_rq->tg_load_avg_contrib;
+
+    /*
+     * No need to update load_avg for root_task_group as it is not used.
+     */
+    if (cfs_rq->tg == &root_task_group)
+        return;
+
+#if 0
+    if (abs(delta) > cfs_rq->tg_load_avg_contrib / 64) {
+        atomic_long_add(delta, &cfs_rq->tg->load_avg);
+        cfs_rq->tg_load_avg_contrib = cfs_rq->avg.load_avg;
+    }
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+/* Update task and its cfs_rq load average */
+static inline
+void update_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *se,
+                     int flags)
+{
+    u64 now = cfs_rq_clock_pelt(cfs_rq);
+    int decayed;
+
+    /*
+     * Track task load average for carrying it to new CPU
+     * after migrated, and track group sched_entity load average
+     * for task_h_load calc in migration
+     */
+    if (se->avg.last_update_time && !(flags & SKIP_AGE_LOAD))
+        __update_load_avg_se(now, cfs_rq, se);
+
+    decayed  = update_cfs_rq_load_avg(now, cfs_rq);
+    decayed |= propagate_entity_load_avg(se);
+
+    if (!se->avg.last_update_time && (flags & DO_ATTACH)) {
+
+#if 0
+        /*
+         * DO_ATTACH means we're here from enqueue_entity().
+         * !last_update_time means we've passed through
+         * migrate_task_rq_fair() indicating we migrated.
+         *
+         * IOW we're enqueueing a task on a new CPU.
+         */
+        attach_entity_load_avg(cfs_rq, se);
+        update_tg_load_avg(cfs_rq);
+#endif
+        panic("%s: 1!\n", __func__);
+
+    } else if (decayed) {
+        cfs_rq_util_change(cfs_rq, 0);
+
+        if (flags & UPDATE_TG)
+            update_tg_load_avg(cfs_rq);
+    }
+}
+
+/*
+ * We are picking a new current task - update its stats:
+ */
+static inline void
+update_stats_curr_start(struct cfs_rq *cfs_rq, struct sched_entity *se)
+{
+    /*
+     * We are starting a new run period:
+     */
+    se->exec_start = rq_clock_task(rq_of(cfs_rq));
+}
+
 static void
 set_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
-#if 0
     clear_buddies(cfs_rq, se);
-#endif
 
     /* 'current' is not kept within the tree. */
     if (se->on_rq) {
@@ -921,12 +1093,12 @@ set_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *se)
          * a CPU. So account for the time it spent waiting on the
          * runqueue.
          */
-        //update_stats_wait_end_fair(cfs_rq, se);
+        update_stats_wait_end_fair(cfs_rq, se);
         __dequeue_entity(cfs_rq, se);
-        //update_load_avg(cfs_rq, se, UPDATE_TG);
+        update_load_avg(cfs_rq, se, UPDATE_TG);
     }
 
-    //update_stats_curr_start(cfs_rq, se);
+    update_stats_curr_start(cfs_rq, se);
     cfs_rq->curr = se;
 }
 
@@ -992,6 +1164,56 @@ pick_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *curr)
     return se;
 }
 
+static void hrtick_start_fair(struct rq *rq, struct task_struct *p)
+{
+    struct sched_entity *se = &p->se;
+    struct cfs_rq *cfs_rq = cfs_rq_of(se);
+
+    SCHED_WARN_ON(task_rq(p) != rq);
+
+    if (rq->cfs.h_nr_running > 1) {
+#if 0
+        u64 slice = sched_slice(cfs_rq, se);
+        u64 ran = se->sum_exec_runtime - se->prev_sum_exec_runtime;
+        s64 delta = slice - ran;
+
+        if (delta < 0) {
+            if (task_current(rq, p))
+                resched_curr(rq);
+            return;
+        }
+        hrtick_start(rq, delta);
+#endif
+        panic("%s: END!\n", __func__);
+    }
+}
+
+static inline
+void update_misfit_status(struct task_struct *p, struct rq *rq)
+{
+    if (!static_branch_unlikely(&sched_asym_cpucapacity))
+        return;
+
+    if (!p || p->nr_cpus_allowed == 1) {
+        rq->misfit_task_load = 0;
+        return;
+    }
+
+#if 0
+    if (task_fits_capacity(p, capacity_of(cpu_of(rq)))) {
+        rq->misfit_task_load = 0;
+        return;
+    }
+
+    /*
+     * Make sure that misfit_task_load will not be null even if
+     * task_h_load() returns 0.
+     */
+    rq->misfit_task_load = max_t(unsigned long, task_h_load(p), 1);
+#endif
+    panic("%s: END!\n", __func__);
+}
+
 struct task_struct *
 pick_next_task_fair(struct rq *rq, struct task_struct *prev,
                     struct rq_flags *rf)
@@ -1030,12 +1252,10 @@ pick_next_task_fair(struct rq *rq, struct task_struct *prev,
      */
     list_move(&p->se.group_node, &rq->cfs_tasks);
 
-#if 0
     if (hrtick_enabled_fair(rq))
         hrtick_start_fair(rq, p);
 
     update_misfit_status(p, rq);
-#endif
 
     return p;
 
@@ -1200,10 +1420,36 @@ static struct task_struct *pick_task_fair(struct rq *rq)
     panic("%s: NO implementation!", __func__);
 }
 
-static int
-balance_fair(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
+/*
+ * newidle_balance is called by schedule() if this_cpu is about to become
+ * idle. Attempts to pull tasks from other CPUs.
+ *
+ * Returns:
+ *   < 0 - we released the lock and there are !fair tasks present
+ *     0 - failed, no new tasks
+ *   > 0 - success, new (fair) tasks present
+ */
+static int newidle_balance(struct rq *this_rq, struct rq_flags *rf)
 {
-    panic("%s: NO implementation!", __func__);
+    unsigned long next_balance = jiffies + HZ;
+    int this_cpu = this_rq->cpu;
+    u64 t0, t1, curr_cost = 0;
+    struct sched_domain *sd;
+    int pulled_task = 0;
+
+    update_misfit_status(NULL, this_rq);
+
+    panic("%s: END!", __func__);
+}
+
+static int
+balance_fair(struct rq *rq, struct task_struct *prev,
+             struct rq_flags *rf)
+{
+    if (rq->nr_running)
+        return 1;
+
+    return newidle_balance(rq, rf) != 0;
 }
 
 /* check whether cfs_rq, or any parent, is throttled */

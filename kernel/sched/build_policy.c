@@ -39,8 +39,8 @@
 #if 0
 #include "autogroup.h"
 #include "stats.h"
-#include "pelt.h"
 #endif
+#include "pelt.h"
 
 /* Source code modules: */
 
@@ -49,6 +49,6 @@
 #include "rt.c"
 
 #include "cpudeadline.c"
-//#include "pelt.c"
+#include "pelt.c"
 
 #include "deadline.c"
