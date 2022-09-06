@@ -343,6 +343,28 @@ bool dl_param_changed(struct task_struct *p, const struct sched_attr *attr)
     return false;
 }
 
+/*
+ * This function clears the sched_dl_entity static params.
+ */
+void __dl_clear_params(struct task_struct *p)
+{
+    struct sched_dl_entity *dl_se = &p->dl;
+
+    dl_se->dl_runtime       = 0;
+    dl_se->dl_deadline      = 0;
+    dl_se->dl_period        = 0;
+    dl_se->flags            = 0;
+    dl_se->dl_bw            = 0;
+    dl_se->dl_density       = 0;
+
+    dl_se->dl_throttled     = 0;
+    dl_se->dl_yielded       = 0;
+    dl_se->dl_non_contending    = 0;
+    dl_se->dl_overrun       = 0;
+
+    dl_se->pi_se            = dl_se;
+}
+
 void __init init_sched_dl_class(void)
 {
     unsigned int i;
@@ -350,6 +372,45 @@ void __init init_sched_dl_class(void)
     for_each_possible_cpu(i)
         zalloc_cpumask_var_node(&per_cpu(local_cpu_mask_dl, i),
                                 GFP_KERNEL, cpu_to_node(i));
+}
+
+/*
+ * This is the bandwidth enforcement timer callback. If here, we know
+ * a task is not on its dl_rq, since the fact that the timer was running
+ * means the task is throttled and needs a runtime replenishment.
+ *
+ * However, what we actually do depends on the fact the task is active,
+ * (it is on its rq) or has been removed from there by a call to
+ * dequeue_task_dl(). In the former case we must issue the runtime
+ * replenishment and add the task back to the dl_rq; in the latter, we just
+ * do nothing but clearing dl_throttled, so that runtime and deadline
+ * updating (and the queueing back to dl_rq) will be done by the
+ * next call to enqueue_task_dl().
+ */
+static enum hrtimer_restart dl_task_timer(struct hrtimer *timer)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
+void init_dl_task_timer(struct sched_dl_entity *dl_se)
+{
+    struct hrtimer *timer = &dl_se->dl_timer;
+
+    hrtimer_init(timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL_HARD);
+    timer->function = dl_task_timer;
+}
+
+static enum hrtimer_restart inactive_task_timer(struct hrtimer *timer)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
+void init_dl_inactive_task_timer(struct sched_dl_entity *dl_se)
+{
+    struct hrtimer *timer = &dl_se->inactive_timer;
+
+    hrtimer_init(timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL_HARD);
+    timer->function = inactive_task_timer;
 }
 
 DEFINE_SCHED_CLASS(dl) = {

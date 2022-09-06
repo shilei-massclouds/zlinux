@@ -19,4 +19,6 @@ enum sched_tunable_scaling {
 
 #define sysctl_numa_balancing_mode  0
 
+extern int sched_rr_timeslice;
+
 #endif /* _LINUX_SCHED_SYSCTL_H */

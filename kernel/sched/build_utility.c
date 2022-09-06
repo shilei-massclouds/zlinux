@@ -17,11 +17,11 @@
 #include <linux/sched/clock.h>
 #include <linux/cpuset.h>
 #if 0
+#include <linux/cpufreq.h>
 #include <linux/sched/cputime.h>
 #include <linux/sched/loadavg.h>
 #include <linux/sched/rseq_api.h>
 
-#include <linux/cpufreq.h>
 #include <linux/cpumask_api.h>
 #include <linux/ctype.h>
 #include <linux/debugfs.h>

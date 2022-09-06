@@ -64,6 +64,61 @@ struct alloc_context {
     bool spread_dirty_pages;
 };
 
+/*
+ * in mm/compaction.c
+ */
+/*
+ * compact_control is used to track pages being migrated and the free pages
+ * they are being migrated to during memory compaction. The free_pfn starts
+ * at the end of a zone and migrate_pfn begins at the start. Movable pages
+ * are moved to the end of a zone during a compaction run and the run
+ * completes when free_pfn <= migrate_pfn
+ */
+struct compact_control {
+    struct list_head freepages; /* List of free pages to migrate to */
+    struct list_head migratepages;  /* List of pages being migrated */
+    unsigned int nr_freepages;  /* Number of isolated free pages */
+    unsigned int nr_migratepages;   /* Number of pages to migrate */
+    unsigned long free_pfn;     /* isolate_freepages search base */
+    /*
+     * Acts as an in/out parameter to page isolation for migration.
+     * isolate_migratepages uses it as a search base.
+     * isolate_migratepages_block will update the value to the next pfn
+     * after the last isolated one.
+     */
+    unsigned long migrate_pfn;
+    unsigned long fast_start_pfn;   /* a pfn to start linear scan from */
+    struct zone *zone;
+    unsigned long total_migrate_scanned;
+    unsigned long total_free_scanned;
+    unsigned short fast_search_fail;/* failures to use free list searches */
+    short search_order;     /* order to start a fast search at */
+    const gfp_t gfp_mask;       /* gfp mask of a direct compactor */
+    int order;          /* order a direct compactor needs */
+    int migratetype;        /* migratetype of direct compactor */
+    const unsigned int alloc_flags; /* alloc flags of a direct compactor */
+    const int highest_zoneidx;  /* zone index of a direct compactor */
+    enum migrate_mode mode;     /* Async or sync migration mode */
+    bool ignore_skip_hint;      /* Scan blocks even if marked skip */
+    bool no_set_skip_hint;      /* Don't mark blocks for skipping */
+    bool ignore_block_suitable; /* Scan blocks considered unsuitable */
+    bool direct_compaction;     /* False from kcompactd or /proc/... */
+    bool proactive_compaction;  /* kcompactd proactive compaction */
+    bool whole_zone;        /* Whole zone should/has been scanned */
+    bool contended;         /* Signal lock or sched contention */
+    bool rescan;            /* Rescanning the same pageblock */
+    bool alloc_contig;      /* alloc_contig_range allocation */
+};
+
+/*
+ * Used in direct compaction when a page should be taken from the freelists
+ * immediately when one is created during the free path.
+ */
+struct capture_control {
+    struct compact_control *cc;
+    struct page *page;
+};
+
 extern unsigned long highest_memmap_pfn;
 
 #define ALLOC_OOM           0x08

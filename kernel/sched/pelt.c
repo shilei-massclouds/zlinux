@@ -71,6 +71,29 @@ int __update_load_avg_se(u64 now, struct cfs_rq *cfs_rq,
     return 0;
 }
 
+static u32 __accumulate_pelt_segments(u64 periods, u32 d1, u32 d3)
+{
+    u32 c1, c2, c3 = d3; /* y^0 == 1 */
+
+    /*
+     * c1 = d1 y^p
+     */
+    c1 = decay_load((u64)d1, periods);
+
+    /*
+     *            p-1
+     * c2 = 1024 \Sum y^n
+     *            n=1
+     *
+     *              inf        inf
+     *    = 1024 ( \Sum y^n - \Sum y^n - y^0 )
+     *              n=0        n=p
+     */
+    c2 = LOAD_AVG_MAX - decay_load(LOAD_AVG_MAX, periods) - 1024;
+
+    return c1 + c2 + c3;
+}
+
 /*
  * Accumulate the three separate parts of the sum; d1 the remainder
  * of the last (incomplete) period, d2 the span of full periods and d3
@@ -115,7 +138,20 @@ accumulate_sum(u64 delta, struct sched_avg *sa,
          */
         delta %= 1024;
         if (load) {
-            panic("%s: periods!\n", __func__);
+            /*
+             * This relies on the:
+             *
+             * if (!load)
+             *  runnable = running = 0;
+             *
+             * clause from ___update_load_sum(); this results in
+             * the below usage of @contrib to disappear entirely,
+             * so no point in calculating it.
+             */
+            contrib =
+                __accumulate_pelt_segments(periods,
+                                           1024 - sa->period_contrib,
+                                           delta);
         }
     }
     sa->period_contrib = delta;

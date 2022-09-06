@@ -99,4 +99,16 @@ plist_head_init(struct plist_head *head)
     INIT_LIST_HEAD(&head->node_list);
 }
 
+/**
+ * plist_node_init - Dynamic struct plist_node initializer
+ * @node:   &struct plist_node pointer
+ * @prio:   initial node priority
+ */
+static inline void plist_node_init(struct plist_node *node, int prio)
+{
+    node->prio = prio;
+    INIT_LIST_HEAD(&node->prio_list);
+    INIT_LIST_HEAD(&node->node_list);
+}
+
 #endif /* _LINUX_PLIST_H_ */

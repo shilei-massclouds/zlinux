@@ -151,6 +151,8 @@ EXPORT_PER_CPU_SYMBOL(kernel_cpustat);
 
 __read_mostly int scheduler_running;
 
+static DEFINE_STATIC_KEY_FALSE(preempt_notifier_key);
+
 /*
  * Nice levels are multiplicative, with a gentle 10% change for every
  * nice level changed. I.e. when a CPU-bound task goes from nice 0 to
@@ -597,6 +599,24 @@ pick_next_task(struct rq *rq, struct task_struct *prev,
     return __pick_next_task(rq, prev, rf);
 }
 
+static void
+__fire_sched_out_preempt_notifiers(struct task_struct *curr,
+                                   struct task_struct *next)
+{
+    struct preempt_notifier *notifier;
+
+    hlist_for_each_entry(notifier, &curr->preempt_notifiers, link)
+        notifier->ops->sched_out(notifier, next);
+}
+
+static __always_inline void
+fire_sched_out_preempt_notifiers(struct task_struct *curr,
+                                 struct task_struct *next)
+{
+    if (static_branch_unlikely(&preempt_notifier_key))
+        __fire_sched_out_preempt_notifiers(curr, next);
+}
+
 /**
  * prepare_task_switch - prepare to switch tasks
  * @rq: the runqueue preparing to switch
@@ -612,13 +632,10 @@ pick_next_task(struct rq *rq, struct task_struct *prev,
  */
 static inline void
 prepare_task_switch(struct rq *rq, struct task_struct *prev,
-            struct task_struct *next)
+                    struct task_struct *next)
 {
-#if 0
     rseq_preempt(prev);
     fire_sched_out_preempt_notifiers(prev, next);
-    kmap_local_sched_out();
-#endif
     prepare_task(next);
 }
 
@@ -702,6 +719,32 @@ struct callback_head *splice_balance_callbacks(struct rq *rq)
 static void __balance_callbacks(struct rq *rq)
 {
     do_balance_callbacks(rq, splice_balance_callbacks(rq));
+}
+
+static void
+__do_set_cpus_allowed(struct task_struct *p,
+                      const struct cpumask *new_mask,
+                      u32 flags);
+
+static int __set_cpus_allowed_ptr(struct task_struct *p,
+                                  const struct cpumask *new_mask,
+                                  u32 flags);
+
+static void migrate_disable_switch(struct rq *rq, struct task_struct *p)
+{
+    printk("%s: 1\n", __func__);
+    if (likely(!p->migration_disabled))
+        return;
+
+    printk("%s: 2\n", __func__);
+    if (p->cpus_ptr != &p->cpus_mask)
+        return;
+
+    printk("%s: 3\n", __func__);
+    /*
+     * Violates locking rules! see comment in __do_set_cpus_allowed().
+     */
+    __do_set_cpus_allowed(p, cpumask_of(rq->cpu), SCA_MIGRATE_DISABLE);
 }
 
 /*
@@ -788,7 +831,6 @@ static void __sched notrace __schedule(unsigned int sched_mode)
          * changes to task_struct made by pick_next_task().
          */
         RCU_INIT_POINTER(rq->curr, next);
-#if 0
         /*
          * The membarrier system call requires each architecture
          * to have a full memory barrier after updating
@@ -806,7 +848,6 @@ static void __sched notrace __schedule(unsigned int sched_mode)
         ++*switch_count;
 
         migrate_disable_switch(rq, prev);
-#endif
 
         /* Also unlocks the rq: */
         rq = context_switch(rq, prev, next, &rf);
@@ -939,15 +980,56 @@ dup_user_cpus_ptr(struct task_struct *dst, struct task_struct *src, int node)
  *
  * __sched_fork() is basic setup used by init_idle() too:
  */
-static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
+static void __sched_fork(unsigned long clone_flags,
+                         struct task_struct *p)
 {
-    p->on_rq = 0;
+    p->on_rq            = 0;
 
-    p->se.on_rq = 0;
-    p->se.vruntime = 0;
+    p->se.on_rq         = 0;
+    p->se.exec_start        = 0;
+    p->se.sum_exec_runtime      = 0;
+    p->se.prev_sum_exec_runtime = 0;
+    p->se.nr_migrations     = 0;
+    p->se.vruntime          = 0;
     INIT_LIST_HEAD(&p->se.group_node);
 
-    p->se.cfs_rq = NULL;
+    p->se.cfs_rq            = NULL;
+
+    RB_CLEAR_NODE(&p->dl.rb_node);
+    init_dl_task_timer(&p->dl);
+    init_dl_inactive_task_timer(&p->dl);
+    __dl_clear_params(p);
+
+    INIT_LIST_HEAD(&p->rt.run_list);
+    p->rt.timeout       = 0;
+    p->rt.time_slice    = sched_rr_timeslice;
+    p->rt.on_rq         = 0;
+    p->rt.on_list       = 0;
+
+    INIT_HLIST_HEAD(&p->preempt_notifiers);
+
+    p->capture_control = NULL;
+    p->wake_entry.u_flags = CSD_TYPE_TTWU;
+    p->migration_pending = NULL;
+}
+
+/* Give new sched_entity start runnable values to heavy its load in infant time */
+void init_entity_runnable_average(struct sched_entity *se)
+{
+    struct sched_avg *sa = &se->avg;
+
+    memset(sa, 0, sizeof(*sa));
+
+    /*
+     * Tasks are initialized with full load to be seen as heavy tasks until
+     * they get a chance to stabilize to their real load level.
+     * Group entities are initialized with zero load to reflect the fact that
+     * nothing has been attached to the task group yet.
+     */
+    if (entity_is_task(se))
+        sa->load_avg = scale_load_down(se->load.weight);
+
+    /* when this task enqueue'ed, it will contribute to its cfs_rq's load_avg */
 }
 
 /*
@@ -984,18 +1066,14 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
     else
         p->sched_class = &fair_sched_class;
 
-#if 0
     init_entity_runnable_average(&p->se);
-#endif
 
     p->on_cpu = 0;
 
     init_task_preempt_count(p);
 
-#if 0
     plist_node_init(&p->pushable_tasks, MAX_PRIO);
     RB_CLEAR_NODE(&p->pushable_dl_tasks);
-#endif
 
     return 0;
 }

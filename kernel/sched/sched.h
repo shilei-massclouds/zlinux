@@ -9,9 +9,9 @@
 #include <linux/sched/rt.h>
 #include <linux/sched/topology.h>
 #include <linux/sched/autogroup.h>
+#include <linux/sched/cpufreq.h>
 #if 0
 #include <linux/sched/affinity.h>
-#include <linux/sched/cpufreq.h>
 #include <linux/sched/loadavg.h>
 #include <linux/sched/mm.h>
 #include <linux/sched/rseq_api.h>
@@ -35,10 +35,10 @@
 #include <linux/rcuwait.h>
 #include <linux/cgroup.h>
 #if 0
+#include <linux/cpufreq.h>
 #include <linux/atomic.h>
 #include <linux/capability.h>
 #include <linux/cgroup_api.h>
-#include <linux/cpufreq.h>
 #include <linux/cpumask_api.h>
 #include <linux/file.h>
 #include <linux/fs_api.h>
@@ -1323,5 +1323,7 @@ extern void init_sched_rt_class(void);
 extern void init_sched_fair_class(void);
 
 extern struct static_key_false sched_asym_cpucapacity;
+
+void __dl_clear_params(struct task_struct *p);
 
 #endif /* _KERNEL_SCHED_SCHED_H */
