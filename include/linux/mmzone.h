@@ -458,13 +458,11 @@ typedef struct pglist_data {
 
     int kswapd_failures;        /* Number of 'reclaimed == 0' runs */
 
-#if 0
     int kcompactd_max_order;
     enum zone_type kcompactd_highest_zoneidx;
     wait_queue_head_t kcompactd_wait;
     struct task_struct *kcompactd;
     bool proactive_compact_trigger;
-#endif
 
     /* nr of writeback-throttled tasks */
     atomic_t nr_writeback_throttled;

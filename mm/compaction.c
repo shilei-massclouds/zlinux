@@ -56,5 +56,11 @@ void wakeup_kcompactd(pg_data_t *pgdat, int order, int highest_zoneidx)
     if (!order)
         return;
 
+    if (pgdat->kcompactd_max_order < order)
+        pgdat->kcompactd_max_order = order;
+
+    if (pgdat->kcompactd_highest_zoneidx > highest_zoneidx)
+        pgdat->kcompactd_highest_zoneidx = highest_zoneidx;
+
     panic("%s: END!\n", __func__);
 }

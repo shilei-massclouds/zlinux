@@ -1423,4 +1423,27 @@ static inline void update_avg(u64 *avg, u64 sample)
     *avg += diff / 8;
 }
 
+/*
+ * The scheduler provides memory barriers required by membarrier between:
+ * - prior user-space memory accesses and store to rq->membarrier_state,
+ * - store to rq->membarrier_state and following user-space memory accesses.
+ * In the same way it provides those guarantees around store to rq->curr.
+ */
+static inline
+void membarrier_switch_mm(struct rq *rq,
+                          struct mm_struct *prev_mm,
+                          struct mm_struct *next_mm)
+{
+    int membarrier_state;
+
+    if (prev_mm == next_mm)
+        return;
+
+    membarrier_state = atomic_read(&next_mm->membarrier_state);
+    if (READ_ONCE(rq->membarrier_state) == membarrier_state)
+        return;
+
+    WRITE_ONCE(rq->membarrier_state, membarrier_state);
+}
+
 #endif /* _KERNEL_SCHED_SCHED_H */

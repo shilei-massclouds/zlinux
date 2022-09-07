@@ -217,4 +217,9 @@ set_pgdat_percpu_threshold(pg_data_t *pgdat,
 #define __count_zid_vm_events(item, zid, delta) \
     __count_vm_events(item##_NORMAL - ZONE_NORMAL + zid, delta)
 
+static inline void count_vm_event(enum vm_event_item item)
+{
+    this_cpu_inc(vm_event_states.event[item]);
+}
+
 #endif /* _LINUX_VMSTAT_H */

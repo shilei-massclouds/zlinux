@@ -1951,7 +1951,39 @@ static void shrink_node(pg_data_t *pgdat, struct scan_control *sc)
         reclaimable = true;
 
     if (current_is_kswapd()) {
-        panic("%s: 1!\n", __func__);
+        /*
+         * If reclaim is isolating dirty pages under writeback,
+         * it implies that the long-lived page allocation rate
+         * is exceeding the page laundering rate. Either the
+         * global limits are not being effective at throttling
+         * processes due to the page distribution throughout
+         * zones or there is heavy usage of a slow backing
+         * device. The only option is to throttle from reclaim
+         * context which is not ideal as there is no guarantee
+         * the dirtying process is throttled in the same way
+         * balance_dirty_pages() manages.
+         *
+         * Once a node is flagged PGDAT_WRITEBACK, kswapd will
+         * count the number of pages under pages flagged for
+         * immediate reclaim and stall if any are encountered
+         * in the nr_immediate check below.
+         */
+        if (sc->nr.writeback && sc->nr.writeback == sc->nr.taken)
+            set_bit(PGDAT_WRITEBACK, &pgdat->flags);
+
+        /* Allow kswapd to start writing pages during reclaim.*/
+        if (sc->nr.unqueued_dirty == sc->nr.file_taken)
+            set_bit(PGDAT_DIRTY, &pgdat->flags);
+
+        /*
+         * If kswapd scans pages marked for immediate
+         * reclaim and under writeback (nr_immediate), it
+         * implies that pages are cycling through the LRU
+         * faster than they are written so forcibly stall
+         * until some pages complete writeback.
+         */
+        if (sc->nr.immediate)
+            reclaim_throttle(pgdat, VMSCAN_THROTTLE_WRITEBACK);
     }
 
     /*
@@ -2345,7 +2377,6 @@ static bool pgdat_balanced(pg_data_t *pgdat, int order,
     if (mark == -1)
         return true;
 
-    panic("%s: END!\n", __func__);
     return false;
 }
 
@@ -2473,7 +2504,10 @@ static void kswapd_try_to_sleep(pg_data_t *pgdat,
 
         set_pgdat_percpu_threshold(pgdat, calculate_pressure_threshold);
     } else {
-        panic("%s: 2!\n", __func__);
+        if (remaining)
+            count_vm_event(KSWAPD_LOW_WMARK_HIT_QUICKLY);
+        else
+            count_vm_event(KSWAPD_HIGH_WMARK_HIT_QUICKLY);
     }
     finish_wait(&pgdat->kswapd_wait, &wait);
 }
@@ -2511,6 +2545,62 @@ clear_reclaim_active(pg_data_t *pgdat, int highest_zoneidx)
     update_reclaim_active(pgdat, highest_zoneidx, false);
 }
 
+static void age_active_anon(struct pglist_data *pgdat,
+                            struct scan_control *sc)
+{
+    struct mem_cgroup *memcg;
+    struct lruvec *lruvec;
+
+    if (!can_age_anon_pages(pgdat, sc))
+        return;
+
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * kswapd shrinks a node of pages that are at or below the highest usable
+ * zone that is currently unbalanced.
+ *
+ * Returns true if kswapd scanned at least the requested number of pages to
+ * reclaim or if the lack of progress was due to pages under writeback.
+ * This is used to determine if the scanning priority needs to be raised.
+ */
+static bool kswapd_shrink_node(pg_data_t *pgdat,
+                               struct scan_control *sc)
+{
+    struct zone *zone;
+    int z;
+
+    /* Reclaim a number of pages proportional to the number of zones */
+    sc->nr_to_reclaim = 0;
+    for (z = 0; z <= sc->reclaim_idx; z++) {
+        zone = pgdat->node_zones + z;
+        if (!managed_zone(zone))
+            continue;
+
+        sc->nr_to_reclaim +=
+            max(high_wmark_pages(zone), SWAP_CLUSTER_MAX);
+    }
+
+    /*
+     * Historically care was taken to put equal pressure on all zones but
+     * now pressure is applied based on node LRU order.
+     */
+    shrink_node(pgdat, sc);
+
+    /*
+     * Fragmentation may mean that the system cannot be rebalanced for
+     * high-order allocations. If twice the allocation size has been
+     * reclaimed then recheck watermarks only at order-0 to prevent
+     * excessive reclaim. Assume that a process requested a high-order
+     * can direct reclaim/compact.
+     */
+    if (sc->order && sc->nr_reclaimed >= compact_gap(sc->order))
+        sc->order = 0;
+
+    return sc->nr_scanned >= sc->nr_to_reclaim;
+}
+
 /*
  * For kswapd, balance_pgdat() will reclaim pages across a node from zones
  * that are eligible for use by the caller until at least one zone is
@@ -2545,7 +2635,7 @@ static int balance_pgdat(pg_data_t *pgdat, int order,
     psi_memstall_enter(&pflags);
     __fs_reclaim_acquire(_THIS_IP_);
 
-    //count_vm_event(PAGEOUTRUN);
+    count_vm_event(PAGEOUTRUN);
 
     /*
      * Account for the reclaim boost. Note that the zone boost is left in
@@ -2620,17 +2710,107 @@ static int balance_pgdat(pg_data_t *pgdat, int order,
         if (nr_boost_reclaim && sc.priority == DEF_PRIORITY - 2)
             raise_priority = false;
 
-        panic("%s: 1!\n", __func__);
+        /*
+         * Do not writeback or swap pages for boosted reclaim. The
+         * intent is to relieve pressure not issue sub-optimal IO
+         * from reclaim context. If no pages are reclaimed, the
+         * reclaim will be aborted.
+         */
+        sc.may_writepage = !laptop_mode && !nr_boost_reclaim;
+        sc.may_swap = !nr_boost_reclaim;
+
+        /*
+         * Do some background aging of the anon list, to give
+         * pages a chance to be referenced before reclaiming. All
+         * pages are rotated regardless of classzone as this is
+         * about consistent aging.
+         */
+        age_active_anon(pgdat, &sc);
+
+        /*
+         * If we're getting trouble reclaiming, start doing writepage
+         * even in laptop mode.
+         */
+        if (sc.priority < DEF_PRIORITY - 2)
+            sc.may_writepage = 1;
+
+        /* Call soft limit reclaim before calling shrink_node. */
+        sc.nr_scanned = 0;
+        nr_soft_scanned = 0;
+        nr_soft_reclaimed = 0;
+        sc.nr_reclaimed += nr_soft_reclaimed;
+
+        /*
+         * There should be no need to raise the scanning priority if
+         * enough pages are already being scanned that that high
+         * watermark would be met at 100% efficiency.
+         */
+        if (kswapd_shrink_node(pgdat, &sc))
+            raise_priority = false;
+
+        /*
+         * If the low watermark is met there is no need for processes
+         * to be throttled on pfmemalloc_wait as they should not be
+         * able to safely make forward progress. Wake them
+         */
+        if (waitqueue_active(&pgdat->pfmemalloc_wait) &&
+            allow_direct_reclaim(pgdat))
+            wake_up_all(&pgdat->pfmemalloc_wait);
+
+        /* Check if kswapd should be suspending */
+        __fs_reclaim_release(_THIS_IP_);
+        __fs_reclaim_acquire(_THIS_IP_);
+        if (ret || kthread_should_stop())
+            break;
+
+        /*
+         * Raise priority if scanning rate is too low or there was no
+         * progress in reclaiming pages
+         */
+        nr_reclaimed = sc.nr_reclaimed - nr_reclaimed;
+        nr_boost_reclaim -= min(nr_boost_reclaim, nr_reclaimed);
+
+        /*
+         * If reclaim made no progress for a boost, stop reclaim as
+         * IO cannot be queued and it could be an infinite loop in
+         * extreme circumstances.
+         */
+        if (nr_boost_reclaim && !nr_reclaimed)
+            break;
+
+        if (raise_priority || !nr_reclaimed)
+            sc.priority--;
     } while (sc.priority >= 1);
 
-    panic("%s: END!\n", __func__);
+    if (!sc.nr_reclaimed)
+        pgdat->kswapd_failures++;
 
 out:
     clear_reclaim_active(pgdat, highest_zoneidx);
 
     /* If reclaim was boosted, account for the reclaim done in this pass */
     if (boosted) {
-        panic("%s: boosted!\n", __func__);
+        unsigned long flags;
+
+        for (i = 0; i <= highest_zoneidx; i++) {
+            if (!zone_boosts[i])
+                continue;
+
+            /* Increments are under the zone lock */
+            zone = pgdat->node_zones + i;
+            spin_lock_irqsave(&zone->lock, flags);
+            zone->watermark_boost -= min(zone->watermark_boost,
+                                         zone_boosts[i]);
+            spin_unlock_irqrestore(&zone->lock, flags);
+        }
+
+#if 0
+        /*
+         * As there is now likely space, wakeup kcompact to defragment
+         * pageblocks.
+         */
+        wakeup_kcompactd(pgdat, pageblock_order, highest_zoneidx);
+#endif
     }
 
     snapshot_refaults(NULL, pgdat);
