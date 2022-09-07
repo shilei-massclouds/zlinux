@@ -29,3 +29,12 @@ const struct cpumask *housekeeping_cpumask(enum hk_type type)
     return cpu_possible_mask;
 }
 EXPORT_SYMBOL_GPL(housekeeping_cpumask);
+
+bool housekeeping_test_cpu(int cpu, enum hk_type type)
+{
+    if (static_branch_unlikely(&housekeeping_overridden))
+        if (housekeeping.flags & BIT(type))
+            return cpumask_test_cpu(cpu, housekeeping.cpumasks[type]);
+    return true;
+}
+EXPORT_SYMBOL_GPL(housekeeping_test_cpu);

@@ -161,8 +161,29 @@ struct task_struct *__kthread_create_on_node(int (*threadfn)(void *data),
     if (unlikely(wait_for_completion_killable(&done))) {
         panic("%s: 1!\n", __func__);
     }
+    task = create->result;
+    if (!IS_ERR(task)) {
+        char name[TASK_COMM_LEN];
+        va_list aq;
+        int len;
 
-    panic("%s: END!\n", __func__);
+        /*
+         * task is already visible to other tasks, so updating
+         * COMM must be protected.
+         */
+        va_copy(aq, args);
+        len = vsnprintf(name, sizeof(name), namefmt, aq);
+        va_end(aq);
+        if (len >= TASK_COMM_LEN) {
+            struct kthread *kthread = to_kthread(task);
+
+            /* leave it truncated when out of memory. */
+            kthread->full_name = kvasprintf(GFP_KERNEL, namefmt, args);
+        }
+        set_task_comm(task, name);
+    }
+    kfree(create);
+    return task;
 }
 
 /**

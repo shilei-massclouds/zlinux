@@ -327,7 +327,18 @@ static void ttwu_do_wakeup(struct rq *rq,
     }
 
     if (rq->idle_stamp) {
-        panic("%s: 2!\n", __func__);
+        u64 delta = rq_clock(rq) - rq->idle_stamp;
+        u64 max = 2*rq->max_idle_balance_cost;
+
+        update_avg(&rq->avg_idle, delta);
+
+        if (rq->avg_idle > max)
+            rq->avg_idle = max;
+
+        rq->wake_stamp = jiffies;
+        rq->wake_avg_idle = rq->avg_idle / 2;
+
+        rq->idle_stamp = 0;
     }
 }
 

@@ -128,4 +128,12 @@ static inline struct cpumask *sched_domain_span(struct sched_domain *sd)
 
 extern int arch_asym_cpu_priority(int cpu);
 
+#ifndef arch_scale_thermal_pressure
+static __always_inline
+unsigned long arch_scale_thermal_pressure(int cpu)
+{
+    return 0;
+}
+#endif
+
 #endif /* _LINUX_SCHED_TOPOLOGY_H */

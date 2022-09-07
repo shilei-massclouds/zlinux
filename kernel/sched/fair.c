@@ -35,11 +35,11 @@
 #include <linux/lockdep_api.h>
 #include <linux/softirq.h>
 #include <linux/refcount_api.h>
-#include <linux/sched/clock.h>
 #include <linux/sched/cond_resched.h>
 #include <linux/sched/cputime.h>
-#include <linux/sched/isolation.h>
 #endif
+#include <linux/sched/isolation.h>
+#include <linux/sched/clock.h>
 
 #if 0
 #include <linux/cpuidle.h>
@@ -68,9 +68,20 @@
 #define __node_2_se(node) \
     rb_entry((node), struct sched_entity, run_node)
 
+static struct {
+    cpumask_var_t idle_cpus_mask;
+    atomic_t nr_cpus;
+    int has_blocked;        /* Idle CPUS has blocked load */
+    int needs_update;       /* Newly idle CPUs need their next_balance collated */
+    unsigned long next_balance;     /* in jiffy units */
+    unsigned long next_blocked; /* Next update of blocked load in jiffies */
+} nohz ____cacheline_aligned;
+
 const_debug unsigned int sysctl_sched_migration_cost = 500000UL;
 
 static unsigned long __read_mostly max_load_balance_interval = HZ/10;
+
+int sched_thermal_decay_shift;
 
 /*
  * SCHED_OTHER wake-up granularity.
@@ -116,6 +127,8 @@ void update_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *se,
 static struct static_key __cfs_bandwidth_used;
 
 static void update_cfs_group(struct sched_entity *se);
+
+static int newidle_balance(struct rq *this_rq, struct rq_flags *rf);
 
 static inline bool cfs_bandwidth_used(void)
 {
@@ -367,7 +380,8 @@ static inline void util_est_enqueue(struct cfs_rq *cfs_rq,
     WRITE_ONCE(cfs_rq->avg.util_est.enqueued, enqueued);
 }
 
-static inline void cpufreq_update_util(struct rq *rq, unsigned int flags){
+static inline
+void cpufreq_update_util(struct rq *rq, unsigned int flags){
 }
 
 static inline int cfs_rq_throttled(struct cfs_rq *cfs_rq)
@@ -1552,6 +1566,14 @@ pick_next_task_fair(struct rq *rq, struct task_struct *prev,
     if (!prev || prev->sched_class != &fair_sched_class)
         goto simple;
 
+    /*
+     * Because of the set_next_buddy() in dequeue_task_fair() it is rather
+     * likely that a next task is from the same cgroup as the current.
+     *
+     * Therefore attempt to avoid putting and setting the entire cgroup
+     * hierarchy, only change the part that actually changes.
+     */
+
     panic("%s: nr_running(%d) END!\n", __func__, rq->cfs.nr_running);
 
  simple:
@@ -1582,9 +1604,18 @@ pick_next_task_fair(struct rq *rq, struct task_struct *prev,
     return p;
 
  idle:
-    panic("%s: idle ...\n", __func__);
     if (!rf)
         return NULL;
+
+    new_tasks = newidle_balance(rq, rf);
+
+    /*
+     * Because newidle_balance() releases (and re-acquires) rq->lock, it is
+     * possible for any higher priority task to appear. In that case we
+     * must re-start the pick_next_entity() loop.
+     */
+    if (new_tasks < 0)
+        return RETRY_TASK;
 
     panic("%s: ERR!\n", __func__);
 }
@@ -1742,6 +1773,270 @@ static struct task_struct *pick_task_fair(struct rq *rq)
     panic("%s: NO implementation!", __func__);
 }
 
+static void nohz_newidle_balance(struct rq *this_rq)
+{
+    int this_cpu = this_rq->cpu;
+
+    /*
+     * This CPU doesn't want to be disturbed by scheduler
+     * housekeeping
+     */
+    if (!housekeeping_cpu(this_cpu, HK_TYPE_SCHED))
+        return;
+
+    /* Will wake up very soon. No time for doing anything else*/
+    if (this_rq->avg_idle < sysctl_sched_migration_cost)
+        return;
+
+    /* Don't need to update blocked load of idle CPUs*/
+    if (!READ_ONCE(nohz.has_blocked) ||
+        time_before(jiffies, READ_ONCE(nohz.next_blocked)))
+        return;
+
+#if 0
+    /*
+     * Set the need to trigger ILB in order to update blocked load
+     * before entering idle state.
+     */
+    atomic_or(NOHZ_NEWILB_KICK, nohz_flags(this_cpu));
+#endif
+    panic("%s: END!", __func__);
+}
+
+static inline void update_blocked_load_tick(struct rq *rq)
+{
+    WRITE_ONCE(rq->last_blocked_load_update_tick, jiffies);
+}
+
+static inline bool others_have_blocked(struct rq *rq)
+{
+    if (READ_ONCE(rq->avg_rt.util_avg))
+        return true;
+
+    if (READ_ONCE(rq->avg_dl.util_avg))
+        return true;
+
+    if (thermal_load_avg(rq))
+        return true;
+
+    return false;
+}
+
+static bool __update_blocked_others(struct rq *rq, bool *done)
+{
+    const struct sched_class *curr_class;
+    u64 now = rq_clock_pelt(rq);
+    unsigned long thermal_pressure;
+    bool decayed;
+
+    /*
+     * update_load_avg() can call cpufreq_update_util(). Make sure that RT,
+     * DL and IRQ signals have been updated before updating CFS.
+     */
+    curr_class = rq->curr->sched_class;
+
+    thermal_pressure = arch_scale_thermal_pressure(cpu_of(rq));
+
+    decayed =
+        update_rt_rq_load_avg(now, rq, curr_class == &rt_sched_class) |
+        update_dl_rq_load_avg(now, rq, curr_class == &dl_sched_class) |
+        update_thermal_load_avg(rq_clock_thermal(rq), rq,
+                                thermal_pressure) |
+        update_irq_load_avg(rq, 0);
+
+    if (others_have_blocked(rq))
+        *done = false;
+
+    return decayed;
+}
+
+/* Iterate thr' all leaf cfs_rq's on a runqueue */
+#define for_each_leaf_cfs_rq_safe(rq, cfs_rq, pos)              \
+    list_for_each_entry_safe(cfs_rq, pos, &rq->leaf_cfs_rq_list,\
+                             leaf_cfs_rq_list)
+
+/*
+ * Check if we need to update the load and the utilization of a blocked
+ * group_entity:
+ */
+static inline bool skip_blocked_update(struct sched_entity *se)
+{
+    struct cfs_rq *gcfs_rq = group_cfs_rq(se);
+
+    /*
+     * If sched_entity still have not zero load or utilization, we have to
+     * decay it:
+     */
+    if (se->avg.load_avg || se->avg.util_avg)
+        return false;
+
+    /*
+     * If there is a pending propagation, we have to update the load and
+     * the utilization of the sched_entity:
+     */
+    if (gcfs_rq->propagate)
+        return false;
+
+    /*
+     * Otherwise, the load and the utilization of the sched_entity is
+     * already zero and there is no pending propagation, so it will be a
+     * waste of time to try to decay it:
+     */
+    return true;
+}
+
+/*
+ * Because list_add_leaf_cfs_rq always places a child cfs_rq on the list
+ * immediately before a parent cfs_rq, and cfs_rqs are removed from the list
+ * bottom-up, we only have to test whether the cfs_rq before us on the list
+ * is our child.
+ * If cfs_rq is not on the list, test whether a child needs its to be added to
+ * connect a branch to the tree  * (see list_add_leaf_cfs_rq() for details).
+ */
+static inline bool child_cfs_rq_on_list(struct cfs_rq *cfs_rq)
+{
+    struct cfs_rq *prev_cfs_rq;
+    struct list_head *prev;
+
+    if (cfs_rq->on_list) {
+        prev = cfs_rq->leaf_cfs_rq_list.prev;
+    } else {
+        struct rq *rq = rq_of(cfs_rq);
+
+        prev = rq->tmp_alone_branch;
+    }
+
+    prev_cfs_rq = container_of(prev, struct cfs_rq, leaf_cfs_rq_list);
+
+    return (prev_cfs_rq->tg->parent == cfs_rq->tg);
+}
+
+static inline bool cfs_rq_is_decayed(struct cfs_rq *cfs_rq)
+{
+    if (cfs_rq->load.weight)
+        return false;
+
+    if (cfs_rq->avg.load_sum)
+        return false;
+
+    if (cfs_rq->avg.util_sum)
+        return false;
+
+    if (cfs_rq->avg.runnable_sum)
+        return false;
+
+    if (child_cfs_rq_on_list(cfs_rq))
+        return false;
+
+    /*
+     * _avg must be null when _sum are null because _avg = _sum / divider
+     * Make sure that rounding and/or propagation of PELT values never
+     * break this.
+     */
+    SCHED_WARN_ON(cfs_rq->avg.load_avg ||
+                  cfs_rq->avg.util_avg ||
+                  cfs_rq->avg.runnable_avg);
+
+    return true;
+}
+
+static inline void list_del_leaf_cfs_rq(struct cfs_rq *cfs_rq)
+{
+    if (cfs_rq->on_list) {
+        struct rq *rq = rq_of(cfs_rq);
+
+        /*
+         * With cfs_rq being unthrottled/throttled during an enqueue,
+         * it can happen the tmp_alone_branch points the a leaf that
+         * we finally want to del. In this case, tmp_alone_branch moves
+         * to the prev element but it will point to rq->leaf_cfs_rq_list
+         * at the end of the enqueue.
+         */
+        if (rq->tmp_alone_branch == &cfs_rq->leaf_cfs_rq_list)
+            rq->tmp_alone_branch = cfs_rq->leaf_cfs_rq_list.prev;
+
+        list_del_rcu(&cfs_rq->leaf_cfs_rq_list);
+        cfs_rq->on_list = 0;
+    }
+}
+
+static inline bool cfs_rq_has_blocked(struct cfs_rq *cfs_rq)
+{
+    if (cfs_rq->avg.load_avg)
+        return true;
+
+    if (cfs_rq->avg.util_avg)
+        return true;
+
+    return false;
+}
+
+static bool __update_blocked_fair(struct rq *rq, bool *done)
+{
+    struct cfs_rq *cfs_rq, *pos;
+    bool decayed = false;
+    int cpu = cpu_of(rq);
+
+    /*
+     * Iterates the task_group tree in a bottom up fashion, see
+     * list_add_leaf_cfs_rq() for details.
+     */
+    for_each_leaf_cfs_rq_safe(rq, cfs_rq, pos) {
+        struct sched_entity *se;
+
+        if (update_cfs_rq_load_avg(cfs_rq_clock_pelt(cfs_rq), cfs_rq)) {
+            update_tg_load_avg(cfs_rq);
+
+            if (cfs_rq == &rq->cfs)
+                decayed = true;
+        }
+
+        /* Propagate pending load changes to the parent, if any: */
+        se = cfs_rq->tg->se[cpu];
+        if (se && !skip_blocked_update(se))
+            update_load_avg(cfs_rq_of(se), se, UPDATE_TG);
+
+        /*
+         * There can be a lot of idle CPU cgroups.  Don't let fully
+         * decayed cfs_rqs linger on the list.
+         */
+        if (cfs_rq_is_decayed(cfs_rq))
+            list_del_leaf_cfs_rq(cfs_rq);
+
+        /* Don't need periodic decay once load/util_avg are null */
+        if (cfs_rq_has_blocked(cfs_rq))
+            *done = false;
+    }
+
+    return decayed;
+}
+
+static inline
+void update_blocked_load_status(struct rq *rq, bool has_blocked)
+{
+    if (!has_blocked)
+        rq->has_blocked_load = 0;
+}
+
+static void update_blocked_averages(int cpu)
+{
+    bool decayed = false, done = true;
+    struct rq *rq = cpu_rq(cpu);
+    struct rq_flags rf;
+
+    rq_lock_irqsave(rq, &rf);
+    update_blocked_load_tick(rq);
+    update_rq_clock(rq);
+
+    decayed |= __update_blocked_others(rq, &done);
+    decayed |= __update_blocked_fair(rq, &done);
+
+    update_blocked_load_status(rq, !done);
+    if (decayed)
+        cpufreq_update_util(rq, 0);
+    rq_unlock_irqrestore(rq, &rf);
+}
+
 /*
  * newidle_balance is called by schedule() if this_cpu is about to become
  * idle. Attempts to pull tasks from other CPUs.
@@ -1761,7 +2056,83 @@ static int newidle_balance(struct rq *this_rq, struct rq_flags *rf)
 
     update_misfit_status(NULL, this_rq);
 
-    panic("%s: END!", __func__);
+    /*
+     * There is a task waiting to run. No need to search for one.
+     * Return 0; the task will be enqueued when switching to idle.
+     */
+    if (this_rq->ttwu_pending)
+        return 0;
+
+    /*
+     * We must set idle_stamp _before_ calling idle_balance(), such that we
+     * measure the duration of idle_balance() as idle time.
+     */
+    this_rq->idle_stamp = rq_clock(this_rq);
+
+    /*
+     * Do not pull tasks towards !active CPUs...
+     */
+    if (!cpu_active(this_cpu))
+        return 0;
+
+    /*
+     * This is OK, because current is on_cpu, which avoids it being picked
+     * for load-balance and preemption/IRQs are still disabled avoiding
+     * further scheduler activity on it and we're being very careful to
+     * re-start the picking loop.
+     */
+    rq_unpin_lock(this_rq, rf);
+
+    rcu_read_lock();
+    sd = rcu_dereference_check_sched_domain(this_rq->sd);
+
+    if (!READ_ONCE(this_rq->rd->overload) ||
+        (sd && this_rq->avg_idle < sd->max_newidle_lb_cost)) {
+        panic("%s: 1!", __func__);
+    }
+    rcu_read_unlock();
+
+    raw_spin_rq_unlock(this_rq);
+
+    t0 = sched_clock_cpu(this_cpu);
+    update_blocked_averages(this_cpu);
+
+    rcu_read_lock();
+    for_each_domain(this_cpu, sd) {
+        panic("%s: 1!", __func__);
+    }
+    rcu_read_unlock();
+
+    raw_spin_rq_lock(this_rq);
+
+    if (curr_cost > this_rq->max_idle_balance_cost)
+        this_rq->max_idle_balance_cost = curr_cost;
+
+    /*
+     * While browsing the domains, we released the rq lock, a task could
+     * have been enqueued in the meantime. Since we're not going idle,
+     * pretend we pulled a task.
+     */
+    if (this_rq->cfs.h_nr_running && !pulled_task)
+        pulled_task = 1;
+
+    /* Is there a task of a high priority class? */
+    if (this_rq->nr_running != this_rq->cfs.h_nr_running)
+        pulled_task = -1;
+
+ out:
+    /* Move the next balance forward */
+    if (time_after(this_rq->next_balance, next_balance))
+        this_rq->next_balance = next_balance;
+
+    if (pulled_task)
+        this_rq->idle_stamp = 0;
+    else
+        nohz_newidle_balance(this_rq);
+
+    rq_repin_lock(this_rq, rf);
+
+    return pulled_task;
 }
 
 static int

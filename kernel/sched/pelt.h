@@ -84,3 +84,9 @@ static inline u32 get_pelt_divider(struct sched_avg *avg)
 {
     return PELT_MIN_DIVIDER + avg->period_contrib;
 }
+
+static inline int
+update_irq_load_avg(struct rq *rq, u64 running)
+{
+    return 0;
+}

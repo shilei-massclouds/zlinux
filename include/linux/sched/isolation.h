@@ -31,4 +31,13 @@ extern void housekeeping_affine(struct task_struct *t, enum hk_type type);
 extern bool housekeeping_test_cpu(int cpu, enum hk_type type);
 extern void __init housekeeping_init(void);
 
+extern bool housekeeping_test_cpu(int cpu, enum hk_type type);
+
+static inline bool housekeeping_cpu(int cpu, enum hk_type type)
+{
+    if (static_branch_unlikely(&housekeeping_overridden))
+        return housekeeping_test_cpu(cpu, type);
+    return true;
+}
+
 #endif /* _LINUX_SCHED_ISOLATION_H */

@@ -93,6 +93,8 @@
 
 #define SCHED_WARN_ON(x)   ({ (void)(x), 0; })
 
+#define RETRY_TASK      ((void *)-1UL)
+
 /*
  * Single value that denotes runtime == period, ie unlimited time.
  */
@@ -1384,6 +1386,41 @@ static inline unsigned long cpu_util_cfs(int cpu)
     }
 
     return min(util, capacity_orig_of(cpu));
+}
+
+static inline u64 rq_clock(struct rq *rq)
+{
+    assert_clock_updated(rq);
+
+    return rq->clock;
+}
+
+static inline void rq_repin_lock(struct rq *rq, struct rq_flags *rf)
+{
+}
+
+/**
+ * By default the decay is the default pelt decay period.
+ * The decay shift can change the decay period in
+ * multiples of 32.
+ *  Decay shift     Decay period(ms)
+ *  0           32
+ *  1           64
+ *  2           128
+ *  3           256
+ *  4           512
+ */
+extern int sched_thermal_decay_shift;
+
+static inline u64 rq_clock_thermal(struct rq *rq)
+{
+    return rq_clock_task(rq) >> sched_thermal_decay_shift;
+}
+
+static inline void update_avg(u64 *avg, u64 sample)
+{
+    s64 diff = sample - *avg;
+    *avg += diff / 8;
 }
 
 #endif /* _KERNEL_SCHED_SCHED_H */
