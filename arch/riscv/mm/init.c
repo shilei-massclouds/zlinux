@@ -324,12 +324,13 @@ static void __init create_kernel_page_table(pgd_t *pgdir, bool early)
  * this means 2 PMD entries whereas for 32-bit kernel, this is only 1 PGDIR
  * entry.
  */
-static void __init create_fdt_early_page_table(pgd_t *pgdir, uintptr_t dtb_pa)
+static void __init create_fdt_early_page_table(pgd_t *pgdir,
+                                               uintptr_t dtb_pa)
 {
     uintptr_t pa = dtb_pa & ~(PMD_SIZE - 1);
 
-    create_pgd_mapping(early_pg_dir, DTB_EARLY_BASE_VA, early_dtb_pgd_next,
-                       PGDIR_SIZE, PAGE_TABLE);
+    create_pgd_mapping(early_pg_dir, DTB_EARLY_BASE_VA,
+                       early_dtb_pgd_next, PGDIR_SIZE, PAGE_TABLE);
 
     if (pgtable_l5_enabled)
         create_p4d_mapping(early_dtb_p4d, DTB_EARLY_BASE_VA,
@@ -534,7 +535,8 @@ asmlinkage void __init setup_vm(uintptr_t dtb_pa)
     set_satp_mode();
 
     kernel_map.va_pa_offset = PAGE_OFFSET - kernel_map.phys_addr;
-    kernel_map.va_kernel_pa_offset = kernel_map.virt_addr - kernel_map.phys_addr;
+    kernel_map.va_kernel_pa_offset =
+        kernel_map.virt_addr - kernel_map.phys_addr;
 
     riscv_pfn_base = PFN_DOWN(kernel_map.phys_addr);
 
@@ -554,7 +556,8 @@ asmlinkage void __init setup_vm(uintptr_t dtb_pa)
      * The last 4K bytes of the addressable memory can not be mapped because
      * of IS_ERR_VALUE macro.
      */
-    BUG_ON((kernel_map.virt_addr + kernel_map.size) > ADDRESS_SPACE_END - SZ_4K);
+    BUG_ON((kernel_map.virt_addr + kernel_map.size) >
+           ADDRESS_SPACE_END - SZ_4K);
 
     pt_ops_set_early();
 
@@ -601,7 +604,6 @@ asmlinkage void __init setup_vm(uintptr_t dtb_pa)
     BUG_ON((__fix_to_virt(FIX_BTMAP_BEGIN) >> PMD_SHIFT) !=
            (__fix_to_virt(FIX_BTMAP_END) >> PMD_SHIFT));
 
-#if 0
     /*
      * Early ioremap fixmap is already created as it lies within first 2MB
      * of fixmap region. We always map PMD_SIZE. Thus, both FIX_BTMAP_END
@@ -623,7 +625,6 @@ asmlinkage void __init setup_vm(uintptr_t dtb_pa)
         pr_warn("FIX_BTMAP_BEGIN:     %d\n", FIX_BTMAP_BEGIN);
     }
 
-#endif
     pt_ops_set_fixmap();
 }
 

@@ -433,13 +433,13 @@ noinline void __ref rest_init(void)
     complete(&kthreadd_done);
 
     printk("###### %s: 3\n", __func__);
+
     /*
      * The boot idle thread must execute schedule()
      * at least once to get things moving:
      */
     schedule_preempt_disabled();
 
-    pr_info("###################### %s: !\n", __func__);
     panic("%s: pid(%d) END!\n", __func__, pid);
 }
 
@@ -694,7 +694,8 @@ static void __init print_unknown_bootoptions(void)
     memblock_free(unknown_options, len);
 }
 
-asmlinkage __visible void __init __no_sanitize_address start_kernel(void)
+asmlinkage __visible
+void __init __no_sanitize_address start_kernel(void)
 {
     char *command_line;
     char *after_dashes;
