@@ -233,9 +233,7 @@ memblock_double_array(struct memblock_type *type,
     phys_addr_t old_alloc_size, new_alloc_size;
     phys_addr_t old_size, new_size, addr, new_end;
     struct memblock_region *new_array, *old_array;
-    /*
     int use_slab = slab_is_available();
-    */
 
     /* We don't allow resizing until we know about the reserved regions
      * of memory that aren't suitable for allocation
@@ -259,13 +257,11 @@ memblock_double_array(struct memblock_type *type,
     else
         in_slab = &memblock_reserved_in_slab;
 
-#if 0
     /* Try to find some space for it */
     if (use_slab) {
         new_array = kmalloc(new_size, GFP_KERNEL);
         addr = new_array ? __pa(new_array) : 0;
     } else {
-#endif
         /* only exclude range when trying to double reserved.regions */
         if (type != &memblock.reserved)
             new_area_start = new_area_size = 0;
@@ -279,11 +275,10 @@ memblock_double_array(struct memblock_type *type,
                 new_alloc_size, PAGE_SIZE);
 
         new_array = addr ? __va(addr) : NULL;
-#if 0
     }
-#endif
     if (!addr) {
-        pr_err("memblock: Failed to double %s array from %ld to %ld entries !\n",
+        pr_err("memblock: Failed to double %s array "
+               "from %ld to %ld entries !\n",
                type->name, type->max, type->max * 2);
         return -1;
     }
@@ -303,8 +298,8 @@ memblock_double_array(struct memblock_type *type,
     type->regions = new_array;
     type->max <<= 1;
 
-#if 0
-    /* Free old array. We needn't free it if the array is the static one */
+    /* Free old array.
+     * We needn't free it if the array is the static one */
     if (*in_slab)
         kfree(old_array);
     else if (old_array != memblock_memory_init_regions &&
@@ -312,15 +307,13 @@ memblock_double_array(struct memblock_type *type,
         memblock_free(old_array, old_alloc_size);
 
     /*
-     * Reserve the new array if that comes from the memblock.  Otherwise, we
-     * needn't do it
-     */
+     * Reserve the new array if that comes from the memblock.
+     * Otherwise, we needn't do it */
     if (!use_slab)
         BUG_ON(memblock_reserve(addr, new_alloc_size));
 
     /* Update slab flag */
     *in_slab = use_slab;
-#endif
     return 0;
 }
 
@@ -590,7 +583,8 @@ int __init_memblock memblock_add(phys_addr_t base, phys_addr_t size)
     memblock_dbg("%s: [%pa-%pa] %pS\n", __func__,
                  &base, &end, (void *)_RET_IP_);
 
-    return memblock_add_range(&memblock.memory, base, size, MAX_NUMNODES, 0);
+    return memblock_add_range(&memblock.memory, base, size,
+                              MAX_NUMNODES, 0);
 }
 
 int __init_memblock memblock_reserve(phys_addr_t base, phys_addr_t size)
@@ -1231,6 +1225,7 @@ void __init memblock_enforce_memory_limit(phys_addr_t limit)
     if (max_addr == PHYS_ADDR_MAX)
         return;
 
+    panic("%s: !\n", __func__);
     /* truncate both memory and reserved regions */
     memblock_remove_range(&memblock.memory, max_addr, PHYS_ADDR_MAX);
     memblock_remove_range(&memblock.reserved, max_addr, PHYS_ADDR_MAX);

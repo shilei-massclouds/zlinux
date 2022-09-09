@@ -3,7 +3,10 @@
 #define _ASM_GENERIC_BUG_H
 
 #include <linux/compiler.h>
+#include <linux/instrumentation.h>
 #include <linux/once_lite.h>
+
+#define CUT_HERE        "------------[ cut here ]------------\n"
 
 #define BUGFLAG_WARNING         (1 << 0)
 #define BUGFLAG_ONCE            (1 << 1)
@@ -39,11 +42,20 @@ struct bug_entry {
 })
 #endif
 
+extern __printf(1, 2) void __warn_printk(const char *fmt, ...);
+#define __WARN_printf(taint, arg...) do {               \
+        instrumentation_begin();                \
+        __warn_printk(arg);                 \
+        __WARN_FLAGS(BUGFLAG_NO_CUT_HERE | BUGFLAG_TAINT(taint));\
+        instrumentation_end();                  \
+    } while (0)
+
 #ifndef WARN
-#define WARN(condition, format...) ({   \
-    int __ret_warn_on = !!(condition);  \
-    no_printk(format);                  \
-    unlikely(__ret_warn_on);            \
+#define WARN(condition, format...) ({                   \
+    int __ret_warn_on = !!(condition);              \
+    if (unlikely(__ret_warn_on))                    \
+        __WARN_printf(TAINT_WARN, format);          \
+    unlikely(__ret_warn_on);                    \
 })
 #endif
 

@@ -213,7 +213,8 @@ void __init __weak early_init_dt_add_memory_arch(u64 base, u64 size)
     }
 
     if (base + size < phys_offset) {
-        pr_warn("Ignoring memory block 0x%llx - 0x%llx\n", base, base + size);
+        pr_warn("Ignoring memory block 0x%llx - 0x%llx\n",
+                base, base + size);
         return;
     }
     if (base < phys_offset) {

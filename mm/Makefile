@@ -15,3 +15,4 @@ page-alloc-y := page_alloc.o
 obj-y += page-alloc.o compaction.o
 obj-y += init-mm.o swap_state.o
 obj-y += mmu_notifier.o
+obj-y += early_ioremap.o

@@ -3,7 +3,7 @@
 #include <linux/init.h>
 #include <linux/mm.h>
 #include <linux/memblock.h>
-//#include <linux/initrd.h>
+#include <linux/initrd.h>
 #include <linux/swap.h>
 #include <linux/swiotlb.h>
 #include <linux/sizes.h>
@@ -11,6 +11,7 @@
 #include <linux/of_reserved_mem.h>
 #include <linux/libfdt.h>
 #include <linux/set_memory.h>
+#include <linux/kernel.h>
 #if 0
 #include <linux/dma-map-ops.h>
 #include <linux/crash_dump.h>
@@ -658,10 +659,11 @@ static void __init setup_bootmem(void)
     max_low_pfn = max_pfn = PFN_DOWN(phys_ram_end);
     high_memory = (void *)(__va(PFN_PHYS(max_low_pfn)));
 
-    dma32_phys_limit = min(4UL * SZ_1G, (unsigned long)PFN_PHYS(max_low_pfn));
+    dma32_phys_limit = min(4UL * SZ_1G,
+                           (unsigned long)PFN_PHYS(max_low_pfn));
     set_max_mapnr(max_low_pfn - ARCH_PFN_OFFSET);
 
-    //reserve_initrd_mem();
+    reserve_initrd_mem();
 
     /*
      * In case the DTB is not located in a memory region we won't
@@ -787,7 +789,6 @@ static void __init setup_vm_final(void)
 
     create_kernel_page_table(swapper_pg_dir, false);
 
-
     /* Clear fixmap PTE and PMD mappings */
     clear_fixmap(FIX_PTE);
     clear_fixmap(FIX_PMD);
@@ -805,9 +806,7 @@ static void __init zone_sizes_init(void)
 {
     unsigned long max_zone_pfns[MAX_NR_ZONES] = { 0, };
 
-#ifdef CONFIG_ZONE_DMA32
     max_zone_pfns[ZONE_DMA32] = PFN_DOWN(dma32_phys_limit);
-#endif
     max_zone_pfns[ZONE_NORMAL] = max_low_pfn;
 
     free_area_init(max_zone_pfns);

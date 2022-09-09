@@ -7,12 +7,13 @@
 #include <linux/console.h>
 //#include <linux/screen_info.h>
 #include <linux/of_fdt.h>
-//#include <linux/of_platform.h>
+#include <linux/of_platform.h>
 #include <linux/sched/task.h>
-//#include <linux/swiotlb.h>
+#include <linux/swiotlb.h>
 #include <linux/smp.h>
+#include <linux/io.h>
 
-//#include <asm/cpu_ops.h>
+#include <asm/cpu_ops.h>
 #include <asm/pgtable.h>
 #include <asm/setup.h>
 #include <asm/set_memory.h>
@@ -40,6 +41,7 @@ void __init parse_dtb(void)
 
         if (name) {
             pr_info("Machine model: %s\n", name);
+            dump_stack_set_arch_desc("%s (DT)", name);
         }
         return;
     }
@@ -54,10 +56,8 @@ void __init setup_arch(char **cmdline_p)
 
     *cmdline_p = boot_command_line;
 
-#if 0
     early_ioremap_setup();
     jump_label_init();
-#endif
     parse_early_param();
 
 #if 0

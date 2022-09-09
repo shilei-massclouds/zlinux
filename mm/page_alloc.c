@@ -91,8 +91,8 @@
 #include <asm/tlbflush.h>
 #include <asm/div64.h>
 #include "internal.h"
-/*
 #include "shuffle.h"
+/*
 #include "page_reporting.h"
 */
 
@@ -4378,6 +4378,9 @@ void __init page_alloc_init_late(void)
 
     /* Discard memblock private memory */
     memblock_discard();
+
+    for_each_node_state(nid, N_MEMORY)
+        shuffle_free_memory(NODE_DATA(nid));
 
 #if 0
     for_each_populated_zone(zone)

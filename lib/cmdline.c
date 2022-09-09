@@ -68,3 +68,54 @@ char *next_arg(char *args, char **param, char **val)
     /* Chew up trailing spaces. */
     return skip_spaces(next);
 }
+
+/**
+ *  memparse - parse a string with mem suffixes into a number
+ *  @ptr: Where parse begins
+ *  @retptr: (output) Optional pointer to next char after parse completes
+ *
+ *  Parses a string into a number.  The number stored at @ptr is
+ *  potentially suffixed with K, M, G, T, P, E.
+ */
+unsigned long long memparse(const char *ptr, char **retptr)
+{
+    char *endptr;   /* local pointer to end of parsed string */
+
+    unsigned long long ret = simple_strtoull(ptr, &endptr, 0);
+
+    switch (*endptr) {
+    case 'E':
+    case 'e':
+        ret <<= 10;
+        fallthrough;
+    case 'P':
+    case 'p':
+        ret <<= 10;
+        fallthrough;
+    case 'T':
+    case 't':
+        ret <<= 10;
+        fallthrough;
+    case 'G':
+    case 'g':
+        ret <<= 10;
+        fallthrough;
+    case 'M':
+    case 'm':
+        ret <<= 10;
+        fallthrough;
+    case 'K':
+    case 'k':
+        ret <<= 10;
+        endptr++;
+        fallthrough;
+    default:
+        break;
+    }
+
+    if (retptr)
+        *retptr = endptr;
+
+    return ret;
+}
+EXPORT_SYMBOL(memparse);

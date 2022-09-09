@@ -11,6 +11,7 @@ CFLAGS_string.o := -ffreestanding
 lib-y := ctype.o string.o vsprintf.o cmdline.o siphash.o
 lib-y += rbtree.o radix-tree.o timerqueue.o
 lib-y += kobject.o klist.o refcount.o idr.o xarray.o random32.o llist.o
+lib-y += dump_stack.o
 obj-y += kstrtox.o percpu_counter.o irq_regs.o iov_iter.o bust_spinlocks.o
 obj-y += hexdump.o percpu-refcount.o extable.o
 obj-y += lockref.o dec_and_lock.o scatterlist.o

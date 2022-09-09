@@ -333,7 +333,8 @@ alloc_pages_bulk_array_node(gfp_t gfp, int nid,
     return __alloc_pages_bulk(gfp, nid, NULL, nr_pages, NULL, page_array);
 }
 
-extern unsigned long __get_free_pages(gfp_t gfp_mask, unsigned int order);
+extern unsigned long __get_free_pages(gfp_t gfp_mask,
+                                      unsigned int order);
 
 extern unsigned long get_zeroed_page(gfp_t gfp_mask);
 

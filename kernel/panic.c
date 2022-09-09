@@ -141,3 +141,15 @@ __visible noinstr void __stack_chk_fail(void)
 }
 EXPORT_SYMBOL(__stack_chk_fail);
 #endif
+
+void __warn_printk(const char *fmt, ...)
+{
+    va_list args;
+
+    pr_warn(CUT_HERE);
+
+    va_start(args, fmt);
+    vprintk(fmt, args);
+    va_end(args);
+}
+EXPORT_SYMBOL(__warn_printk);

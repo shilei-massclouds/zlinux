@@ -234,4 +234,6 @@ extern int oops_in_progress;
 #define pr_info_once(fmt, ...)                  \
     printk_once(KERN_INFO pr_fmt(fmt), ##__VA_ARGS__)
 
+__printf(1, 2) void dump_stack_set_arch_desc(const char *fmt, ...);
+
 #endif /* __KERNEL_PRINTK__ */

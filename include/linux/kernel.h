@@ -166,4 +166,6 @@ static inline void might_fault(void) { }
 
 void do_exit(long error_code) __noreturn;
 
+extern unsigned long long memparse(const char *ptr, char **retptr);
+
 #endif /* _LINUX_KERNEL_H */

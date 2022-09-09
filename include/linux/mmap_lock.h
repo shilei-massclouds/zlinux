@@ -8,6 +8,9 @@
 //#include <linux/tracepoint-defs.h>
 #include <linux/types.h>
 
+#define MMAP_LOCK_INITIALIZER(name) \
+    .mmap_lock = __RWSEM_INITIALIZER((name).mmap_lock),
+
 static inline void mmap_init_lock(struct mm_struct *mm)
 {
     init_rwsem(&mm->mmap_lock);
