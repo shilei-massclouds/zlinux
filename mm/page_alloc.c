@@ -2103,9 +2103,9 @@ __zone_watermark_unusable_free(struct zone *z,
  * one free page of a suitable size. Checking now avoids taking the zone lock
  * to check in the allocation paths if no pages are free.
  */
-bool __zone_watermark_ok(struct zone *z, unsigned int order, unsigned long mark,
-                         int highest_zoneidx, unsigned int alloc_flags,
-                         long free_pages)
+bool __zone_watermark_ok(struct zone *z, unsigned int order,
+                         unsigned long mark, int highest_zoneidx,
+                         unsigned int alloc_flags, long free_pages)
 {
     long min = mark;
     int o;
@@ -2184,8 +2184,8 @@ zone_watermark_fast(struct zone *z, unsigned int order,
             return true;
     }
 
-    if (__zone_watermark_ok(z, order, mark, highest_zoneidx, alloc_flags,
-                            free_pages))
+    if (__zone_watermark_ok(z, order, mark, highest_zoneidx,
+                            alloc_flags, free_pages))
         return true;
 
     /*
@@ -2194,7 +2194,8 @@ zone_watermark_fast(struct zone *z, unsigned int order,
      * point where boosting is ignored so that kswapd is woken up
      * when below the low watermark.
      */
-    if (unlikely(!order && (gfp_mask & __GFP_ATOMIC) && z->watermark_boost &&
+    if (unlikely(!order && (gfp_mask & __GFP_ATOMIC) &&
+                 z->watermark_boost &&
                  ((alloc_flags & ALLOC_WMARK_MASK) == WMARK_MIN))) {
         mark = z->_watermark[WMARK_MIN];
         return __zone_watermark_ok(z, order, mark, highest_zoneidx,
@@ -2845,7 +2846,8 @@ __alloc_pages(gfp_t gfp, unsigned int order, int preferred_nid,
               nodemask_t *nodemask)
 {
     struct page *page;
-    gfp_t alloc_gfp; /* The gfp_t that was actually used for allocation */
+    /* The gfp_t that was actually used for allocation */
+    gfp_t alloc_gfp;
     struct alloc_context ac = { };
     unsigned int alloc_flags = ALLOC_WMARK_LOW;
 
@@ -2911,7 +2913,8 @@ static void zoneref_set_zone(struct zone *zone, struct zoneref *zoneref)
  *
  * Add all populated zones of a node to the zonelist.
  */
-static int build_zonerefs_node(pg_data_t *pgdat, struct zoneref *zonerefs)
+static int build_zonerefs_node(pg_data_t *pgdat,
+                               struct zoneref *zonerefs)
 {
     struct zone *zone;
     int nr_zones = 0;
@@ -3003,7 +3006,8 @@ static void __build_all_zonelists(void *data)
 }
 
 static void
-per_cpu_pages_init(struct per_cpu_pages *pcp, struct per_cpu_zonestat *pzstats)
+per_cpu_pages_init(struct per_cpu_pages *pcp,
+                   struct per_cpu_zonestat *pzstats)
 {
     int pindex;
 
@@ -3251,7 +3255,7 @@ __free_one_page(struct page *page, unsigned long pfn,
     max_order = min_t(unsigned int, MAX_ORDER - 1, pageblock_order);
 
     VM_BUG_ON(!zone_is_initialized(zone));
-    //VM_BUG_ON_PAGE(page->flags & PAGE_FLAGS_CHECK_AT_PREP, page);
+    VM_BUG_ON_PAGE(page->flags & PAGE_FLAGS_CHECK_AT_PREP, page);
 
     VM_BUG_ON(migratetype == -1);
     if (likely(!is_migrate_isolate(migratetype)))
@@ -3445,7 +3449,8 @@ static void __zone_set_pageset_high_and_batch(struct zone *zone,
  * Calculate and set new high and batch values for all per-cpu pagesets of a
  * zone based on the zone's size.
  */
-static void zone_set_pageset_high_and_batch(struct zone *zone, int cpu_online)
+static void zone_set_pageset_high_and_batch(struct zone *zone,
+                                            int cpu_online)
 {
     int new_high, new_batch;
 

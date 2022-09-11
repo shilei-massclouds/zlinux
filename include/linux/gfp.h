@@ -216,7 +216,8 @@ alloc_pages_node(int nid, gfp_t gfp_mask, unsigned int order)
     return __alloc_pages_node(nid, gfp_mask, order);
 }
 
-static inline struct page *alloc_pages(gfp_t gfp_mask, unsigned int order)
+static inline struct page *alloc_pages(gfp_t gfp_mask,
+                                       unsigned int order)
 {
     return alloc_pages_node(numa_node_id(), gfp_mask, order);
 }
