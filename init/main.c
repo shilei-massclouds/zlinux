@@ -802,11 +802,13 @@ void __init __no_sanitize_address start_kernel(void)
     proc_caches_init();
     uts_ns_init();
 
+    printk("############## %s: step5\n", __func__);
     vfs_caches_init();
     pagecache_init();
     signals_init();
     proc_root_init();
 
+    printk("############## %s: step6\n", __func__);
     /* Do the rest non-__init'ed, we're now alive */
     arch_call_rest_init();
 
