@@ -66,6 +66,9 @@ struct resource {
 #define IORESOURCE_MEM_EXPANSIONROM (1<<6)
 #define IORESOURCE_MEM_NONPOSTED    (1<<7)
 
+/* I/O resource extended types */
+#define IORESOURCE_SYSTEM_RAM       (IORESOURCE_MEM|IORESOURCE_SYSRAM)
+
 extern struct resource iomem_resource;
 
 static inline resource_size_t resource_size(const struct resource *res)
@@ -103,6 +106,13 @@ extern struct resource *
 __devm_request_region(struct device *dev,
                       struct resource *parent, resource_size_t start,
                       resource_size_t n, const char *name);
+
+void release_child_resources(struct resource *new);
+
+extern struct resource *
+insert_resource_conflict(struct resource *parent, struct resource *new);
+extern int insert_resource(struct resource *parent,
+                           struct resource *new);
 
 #endif /* __ASSEMBLY__ */
 #endif  /* _LINUX_IOPORT_H */

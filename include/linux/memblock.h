@@ -360,4 +360,61 @@ static inline void *memblock_alloc_raw(phys_addr_t size,
                                       MEMBLOCK_ALLOC_ACCESSIBLE, NUMA_NO_NODE);
 }
 
+/**
+ * memblock_region_reserved_base_pfn - get the lowest pfn of the reserved region
+ * @reg: memblock_region structure
+ *
+ * Return: the lowest pfn intersecting with the reserved region
+ */
+static inline unsigned long
+memblock_region_reserved_base_pfn(const struct memblock_region *reg)
+{
+    return PFN_DOWN(reg->base);
+}
+
+/**
+ * memblock_region_reserved_end_pfn - get the end pfn of the reserved region
+ * @reg: memblock_region structure
+ *
+ * Return: the end_pfn of the reserved region
+ */
+static inline unsigned long
+memblock_region_reserved_end_pfn(const struct memblock_region *reg)
+{
+    return PFN_UP(reg->base + reg->size);
+}
+
+/**
+ * for_each_reserved_mem_region - itereate over reserved memory regions
+ * @region: loop variable
+ */
+#define for_each_reserved_mem_region(region)                \
+    for (region = memblock.reserved.regions;            \
+         region < (memblock.reserved.regions + memblock.reserved.cnt); \
+         region++)
+
+/**
+ * memblock_region_memory_base_pfn - get the lowest pfn of the memory region
+ * @reg: memblock_region structure
+ *
+ * Return: the lowest pfn intersecting with the memory region
+ */
+static inline unsigned long
+memblock_region_memory_base_pfn(const struct memblock_region *reg)
+{
+    return PFN_UP(reg->base);
+}
+
+/**
+ * memblock_region_memory_end_pfn - get the end pfn of the memory region
+ * @reg: memblock_region structure
+ *
+ * Return: the end_pfn of the reserved region
+ */
+static inline unsigned long
+memblock_region_memory_end_pfn(const struct memblock_region *reg)
+{
+    return PFN_DOWN(reg->base + reg->size);
+}
+
 #endif /* _LINUX_MEMBLOCK_H */
