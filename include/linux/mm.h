@@ -1604,4 +1604,21 @@ static inline void dec_mm_counter(struct mm_struct *mm, int member)
     atomic_long_dec_return(&mm->rss_stat.count[member]);
 }
 
+static inline struct folio *virt_to_folio(const void *x)
+{
+    struct page *page = virt_to_page(x);
+
+    return page_folio(page);
+}
+
+static inline void *folio_address(const struct folio *folio)
+{
+    return page_address(&folio->page);
+}
+
+static inline int folio_nid(const struct folio *folio)
+{
+    return page_to_nid(&folio->page);
+}
+
 #endif /* _LINUX_MM_H */

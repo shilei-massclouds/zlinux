@@ -79,10 +79,11 @@ struct kmem_cache {
  *   we can replace (offset / cache->size) by
  *   reciprocal_divide(offset, cache->reciprocal_buffer_size)
  */
-static inline unsigned int
-obj_to_index(const struct kmem_cache *cache, const struct page *page, void *obj)
+static inline
+unsigned int obj_to_index(const struct kmem_cache *cache,
+                          const struct slab *slab, void *obj)
 {
-    u32 offset = (obj - page->s_mem);
+    u32 offset = (obj - slab->s_mem);
     return reciprocal_divide(offset, cache->reciprocal_buffer_size);
 }
 

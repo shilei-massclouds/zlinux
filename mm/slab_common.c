@@ -177,41 +177,6 @@ void *kmalloc_order(size_t size, gfp_t flags, unsigned int order)
 }
 EXPORT_SYMBOL(kmalloc_order);
 
-/**
- * kfree - free previously allocated memory
- * @objp: pointer returned by kmalloc.
- *
- * If @objp is NULL, no operation is performed.
- *
- * Don't free memory not originally allocated by kmalloc()
- * or you will run into trouble.
- */
-void kfree(const void *objp)
-{
-#if 0
-    struct kmem_cache *c;
-    unsigned long flags;
-
-    trace_kfree(_RET_IP_, objp);
-
-    if (unlikely(ZERO_OR_NULL_PTR(objp)))
-        return;
-    local_irq_save(flags);
-    kfree_debugcheck(objp);
-    c = virt_to_cache(objp);
-    if (!c) {
-        local_irq_restore(flags);
-        return;
-    }
-    debug_check_no_locks_freed(objp, c->object_size);
-
-    debug_check_no_obj_freed(objp, c->object_size);
-    __cache_free(c, (void *)objp, _RET_IP_);
-    local_irq_restore(flags);
-#endif
-}
-EXPORT_SYMBOL(kfree);
-
 /*
  * Figure out what the alignment of the objects will be given a set of
  * flags, a user specified alignment and the size of the objects.

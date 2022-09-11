@@ -5,6 +5,22 @@
  * Internal slab definitions
  */
 
+/* Reuses the bits in struct page */
+struct slab {
+    unsigned long __page_flags;
+
+    union {
+        struct list_head slab_list;
+        struct rcu_head rcu_head;
+    };
+    struct kmem_cache *slab_cache;
+    void *freelist; /* array of free object indexes */
+    void *s_mem;    /* first object */
+    unsigned int active;
+
+    atomic_t __page_refcount;
+};
+
 #include <linux/slab_def.h>
 #include <linux/string.h>
 #include <linux/memcontrol.h>
@@ -12,8 +28,6 @@
 
 /*
 #include <linux/fault-inject.h>
-#include <linux/kasan.h>
-#include <linux/kmemleak.h>
 #include <linux/random.h>
 #include <linux/sched/mm.h>
 */
@@ -190,5 +204,88 @@ int slab_unmergeable(struct kmem_cache *s);
 struct kmem_cache *
 find_mergeable(unsigned size, unsigned align, slab_flags_t flags,
                const char *name, void (*ctor)(void *));
+
+/**
+ * folio_slab - Converts from folio to slab.
+ * @folio: The folio.
+ *
+ * Currently struct slab is a different representation of a folio where
+ * folio_test_slab() is true.
+ *
+ * Return: The slab which contains this folio.
+ */
+#define folio_slab(folio)   (_Generic((folio),          \
+    const struct folio *:   (const struct slab *)(folio),       \
+    struct folio *:     (struct slab *)(folio)))
+
+static inline struct slab *virt_to_slab(const void *addr)
+{
+    struct folio *folio = virt_to_folio(addr);
+
+    if (!folio_test_slab(folio))
+        return NULL;
+
+    return folio_slab(folio);
+}
+
+static inline struct kmem_cache *virt_to_cache(const void *obj)
+{
+    struct slab *slab;
+
+    slab = virt_to_slab(obj);
+    if (WARN_ONCE(!slab, "%s: Object is not a Slab page!\n", __func__))
+        return NULL;
+    return slab->slab_cache;
+}
+
+/**
+ * slab_folio - The folio allocated for a slab
+ * @slab: The slab.
+ *
+ * Slabs are allocated as folios that contain the individual objects and are
+ * using some fields in the first struct page of the folio - those fields are
+ * now accessed by struct slab. It is occasionally necessary to convert back to
+ * a folio in order to communicate with the rest of the mm.  Please use this
+ * helper function instead of casting yourself, as the implementation may change
+ * in the future.
+ */
+#define slab_folio(s)       (_Generic((s),              \
+    const struct slab *:    (const struct folio *)s,        \
+    struct slab *:      (struct folio *)s))
+
+static inline void *slab_address(const struct slab *slab)
+{
+    return folio_address(slab_folio(slab));
+}
+
+static inline pg_data_t *slab_pgdat(const struct slab *slab)
+{
+    return folio_pgdat(slab_folio(slab));
+}
+
+static __always_inline
+void unaccount_slab(struct slab *slab, int order, struct kmem_cache *s)
+{
+    mod_node_page_state(slab_pgdat(slab), cache_vmstat_idx(s),
+                        -(PAGE_SIZE << order));
+}
+
+static inline void __slab_clear_pfmemalloc(struct slab *slab)
+{
+    __folio_clear_active(slab_folio(slab));
+}
+
+static __always_inline
+void account_slab(struct slab *slab, int order,
+                  struct kmem_cache *s, gfp_t gfp)
+{
+    mod_node_page_state(slab_pgdat(slab), cache_vmstat_idx(s),
+                        PAGE_SIZE << order);
+}
+
+static inline int slab_nid(const struct slab *slab)
+{
+    return folio_nid(slab_folio(slab));
+}
 
 #endif /* MM_SLAB_H */

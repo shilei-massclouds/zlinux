@@ -24,104 +24,136 @@ struct file;
 
 #define _struct_page_alignment
 
-#define AT_VECTOR_SIZE (2*(AT_VECTOR_SIZE_ARCH + AT_VECTOR_SIZE_BASE + 1))
+#define AT_VECTOR_SIZE \
+    (2*(AT_VECTOR_SIZE_ARCH + AT_VECTOR_SIZE_BASE + 1))
 
 struct page {
-    unsigned long flags;    /* Atomic flags, some possibly updated asynchronously */
+	unsigned long flags;		/* Atomic flags, some possibly
+                                 * updated asynchronously */
+	/*
+	 * Five words (20/40 bytes) are available in this union.
+	 * WARNING: bit 0 of the first word is used for PageTail(). That
+	 * means the other users of this union MUST NOT use the bit to
+	 * avoid collision and false-positive PageTail().
+	 */
+	union {
+		struct {	/* Page cache and anonymous pages */
+			/**
+			 * @lru: Pageout list, eg. active_list protected by
+			 * lruvec->lru_lock.  Sometimes used as a generic list
+			 * by the page owner.
+			 */
+			union {
+				struct list_head lru;
+				/* Or, for the Unevictable "LRU list" slot */
+				struct {
+					/* Always even, to negate PageTail */
+					void *__filler;
+					/* Count page's or folio's mlocks */
+					unsigned int mlock_count;
+				};
+			};
+			/* See page-flags.h for PAGE_MAPPING_FLAGS */
+			struct address_space *mapping;
+			pgoff_t index;		/* Our offset within mapping. */
+			/**
+			 * @private: Mapping-private opaque data.
+			 * Usually used for buffer_heads if PagePrivate.
+			 * Used for swp_entry_t if PageSwapCache.
+			 * Indicates order in the buddy system if PageBuddy.
+			 */
+			unsigned long private;
+		};
+		struct {	/* page_pool used by netstack */
+			/**
+			 * @pp_magic: magic value to avoid recycling non
+			 * page_pool allocated pages.
+			 */
+			unsigned long pp_magic;
+			struct page_pool *pp;
+			unsigned long _pp_mapping_pad;
+			unsigned long dma_addr;
+			union {
+				/**
+				 * dma_addr_upper: might require a 64-bit
+				 * value on 32-bit architectures.
+				 */
+				unsigned long dma_addr_upper;
+				/**
+				 * For frag page support, not supported in
+				 * 32-bit architectures with 64-bit DMA.
+				 */
+				atomic_long_t pp_frag_count;
+			};
+		};
+		struct {	/* Tail pages of compound page */
+			unsigned long compound_head;	/* Bit zero is set */
 
-    union {
-        struct {    /* Page cache and anonymous pages */
-            /**
-             * @lru: Pageout list, eg. active_list protected by
-             * lruvec->lru_lock.  Sometimes used as a generic list
-             * by the page owner.
-             */
-            struct list_head lru;
-            /* See page-flags.h for PAGE_MAPPING_FLAGS */
-            struct address_space *mapping;
-            pgoff_t index;      /* Our offset within mapping. */
-            /**
-             * @private: Mapping-private opaque data.
-             * Usually used for buffer_heads if PagePrivate.
-             * Used for swp_entry_t if PageSwapCache.
-             * Indicates order in the buddy system if PageBuddy.
-             */
-            unsigned long private;
-        };
-        struct {    /* slab, slob and slub */
-            union {
-                struct list_head slab_list;
-                struct {        /* Partial pages */
-                    struct page *next;
-                    int pages;  /* Nr of pages left */
-                };
-            };
-            struct kmem_cache *slab_cache; /* not slob */
-            /* Double-word boundary */
-            void *freelist;             /* first free object */
-            union {
-                void *s_mem;            /* slab: first object */
-                unsigned long counters; /* SLUB */
-                struct {                /* SLUB */
-                    unsigned inuse:16;
-                    unsigned objects:15;
-                    unsigned frozen:1;
-                };
-            };
-        };
-        struct {    /* Tail pages of compound page */
-            unsigned long compound_head;    /* Bit zero is set */
+			/* First tail page only */
+			unsigned char compound_dtor;
+			unsigned char compound_order;
+			atomic_t compound_mapcount;
+			atomic_t compound_pincount;
+			unsigned int compound_nr; /* 1 << compound_order */
+		};
+		struct {	/* Second tail page of compound page */
+			unsigned long _compound_pad_1;	/* compound_head */
+			unsigned long _compound_pad_2;
+			/* For both global and memcg */
+			struct list_head deferred_list;
+		};
+		struct {	/* Page table pages */
+			unsigned long _pt_pad_1;	/* compound_head */
+			pgtable_t pmd_huge_pte; /* protected by page->ptl */
+			unsigned long _pt_pad_2;	/* mapping */
+			union {
+				struct mm_struct *pt_mm; /* x86 pgds only */
+				atomic_t pt_frag_refcount; /* powerpc */
+			};
+#if ALLOC_SPLIT_PTLOCKS
+			spinlock_t *ptl;
+#else
+			spinlock_t ptl;
+#endif
+		};
+		struct {	/* ZONE_DEVICE pages */
+			/** @pgmap: Points to the hosting device page map. */
+			struct dev_pagemap *pgmap;
+			void *zone_device_data;
+			/*
+			 * ZONE_DEVICE private pages are counted as being
+			 * mapped so the next 3 words hold the mapping, index,
+			 * and private fields from the source anonymous or
+			 * page cache page while the page is migrated to device
+			 * private memory.
+			 * ZONE_DEVICE MEMORY_DEVICE_FS_DAX pages also
+			 * use the mapping, index, and private fields when
+			 * pmem backed DAX files are mapped.
+			 */
+		};
 
-            /* First tail page only */
-            unsigned char compound_dtor;
-            unsigned char compound_order;
-            atomic_t compound_mapcount;
-            atomic_t compound_pincount;
-            unsigned int compound_nr; /* 1 << compound_order */
-        };
-        struct {    /* Second tail page of compound page */
-            unsigned long _compound_pad_1;  /* compound_head */
-            atomic_t hpage_pinned_refcount;
-            /* For both global and memcg */
-            struct list_head deferred_list;
-        };
-        struct {    /* Page table pages */
-            unsigned long _pt_pad_1;    /* compound_head */
-            pgtable_t pmd_huge_pte; /* protected by page->ptl */
-            unsigned long _pt_pad_2;    /* mapping */
-            union {
-                struct mm_struct *pt_mm; /* x86 pgds only */
-                atomic_t pt_frag_refcount; /* powerpc */
-            };
-            spinlock_t ptl;
-        };
+		/** @rcu_head: You can use this to free a page by RCU. */
+		struct rcu_head rcu_head;
+	};
 
-        /** @rcu_head: You can use this to free a page by RCU. */
-        struct rcu_head rcu_head;
-    };
+	union {		/* This union is 4 bytes in size. */
+		/*
+		 * If the page can be mapped to userspace, encodes the number
+		 * of times this page is referenced by a page table.
+		 */
+		atomic_t _mapcount;
 
-    union {     /* This union is 4 bytes in size. */
-        /*
-         * If the page can be mapped to userspace, encodes the number
-         * of times this page is referenced by a page table.
-         */
-        atomic_t _mapcount;
+		/*
+		 * If the page is neither PageSlab nor mappable to userspace,
+		 * the value stored here may help determine what this page
+		 * is used for.  See page-flags.h for a list of page types
+		 * which are currently stored here.
+		 */
+		unsigned int page_type;
+	};
 
-        /*
-         * If the page is neither PageSlab nor mappable to userspace,
-         * the value stored here may help determine what this page
-         * is used for.  See page-flags.h for a list of page types
-         * which are currently stored here.
-         */
-        unsigned int page_type;
-
-        unsigned int active;        /* SLAB */
-        int units;                  /* SLOB */
-    };
-
-    /* Usage count. *DO NOT USE DIRECTLY*. See page_ref.h */
-    atomic_t _refcount;
-
+	/* Usage count. *DO NOT USE DIRECTLY*. See page_ref.h */
+	atomic_t _refcount;
 } _struct_page_alignment;
 
 /**
@@ -356,7 +388,7 @@ static inline atomic_t *compound_mapcount_ptr(struct page *page)
 
 static inline atomic_t *compound_pincount_ptr(struct page *page)
 {
-    return &page[2].hpage_pinned_refcount;
+    return &page[1].compound_pincount;
 }
 
 /**
