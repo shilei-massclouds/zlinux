@@ -40,4 +40,6 @@ extern void smp_shutdown_nonboot_cpus(unsigned int primary_cpu);
 
 void bringup_nonboot_cpus(unsigned int setup_max_cpus);
 
+void __noreturn cpu_startup_entry(enum cpuhp_state state);
+
 #endif /* _LINUX_CPU_H_ */

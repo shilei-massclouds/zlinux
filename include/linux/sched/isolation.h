@@ -3,9 +3,7 @@
 
 #include <linux/cpumask.h>
 #include <linux/init.h>
-#if 0
 #include <linux/tick.h>
-#endif
 #include <linux/jump_label.h>
 
 enum hk_type {

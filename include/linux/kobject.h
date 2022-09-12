@@ -80,8 +80,8 @@ struct kset {
 
 struct kobj_type {
     void (*release)(struct kobject *kobj);
-#if 0
     const struct sysfs_ops *sysfs_ops;
+#if 0
     const struct attribute_group **default_groups;
     const struct kobj_ns_type_operations *
         (*child_ns_type)(struct kobject *kobj);

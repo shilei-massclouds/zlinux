@@ -313,4 +313,6 @@ int cpuhp_setup_state_nocalls(enum cpuhp_state state,
                                false);
 }
 
+void cpuhp_online_idle(enum cpuhp_state state);
+
 #endif /* __CPUHOTPLUG_H */

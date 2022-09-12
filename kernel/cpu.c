@@ -590,11 +590,26 @@ int __cpuhp_setup_state(enum cpuhp_state state,
 }
 EXPORT_SYMBOL(__cpuhp_setup_state);
 
+/*
+ * Called from the idle task. Wake up the controlling task which brings the
+ * hotplug thread of the upcoming CPU up and then delegates the rest of the
+ * online bringup to the hotplug thread.
+ */
+void cpuhp_online_idle(enum cpuhp_state state)
+{
+    struct cpuhp_cpu_state *st = this_cpu_ptr(&cpuhp_state);
+
+    /* Happens for the boot cpu */
+    if (state != CPUHP_AP_ONLINE_IDLE)
+        return;
+
+    panic("%s: END!\n", __func__);
+}
+
 void __init cpuhp_threads_init(void)
 {
-    //BUG_ON(smpboot_register_percpu_thread(&cpuhp_threads));
-    //kthread_unpark(this_cpu_read(cpuhp_state.thread));
-    panic("%s: END!\n", __func__);
+    BUG_ON(smpboot_register_percpu_thread(&cpuhp_threads));
+    kthread_unpark(this_cpu_read(cpuhp_state.thread));
 }
 
 /* Boot processor state steps */

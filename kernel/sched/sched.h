@@ -61,11 +61,11 @@
 #include <linux/static_key.h>
 #include <linux/syscalls_api.h>
 #include <linux/syscalls.h>
-#include <linux/tick.h>
 #include <linux/u64_stats_sync_api.h>
 #include <linux/uaccess.h>
 #include <linux/workqueue_api.h>
 #endif
+#include <linux/tick.h>
 #include <linux/stop_machine.h>
 #include <linux/plist.h>
 #include <linux/ktime_api.h>
@@ -1445,5 +1445,33 @@ void membarrier_switch_mm(struct rq *rq,
 
     WRITE_ONCE(rq->membarrier_state, membarrier_state);
 }
+
+static inline int task_running(struct rq *rq, struct task_struct *p)
+{
+    return p->on_cpu;
+}
+
+extern void nohz_run_idle_balance(int cpu);
+
+#define NOHZ_BALANCE_KICK_BIT   0
+#define NOHZ_STATS_KICK_BIT 1
+#define NOHZ_NEWILB_KICK_BIT    2
+#define NOHZ_NEXT_KICK_BIT  3
+
+/* Run rebalance_domains() */
+#define NOHZ_BALANCE_KICK   BIT(NOHZ_BALANCE_KICK_BIT)
+/* Update blocked load */
+#define NOHZ_STATS_KICK     BIT(NOHZ_STATS_KICK_BIT)
+/* Update blocked load when entering idle */
+#define NOHZ_NEWILB_KICK    BIT(NOHZ_NEWILB_KICK_BIT)
+/* Update nohz.next_balance */
+#define NOHZ_NEXT_KICK      BIT(NOHZ_NEXT_KICK_BIT)
+
+#define NOHZ_KICK_MASK \
+    (NOHZ_BALANCE_KICK | NOHZ_STATS_KICK | NOHZ_NEXT_KICK)
+
+#define nohz_flags(cpu) (&cpu_rq(cpu)->nohz_flags)
+
+extern void nohz_balance_exit_idle(struct rq *rq);
 
 #endif /* _KERNEL_SCHED_SCHED_H */

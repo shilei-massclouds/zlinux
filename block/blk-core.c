@@ -190,7 +190,7 @@ struct request_queue *blk_alloc_queue(int node_id, bool alloc_srcu)
 #endif
     INIT_LIST_HEAD(&q->icq_list);
 
-    //kobject_init(&q->kobj, &blk_queue_ktype);
+    kobject_init(&q->kobj, &blk_queue_ktype);
 
     mutex_init(&q->debugfs_mutex);
 #if 0

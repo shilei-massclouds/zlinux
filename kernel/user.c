@@ -27,6 +27,48 @@
  * and 1 for... ?
  */
 struct user_namespace init_user_ns = {
+#if 0
+    .uid_map = {
+        .nr_extents = 1,
+        {
+            .extent[0] = {
+                .first = 0,
+                .lower_first = 0,
+                .count = 4294967295U,
+            },
+        },
+    },
+    .gid_map = {
+        .nr_extents = 1,
+        {
+            .extent[0] = {
+                .first = 0,
+                .lower_first = 0,
+                .count = 4294967295U,
+            },
+        },
+    },
+    .projid_map = {
+        .nr_extents = 1,
+        {
+            .extent[0] = {
+                .first = 0,
+                .lower_first = 0,
+                .count = 4294967295U,
+            },
+        },
+    },
+#endif
+    .ns.count = REFCOUNT_INIT(3),
+    .owner = GLOBAL_ROOT_UID,
+    .group = GLOBAL_ROOT_GID,
+#if 0
+    .ns.inum = PROC_USER_INIT_INO,
+    .ns.ops = &userns_operations,
+    .flags = USERNS_INIT_FLAGS,
+    .keyring_name_list = LIST_HEAD_INIT(init_user_ns.keyring_name_list),
+    .keyring_sem = __RWSEM_INITIALIZER(init_user_ns.keyring_sem),
+#endif
 };
 EXPORT_SYMBOL_GPL(init_user_ns);
 

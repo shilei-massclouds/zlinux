@@ -215,7 +215,7 @@ void __init smp_init(void)
     int num_nodes, num_cpus;
 
     idle_threads_init();
-    //cpuhp_threads_init();
+    cpuhp_threads_init();
 
     pr_info("Bringing up secondary CPUs ...\n");
 

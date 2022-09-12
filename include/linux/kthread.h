@@ -76,4 +76,6 @@ int kthreadd(void *unused);
 extern struct task_struct *kthreadd_task;
 extern int tsk_fork_get_node(struct task_struct *tsk);
 
+void kthread_set_per_cpu(struct task_struct *k, int cpu);
+
 #endif /* _LINUX_KTHREAD_H */

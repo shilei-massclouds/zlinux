@@ -341,6 +341,47 @@ void kthread_unpark(struct task_struct *k)
 EXPORT_SYMBOL_GPL(kthread_unpark);
 
 /**
+ * kthread_park - park a thread created by kthread_create().
+ * @k: thread created by kthread_create().
+ *
+ * Sets kthread_should_park() for @k to return true, wakes it, and
+ * waits for it to return. This can also be called after kthread_create()
+ * instead of calling wake_up_process(): the thread will park without
+ * calling threadfn().
+ *
+ * Returns 0 if the thread is parked, -ENOSYS if the thread exited.
+ * If called by the kthread itself just the park bit is set.
+ */
+int kthread_park(struct task_struct *k)
+{
+    struct kthread *kthread = to_kthread(k);
+
+    if (WARN_ON(k->flags & PF_EXITING))
+        return -ENOSYS;
+
+    if (WARN_ON_ONCE(test_bit(KTHREAD_SHOULD_PARK, &kthread->flags)))
+        return -EBUSY;
+
+    set_bit(KTHREAD_SHOULD_PARK, &kthread->flags);
+    if (k != current) {
+        wake_up_process(k);
+        /*
+         * Wait for __kthread_parkme() to complete(), this means we
+         * _will_ have TASK_PARKED and are about to call schedule().
+         */
+        wait_for_completion(&kthread->parked);
+        /*
+         * Now wait for that schedule() to complete and the task to
+         * get scheduled out.
+         */
+        WARN_ON_ONCE(!wait_task_inactive(k, TASK_PARKED));
+    }
+
+    return 0;
+}
+EXPORT_SYMBOL_GPL(kthread_park);
+
+/**
  * kthread_exit - Cause the current kthread return @result to kthread_stop().
  * @result: The integer value to return to kthread_stop().
  *
@@ -504,3 +545,37 @@ bool kthread_should_stop(void)
     return test_bit(KTHREAD_SHOULD_STOP, &to_kthread(current)->flags);
 }
 EXPORT_SYMBOL(kthread_should_stop);
+
+void kthread_set_per_cpu(struct task_struct *k, int cpu)
+{
+    struct kthread *kthread = to_kthread(k);
+    if (!kthread)
+        return;
+
+    WARN_ON_ONCE(!(k->flags & PF_NO_SETAFFINITY));
+
+    if (cpu < 0) {
+        clear_bit(KTHREAD_IS_PER_CPU, &kthread->flags);
+        return;
+    }
+
+    kthread->cpu = cpu;
+    set_bit(KTHREAD_IS_PER_CPU, &kthread->flags);
+}
+
+/**
+ * kthread_should_park - should this kthread park now?
+ *
+ * When someone calls kthread_park() on your kthread, it will be woken
+ * and this will return true.  You should then do the necessary
+ * cleanup and call kthread_parkme()
+ *
+ * Similar to kthread_should_stop(), but this keeps the thread alive
+ * and in a park position. kthread_unpark() "restarts" the thread and
+ * calls the thread function again.
+ */
+bool kthread_should_park(void)
+{
+    return __kthread_should_park(current);
+}
+EXPORT_SYMBOL_GPL(kthread_should_park);

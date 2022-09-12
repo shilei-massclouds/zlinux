@@ -2525,6 +2525,35 @@ void __init sched_init_granularity(void)
 }
 
 /*
+ * Internal function that runs load balance for all idle cpus. The load balance
+ * can be a simple update of blocked load or a complete load balance with
+ * tasks movement depending of flags.
+ */
+static void _nohz_idle_balance(struct rq *this_rq, unsigned int flags,
+                               enum cpu_idle_type idle)
+{
+    panic("%s: NO implementation!", __func__);
+}
+
+/*
+ * Check if we need to run the ILB for updating blocked load before entering
+ * idle state.
+ */
+void nohz_run_idle_balance(int cpu)
+{
+    unsigned int flags;
+
+    flags = atomic_fetch_andnot(NOHZ_NEWILB_KICK, nohz_flags(cpu));
+
+    /*
+     * Update the blocked load only if no SCHED_SOFTIRQ is about to happen
+     * (ie NOHZ_STATS_KICK set) and will do the same.
+     */
+    if ((flags == NOHZ_NEWILB_KICK) && !need_resched())
+        _nohz_idle_balance(cpu_rq(cpu), NOHZ_STATS_KICK, CPU_IDLE);
+}
+
+/*
  * All the scheduling class methods:
  */
 DEFINE_SCHED_CLASS(fair) = {

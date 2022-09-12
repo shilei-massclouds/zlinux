@@ -50,3 +50,26 @@ void tick_clock_notify(void)
     for_each_possible_cpu(cpu)
         set_bit(0, &per_cpu(tick_cpu_sched, cpu).check_clocks);
 }
+
+/**
+ * tick_nohz_idle_enter - prepare for entering idle on the current CPU
+ *
+ * Called when we start the idle loop.
+ */
+void tick_nohz_idle_enter(void)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * tick_nohz_idle_exit - restart the idle tick from the idle task
+ *
+ * Restart the idle tick when the CPU is woken up from idle
+ * This also exit the RCU extended quiescent state. The CPU
+ * can use RCU again after this function is called.
+ */
+void tick_nohz_idle_exit(void)
+{
+    panic("%s: END!\n", __func__);
+}
+

@@ -318,4 +318,10 @@ atomic_long_dec_and_test(atomic_long_t *v)
     return arch_atomic_long_dec_and_test(v);
 }
 
+static __always_inline int
+atomic_fetch_andnot(int i, atomic_t *v)
+{
+    return arch_atomic_fetch_andnot(i, v);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */

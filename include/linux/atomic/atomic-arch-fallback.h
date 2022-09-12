@@ -435,4 +435,13 @@ arch_atomic64_dec_and_test(atomic64_t *v)
 #define arch_atomic64_dec_and_test arch_atomic64_dec_and_test
 #endif
 
+#ifndef arch_atomic_fetch_andnot
+static __always_inline int
+arch_atomic_fetch_andnot(int i, atomic_t *v)
+{
+    return arch_atomic_fetch_and(~i, v);
+}
+#define arch_atomic_fetch_andnot arch_atomic_fetch_andnot
+#endif
+
 #endif /* _LINUX_ATOMIC_FALLBACK_H */

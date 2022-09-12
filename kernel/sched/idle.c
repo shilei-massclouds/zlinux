@@ -86,10 +86,47 @@ dequeue_task_idle(struct rq *rq, struct task_struct *p, int flags)
 /*
  * Idle tasks are unconditionally rescheduled:
  */
-static void check_preempt_curr_idle(struct rq *rq, struct task_struct *p,
+static void check_preempt_curr_idle(struct rq *rq,
+                                    struct task_struct *p,
                                     int flags)
 {
     resched_curr(rq);
+}
+
+/*
+ * Generic idle loop implementation
+ *
+ * Called with polling cleared.
+ */
+static void do_idle(void)
+{
+    int cpu = smp_processor_id();
+
+    /*
+     * Check if we need to update blocked load
+     */
+    nohz_run_idle_balance(cpu);
+
+    /*
+     * If the arch has a polling bit, we maintain an invariant:
+     *
+     * Our polling bit is clear if we're not scheduled (i.e. if rq->curr !=
+     * rq->idle). This means that, if rq->idle has the polling bit set,
+     * then setting need_resched is guaranteed to cause the CPU to
+     * reschedule.
+     */
+
+    __current_set_polling();
+    tick_nohz_idle_enter();
+
+    panic("%s: NO implementation!\n", __func__);
+}
+
+void cpu_startup_entry(enum cpuhp_state state)
+{
+    cpuhp_online_idle(state);
+    while (1)
+        do_idle();
 }
 
 /*

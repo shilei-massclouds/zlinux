@@ -375,6 +375,7 @@ static int vm_find_vqs(struct virtio_device *vdev, unsigned nvqs,
         }
     }
 
+    printk("###### %s: irq(%d) END! ######\n", __func__, irq);
     return 0;
 }
 

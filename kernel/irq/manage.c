@@ -827,6 +827,7 @@ int request_threaded_irq(unsigned int irq, irq_handler_t handler,
         kfree(action);
     }
 
+    printk("%s: END!\n", __func__);
     return retval;
 }
 EXPORT_SYMBOL(request_threaded_irq);
@@ -921,6 +922,7 @@ int __request_percpu_irq(unsigned int irq, irq_handler_t handler,
 #endif
 
     retval = __setup_irq(irq, desc, action);
+    printk("%s: 1\n", __func__);
 
     if (retval) {
         //irq_chip_pm_put(&desc->irq_data);

@@ -226,6 +226,7 @@ static int init_vq(struct virtio_blk *vblk)
     kfree(names);
     if (err)
         kfree(vblk->vqs);
+    printk("%s: END!\n", __func__);
     return err;
 }
 
@@ -737,6 +738,7 @@ static int virtblk_probe(struct virtio_device *vdev)
     if (err)
         goto out_cleanup_disk;
 
+    printk("%s: !\n", __func__);
     return 0;
 
 out_cleanup_disk:

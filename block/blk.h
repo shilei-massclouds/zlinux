@@ -218,4 +218,6 @@ static inline bool bvec_gap_to_prev(struct request_queue *q,
     return __bvec_gap_to_prev(q, bprv, offset);
 }
 
+extern struct kobj_type blk_queue_ktype;
+
 #endif /* BLK_INTERNAL_H */

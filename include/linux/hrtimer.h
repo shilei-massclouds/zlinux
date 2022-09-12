@@ -296,4 +296,13 @@ static inline int hrtimer_is_hres_active(struct hrtimer *timer)
     return timer->base->cpu_base->hres_active;
 }
 
+extern int schedule_hrtimeout_range(ktime_t *expires, u64 delta,
+                                    const enum hrtimer_mode mode);
+extern int schedule_hrtimeout_range_clock(ktime_t *expires,
+                                          u64 delta,
+                                          const enum hrtimer_mode mode,
+                                          clockid_t clock_id);
+extern int schedule_hrtimeout(ktime_t *expires,
+                              const enum hrtimer_mode mode);
+
 #endif /* _LINUX_HRTIMER_H */

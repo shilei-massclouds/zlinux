@@ -1737,7 +1737,8 @@ void *__kmem_cache_alloc_lru(struct kmem_cache *cachep, struct list_lru *lru,
     return ret;
 }
 
-void *kmem_cache_alloc_lru(struct kmem_cache *cachep, struct list_lru *lru,
+void *kmem_cache_alloc_lru(struct kmem_cache *cachep,
+                           struct list_lru *lru,
                            gfp_t flags)
 {
     return __kmem_cache_alloc_lru(cachep, lru, flags);
