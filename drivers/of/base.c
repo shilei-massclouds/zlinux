@@ -179,7 +179,8 @@ void of_alias_scan(void * (*dt_alloc)(u64 size, u64 align))
                                     &name);
 
         if (name)
-            of_stdout = of_find_node_opts_by_path(name, &of_stdout_options);
+            of_stdout = of_find_node_opts_by_path(name,
+                                                  &of_stdout_options);
     }
 
     if (!of_aliases)

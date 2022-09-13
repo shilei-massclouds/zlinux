@@ -96,6 +96,8 @@ extern void time_init(void);
 
 extern void radix_tree_init(void);
 
+void __init __weak trap_init(void) { }
+
 struct blacklist_entry {
     struct list_head next;
     char *buf;
@@ -760,8 +762,8 @@ void __init __no_sanitize_address start_kernel(void)
     vfs_caches_init_early();
 #if 0
     sort_main_extable();
-    trap_init();
 #endif
+    trap_init();
     mm_init();
 
     /*

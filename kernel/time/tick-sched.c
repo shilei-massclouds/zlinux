@@ -51,6 +51,13 @@ void tick_clock_notify(void)
         set_bit(0, &per_cpu(tick_cpu_sched, cpu).check_clocks);
 }
 
+static void tick_nohz_start_idle(struct tick_sched *ts)
+{
+    ts->idle_entrytime = ktime_get();
+    ts->idle_active = 1;
+    sched_clock_idle_sleep_event();
+}
+
 /**
  * tick_nohz_idle_enter - prepare for entering idle on the current CPU
  *
@@ -58,7 +65,18 @@ void tick_clock_notify(void)
  */
 void tick_nohz_idle_enter(void)
 {
-    panic("%s: END!\n", __func__);
+    struct tick_sched *ts;
+
+    local_irq_disable();
+
+    ts = this_cpu_ptr(&tick_cpu_sched);
+
+    WARN_ON_ONCE(ts->timer_expires_base);
+
+    ts->inidle = 1;
+    tick_nohz_start_idle(ts);
+
+    local_irq_enable();
 }
 
 /**
@@ -72,4 +90,3 @@ void tick_nohz_idle_exit(void)
 {
     panic("%s: END!\n", __func__);
 }
-

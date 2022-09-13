@@ -3127,7 +3127,8 @@ void __ref build_all_zonelists(pg_data_t *pgdat)
  * marks the pages PageReserved. The remaining valid pages are later
  * sent to the buddy page allocator.
  */
-void __meminit reserve_bootmem_region(phys_addr_t start, phys_addr_t end)
+void __meminit reserve_bootmem_region(phys_addr_t start,
+                                      phys_addr_t end)
 {
     unsigned long start_pfn = PFN_DOWN(start);
     unsigned long end_pfn = PFN_UP(end);

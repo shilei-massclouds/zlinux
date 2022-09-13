@@ -1151,7 +1151,8 @@ memblock_setclr_flag(phys_addr_t base, phys_addr_t size, int set, int flag)
  *
  * Return: 0 on success, -errno on failure.
  */
-int __init_memblock memblock_clear_hotplug(phys_addr_t base, phys_addr_t size)
+int __init_memblock memblock_clear_hotplug(phys_addr_t base,
+                                           phys_addr_t size)
 {
     return memblock_setclr_flag(base, size, 0, MEMBLOCK_HOTPLUG);
 }

@@ -610,7 +610,8 @@ static void populate_properties(const void *blob,
 }
 
 static int populate_node(const void *blob, int offset, void **mem,
-                         struct device_node *dad, struct device_node **pnp,
+                         struct device_node *dad,
+                         struct device_node **pnp,
                          bool dryrun)
 {
     struct device_node *np;
