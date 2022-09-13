@@ -34,4 +34,12 @@ static inline void flush_dcache_mmap_unlock(struct address_space *mapping)
 }
 #endif
 
+#ifndef flush_cache_range
+static inline void flush_cache_range(struct vm_area_struct *vma,
+                                     unsigned long start,
+                                     unsigned long end)
+{
+}
+#endif
+
 #endif /* _ASM_GENERIC_CACHEFLUSH_H */

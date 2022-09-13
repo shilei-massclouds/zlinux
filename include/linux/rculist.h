@@ -210,6 +210,28 @@ static inline void list_del_rcu(struct list_head *entry)
     entry->prev = LIST_POISON2;
 }
 
+/**
+ * list_add_rcu - add a new entry to rcu-protected list
+ * @new: new entry to be added
+ * @head: list head to add it after
+ *
+ * Insert a new entry after the specified head.
+ * This is good for implementing stacks.
+ *
+ * The caller must take whatever precautions are necessary
+ * (such as holding appropriate locks) to avoid racing
+ * with another list-mutation primitive, such as list_add_rcu()
+ * or list_del_rcu(), running on this same list.
+ * However, it is perfectly legal to run concurrently with
+ * the _rcu list-traversal primitives, such as
+ * list_for_each_entry_rcu().
+ */
+static inline
+void list_add_rcu(struct list_head *new, struct list_head *head)
+{
+    __list_add_rcu(new, head, head->next);
+}
+
 #endif  /* __KERNEL__ */
 
 #endif /* _LINUX_RCULIST_H */

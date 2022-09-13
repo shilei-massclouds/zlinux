@@ -113,7 +113,8 @@ static inline bool cpu_dying(unsigned int cpu)
         (cpu) = cpumask_next((cpu), (mask)),    \
         (cpu) < nr_cpu_ids;)
 
-#define for_each_possible_cpu(cpu) for_each_cpu((cpu), cpu_possible_mask)
+#define for_each_possible_cpu(cpu) \
+    for_each_cpu((cpu), cpu_possible_mask)
 #define for_each_online_cpu(cpu)   for_each_cpu((cpu), cpu_online_mask)
 #define for_each_present_cpu(cpu)  for_each_cpu((cpu), cpu_present_mask)
 
@@ -541,5 +542,7 @@ extern int cpumask_next_wrap(int n, const struct cpumask *mask,
     for ((cpu) = cpumask_next_wrap((start)-1, (mask), (start), false);  \
          (cpu) < nr_cpumask_bits;                       \
          (cpu) = cpumask_next_wrap((cpu), (mask), (start), true))
+
+#define cpu_is_offline(cpu) unlikely(!cpu_online(cpu))
 
 #endif /* __LINUX_CPUMASK_H */

@@ -7,6 +7,19 @@
  *        tasks which are handled in sched/fair.c )
  */
 
+static int __read_mostly cpu_idle_force_poll;
+
+/* Weak implementations for optional arch specific functions */
+void __weak arch_cpu_idle_prepare(void) { }
+void __weak arch_cpu_idle_enter(void) { }
+void __weak arch_cpu_idle_exit(void) { }
+void __weak arch_cpu_idle_dead(void) { }
+void __weak arch_cpu_idle(void)
+{
+    cpu_idle_force_poll = 1;
+    raw_local_irq_enable();
+}
+
 static void
 set_next_task_idle(struct rq *rq, struct task_struct *next, bool first)
 {
@@ -93,6 +106,62 @@ static void check_preempt_curr_idle(struct rq *rq,
     resched_curr(rq);
 }
 
+static noinline int __cpuidle cpu_idle_poll(void)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
+/**
+ * cpuidle_idle_call - the main idle function
+ *
+ * NOTE: no locks or semaphores should be used here
+ *
+ * On architectures that support TIF_POLLING_NRFLAG, is called with polling
+ * set, and it returns with polling set.  If it ever stops polling, it
+ * must clear the polling bit.
+ */
+static void cpuidle_idle_call(void)
+{
+    struct cpuidle_device *dev = cpuidle_get_device();
+    struct cpuidle_driver *drv = cpuidle_get_cpu_driver(dev);
+    int next_state, entered_state;
+
+    /*
+     * Check if the idle task must be rescheduled. If it is the
+     * case, exit the function after re-enabling the local irq.
+     */
+    if (need_resched()) {
+        local_irq_enable();
+        return;
+    }
+
+    /*
+     * The RCU framework needs to be told that we are entering an idle
+     * section, so no more rcu read side critical sections and one more
+     * step to the grace period
+     */
+
+#if 0
+    if (cpuidle_not_available(drv, dev)) {
+        tick_nohz_idle_stop_tick();
+
+        default_idle_call();
+        goto exit_idle;
+    }
+#endif
+
+    panic("%s: NO implementation!\n", __func__);
+
+ exit_idle:
+    __current_set_polling();
+
+    /*
+     * It is up to the idle functions to reenable local interrupts
+     */
+    if (WARN_ON_ONCE(irqs_disabled()))
+        local_irq_enable();
+}
+
 /*
  * Generic idle loop implementation
  *
@@ -119,6 +188,39 @@ static void do_idle(void)
     __current_set_polling();
     tick_nohz_idle_enter();
 
+    while (!need_resched()) {
+        rmb();
+
+        local_irq_disable();
+
+        if (cpu_is_offline(cpu)) {
+#if 0
+            tick_nohz_idle_stop_tick();
+            cpuhp_report_idle_dead();
+            arch_cpu_idle_dead();
+#endif
+            panic("%s: cpu_is_offline!\n", __func__);
+        }
+
+        arch_cpu_idle_enter();
+        rcu_nocb_flush_deferred_wakeup();
+
+        /*
+         * In poll mode we reenable interrupts and spin. Also if we
+         * detected in the wakeup from idle path that the tick
+         * broadcast device expired for us, we don't want to go deep
+         * idle as we know that the IPI is going to arrive right away.
+         */
+        if (cpu_idle_force_poll || tick_check_broadcast_expired()) {
+            tick_nohz_idle_restart_tick();
+            cpu_idle_poll();
+        } else {
+            cpuidle_idle_call();
+        }
+        arch_cpu_idle_exit();
+
+        panic("%s: !need_resched!\n", __func__);
+    }
     panic("%s: NO implementation!\n", __func__);
 }
 

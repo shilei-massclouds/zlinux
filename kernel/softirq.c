@@ -51,6 +51,17 @@
 #define MAX_SOFTIRQ_TIME  msecs_to_jiffies(2)
 #define MAX_SOFTIRQ_RESTART 10
 
+/*
+ * Tasklets
+ */
+struct tasklet_head {
+    struct tasklet_struct *head;
+    struct tasklet_struct **tail;
+};
+
+static DEFINE_PER_CPU(struct tasklet_head, tasklet_vec);
+static DEFINE_PER_CPU(struct tasklet_head, tasklet_hi_vec);
+
 DEFINE_PER_CPU_ALIGNED(irq_cpustat_t, irq_stat);
 EXPORT_PER_CPU_SYMBOL(irq_stat);
 
@@ -64,6 +75,26 @@ const char * const softirq_to_name[NR_SOFTIRQS] = {
 static struct softirq_action softirq_vec[NR_SOFTIRQS]
     __cacheline_aligned_in_smp;
 
+static void tasklet_action_common(struct softirq_action *a,
+                                  struct tasklet_head *tl_head,
+                                  unsigned int softirq_nr)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static __latent_entropy
+void tasklet_action(struct softirq_action *a)
+{
+    tasklet_action_common(a, this_cpu_ptr(&tasklet_vec),
+                          TASKLET_SOFTIRQ);
+}
+
+static __latent_entropy
+void tasklet_hi_action(struct softirq_action *a)
+{
+    tasklet_action_common(a, this_cpu_ptr(&tasklet_hi_vec), HI_SOFTIRQ);
+}
+
 unsigned int __weak arch_dynirq_lower_bound(unsigned int from)
 {
     return from;
@@ -72,6 +103,17 @@ unsigned int __weak arch_dynirq_lower_bound(unsigned int from)
 static void __local_bh_enable(unsigned int cnt)
 {
     __preempt_count_sub(cnt);
+}
+
+asmlinkage __visible void do_softirq(void)
+{
+    __u32 pending;
+    unsigned long flags;
+
+    if (in_interrupt())
+        return;
+
+    panic("%s: END!\n", __func__);
 }
 
 void __local_bh_enable_ip(unsigned long ip, unsigned int cnt)
@@ -85,14 +127,11 @@ void __local_bh_enable_ip(unsigned long ip, unsigned int cnt)
     __preempt_count_sub(cnt - 1);
 
     if (unlikely(!in_interrupt() && local_softirq_pending())) {
-#if 0
         /*
          * Run softirq if any pending. And do it in its own stack
          * as we may be calling this deep in a task call stack already.
          */
         do_softirq();
-#endif
-        panic("%s: END!\n", __func__);
     }
 
     preempt_count_dec();
@@ -317,4 +356,19 @@ asmlinkage __visible void __softirq_entry __do_softirq(void)
 #endif
     softirq_handle_end();
     current_restore_flags(old_flags, PF_MEMALLOC);
+}
+
+void __init softirq_init(void)
+{
+    int cpu;
+
+    for_each_possible_cpu(cpu) {
+        per_cpu(tasklet_vec, cpu).tail =
+            &per_cpu(tasklet_vec, cpu).head;
+        per_cpu(tasklet_hi_vec, cpu).tail =
+            &per_cpu(tasklet_hi_vec, cpu).head;
+    }
+
+    open_softirq(TASKLET_SOFTIRQ, tasklet_action);
+    open_softirq(HI_SOFTIRQ, tasklet_hi_action);
 }

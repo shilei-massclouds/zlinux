@@ -64,6 +64,11 @@
 DEFINE_IDA(blk_queue_ida);
 
 /*
+ * Controlling structure to kblockd
+ */
+static struct workqueue_struct *kblockd_workqueue;
+
+/*
  * For queue allocation
  */
 struct kmem_cache *blk_requestq_cachep;
@@ -702,16 +707,15 @@ int __init blk_dev_init(void)
                __alignof__(struct request_queue)) !=
              sizeof(struct request_queue));
 
-#if 0
     /* used for unplugging and affects IO latency/throughput - HIGHPRI */
     kblockd_workqueue = alloc_workqueue("kblockd",
-                        WQ_MEM_RECLAIM | WQ_HIGHPRI, 0);
+                                        WQ_MEM_RECLAIM | WQ_HIGHPRI, 0);
     if (!kblockd_workqueue)
         panic("Failed to create kblockd\n");
-#endif
 
     blk_requestq_cachep =
-        kmem_cache_create("request_queue", sizeof(struct request_queue), 0,
+        kmem_cache_create("request_queue",
+                          sizeof(struct request_queue), 0,
                           SLAB_PANIC, NULL);
 
     blk_requestq_srcu_cachep =
@@ -800,3 +804,10 @@ void blk_finish_plug(struct blk_plug *plug)
     }
 }
 EXPORT_SYMBOL(blk_finish_plug);
+
+int kblockd_mod_delayed_work_on(int cpu, struct delayed_work *dwork,
+                                unsigned long delay)
+{
+    return mod_delayed_work_on(cpu, kblockd_workqueue, dwork, delay);
+}
+EXPORT_SYMBOL(kblockd_mod_delayed_work_on);

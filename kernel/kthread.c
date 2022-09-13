@@ -579,3 +579,23 @@ bool kthread_should_park(void)
     return __kthread_should_park(current);
 }
 EXPORT_SYMBOL_GPL(kthread_should_park);
+
+void kthread_bind_mask(struct task_struct *p,
+                       const struct cpumask *mask)
+{
+    __kthread_bind_mask(p, mask, TASK_UNINTERRUPTIBLE);
+}
+
+/**
+ * kthread_data - return data value specified on kthread creation
+ * @task: kthread task in question
+ *
+ * Return the data value specified when kthread @task was created.
+ * The caller is responsible for ensuring the validity of @task when
+ * calling this function.
+ */
+void *kthread_data(struct task_struct *task)
+{
+    return to_kthread(task)->data;
+}
+EXPORT_SYMBOL_GPL(kthread_data);

@@ -277,9 +277,11 @@ static noinline void __init kernel_init_freeable(void)
     cad_pid = get_pid(task_pid(current));
 
     smp_prepare_cpus(setup_max_cpus);
+#endif
 
     workqueue_init();
 
+#if 0
     init_mm_internals();
 
     rcu_init_tasks_generic();
@@ -782,7 +784,7 @@ void __init __no_sanitize_address start_kernel(void)
 
     init_IRQ();
     hrtimers_init();
-    //softirq_init();
+    softirq_init();
     timekeeping_init();
     time_init();
 

@@ -79,3 +79,10 @@ __mmu_notifier_invalidate_range_end(struct mmu_notifier_range *range,
 {
     panic("%s: END!\n", __func__);
 }
+
+void __mmu_notifier_invalidate_range(struct mm_struct *mm,
+                                     unsigned long start,
+                                     unsigned long end)
+{
+    panic("%s: END!\n", __func__);
+}

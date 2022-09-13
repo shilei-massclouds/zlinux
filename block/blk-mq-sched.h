@@ -33,4 +33,14 @@ static inline void blk_mq_sched_restart(struct blk_mq_hw_ctx *hctx)
         __blk_mq_sched_restart(hctx);
 }
 
+static inline bool blk_mq_sched_has_work(struct blk_mq_hw_ctx *hctx)
+{
+    struct elevator_queue *e = hctx->queue->elevator;
+
+    if (e && e->type->ops.has_work)
+        return e->type->ops.has_work(hctx);
+
+    return false;
+}
+
 #endif /* BLK_MQ_SCHED_H */

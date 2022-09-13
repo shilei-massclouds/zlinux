@@ -30,9 +30,9 @@
 #include <linux/pfn_t.h>
 #include <linux/writeback.h>
 #include <linux/memcontrol.h>
-#include <linux/mmu_notifier.h>
 #include <linux/swapops.h>
 */
+#include <linux/mmu_notifier.h>
 #include <linux/elf.h>
 #include <linux/gfp.h>
 #include <linux/migrate.h>
@@ -1246,6 +1246,119 @@ check_pfn:
     return pfn_to_page(pfn);
 }
 
+static inline
+unsigned long zap_pmd_range(struct mmu_gather *tlb,
+                            struct vm_area_struct *vma, pud_t *pud,
+                            unsigned long addr, unsigned long end,
+                            struct zap_details *details)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static inline
+unsigned long zap_pud_range(struct mmu_gather *tlb,
+                            struct vm_area_struct *vma, p4d_t *p4d,
+                            unsigned long addr, unsigned long end,
+                            struct zap_details *details)
+{
+    pud_t *pud;
+    unsigned long next;
+
+    pud = pud_offset(p4d, addr);
+    do {
+        next = pud_addr_end(addr, end);
+        if (pud_none_or_clear_bad(pud))
+            continue;
+        next = zap_pmd_range(tlb, vma, pud, addr, next, details);
+ next:
+        cond_resched();
+    } while (pud++, addr = next, addr != end);
+
+    return addr;
+}
+
+static inline
+unsigned long zap_p4d_range(struct mmu_gather *tlb,
+                            struct vm_area_struct *vma, pgd_t *pgd,
+                            unsigned long addr, unsigned long end,
+                            struct zap_details *details)
+{
+    p4d_t *p4d;
+    unsigned long next;
+
+    p4d = p4d_offset(pgd, addr);
+    do {
+        next = p4d_addr_end(addr, end);
+        if (p4d_none_or_clear_bad(p4d))
+            continue;
+        next = zap_pud_range(tlb, vma, p4d, addr, next, details);
+    } while (p4d++, addr = next, addr != end);
+
+    return addr;
+}
+
+void unmap_page_range(struct mmu_gather *tlb,
+                      struct vm_area_struct *vma,
+                      unsigned long addr, unsigned long end,
+                      struct zap_details *details)
+{
+    pgd_t *pgd;
+    unsigned long next;
+
+    BUG_ON(addr >= end);
+    tlb_start_vma(tlb, vma);
+    pgd = pgd_offset(vma->vm_mm, addr);
+    do {
+        next = pgd_addr_end(addr, end);
+        if (pgd_none_or_clear_bad(pgd))
+            continue;
+        next = zap_p4d_range(tlb, vma, pgd, addr, next, details);
+    } while (pgd++, addr = next, addr != end);
+    tlb_end_vma(tlb, vma);
+}
+
+static void unmap_single_vma(struct mmu_gather *tlb,
+                             struct vm_area_struct *vma,
+                             unsigned long start_addr,
+                             unsigned long end_addr,
+                             struct zap_details *details)
+{
+    unsigned long start = max(vma->vm_start, start_addr);
+    unsigned long end;
+
+    if (start >= vma->vm_end)
+        return;
+
+    end = min(vma->vm_end, end_addr);
+    if (end <= vma->vm_start)
+        return;
+
+    if (start != end) {
+        if (unlikely(is_vm_hugetlb_page(vma))) {
+#if 0
+            /*
+             * It is undesirable to test vma->vm_file as it
+             * should be non-null for valid hugetlb area.
+             * However, vm_file will be NULL in the error
+             * cleanup path of mmap_region. When
+             * hugetlbfs ->mmap method fails,
+             * mmap_region() nullifies vma->vm_file
+             * before calling this function to clean up.
+             * Since no pte has actually been setup, it is
+             * safe to do nothing in this case.
+             */
+            if (vma->vm_file) {
+                i_mmap_lock_write(vma->vm_file->f_mapping);
+                __unmap_hugepage_range_final(tlb, vma, start, end,
+                                             NULL);
+                i_mmap_unlock_write(vma->vm_file->f_mapping);
+            }
+#endif
+        } else
+            unmap_page_range(tlb, vma, start, end, details);
+    }
+}
+
 /**
  * unmap_vmas - unmap a range of memory covered by a list of vma's
  * @tlb: address of the caller's struct mmu_gather
@@ -1269,17 +1382,15 @@ void unmap_vmas(struct mmu_gather *tlb,
                 unsigned long start_addr,
                 unsigned long end_addr)
 {
-#if 0
     struct mmu_notifier_range range;
 
-    mmu_notifier_range_init(&range, MMU_NOTIFY_UNMAP, 0, vma, vma->vm_mm,
+    mmu_notifier_range_init(&range, MMU_NOTIFY_UNMAP, 0,
+                            vma, vma->vm_mm,
                             start_addr, end_addr);
     mmu_notifier_invalidate_range_start(&range);
     for ( ; vma && vma->vm_start < end_addr; vma = vma->vm_next)
         unmap_single_vma(tlb, vma, start_addr, end_addr, NULL);
     mmu_notifier_invalidate_range_end(&range);
-#endif
-    pr_warn("%s: NO implementation!\n", __func__);
 }
 
 /*

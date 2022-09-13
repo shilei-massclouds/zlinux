@@ -314,4 +314,10 @@ extern void bio_uninit(struct bio *);
 void bio_reset(struct bio *bio, struct block_device *bdev, unsigned int opf);
 void bio_chain(struct bio *, struct bio *);
 
+/*
+ * Return the data direction, READ or WRITE.
+ */
+#define bio_data_dir(bio) \
+    (op_is_write(bio_op(bio)) ? WRITE : READ)
+
 #endif /* __LINUX_BIO_H */

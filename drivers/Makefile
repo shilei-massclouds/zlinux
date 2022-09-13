@@ -13,3 +13,4 @@ obj-y               += iommu/
 obj-$(CONFIG_OF)	+= of/
 obj-y               += clk/
 obj-y               += clocksource/
+obj-y				+= cpuidle/

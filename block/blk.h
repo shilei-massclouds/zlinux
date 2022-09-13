@@ -109,7 +109,8 @@ static inline void blk_queue_bounce(struct request_queue *q, struct bio **bio)
     }
 }
 
-static inline bool blk_may_split(struct request_queue *q, struct bio *bio)
+static inline
+bool blk_may_split(struct request_queue *q, struct bio *bio)
 {
     switch (bio_op(bio)) {
     case REQ_OP_DISCARD:
@@ -219,5 +220,81 @@ static inline bool bvec_gap_to_prev(struct request_queue *q,
 }
 
 extern struct kobj_type blk_queue_ktype;
+
+static inline bool rq_mergeable(struct request *rq)
+{
+    if (blk_rq_is_passthrough(rq))
+        return false;
+
+    if (req_op(rq) == REQ_OP_FLUSH)
+        return false;
+
+    if (req_op(rq) == REQ_OP_WRITE_ZEROES)
+        return false;
+
+    if (req_op(rq) == REQ_OP_ZONE_APPEND)
+        return false;
+
+    if (rq->cmd_flags & REQ_NOMERGE_FLAGS)
+        return false;
+    if (rq->rq_flags & RQF_NOMERGE_FLAGS)
+        return false;
+
+    return true;
+}
+
+static inline bool blk_integrity_merge_rq(struct request_queue *rq,
+        struct request *r1, struct request *r2)
+{
+    return true;
+}
+static inline bool blk_integrity_merge_bio(struct request_queue *rq,
+        struct request *r, struct bio *b)
+{
+    return true;
+}
+static inline bool integrity_req_gap_back_merge(struct request *req,
+        struct bio *next)
+{
+    return false;
+}
+static inline bool integrity_req_gap_front_merge(struct request *req,
+        struct bio *bio)
+{
+    return false;
+}
+static inline void blk_flush_integrity(void)
+{
+}
+static inline bool bio_integrity_endio(struct bio *bio)
+{
+    return true;
+}
+static inline void bio_integrity_free(struct bio *bio)
+{
+}
+static inline int blk_integrity_add(struct gendisk *disk)
+{
+    return 0;
+}
+static inline void blk_integrity_del(struct gendisk *disk)
+{
+}
+
+/*
+ * There are two different ways to handle DISCARD merges:
+ *  1) If max_discard_segments > 1, the driver treats every bio as a range and
+ *     send the bios to controller together. The ranges don't need to be
+ *     contiguous.
+ *  2) Otherwise, the request will be normal read/write requests.  The ranges
+ *     need to be contiguous.
+ */
+static inline bool blk_discard_mergable(struct request *req)
+{
+    if (req_op(req) == REQ_OP_DISCARD &&
+        queue_max_discard_segments(req->q) > 1)
+        return true;
+    return false;
+}
 
 #endif /* BLK_INTERNAL_H */

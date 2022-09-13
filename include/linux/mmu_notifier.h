@@ -333,4 +333,17 @@ mmu_notifier_invalidate_range_end(struct mmu_notifier_range *range)
         __mmu_notifier_invalidate_range_end(range, false);
 }
 
+extern void __mmu_notifier_invalidate_range(struct mm_struct *mm,
+                                            unsigned long start,
+                                            unsigned long end);
+
+static inline
+void mmu_notifier_invalidate_range(struct mm_struct *mm,
+                                   unsigned long start,
+                                   unsigned long end)
+{
+    if (mm_has_notifiers(mm))
+        __mmu_notifier_invalidate_range(mm, start, end);
+}
+
 #endif /* _LINUX_MMU_NOTIFIER_H */

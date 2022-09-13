@@ -639,3 +639,30 @@ int del_timer_sync(struct timer_list *timer)
     return ret;
 }
 EXPORT_SYMBOL(del_timer_sync);
+
+/**
+ * del_timer - deactivate a timer.
+ * @timer: the timer to be deactivated
+ *
+ * del_timer() deactivates a timer - this works on both active and inactive
+ * timers.
+ *
+ * The function returns whether it has deactivated a pending timer or not.
+ * (ie. del_timer() of an inactive timer returns 0, del_timer() of an
+ * active timer returns 1.)
+ */
+int del_timer(struct timer_list *timer)
+{
+    struct timer_base *base;
+    unsigned long flags;
+    int ret = 0;
+
+    if (timer_pending(timer)) {
+        base = lock_timer_base(timer, &flags);
+        ret = detach_if_pending(timer, base, true);
+        raw_spin_unlock_irqrestore(&base->lock, flags);
+    }
+
+    return ret;
+}
+EXPORT_SYMBOL(del_timer);

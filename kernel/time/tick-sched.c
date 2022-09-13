@@ -90,3 +90,17 @@ void tick_nohz_idle_exit(void)
 {
     panic("%s: END!\n", __func__);
 }
+
+void tick_nohz_idle_restart_tick(void)
+{
+    struct tick_sched *ts = this_cpu_ptr(&tick_cpu_sched);
+
+    if (ts->tick_stopped) {
+#if 0
+        ktime_t now = ktime_get();
+        tick_nohz_restart_sched_tick(ts, now);
+        tick_nohz_account_idle_time(ts, now);
+#endif
+        panic("%s: END!\n", __func__);
+    }
+}

@@ -88,4 +88,6 @@ static inline int num_node_state(enum node_states state)
 
 extern nodemask_t node_states[NR_NODE_STATES];
 
+#define num_possible_nodes() num_node_state(N_POSSIBLE)
+
 #endif /* __LINUX_NODEMASK_H */

@@ -1245,7 +1245,8 @@ static struct vm_area_struct *remove_vma(struct vm_area_struct *vma)
  *
  * Called with the mm semaphore held.
  */
-static void remove_vma_list(struct mm_struct *mm, struct vm_area_struct *vma)
+static void remove_vma_list(struct mm_struct *mm,
+                            struct vm_area_struct *vma)
 {
     unsigned long nr_accounted = 0;
 

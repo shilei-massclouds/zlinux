@@ -166,4 +166,7 @@ static inline bool clockevent_state_shutdown(struct clock_event_device *dev)
     return dev->state_use_accessors == CLOCK_EVT_STATE_SHUTDOWN;
 }
 
+extern void tick_setup_hrtimer_broadcast(void);
+extern int tick_check_broadcast_expired(void);
+
 #endif /* _LINUX_CLOCKCHIPS_H */

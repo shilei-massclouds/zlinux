@@ -8,6 +8,16 @@
 struct blk_mq_alloc_data;
 struct blk_mq_hw_ctx;
 
+/*
+ * Return values from elevator merger
+ */
+enum elv_merge {
+    ELEVATOR_NO_MERGE       = 0,
+    ELEVATOR_FRONT_MERGE    = 1,
+    ELEVATOR_BACK_MERGE     = 2,
+    ELEVATOR_DISCARD_MERGE  = 3,
+};
+
 struct elevator_mq_ops {
     int (*init_sched)(struct request_queue *, struct elevator_type *);
     void (*exit_sched)(struct elevator_queue *);

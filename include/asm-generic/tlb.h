@@ -11,7 +11,7 @@
 #ifndef _ASM_GENERIC__TLB_H
 #define _ASM_GENERIC__TLB_H
 
-//#include <linux/mmu_notifier.h>
+#include <linux/mmu_notifier.h>
 #include <linux/swap.h>
 #include <linux/hugetlb_inline.h>
 #include <asm/tlbflush.h>
@@ -76,6 +76,10 @@ struct mmu_gather {
     struct mmu_gather_batch local;
     struct page     *__pages[MMU_GATHER_BUNDLE];
 };
+
+static inline void
+tlb_update_vma_flags(struct mmu_gather *tlb, struct vm_area_struct *vma){
+}
 
 static inline void __tlb_reset_range(struct mmu_gather *tlb)
 {
@@ -218,8 +222,42 @@ static inline void tlb_flush_mmu_tlbonly(struct mmu_gather *tlb)
         return;
 
     tlb_flush(tlb);
-    //mmu_notifier_invalidate_range(tlb->mm, tlb->start, tlb->end);
+    mmu_notifier_invalidate_range(tlb->mm, tlb->start, tlb->end);
     __tlb_reset_range(tlb);
 }
+
+/*
+ * In the case of tlb vma handling, we can optimise these away in the
+ * case where we're doing a full MM flush.  When we're doing a munmap,
+ * the vmas are adjusted to only cover the region to be torn down.
+ */
+#ifndef tlb_start_vma
+static inline
+void tlb_start_vma(struct mmu_gather *tlb, struct vm_area_struct *vma)
+{
+    if (tlb->fullmm)
+        return;
+
+    tlb_update_vma_flags(tlb, vma);
+    flush_cache_range(vma, vma->vm_start, vma->vm_end);
+}
+#endif
+
+#ifndef tlb_end_vma
+static inline
+void tlb_end_vma(struct mmu_gather *tlb, struct vm_area_struct *vma)
+{
+    if (tlb->fullmm)
+        return;
+
+    /*
+     * Do a TLB flush and reset the range at VMA boundaries; this avoids
+     * the ranges growing with the unused space between consecutive VMAs,
+     * but also the mmu_gather::vma_* flags from tlb_start_vma() rely on
+     * this.
+     */
+    tlb_flush_mmu_tlbonly(tlb);
+}
+#endif
 
 #endif /* _ASM_GENERIC__TLB_H */

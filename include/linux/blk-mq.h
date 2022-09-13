@@ -341,12 +341,10 @@ struct blk_mq_hw_ctx {
         unsigned long       state;
     } ____cacheline_aligned_in_smp;
 
-#if 0
     /**
      * @run_work: Used for scheduling a hardware queue run at a later time.
      */
     struct delayed_work run_work;
-#endif
     /** @cpumask: Map of available CPUs where this hctx can run. */
     cpumask_var_t       cpumask;
     /**
@@ -628,6 +626,11 @@ __blk_mq_alloc_disk(struct blk_mq_tag_set *set, void *queuedata,
     __blk_mq_alloc_disk(set, queuedata, &__key);\
 })
 
+#define rq_list_add(listptr, rq)    do {        \
+    (rq)->rq_next = *(listptr);         \
+    *(listptr) = rq;                \
+} while (0)
+
 #define rq_list_peek(listptr)       \
 ({                                  \
     struct request *__req = NULL;   \
@@ -801,5 +804,18 @@ static inline bool blk_rq_is_passthrough(struct request *rq)
     }                       \
     __req;                      \
 })
+
+#define rq_list_for_each(listptr, pos)          \
+    for (pos = rq_list_peek((listptr)); pos; pos = rq_list_next(pos))
+
+#define rq_data_dir(rq) (op_is_write(req_op(rq)) ? WRITE : READ)
+
+static inline unsigned int blk_rq_sectors(const struct request *rq)
+{
+    return blk_rq_bytes(rq) >> SECTOR_SHIFT;
+}
+
+void blk_mq_run_hw_queue(struct blk_mq_hw_ctx *hctx, bool async);
+void blk_mq_run_hw_queues(struct request_queue *q, bool async);
 
 #endif /* BLK_MQ_H */

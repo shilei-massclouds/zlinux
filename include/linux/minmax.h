@@ -116,4 +116,17 @@
     typeof(y) __y = (y);            \
     __x == 0 ? __y : ((__y == 0) ? __x : min(__x, __y)); })
 
+/**
+ * clamp_val - return a value clamped to a given range using val's type
+ * @val: current value
+ * @lo: minimum allowable value
+ * @hi: maximum allowable value
+ *
+ * This macro does no typechecking and uses temporary variables of whatever
+ * type the input argument @val is.  This is useful when @val is an unsigned
+ * type and @lo and @hi are literals that will otherwise be assigned a signed
+ * integer type.
+ */
+#define clamp_val(val, lo, hi) clamp_t(typeof(val), val, lo, hi)
+
 #endif  /* _LINUX_MINMAX_H */

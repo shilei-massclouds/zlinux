@@ -18,6 +18,12 @@
 //#include "blk-rq-qos.h"
 //#include "blk-throttle.h"
 
+enum bio_merge_status {
+    BIO_MERGE_OK,
+    BIO_MERGE_NONE,
+    BIO_MERGE_FAILED,
+};
+
 static inline unsigned
 get_max_segment_size(const struct request_queue *q,
                      struct page *start_page,
@@ -207,6 +213,74 @@ void __blk_queue_split(struct request_queue *q, struct bio **bio,
     }
 }
 
+bool blk_rq_merge_ok(struct request *rq, struct bio *bio)
+{
+    if (!rq_mergeable(rq) || !bio_mergeable(bio))
+        return false;
+
+    if (req_op(rq) != bio_op(bio))
+        return false;
+
+    /* different data direction or already started, don't merge */
+    if (bio_data_dir(bio) != rq_data_dir(rq))
+        return false;
+
+    /* only merge integrity protected bio into ditto rq */
+    if (blk_integrity_merge_bio(rq->q, rq, bio) == false)
+        return false;
+
+    if (rq->ioprio != bio_prio(bio))
+        return false;
+
+    return true;
+}
+
+enum elv_merge blk_try_merge(struct request *rq, struct bio *bio)
+{
+    if (blk_discard_mergable(rq))
+        return ELEVATOR_DISCARD_MERGE;
+    else if (blk_rq_pos(rq) + blk_rq_sectors(rq) == bio->bi_iter.bi_sector)
+        return ELEVATOR_BACK_MERGE;
+    else if (blk_rq_pos(rq) - bio_sectors(bio) == bio->bi_iter.bi_sector)
+        return ELEVATOR_FRONT_MERGE;
+    return ELEVATOR_NO_MERGE;
+}
+
+static enum bio_merge_status
+blk_attempt_bio_merge(struct request_queue *q,
+                      struct request *rq,
+                      struct bio *bio,
+                      unsigned int nr_segs,
+                      bool sched_allow_merge)
+{
+    if (!blk_rq_merge_ok(rq, bio))
+        return BIO_MERGE_NONE;
+
+    switch (blk_try_merge(rq, bio)) {
+    case ELEVATOR_BACK_MERGE:
+#if 0
+        if (!sched_allow_merge || blk_mq_sched_allow_merge(q, rq, bio))
+            return bio_attempt_back_merge(rq, bio, nr_segs);
+#endif
+        panic("%s: ELEVATOR_BACK_MERGE!\n", __func__);
+        break;
+    case ELEVATOR_FRONT_MERGE:
+#if 0
+        if (!sched_allow_merge || blk_mq_sched_allow_merge(q, rq, bio))
+            return bio_attempt_front_merge(rq, bio, nr_segs);
+#endif
+        panic("%s: ELEVATOR_FRONT_MERGE!\n", __func__);
+        break;
+    case ELEVATOR_DISCARD_MERGE:
+        panic("%s: ELEVATOR_DISCARD_MERGE!\n", __func__);
+        //return bio_attempt_discard_merge(q, rq, bio);
+    default:
+        return BIO_MERGE_NONE;
+    }
+
+    return BIO_MERGE_FAILED;
+}
+
 /**
  * blk_attempt_plug_merge - try to merge with %current's plugged list
  * @q: request_queue new bio is being queued at
@@ -237,7 +311,6 @@ bool blk_attempt_plug_merge(struct request_queue *q, struct bio *bio,
     if (!plug || rq_list_empty(plug->mq_list))
         return false;
 
-#if 0
     rq_list_for_each(&plug->mq_list, rq) {
         if (rq->q == q) {
             if (blk_attempt_bio_merge(q, rq, bio, nr_segs, false) ==
@@ -253,8 +326,6 @@ bool blk_attempt_plug_merge(struct request_queue *q, struct bio *bio,
         if (!plug->multiple_queues)
             break;
     }
-#endif
-    panic("%s: END!\n", __func__);
     return false;
 }
 

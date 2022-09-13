@@ -499,7 +499,9 @@ struct gendisk *__blk_alloc_disk(int node, struct lock_class_key *lkclass);
     test_bit(QUEUE_FLAG_STABLE_WRITES, &(q)->queue_flags)
 
 #define blk_queue_io_stat(q)    test_bit(QUEUE_FLAG_IO_STAT, &(q)->queue_flags)
-#define blk_queue_quiesced(q)   test_bit(QUEUE_FLAG_QUIESCED, &(q)->queue_flags)
+#define blk_queue_quiesced(q) \
+    test_bit(QUEUE_FLAG_QUIESCED, &(q)->queue_flags)
+
 #define blk_queue_secure_erase(q) \
     (test_bit(QUEUE_FLAG_SECERASE, &(q)->queue_flags))
 #define blk_queue_zone_resetall(q)  \
@@ -812,5 +814,14 @@ extern void blk_set_stacking_limits(struct queue_limits *lim);
 extern void blk_start_plug(struct blk_plug *);
 extern void blk_start_plug_nr_ios(struct blk_plug *, unsigned short);
 extern void blk_finish_plug(struct blk_plug *);
+
+static inline
+unsigned short queue_max_discard_segments(const struct request_queue *q)
+{
+    return q->limits.max_discard_segments;
+}
+
+int kblockd_mod_delayed_work_on(int cpu, struct delayed_work *dwork,
+                                unsigned long delay);
 
 #endif /* _LINUX_BLKDEV_H */

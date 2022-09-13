@@ -70,6 +70,8 @@ extern __printf(1, 2) void __warn_printk(const char *fmt, ...);
 #define WARN_ONCE(condition, format...) \
     DO_ONCE_LITE_IF(condition, WARN, 1, format)
 
+#define WARN_ON_FUNCTION_MISMATCH(x, fn) WARN_ON_ONCE((x) != (fn))
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* _ASM_GENERIC_BUG_H */

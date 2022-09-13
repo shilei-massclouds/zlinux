@@ -25,6 +25,13 @@ static cpumask_var_t tick_broadcast_on __cpumask_var_read_mostly;
 
 static __cacheline_aligned_in_smp DEFINE_RAW_SPINLOCK(tick_broadcast_lock);
 
+static cpumask_var_t tick_broadcast_oneshot_mask
+    __cpumask_var_read_mostly;
+static cpumask_var_t tick_broadcast_pending_mask
+    __cpumask_var_read_mostly;
+static cpumask_var_t tick_broadcast_force_mask
+    __cpumask_var_read_mostly;
+
 /*
  * Conditionally install/replace broadcast device
  */
@@ -174,4 +181,17 @@ void tick_set_periodic_handler(struct clock_event_device *dev, int broadcast)
 int tick_broadcast_oneshot_active(void)
 {
     return tick_broadcast_device.mode == TICKDEV_MODE_ONESHOT;
+}
+
+/*
+ * Called before going idle with interrupts disabled. Checks whether a
+ * broadcast event from the other core is about to happen. We detected
+ * that in tick_broadcast_oneshot_control(). The callsite can use this
+ * to avoid a deep idle transition as we are about to get the
+ * broadcast IPI right away.
+ */
+int tick_check_broadcast_expired(void)
+{
+    return cpumask_test_cpu(smp_processor_id(),
+                            tick_broadcast_force_mask);
 }

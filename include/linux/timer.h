@@ -114,4 +114,6 @@ static inline int timer_pending(const struct timer_list * timer)
 
 static inline void destroy_timer_on_stack(struct timer_list *timer) { }
 
+extern int del_timer(struct timer_list * timer);
+
 #endif /* _LINUX_TIMER_H */

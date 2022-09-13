@@ -573,4 +573,21 @@ hlist_is_singular_node(struct hlist_node *n, struct hlist_head *h)
     return !n->next && n->pprev == &h->first;
 }
 
+/**
+ * list_splice_tail_init - join two lists and reinitialise the emptied list
+ * @list: the new list to add.
+ * @head: the place to add it in the first list.
+ *
+ * Each of the lists is a queue.
+ * The list at @list is reinitialised
+ */
+static inline void list_splice_tail_init(struct list_head *list,
+                                         struct list_head *head)
+{
+    if (!list_empty(list)) {
+        __list_splice(list, head->prev, head);
+        INIT_LIST_HEAD(list);
+    }
+}
+
 #endif /* _LINUX_LIST_H */

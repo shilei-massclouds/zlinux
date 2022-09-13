@@ -405,3 +405,15 @@ unsigned long __sbitmap_queue_get_batch(struct sbitmap_queue *sbq, int nr_tags,
 
     panic("%s: END!\n", __func__);
 }
+
+bool sbitmap_any_bit_set(const struct sbitmap *sb)
+{
+    unsigned int i;
+
+    for (i = 0; i < sb->map_nr; i++) {
+        if (sb->map[i].word & ~sb->map[i].cleared)
+            return true;
+    }
+    return false;
+}
+EXPORT_SYMBOL_GPL(sbitmap_any_bit_set);

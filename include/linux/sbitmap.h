@@ -320,4 +320,30 @@ static inline int sbq_index_inc(int index)
     return (index + 1) & (SBQ_WAIT_QUEUES - 1);
 }
 
+static inline
+unsigned long *__sbitmap_word(struct sbitmap *sb, unsigned int bitnr)
+{
+    return &sb->map[SB_NR_TO_INDEX(sb, bitnr)].word;
+}
+
+static inline
+void sbitmap_set_bit(struct sbitmap *sb, unsigned int bitnr)
+{
+    set_bit(SB_NR_TO_BIT(sb, bitnr), __sbitmap_word(sb, bitnr));
+}
+
+static inline
+int sbitmap_test_bit(struct sbitmap *sb, unsigned int bitnr)
+{
+    return test_bit(SB_NR_TO_BIT(sb, bitnr), __sbitmap_word(sb, bitnr));
+}
+
+/**
+ * sbitmap_any_bit_set() - Check for a set bit in a &struct sbitmap.
+ * @sb: Bitmap to check.
+ *
+ * Return: true if any bit in the bitmap is set, false otherwise.
+ */
+bool sbitmap_any_bit_set(const struct sbitmap *sb);
+
 #endif /* __LINUX_SCALE_BITMAP_H */

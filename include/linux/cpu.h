@@ -42,4 +42,7 @@ void bringup_nonboot_cpus(unsigned int setup_max_cpus);
 
 void __noreturn cpu_startup_entry(enum cpuhp_state state);
 
+/* Attach to any functions which should be considered cpuidle. */
+#define __cpuidle   __section(".cpuidle.text")
+
 #endif /* _LINUX_CPU_H_ */

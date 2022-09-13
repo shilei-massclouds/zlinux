@@ -81,7 +81,8 @@ unsigned long global_node_page_state_pages(enum node_stat_item item)
     return x;
 }
 
-static inline unsigned long global_node_page_state(enum node_stat_item item)
+static inline
+unsigned long global_node_page_state(enum node_stat_item item)
 {
     VM_WARN_ON_ONCE(vmstat_item_in_bytes(item));
 
@@ -131,7 +132,8 @@ node_page_state_add(long x, struct pglist_data *pgdat,
 }
 
 static inline void
-__mod_zone_freepage_state(struct zone *zone, int nr_pages, int migratetype)
+__mod_zone_freepage_state(struct zone *zone, int nr_pages,
+                          int migratetype)
 {
     __mod_zone_page_state(zone, NR_FREE_PAGES, nr_pages);
 }

@@ -20,4 +20,19 @@
 #define DECLARE_HASHTABLE(name, bits) \
     struct hlist_head name[1 << (bits)]
 
+#define HASH_SIZE(name) (ARRAY_SIZE(name))
+#define HASH_BITS(name) ilog2(HASH_SIZE(name))
+
+/**
+ * hash_for_each - iterate over a hashtable
+ * @name: hashtable to iterate
+ * @bkt: integer to use as bucket loop cursor
+ * @obj: the type * to use as a loop cursor for each entry
+ * @member: the name of the hlist_node within the struct
+ */
+#define hash_for_each(name, bkt, obj, member)               \
+    for ((bkt) = 0, obj = NULL; obj == NULL && (bkt) < HASH_SIZE(name);\
+            (bkt)++)\
+        hlist_for_each_entry(obj, &name[bkt], member)
+
 #endif /* _LINUX_HASHTABLE_H */

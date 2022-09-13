@@ -41,8 +41,8 @@
 #include <linux/sched/isolation.h>
 #include <linux/sched/clock.h>
 
-#if 0
 #include <linux/cpuidle.h>
+#if 0
 #include <linux/interrupt.h>
 #include <linux/mempolicy.h>
 #include <linux/mutex_api.h>

@@ -314,4 +314,18 @@ static inline void blk_mq_put_driver_tag(struct request *rq)
 void blk_mq_free_plug_rqs(struct blk_plug *plug);
 void blk_mq_flush_plug_list(struct blk_plug *plug, bool from_schedule);
 
+/*
+ * Internal helpers for request insertion into sw queues
+ */
+void __blk_mq_insert_request(struct blk_mq_hw_ctx *hctx,
+                             struct request *rq,
+                             bool at_head);
+void blk_mq_request_bypass_insert(struct request *rq, bool at_head,
+                                  bool run_queue);
+void blk_mq_insert_requests(struct blk_mq_hw_ctx *hctx,
+                            struct blk_mq_ctx *ctx,
+                            struct list_head *list);
+void blk_mq_try_issue_list_directly(struct blk_mq_hw_ctx *hctx,
+                                    struct list_head *list);
+
 #endif /* INT_BLK_MQ_H */

@@ -78,6 +78,60 @@ enum {
     WORKER_DESC_LEN     = 24,
 };
 
+/*
+ * Workqueue flags and constants.  For details, please refer to
+ * Documentation/core-api/workqueue.rst.
+ */
+enum {
+    WQ_UNBOUND      = 1 << 1, /* not bound to any cpu */
+    WQ_FREEZABLE        = 1 << 2, /* freeze during suspend */
+    WQ_MEM_RECLAIM      = 1 << 3, /* may be used for memory reclaim */
+    WQ_HIGHPRI      = 1 << 4, /* high priority */
+    WQ_CPU_INTENSIVE    = 1 << 5, /* cpu intensive workqueue */
+    WQ_SYSFS        = 1 << 6, /* visible in sysfs, see workqueue_sysfs_register() */
+
+    /*
+     * Per-cpu workqueues are generally preferred because they tend to
+     * show better performance thanks to cache locality.  Per-cpu
+     * workqueues exclude the scheduler from choosing the CPU to
+     * execute the worker threads, which has an unfortunate side effect
+     * of increasing power consumption.
+     *
+     * The scheduler considers a CPU idle if it doesn't have any task
+     * to execute and tries to keep idle cores idle to conserve power;
+     * however, for example, a per-cpu work item scheduled from an
+     * interrupt handler on an idle CPU will force the scheduler to
+     * execute the work item on that CPU breaking the idleness, which in
+     * turn may lead to more scheduling choices which are sub-optimal
+     * in terms of power consumption.
+     *
+     * Workqueues marked with WQ_POWER_EFFICIENT are per-cpu by default
+     * but become unbound if workqueue.power_efficient kernel param is
+     * specified.  Per-cpu workqueues which are identified to
+     * contribute significantly to power-consumption are identified and
+     * marked with this flag and enabling the power_efficient mode
+     * leads to noticeable power saving at the cost of small
+     * performance disadvantage.
+     *
+     * http://thread.gmane.org/gmane.linux.kernel/1480396
+     */
+    WQ_POWER_EFFICIENT  = 1 << 7,
+
+    __WQ_DRAINING       = 1 << 16, /* internal: workqueue is draining */
+    __WQ_ORDERED        = 1 << 17, /* internal: workqueue is ordered */
+    __WQ_LEGACY     = 1 << 18, /* internal: create*_workqueue() */
+    __WQ_ORDERED_EXPLICIT   = 1 << 19, /* internal: alloc_ordered_workqueue() */
+
+    WQ_MAX_ACTIVE       = 512,    /* I like 512, better ideas? */
+    WQ_MAX_UNBOUND_PER_CPU  = 4,      /* 4 * #cpus for unbound wq */
+    WQ_DFL_ACTIVE       = WQ_MAX_ACTIVE / 2,
+};
+
+/* unbound wq's aren't per-cpu, scale max_active according to #cpus */
+#define WQ_UNBOUND_MAX_ACTIVE   \
+    max_t(int, WQ_MAX_ACTIVE,   \
+          num_possible_cpus() * WQ_MAX_UNBOUND_PER_CPU)
+
 struct work_struct {
     atomic_long_t data;
     struct list_head entry;
@@ -91,6 +145,32 @@ struct delayed_work {
     /* target workqueue and CPU ->timer uses to queue ->work */
     struct workqueue_struct *wq;
     int cpu;
+};
+
+/**
+ * struct workqueue_attrs - A struct for workqueue attributes.
+ *
+ * This can be used to change attributes of an unbound workqueue.
+ */
+struct workqueue_attrs {
+    /**
+     * @nice: nice level
+     */
+    int nice;
+
+    /**
+     * @cpumask: allowed CPUs
+     */
+    cpumask_var_t cpumask;
+
+    /**
+     * @no_numa: disable NUMA affinity
+     *
+     * Unlike other fields, ``no_numa`` isn't a property of a worker_pool. It
+     * only modifies how :c:func:`apply_workqueue_attrs` select pools and thus
+     * doesn't participate in pool hash calculations or equality comparisons.
+     */
+    bool no_numa;
 };
 
 struct rcu_work {
@@ -116,5 +196,77 @@ struct rcu_work {
     .timer = __TIMER_INITIALIZER(delayed_work_timer_fn,\
                      (tflags) | TIMER_IRQSAFE),     \
     }
+
+extern bool mod_delayed_work_on(int cpu, struct workqueue_struct *wq,
+                                struct delayed_work *dwork,
+                                unsigned long delay);
+
+/**
+ * alloc_workqueue - allocate a workqueue
+ * @fmt: printf format for the name of the workqueue
+ * @flags: WQ_* flags
+ * @max_active: max in-flight work items, 0 for default
+ * remaining args: args for @fmt
+ *
+ * Allocate a workqueue with the specified parameters.  For detailed
+ * information on WQ_* flags, please refer to
+ * Documentation/core-api/workqueue.rst.
+ *
+ * RETURNS:
+ * Pointer to the allocated workqueue on success, %NULL on failure.
+ */
+__printf(1, 4) struct workqueue_struct *
+alloc_workqueue(const char *fmt, unsigned int flags, int max_active,
+                ...);
+
+extern bool cancel_delayed_work(struct delayed_work *dwork);
+
+static inline
+void __init_work(struct work_struct *work, int onstack) { }
+static inline
+void destroy_work_on_stack(struct work_struct *work) { }
+static inline
+void destroy_delayed_work_on_stack(struct delayed_work *work) { }
+static inline
+unsigned int work_static(struct work_struct *work) { return 0; }
+
+#define __INIT_WORK(_work, _func, _onstack)             \
+    do {                                \
+        __init_work((_work), _onstack);             \
+        (_work)->data = (atomic_long_t) WORK_DATA_INIT();   \
+        INIT_LIST_HEAD(&(_work)->entry);            \
+        (_work)->func = (_func);                \
+    } while (0)
+
+#define INIT_WORK(_work, _func)                     \
+    __INIT_WORK((_work), (_func), 0)
+
+#define __INIT_DELAYED_WORK(_work, _func, _tflags)  \
+    do {                                            \
+        INIT_WORK(&(_work)->work, (_func));         \
+        __init_timer(&(_work)->timer,               \
+                 delayed_work_timer_fn,             \
+                 (_tflags) | TIMER_IRQSAFE);        \
+    } while (0)
+
+#define INIT_DELAYED_WORK(_work, _func) \
+    __INIT_DELAYED_WORK(_work, _func, 0)
+
+void __init workqueue_init_early(void);
+void __init workqueue_init(void);
+
+int workqueue_sysfs_register(struct workqueue_struct *wq);
+
+static inline
+struct delayed_work *to_delayed_work(struct work_struct *work)
+{
+    return container_of(work, struct delayed_work, work);
+}
+
+/*
+ * The first word is the work queue pointer and the flags rolled into
+ * one
+ */
+#define work_data_bits(work) ((unsigned long *)(&(work)->data))
 
 #endif /* _LINUX_WORKQUEUE_H */

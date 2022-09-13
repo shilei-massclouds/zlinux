@@ -219,4 +219,41 @@ static inline bool percpu_ref_tryget_live_rcu(struct percpu_ref *ref)
     return ret;
 }
 
+/**
+ * percpu_ref_get_many - increment a percpu refcount
+ * @ref: percpu_ref to get
+ * @nr: number of references to get
+ *
+ * Analogous to atomic_long_add().
+ *
+ * This function is safe to call as long as @ref is between init and exit.
+ */
+static inline
+void percpu_ref_get_many(struct percpu_ref *ref, unsigned long nr)
+{
+    unsigned long __percpu *percpu_count;
+
+    rcu_read_lock();
+
+    if (__ref_is_percpu(ref, &percpu_count))
+        this_cpu_add(*percpu_count, nr);
+    else
+        atomic_long_add(nr, &ref->data->count);
+
+    rcu_read_unlock();
+}
+
+/**
+ * percpu_ref_get - increment a percpu refcount
+ * @ref: percpu_ref to get
+ *
+ * Analogous to atomic_long_inc().
+ *
+ * This function is safe to call as long as @ref is between init and exit.
+ */
+static inline void percpu_ref_get(struct percpu_ref *ref)
+{
+    percpu_ref_get_many(ref, 1);
+}
+
 #endif /* _LINUX_PERCPU_REFCOUNT_H */

@@ -125,6 +125,7 @@
 #include <linux/mm_inline.h>
 //#include <linux/blk-cgroup.h>
 //#include <linux/fadvise.h>
+#include <linux/blkdev.h>
 #include <linux/sched/mm.h>
 
 #include "internal.h"
@@ -191,12 +192,12 @@ static void read_pages(struct readahead_control *rac)
 {
     const struct address_space_operations *aops = rac->mapping->a_ops;
     struct page *page;
-    //struct blk_plug plug;
+    struct blk_plug plug;
 
     if (!readahead_count(rac))
         return;
 
-    //blk_start_plug(&plug);
+    blk_start_plug(&plug);
 
     if (aops->readahead) {
         aops->readahead(rac);
@@ -221,7 +222,7 @@ static void read_pages(struct readahead_control *rac)
         }
     }
 
-    //blk_finish_plug(&plug);
+    blk_finish_plug(&plug);
 
     BUG_ON(readahead_count(rac));
 }

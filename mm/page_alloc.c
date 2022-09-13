@@ -286,6 +286,26 @@ bool __weak arch_has_descending_max_zone_pfns(void)
     return false;
 }
 
+static inline struct capture_control *task_capc(struct zone *zone)
+{
+    struct capture_control *capc = current->capture_control;
+
+    return unlikely(capc) &&
+        !(current->flags & PF_KTHREAD) &&
+        !capc->page &&
+        capc->cc->zone == zone ? capc : NULL;
+}
+
+static inline bool
+compaction_capture(struct capture_control *capc, struct page *page,
+                   int order, int migratetype)
+{
+    if (!capc || order != capc->cc->order)
+        return false;
+
+    panic("%s: NO implementation!\n", __func__);
+}
+
 /*
  * Return the number of pages a zone spans in a node, including holes
  * present_pages = zone_spanned_pages_in_node() - zone_absent_pages_in_node()
@@ -1887,6 +1907,8 @@ struct page *rmqueue(struct zone *preferred_zone, struct zone *zone,
             page = __rmqueue_smallest(zone, order, MIGRATE_HIGHATOMIC);
         if (!page)
             page = __rmqueue(zone, order, migratetype, alloc_flags);
+        __mod_zone_freepage_state(zone, -(1 << order),
+                                  get_pcppage_migratetype(page));
         spin_unlock_irqrestore(&zone->lock, flags);
     } while (check_new_pages(page, order));
     if (!page)
@@ -2180,6 +2202,16 @@ zone_watermark_fast(struct zone *z, unsigned int order,
 
         fast_free = free_pages;
         fast_free -= __zone_watermark_unusable_free(z, 0, alloc_flags);
+#if 0
+        {
+            static long s_rec = 0;
+            if (s_rec != free_pages) {
+                printk("%s: free(%lx) fast(%lx) mark(%lx)\n",
+                       __func__, free_pages, fast_free, mark);
+                s_rec = free_pages;
+            }
+        }
+#endif
         if (fast_free > mark + z->lowmem_reserve[highest_zoneidx])
             return true;
     }
@@ -3252,6 +3284,7 @@ __free_one_page(struct page *page, unsigned long pfn,
     unsigned long buddy_pfn;
     unsigned long combined_pfn;
     unsigned int max_order;
+    struct capture_control *capc = task_capc(zone);
 
     max_order = min_t(unsigned int, MAX_ORDER - 1, pageblock_order);
 
@@ -3266,6 +3299,11 @@ __free_one_page(struct page *page, unsigned long pfn,
 
  continue_merging:
     while (order < max_order) {
+        if (compaction_capture(capc, page, order, migratetype)) {
+            __mod_zone_freepage_state(zone, -(1 << order), migratetype);
+            return;
+        }
+
         buddy_pfn = __find_buddy_pfn(pfn, order);
         buddy = page + (buddy_pfn - pfn);
 
