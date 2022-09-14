@@ -34,3 +34,12 @@ DEFINE_PER_CPU(struct cpuidle_device, cpuidle_dev);
 
 DEFINE_MUTEX(cpuidle_lock);
 LIST_HEAD(cpuidle_detected_devices);
+
+static int off __read_mostly;
+static int initialized __read_mostly;
+
+bool cpuidle_not_available(struct cpuidle_driver *drv,
+                           struct cpuidle_device *dev)
+{
+    return off || !initialized || !drv || !dev || !dev->enabled;
+}

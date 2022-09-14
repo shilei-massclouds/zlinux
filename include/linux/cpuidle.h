@@ -59,4 +59,8 @@ DECLARE_PER_CPU(struct cpuidle_device *, cpuidle_devices);
 static inline struct cpuidle_device *cpuidle_get_device(void)
 {return __this_cpu_read(cpuidle_devices); }
 
+extern void disable_cpuidle(void);
+extern bool cpuidle_not_available(struct cpuidle_driver *drv,
+                                  struct cpuidle_device *dev);
+
 #endif /* _LINUX_CPUIDLE_H */

@@ -80,6 +80,14 @@
 #include "tree.h"
 #include "rcu.h"
 
+/* Data structures. */
+
+static DEFINE_PER_CPU_SHARED_ALIGNED(struct rcu_data, rcu_data) = {
+    .dynticks_nesting = 1,
+    .dynticks_nmi_nesting = DYNTICK_IRQ_NONIDLE,
+    .dynticks = ATOMIC_INIT(1),
+};
+
 /*
  * The rcu_scheduler_active variable is initialized to the value
  * RCU_SCHEDULER_INACTIVE and transitions RCU_SCHEDULER_INIT just before the
@@ -272,3 +280,153 @@ void noinstr rcu_irq_exit(void)
 {
     //rcu_nmi_exit();
 }
+
+/*
+ * Increment the current CPU's rcu_data structure's ->dynticks field
+ * with ordering.  Return the new value.
+ */
+static noinline noinstr unsigned long rcu_dynticks_inc(int incby)
+{
+    return arch_atomic_add_return(incby,
+                                  this_cpu_ptr(&rcu_data.dynticks));
+}
+
+/*
+ * Record entry into an extended quiescent state.  This is only to be
+ * called when not already in an extended quiescent state, that is,
+ * RCU is watching prior to the call to this function and is no longer
+ * watching upon return.
+ */
+static noinstr void rcu_dynticks_eqs_enter(void)
+{
+    int seq;
+
+    /*
+     * CPUs seeing atomic_add_return() must see prior RCU read-side
+     * critical sections, and we also must force ordering with the
+     * next idle sojourn.
+     */
+    seq = rcu_dynticks_inc(1);
+}
+
+/*
+ * Record exit from an extended quiescent state.  This is only to be
+ * called from an extended quiescent state, that is, RCU is not watching
+ * prior to the call to this function and is watching upon return.
+ */
+static noinstr void rcu_dynticks_eqs_exit(void)
+{
+    int seq;
+
+    /*
+     * CPUs seeing atomic_add_return() must see prior idle sojourns,
+     * and we also must force ordering with the next RCU read-side
+     * critical section.
+     */
+    seq = rcu_dynticks_inc(1);
+}
+
+/*
+ * Enter an RCU extended quiescent state, which can be either the
+ * idle loop or adaptive-tickless usermode execution.
+ *
+ * We crowbar the ->dynticks_nmi_nesting field to zero to allow for
+ * the possibility of usermode upcalls having messed up our count
+ * of interrupt nesting level during the prior busy period.
+ */
+static noinstr void rcu_eqs_enter(bool user)
+{
+    struct rcu_data *rdp = this_cpu_ptr(&rcu_data);
+
+    WARN_ON_ONCE(rdp->dynticks_nmi_nesting != DYNTICK_IRQ_NONIDLE);
+    WRITE_ONCE(rdp->dynticks_nmi_nesting, 0);
+    if (rdp->dynticks_nesting != 1) {
+        // RCU will still be watching, so just do accounting and leave.
+        rdp->dynticks_nesting--;
+        return;
+    }
+
+    instrumentation_begin();
+    rcu_preempt_deferred_qs(current);
+    instrumentation_end();
+
+    WRITE_ONCE(rdp->dynticks_nesting, 0); /* Avoid irq-access tearing. */
+    // RCU is watching here ...
+    rcu_dynticks_eqs_enter();
+    // ... but is no longer watching here.
+    rcu_dynticks_task_enter();
+}
+
+/*
+ * Exit an RCU extended quiescent state, which can be either the
+ * idle loop or adaptive-tickless usermode execution.
+ *
+ * We crowbar the ->dynticks_nmi_nesting field to DYNTICK_IRQ_NONIDLE to
+ * allow for the possibility of usermode upcalls messing up our count of
+ * interrupt nesting level during the busy period that is just now starting.
+ */
+static void noinstr rcu_eqs_exit(bool user)
+{
+    struct rcu_data *rdp;
+    long oldval;
+
+    rdp = this_cpu_ptr(&rcu_data);
+    oldval = rdp->dynticks_nesting;
+    if (oldval) {
+        // RCU was already watching, so just do accounting and leave.
+        rdp->dynticks_nesting++;
+        return;
+    }
+    rcu_dynticks_task_exit();
+    // RCU is not watching here ...
+    rcu_dynticks_eqs_exit();
+    // ... but is watching here.
+    instrumentation_begin();
+    WRITE_ONCE(rdp->dynticks_nesting, 1);
+    WARN_ON_ONCE(rdp->dynticks_nmi_nesting);
+    WRITE_ONCE(rdp->dynticks_nmi_nesting, DYNTICK_IRQ_NONIDLE);
+    instrumentation_end();
+}
+
+/**
+ * rcu_idle_enter - inform RCU that current CPU is entering idle
+ *
+ * Enter idle mode, in other words, -leave- the mode in which RCU
+ * read-side critical sections can occur.  (Though RCU read-side
+ * critical sections can occur in irq handlers in idle, a possibility
+ * handled by irq_enter() and irq_exit().)
+ *
+ * If you add or remove a call to rcu_idle_enter(), be sure to test with
+ * CONFIG_RCU_EQS_DEBUG=y.
+ */
+void rcu_idle_enter(void)
+{
+    rcu_eqs_enter(false);
+}
+EXPORT_SYMBOL_GPL(rcu_idle_enter);
+
+/**
+ * rcu_idle_exit - inform RCU that current CPU is leaving idle
+ *
+ * Exit idle mode, in other words, -enter- the mode in which RCU
+ * read-side critical sections can occur.
+ *
+ * If you add or remove a call to rcu_idle_exit(), be sure to test with
+ * CONFIG_RCU_EQS_DEBUG=y.
+ */
+void rcu_idle_exit(void)
+{
+    unsigned long flags;
+
+    local_irq_save(flags);
+    rcu_eqs_exit(false);
+    local_irq_restore(flags);
+}
+EXPORT_SYMBOL_GPL(rcu_idle_exit);
+
+#if 0
+#include "tree_stall.h"
+#include "tree_exp.h"
+#include "tree_nocb.h"
+#endif
+#include "tree_plugin.h"

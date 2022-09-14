@@ -45,4 +45,13 @@
         arch_local_irq_restore(flags);      \
     } while (0)
 
+static inline void lockdep_softirqs_on(unsigned long ip) { }
+static inline void lockdep_softirqs_off(unsigned long ip) { }
+static inline void lockdep_hardirqs_on_prepare(unsigned long ip) { }
+static inline void lockdep_hardirqs_on(unsigned long ip) { }
+static inline void lockdep_hardirqs_off(unsigned long ip) { }
+
+#define stop_critical_timings() do { } while (0)
+#define start_critical_timings() do { } while (0)
+
 #endif /* _LINUX_TRACE_IRQFLAGS_H */

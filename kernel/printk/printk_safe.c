@@ -7,8 +7,8 @@
 #include <linux/spinlock.h>
 #include <linux/smp.h>
 #include <linux/cpumask.h>
-/*
 #include <linux/irq_work.h>
+/*
 #include <linux/kprobes.h>
 */
 #include <linux/printk.h>

@@ -108,7 +108,66 @@ static void check_preempt_curr_idle(struct rq *rq,
 
 static noinline int __cpuidle cpu_idle_poll(void)
 {
+    printk("%s: 1\n", __func__);
+    stop_critical_timings();
+    rcu_idle_enter();
+    local_irq_enable();
+
+    printk("%s: 2\n", __func__);
+    while (!tif_need_resched() &&
+           (cpu_idle_force_poll || tick_check_broadcast_expired()))
+        cpu_relax();
+
+    printk("%s: 3\n", __func__);
+    rcu_idle_exit();
+    start_critical_timings();
+
     panic("%s: NO implementation!\n", __func__);
+    return 1;
+}
+
+/**
+ * default_idle_call - Default CPU idle routine.
+ *
+ * To use when the cpuidle framework cannot be used.
+ */
+void __cpuidle default_idle_call(void)
+{
+    if (current_clr_polling_and_test()) {
+        local_irq_enable();
+    } else {
+
+        stop_critical_timings();
+
+        /*
+         * arch_cpu_idle() is supposed to enable IRQs, however
+         * we can't do that because of RCU and tracing.
+         *
+         * Trace IRQs enable here, then switch off RCU, and have
+         * arch_cpu_idle() use raw_local_irq_enable(). Note that
+         * rcu_idle_enter() relies on lockdep IRQ state, so switch that
+         * last -- this is very similar to the entry code.
+         */
+        lockdep_hardirqs_on_prepare(_THIS_IP_);
+        rcu_idle_enter();
+        lockdep_hardirqs_on(_THIS_IP_);
+
+        arch_cpu_idle();
+
+        /*
+         * OK, so IRQs are enabled here, but RCU needs them disabled to
+         * turn itself back on.. funny thing is that disabling IRQs
+         * will cause tracing, which needs RCU. Jump through hoops to
+         * make it 'work'.
+         */
+        raw_local_irq_disable();
+        lockdep_hardirqs_off(_THIS_IP_);
+        rcu_idle_exit();
+        lockdep_hardirqs_on(_THIS_IP_);
+        raw_local_irq_enable();
+
+        start_critical_timings();
+    }
 }
 
 /**
@@ -141,14 +200,12 @@ static void cpuidle_idle_call(void)
      * step to the grace period
      */
 
-#if 0
     if (cpuidle_not_available(drv, dev)) {
         tick_nohz_idle_stop_tick();
 
         default_idle_call();
         goto exit_idle;
     }
-#endif
 
     panic("%s: NO implementation!\n", __func__);
 
@@ -160,6 +217,8 @@ static void cpuidle_idle_call(void)
      */
     if (WARN_ON_ONCE(irqs_disabled()))
         local_irq_enable();
+
+    printk("%s: END!\n", __func__);
 }
 
 /*
@@ -205,6 +264,7 @@ static void do_idle(void)
         arch_cpu_idle_enter();
         rcu_nocb_flush_deferred_wakeup();
 
+        printk("%s: 1\n", __func__);
         /*
          * In poll mode we reenable interrupts and spin. Also if we
          * detected in the wakeup from idle path that the tick
@@ -215,12 +275,25 @@ static void do_idle(void)
             tick_nohz_idle_restart_tick();
             cpu_idle_poll();
         } else {
+            printk("%s: 1.2\n", __func__);
             cpuidle_idle_call();
         }
+        printk("%s: 3\n", __func__);
         arch_cpu_idle_exit();
-
-        panic("%s: !need_resched!\n", __func__);
+        printk("%s: !\n", __func__);
     }
+
+    /*
+     * Since we fell out of the loop above, we know TIF_NEED_RESCHED must
+     * be set, propagate it into PREEMPT_NEED_RESCHED.
+     *
+     * This is required because for polling idle loops we will not have had
+     * an IPI to fold the state for us.
+     */
+    preempt_set_need_resched();
+    tick_nohz_idle_exit();
+    __current_clr_polling();
+
     panic("%s: NO implementation!\n", __func__);
 }
 

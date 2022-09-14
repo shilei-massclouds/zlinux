@@ -24,11 +24,11 @@
 #include <linux/delay.h>
 #include <linux/tick.h>
 #include <linux/kallsyms.h>
-#include <linux/irq_work.h>
 #include <linux/sched/signal.h>
 #include <linux/sched/sysctl.h>
 #include <linux/random.h>
 #endif
+#include <linux/irq_work.h>
 #include <linux/sched/nohz.h>
 #include <linux/slab.h>
 #include <linux/compat.h>

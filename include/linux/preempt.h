@@ -272,4 +272,14 @@ struct preempt_notifier {
     struct preempt_ops *ops;
 };
 
+#define preempt_set_need_resched() \
+do { \
+    set_preempt_need_resched(); \
+} while (0)
+#define preempt_fold_need_resched() \
+do { \
+    if (tif_need_resched()) \
+        set_preempt_need_resched(); \
+} while (0)
+
 #endif /* __LINUX_PREEMPT_H */

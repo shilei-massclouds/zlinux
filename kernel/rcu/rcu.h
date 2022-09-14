@@ -13,4 +13,7 @@
 #define RCU_SCHEDULER_INIT      1
 #define RCU_SCHEDULER_RUNNING   2
 
+/* Offset to allow distinguishing irq vs. task-based idle entry/exit. */
+#define DYNTICK_IRQ_NONIDLE ((LONG_MAX / 2) + 1)
+
 #endif /* __LINUX_RCU_H */

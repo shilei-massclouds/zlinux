@@ -316,6 +316,13 @@ static inline int rcu_nocb_cpu_offload(int cpu) { return -EINVAL; }
 static inline int rcu_nocb_cpu_deoffload(int cpu) { return 0; }
 static inline void rcu_nocb_flush_deferred_wakeup(void) { }
 
+void rcu_read_unlock_strict(void);
+
+static inline int rcu_preempt_depth(void)
+{
+    return 0;
+}
+
 #include <linux/rcutree.h>
 
 #endif /* __LINUX_RCUPDATE_H */

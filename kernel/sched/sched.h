@@ -44,7 +44,6 @@
 #include <linux/fs_api.h>
 #include <linux/hrtimer_api.h>
 #include <linux/interrupt.h>
-#include <linux/irq_work.h>
 #include <linux/kref_api.h>
 #include <linux/kthread.h>
 #include <linux/lockdep_api.h>
@@ -65,6 +64,7 @@
 #include <linux/uaccess.h>
 #include <linux/workqueue_api.h>
 #endif
+#include <linux/irq_work.h>
 #include <linux/tick.h>
 #include <linux/stop_machine.h>
 #include <linux/plist.h>
