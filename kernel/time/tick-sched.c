@@ -79,6 +79,57 @@ void tick_nohz_idle_enter(void)
     local_irq_enable();
 }
 
+static void tick_nohz_idle_update_tick(struct tick_sched *ts,
+                                       ktime_t now)
+{
+#if 0
+    if (tick_nohz_full_cpu(smp_processor_id()))
+        __tick_nohz_full_update_tick(ts, now);
+    else
+        tick_nohz_restart_sched_tick(ts, now);
+
+    tick_nohz_account_idle_time(ts, now);
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * Updates the per-CPU time idle statistics counters
+ */
+static void
+update_ts_time_stats(int cpu, struct tick_sched *ts, ktime_t now,
+                     u64 *last_update_time)
+{
+    ktime_t delta;
+
+    if (ts->idle_active) {
+#if 0
+        delta = ktime_sub(now, ts->idle_entrytime);
+        if (nr_iowait_cpu(cpu) > 0)
+            ts->iowait_sleeptime =
+                ktime_add(ts->iowait_sleeptime, delta);
+        else
+            ts->idle_sleeptime = ktime_add(ts->idle_sleeptime, delta);
+        ts->idle_entrytime = now;
+#endif
+        panic("%s: 1!\n", __func__);
+    }
+
+    if (last_update_time)
+        *last_update_time = ktime_to_us(now);
+}
+
+static void tick_nohz_stop_idle(struct tick_sched *ts, ktime_t now)
+{
+    update_ts_time_stats(smp_processor_id(), ts, now, NULL);
+#if 0
+    ts->idle_active = 0;
+
+    sched_clock_idle_wakeup_event();
+#endif
+    panic("%s: END!\n", __func__);
+}
+
 /**
  * tick_nohz_idle_exit - restart the idle tick from the idle task
  *
@@ -88,7 +139,29 @@ void tick_nohz_idle_enter(void)
  */
 void tick_nohz_idle_exit(void)
 {
-    panic("%s: END!\n", __func__);
+    struct tick_sched *ts = this_cpu_ptr(&tick_cpu_sched);
+    bool idle_active, tick_stopped;
+    ktime_t now;
+
+    local_irq_disable();
+
+    WARN_ON_ONCE(!ts->inidle);
+    WARN_ON_ONCE(ts->timer_expires_base);
+
+    ts->inidle = 0;
+    idle_active = ts->idle_active;
+    tick_stopped = ts->tick_stopped;
+
+    if (idle_active || tick_stopped)
+        now = ktime_get();
+
+    if (idle_active)
+        tick_nohz_stop_idle(ts, now);
+
+    if (tick_stopped)
+        tick_nohz_idle_update_tick(ts, now);
+
+    local_irq_enable();
 }
 
 void tick_nohz_idle_restart_tick(void)

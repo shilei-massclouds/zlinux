@@ -108,21 +108,17 @@ static void check_preempt_curr_idle(struct rq *rq,
 
 static noinline int __cpuidle cpu_idle_poll(void)
 {
-    printk("%s: 1\n", __func__);
     stop_critical_timings();
     rcu_idle_enter();
     local_irq_enable();
 
-    printk("%s: 2\n", __func__);
     while (!tif_need_resched() &&
            (cpu_idle_force_poll || tick_check_broadcast_expired()))
         cpu_relax();
 
-    printk("%s: 3\n", __func__);
     rcu_idle_exit();
     start_critical_timings();
 
-    panic("%s: NO implementation!\n", __func__);
     return 1;
 }
 

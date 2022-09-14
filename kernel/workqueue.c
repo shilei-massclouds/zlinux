@@ -77,6 +77,7 @@ static struct rcuwait manager_wait =
 
 struct workqueue_struct *system_wq __read_mostly;
 EXPORT_SYMBOL(system_wq);
+#if 0
 struct workqueue_struct *system_highpri_wq __read_mostly;
 EXPORT_SYMBOL_GPL(system_highpri_wq);
 struct workqueue_struct *system_long_wq __read_mostly;
@@ -90,6 +91,7 @@ EXPORT_SYMBOL_GPL(system_power_efficient_wq);
 struct workqueue_struct *system_freezable_power_efficient_wq
     __read_mostly;
 EXPORT_SYMBOL_GPL(system_freezable_power_efficient_wq);
+#endif
 
 static bool wq_numa_enabled;        /* unbound NUMA affinity enabled */
 
@@ -920,6 +922,30 @@ int workqueue_sysfs_register(struct workqueue_struct *wq)
     panic("%s: END!\n", __func__);
 }
 
+/**
+ * put_pwq - put a pool_workqueue reference
+ * @pwq: pool_workqueue to put
+ *
+ * Drop a reference of @pwq.  If its refcnt reaches zero, schedule its
+ * destruction.  The caller should be holding the matching pool->lock.
+ */
+static void put_pwq(struct pool_workqueue *pwq)
+{
+    if (likely(--pwq->refcnt))
+        return;
+    if (WARN_ON_ONCE(!(pwq->wq->flags & WQ_UNBOUND)))
+        return;
+    /*
+     * @pwq can't be released under pool->lock, bounce to
+     * pwq_unbound_release_workfn().  This never recurses on the same
+     * pool->lock as this path is taken only for unbound workqueues and
+     * the release work item is scheduled on a per-cpu workqueue.  To
+     * avoid lockdep warning, unbound pool->locks are given lockdep
+     * subclass of 1 in get_unbound_pool().
+     */
+    schedule_work(&pwq->unbound_release_work);
+}
+
 /*
  * Scheduled on system_wq by put_pwq() when an unbound pwq hits zero refcnt
  * and needs to be destroyed.
@@ -1066,6 +1092,258 @@ static void link_pwq(struct pool_workqueue *pwq)
     list_add_rcu(&pwq->pwqs_node, &wq->pwqs);
 }
 
+/* context to store the prepared attrs & pwqs before applying */
+struct apply_wqattrs_ctx {
+    struct workqueue_struct *wq;        /* target workqueue */
+    struct workqueue_attrs  *attrs;     /* attrs to apply */
+    struct list_head    list;       /* queued for batching commit */
+    struct pool_workqueue   *dfl_pwq;
+    struct pool_workqueue   *pwq_tbl[];
+};
+
+/**
+ * put_pwq_unlocked - put_pwq() with surrounding pool lock/unlock
+ * @pwq: pool_workqueue to put (can be %NULL)
+ *
+ * put_pwq() with locking.  This function also allows %NULL @pwq.
+ */
+static void put_pwq_unlocked(struct pool_workqueue *pwq)
+{
+    if (pwq) {
+        /*
+         * As both pwqs and pools are RCU protected, the
+         * following lock operations are safe.
+         */
+        raw_spin_lock_irq(&pwq->pool->lock);
+        put_pwq(pwq);
+        raw_spin_unlock_irq(&pwq->pool->lock);
+    }
+}
+
+/* free the resources after success or abort */
+static void apply_wqattrs_cleanup(struct apply_wqattrs_ctx *ctx)
+{
+    if (ctx) {
+        int node;
+
+        for_each_node(node)
+            put_pwq_unlocked(ctx->pwq_tbl[node]);
+        put_pwq_unlocked(ctx->dfl_pwq);
+
+        free_workqueue_attrs(ctx->attrs);
+
+        kfree(ctx);
+    }
+}
+
+static void copy_workqueue_attrs(struct workqueue_attrs *to,
+                                 const struct workqueue_attrs *from)
+{
+    to->nice = from->nice;
+    cpumask_copy(to->cpumask, from->cpumask);
+    /*
+     * Unlike hash and equality test, this function doesn't ignore
+     * ->no_numa as it is used for both pool and wq attrs.  Instead,
+     * get_unbound_pool() explicitly clears ->no_numa after copying.
+     */
+    to->no_numa = from->no_numa;
+}
+
+/* hash value of the content of @attr */
+static u32 wqattrs_hash(const struct workqueue_attrs *attrs)
+{
+#if 0
+    u32 hash = 0;
+
+    hash = jhash_1word(attrs->nice, hash);
+    hash = jhash(cpumask_bits(attrs->cpumask),
+                 BITS_TO_LONGS(nr_cpumask_bits) * sizeof(long), hash);
+    return hash;
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * get_unbound_pool - get a worker_pool with the specified attributes
+ * @attrs: the attributes of the worker_pool to get
+ *
+ * Obtain a worker_pool which has the same attributes as @attrs, bump the
+ * reference count and return it.  If there already is a matching
+ * worker_pool, it will be used; otherwise, this function attempts to
+ * create a new one.
+ *
+ * Should be called with wq_pool_mutex held.
+ *
+ * Return: On success, a worker_pool with the same attributes as @attrs.
+ * On failure, %NULL.
+ */
+static struct worker_pool *
+get_unbound_pool(const struct workqueue_attrs *attrs)
+{
+#if 0
+    u32 hash = wqattrs_hash(attrs);
+    struct worker_pool *pool;
+    int node;
+    int target_node = NUMA_NO_NODE;
+
+    /* do we already have a matching pool? */
+    hash_for_each_possible(unbound_pool_hash, pool, hash_node, hash) {
+        if (wqattrs_equal(pool->attrs, attrs)) {
+            pool->refcnt++;
+            return pool;
+        }
+    }
+#endif
+
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * put_unbound_pool - put a worker_pool
+ * @pool: worker_pool to put
+ *
+ * Put @pool.  If its refcnt reaches zero, it gets destroyed in RCU
+ * safe manner.  get_unbound_pool() calls this function on its failure path
+ * and this function should be able to release pools which went through,
+ * successfully or not, init_worker_pool().
+ *
+ * Should be called with wq_pool_mutex held.
+ */
+static void put_unbound_pool(struct worker_pool *pool)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/* obtain a pool matching @attr and create a pwq associating the pool and @wq */
+static struct pool_workqueue *
+alloc_unbound_pwq(struct workqueue_struct *wq,
+                  const struct workqueue_attrs *attrs)
+{
+    struct worker_pool *pool;
+    struct pool_workqueue *pwq;
+
+    pool = get_unbound_pool(attrs);
+    if (!pool)
+        return NULL;
+
+    pwq = kmem_cache_alloc_node(pwq_cache, GFP_KERNEL, pool->node);
+    if (!pwq) {
+        put_unbound_pool(pool);
+        return NULL;
+    }
+
+    init_pwq(pwq, wq, pool);
+    return pwq;
+}
+
+/* allocate the attrs and pwqs for later installation */
+static struct apply_wqattrs_ctx *
+apply_wqattrs_prepare(struct workqueue_struct *wq,
+                      const struct workqueue_attrs *attrs)
+{
+    struct apply_wqattrs_ctx *ctx;
+    struct workqueue_attrs *new_attrs, *tmp_attrs;
+    int node;
+
+    ctx = kzalloc(struct_size(ctx, pwq_tbl, nr_node_ids), GFP_KERNEL);
+
+    new_attrs = alloc_workqueue_attrs();
+    tmp_attrs = alloc_workqueue_attrs();
+    if (!ctx || !new_attrs || !tmp_attrs)
+        goto out_free;
+
+    /*
+     * Calculate the attrs of the default pwq.
+     * If the user configured cpumask doesn't overlap with the
+     * wq_unbound_cpumask, we fallback to the wq_unbound_cpumask.
+     */
+    copy_workqueue_attrs(new_attrs, attrs);
+    cpumask_and(new_attrs->cpumask, new_attrs->cpumask,
+                wq_unbound_cpumask);
+    if (unlikely(cpumask_empty(new_attrs->cpumask)))
+        cpumask_copy(new_attrs->cpumask, wq_unbound_cpumask);
+
+    /*
+     * We may create multiple pwqs with differing cpumasks.  Make a
+     * copy of @new_attrs which will be modified and used to obtain
+     * pools.
+     */
+    copy_workqueue_attrs(tmp_attrs, new_attrs);
+
+    /*
+     * If something goes wrong during CPU up/down, we'll fall back to
+     * the default pwq covering whole @attrs->cpumask.  Always create
+     * it even if we don't use it immediately.
+     */
+    ctx->dfl_pwq = alloc_unbound_pwq(wq, new_attrs);
+    if (!ctx->dfl_pwq)
+        goto out_free;
+
+    panic("%s: END!\n", __func__);
+    return ctx;
+
+ out_free:
+    free_workqueue_attrs(tmp_attrs);
+    free_workqueue_attrs(new_attrs);
+    apply_wqattrs_cleanup(ctx);
+    return NULL;
+}
+
+static int
+apply_workqueue_attrs_locked(struct workqueue_struct *wq,
+                             const struct workqueue_attrs *attrs)
+{
+    struct apply_wqattrs_ctx *ctx;
+
+    /* only unbound workqueues can change attributes */
+    if (WARN_ON(!(wq->flags & WQ_UNBOUND)))
+        return -EINVAL;
+
+    /* creating multiple pwqs breaks ordering guarantee */
+    if (!list_empty(&wq->pwqs)) {
+        if (WARN_ON(wq->flags & __WQ_ORDERED_EXPLICIT))
+            return -EINVAL;
+
+        wq->flags &= ~__WQ_ORDERED;
+    }
+
+    ctx = apply_wqattrs_prepare(wq, attrs);
+    if (!ctx)
+        return -ENOMEM;
+
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * apply_workqueue_attrs - apply new workqueue_attrs to an unbound workqueue
+ * @wq: the target workqueue
+ * @attrs: the workqueue_attrs to apply, allocated with alloc_workqueue_attrs()
+ *
+ * Apply @attrs to an unbound workqueue @wq.  Unless disabled, on NUMA
+ * machines, this function maps a separate pwq to each NUMA node with
+ * possibles CPUs in @attrs->cpumask so that work items are affine to the
+ * NUMA node it was issued on.  Older pwqs are released as in-flight work
+ * items finish.  Note that a work item which repeatedly requeues itself
+ * back-to-back will stay on its current pwq.
+ *
+ * Performs GFP_KERNEL allocations.
+ *
+ * Assumes caller has CPU hotplug read exclusion, i.e. cpus_read_lock().
+ *
+ * Return: 0 on success and -errno on failure.
+ */
+int apply_workqueue_attrs(struct workqueue_struct *wq,
+                          const struct workqueue_attrs *attrs)
+{
+    int ret;
+
+    mutex_lock(&wq_pool_mutex);
+    ret = apply_workqueue_attrs_locked(wq, attrs);
+    mutex_unlock(&wq_pool_mutex);
+
+    return ret;
+}
+
 static int alloc_and_link_pwqs(struct workqueue_struct *wq)
 {
     bool highpri = wq->flags & WQ_HIGHPRI;
@@ -1091,7 +1369,19 @@ static int alloc_and_link_pwqs(struct workqueue_struct *wq)
         return 0;
     }
 
-    panic("%s: END!\n", __func__);
+    cpus_read_lock();
+    if (wq->flags & __WQ_ORDERED) {
+        ret = apply_workqueue_attrs(wq, ordered_wq_attrs[highpri]);
+        /* there should only be single pwq for ordering guarantee */
+        WARN(!ret && (wq->pwqs.next != &wq->dfl_pwq->pwqs_node ||
+                  wq->pwqs.prev != &wq->dfl_pwq->pwqs_node),
+             "ordering guarantee broken for workqueue %s\n", wq->name);
+    } else {
+        ret = apply_workqueue_attrs(wq, unbound_std_wq_attrs[highpri]);
+    }
+    cpus_read_unlock();
+
+    return ret;
 }
 
 static struct worker *alloc_worker(int node)
@@ -1676,29 +1966,6 @@ static void set_work_pool_and_clear_pending(struct work_struct *work,
     smp_mb();
 }
 
-/**
- * put_pwq - put a pool_workqueue reference
- * @pwq: pool_workqueue to put
- *
- * Drop a reference of @pwq.  If its refcnt reaches zero, schedule its
- * destruction.  The caller should be holding the matching pool->lock.
- */
-static void put_pwq(struct pool_workqueue *pwq)
-{
-    if (likely(--pwq->refcnt))
-        return;
-    if (WARN_ON_ONCE(!(pwq->wq->flags & WQ_UNBOUND)))
-        return;
-    /*
-     * @pwq can't be released under pool->lock, bounce to
-     * pwq_unbound_release_workfn().  This never recurses on the same
-     * pool->lock as this path is taken only for unbound workqueues and
-     * the release work item is scheduled on a per-cpu workqueue.  To
-     * avoid lockdep warning, unbound pool->locks are given lockdep
-     * subclass of 1 in get_unbound_pool().
-     */
-    schedule_work(&pwq->unbound_release_work);
-}
 
 /**
  * pwq_dec_nr_in_flight - decrement pwq's nr_in_flight
@@ -2250,17 +2517,19 @@ void __init workqueue_init_early(void)
 
     system_wq = alloc_workqueue("events", 0, 0);
 #if 0
-    system_highpri_wq = alloc_workqueue("events_highpri", WQ_HIGHPRI, 0);
+    system_highpri_wq =
+        alloc_workqueue("events_highpri", WQ_HIGHPRI, 0);
     system_long_wq = alloc_workqueue("events_long", 0, 0);
     system_unbound_wq = alloc_workqueue("events_unbound", WQ_UNBOUND,
-                        WQ_UNBOUND_MAX_ACTIVE);
+                                        WQ_UNBOUND_MAX_ACTIVE);
     system_freezable_wq = alloc_workqueue("events_freezable",
-                          WQ_FREEZABLE, 0);
-    system_power_efficient_wq = alloc_workqueue("events_power_efficient",
-                          WQ_POWER_EFFICIENT, 0);
-    system_freezable_power_efficient_wq = alloc_workqueue("events_freezable_power_efficient",
-                          WQ_FREEZABLE | WQ_POWER_EFFICIENT,
-                          0);
+                                          WQ_FREEZABLE, 0);
+    system_power_efficient_wq =
+        alloc_workqueue("events_power_efficient",
+                        WQ_POWER_EFFICIENT, 0);
+    system_freezable_power_efficient_wq =
+        alloc_workqueue("events_freezable_power_efficient",
+                        WQ_FREEZABLE | WQ_POWER_EFFICIENT, 0);
     BUG_ON(!system_wq || !system_highpri_wq || !system_long_wq ||
            !system_unbound_wq || !system_freezable_wq ||
            !system_power_efficient_wq ||

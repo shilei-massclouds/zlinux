@@ -95,6 +95,21 @@ static inline s64 ktime_to_ns(const ktime_t kt)
 
 extern ktime_t ktime_add_safe(const ktime_t lhs, const ktime_t rhs);
 
+static inline s64 ktime_divns(const ktime_t kt, s64 div)
+{
+    /*
+     * 32-bit implementation cannot handle negative divisors,
+     * so catch them on 64bit as well.
+     */
+    WARN_ON(div < 0);
+    return kt / div;
+}
+
+static inline s64 ktime_to_us(const ktime_t kt)
+{
+    return ktime_divns(kt, NSEC_PER_USEC);
+}
+
 #include <linux/timekeeping.h>
 
 #endif /* _LINUX_KTIME_H */
