@@ -68,6 +68,26 @@
 #define __node_2_se(node) \
     rb_entry((node), struct sched_entity, run_node)
 
+/*
+ * Unsigned subtract and clamp on underflow.
+ *
+ * Explicitly do a load-store to ensure the intermediate value never hits
+ * memory. This allows lockless observations without ever seeing the negative
+ * values.
+ */
+#define sub_positive(_ptr, _val) do {               \
+    typeof(_ptr) ptr = (_ptr);              \
+    typeof(*ptr) val = (_val);              \
+    typeof(*ptr) res, var = READ_ONCE(*ptr);        \
+    res = var - val;                    \
+    if (res > var)                      \
+        res = 0;                    \
+    WRITE_ONCE(*ptr, res);                  \
+} while (0)
+
+#define WMULT_CONST (~0U)
+#define WMULT_SHIFT 32
+
 static struct {
     cpumask_var_t idle_cpus_mask;
     atomic_t nr_cpus;
@@ -552,6 +572,23 @@ void util_est_dequeue(struct cfs_rq *cfs_rq, struct task_struct *p)
     WRITE_ONCE(cfs_rq->avg.util_est.enqueued, enqueued);
 }
 
+static void __update_inv_weight(struct load_weight *lw)
+{
+    unsigned long w;
+
+    if (likely(lw->inv_weight))
+        return;
+
+    w = scale_load_down(lw->weight);
+
+    if (BITS_PER_LONG > 32 && unlikely(w >= WMULT_CONST))
+        lw->inv_weight = 1;
+    else if (unlikely(!w))
+        lw->inv_weight = WMULT_CONST;
+    else
+        lw->inv_weight = WMULT_CONST / w;
+}
+
 /*
  * delta_exec * weight / lw.weight
  *   OR
@@ -567,7 +604,29 @@ void util_est_dequeue(struct cfs_rq *cfs_rq, struct task_struct *p)
 static u64 __calc_delta(u64 delta_exec, unsigned long weight,
                         struct load_weight *lw)
 {
-    panic("%s: NO implementation!", __func__);
+    u64 fact = scale_load_down(weight);
+    u32 fact_hi = (u32)(fact >> 32);
+    int shift = WMULT_SHIFT;
+    int fs;
+
+    __update_inv_weight(lw);
+
+    if (unlikely(fact_hi)) {
+        fs = fls(fact_hi);
+        shift -= fs;
+        fact >>= fs;
+    }
+
+    fact = mul_u32_u32(fact, lw->inv_weight);
+
+    fact_hi = (u32)(fact >> 32);
+    if (fact_hi) {
+        fs = fls(fact_hi);
+        shift -= fs;
+        fact >>= fs;
+    }
+
+    return mul_u64_u32_shr(delta_exec, fact, shift);
 }
 
 /*
@@ -1632,9 +1691,50 @@ void init_cfs_rq(struct cfs_rq *cfs_rq)
     raw_spin_lock_init(&cfs_rq->removed.lock);
 }
 
+static inline void
+enqueue_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *se)
+{
+    cfs_rq->avg.load_avg += se->avg.load_avg;
+    cfs_rq->avg.load_sum += se_weight(se) * se->avg.load_sum;
+}
+
+static inline void
+dequeue_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *se)
+{
+    sub_positive(&cfs_rq->avg.load_avg, se->avg.load_avg);
+    sub_positive(&cfs_rq->avg.load_sum, se_weight(se) * se->avg.load_sum);
+    /* See update_cfs_rq_load_avg() */
+    cfs_rq->avg.load_sum = max_t(u32, cfs_rq->avg.load_sum,
+                      cfs_rq->avg.load_avg * PELT_MIN_DIVIDER);
+}
+
+static void reweight_entity(struct cfs_rq *cfs_rq, struct sched_entity *se,
+                unsigned long weight)
+{
+    if (se->on_rq) {
+        /* commit outstanding execution time */
+        if (cfs_rq->curr == se)
+            update_curr(cfs_rq);
+        update_load_sub(&cfs_rq->load, se->load.weight);
+    }
+    dequeue_load_avg(cfs_rq, se);
+
+    update_load_set(&se->load, weight);
+
+    do {
+        u32 divider = get_pelt_divider(&se->avg);
+
+        se->avg.load_avg = div_u64(se_weight(se) * se->avg.load_sum,
+                                   divider);
+    } while (0);
+
+    enqueue_load_avg(cfs_rq, se);
+    if (se->on_rq)
+        update_load_add(&cfs_rq->load, se->load.weight);
+}
+
 void reweight_task(struct task_struct *p, int prio)
 {
-#if 0
     struct sched_entity *se = &p->se;
     struct cfs_rq *cfs_rq = cfs_rq_of(se);
     struct load_weight *load = &se->load;
@@ -1642,8 +1742,6 @@ void reweight_task(struct task_struct *p, int prio)
 
     reweight_entity(cfs_rq, se, weight);
     load->inv_weight = sched_prio_to_wmult[prio];
-#endif
-    panic("%s: NO implementation!", __func__);
 }
 
 __init void init_sched_fair_class(void)
@@ -2431,6 +2529,12 @@ static void task_fork_fair(struct task_struct *p)
 static void
 prio_changed_fair(struct rq *rq, struct task_struct *p, int oldprio)
 {
+    if (!task_on_rq_queued(p))
+        return;
+
+    if (rq->cfs.nr_running == 1)
+        return;
+
     panic("%s: NO implementation!", __func__);
 }
 

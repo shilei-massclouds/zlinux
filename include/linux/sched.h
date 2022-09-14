@@ -100,6 +100,8 @@ struct task_group;
 /* Convenience macros for the sake of wake_up(): */
 #define TASK_NORMAL             (TASK_INTERRUPTIBLE | TASK_UNINTERRUPTIBLE)
 
+#define TASK_IDLE               (TASK_UNINTERRUPTIBLE | TASK_NOLOAD)
+
 #define MAX_SCHEDULE_TIMEOUT    LONG_MAX
 
 #define task_is_running(task) \
@@ -932,5 +934,9 @@ static inline void rseq_preempt(struct task_struct *t)
     __set_bit(RSEQ_EVENT_PREEMPT_BIT, &t->rseq_event_mask);
     rseq_set_notify_resume(t);
 }
+
+extern void set_user_nice(struct task_struct *p, long nice);
+
+extern long schedule_timeout_interruptible(long timeout);
 
 #endif /* _LINUX_SCHED_H */

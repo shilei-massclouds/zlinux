@@ -43,4 +43,6 @@ static inline bool blk_mq_sched_has_work(struct blk_mq_hw_ctx *hctx)
     return false;
 }
 
+void blk_mq_sched_dispatch_requests(struct blk_mq_hw_ctx *hctx);
+
 #endif /* BLK_MQ_SCHED_H */

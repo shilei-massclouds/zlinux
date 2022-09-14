@@ -1474,4 +1474,25 @@ extern void nohz_run_idle_balance(int cpu);
 
 extern void nohz_balance_exit_idle(struct rq *rq);
 
+static inline int task_has_rt_policy(struct task_struct *p)
+{
+    return rt_policy(p->policy);
+}
+
+static inline int task_has_dl_policy(struct task_struct *p)
+{
+    return dl_policy(p->policy);
+}
+
+extern const int sched_prio_to_weight[40];
+extern const u32 sched_prio_to_wmult[40];
+
+/*
+ * XXX we want to get rid of these helpers and use the full load resolution.
+ */
+static inline long se_weight(struct sched_entity *se)
+{
+    return scale_load_down(se->load.weight);
+}
+
 #endif /* _KERNEL_SCHED_SCHED_H */

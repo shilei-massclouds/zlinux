@@ -203,6 +203,15 @@ static int io_wq_cpu_offline(unsigned int cpu, struct hlist_node *node)
     return __io_wq_cpu_online(wq, cpu, false);
 }
 
+/*
+ * Called when worker is going to sleep. If there are no workers currently
+ * running and we have work pending, wake up a free one or create a new one.
+ */
+void io_wq_worker_sleeping(struct task_struct *tsk)
+{
+    panic("%s: END!\n", __func__);
+}
+
 static __init int io_wq_init(void)
 {
     int ret;

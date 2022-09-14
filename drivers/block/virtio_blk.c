@@ -416,6 +416,7 @@ static inline void virtblk_request_done(struct request *req)
     virtblk_unmap_data(req, vbr);
     virtblk_cleanup_cmd(req);
     blk_mq_end_request(req, virtblk_result(vbr));
+    printk("########## %s: END!\n", __func__);
 }
 
 static void virtio_commit_rqs(struct blk_mq_hw_ctx *hctx)

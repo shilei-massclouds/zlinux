@@ -76,6 +76,15 @@ void ida_destroy(struct ida *ida);
  */
 #define IDR_INIT(name)      IDR_INIT_BASE(name, 0)
 
+/**
+ * DEFINE_IDR() - Define a statically-allocated IDR.
+ * @name: Name of IDR.
+ *
+ * An IDR defined using this macro is ready for use with no additional
+ * initialisation required.  It contains no IDs.
+ */
+#define DEFINE_IDR(name)    struct idr name = IDR_INIT(name)
+
 struct idr {
     struct radix_tree_root  idr_rt;
     unsigned int            idr_base;
@@ -172,5 +181,24 @@ static inline int ida_alloc(struct ida *ida, gfp_t gfp)
 }
 
 void *idr_find(const struct idr *, unsigned long id);
+void *idr_get_next(struct idr *, int *nextid);
+
+/**
+ * idr_for_each_entry() - Iterate over an IDR's elements of a given type.
+ * @idr: IDR handle.
+ * @entry: The type * to use as cursor
+ * @id: Entry ID.
+ *
+ * @entry and @id do not need to be initialized before the loop, and
+ * after normal termination @entry is left with the value NULL.  This
+ * is convenient for a "not found" value.
+ */
+#define idr_for_each_entry(idr, entry, id)          \
+    for (id = 0; ((entry) = idr_get_next(idr, &(id))) != NULL; id += 1U)
+
+static inline void ida_init(struct ida *ida)
+{
+    xa_init_flags(&ida->xa, IDA_INIT_FLAGS);
+}
 
 #endif /* __IDR_H__ */

@@ -25,6 +25,12 @@
 #define radix_tree_root     xarray
 #define radix_tree_node     xa_node
 
+enum {
+    RADIX_TREE_ITER_TAG_MASK = 0x0f,    /* tag index in lower nybble */
+    RADIX_TREE_ITER_TAGGED   = 0x10,    /* lookup tagged slots */
+    RADIX_TREE_ITER_CONTIG   = 0x20,    /* stop at first hole */
+};
+
 #define RADIX_TREE(name, mask) \
     struct radix_tree_root name = RADIX_TREE_INIT(name, mask)
 
@@ -47,12 +53,6 @@
 #define RADIX_TREE_ENTRY_MASK       3UL
 #define RADIX_TREE_INTERNAL_NODE    2UL
 
-static inline bool radix_tree_is_internal_node(void *ptr)
-{
-    return ((unsigned long)ptr & RADIX_TREE_ENTRY_MASK) ==
-        RADIX_TREE_INTERNAL_NODE;
-}
-
 /**
  * struct radix_tree_iter - radix tree iterator state
  *
@@ -74,6 +74,41 @@ struct radix_tree_iter {
     unsigned long   tags;
     struct radix_tree_node *node;
 };
+
+/**
+ * radix_tree_chunk_size - get current chunk size
+ *
+ * @iter:   pointer to radix tree iterator
+ * Returns: current chunk size
+ */
+static __always_inline long
+radix_tree_chunk_size(struct radix_tree_iter *iter)
+{
+    return iter->next_index - iter->index;
+}
+
+/**
+ * radix_tree_iter_retry - retry this chunk of the iteration
+ * @iter:   iterator state
+ *
+ * If we iterate over a tree protected only by the RCU lock, a race
+ * against deletion or creation may result in seeing a slot for which
+ * radix_tree_deref_retry() returns true.  If so, call this function
+ * and continue the iteration.
+ */
+static inline __must_check
+void __rcu **radix_tree_iter_retry(struct radix_tree_iter *iter)
+{
+    iter->next_index = iter->index;
+    iter->tags = 0;
+    return NULL;
+}
+
+static inline bool radix_tree_is_internal_node(void *ptr)
+{
+    return ((unsigned long)ptr & RADIX_TREE_ENTRY_MASK) ==
+        RADIX_TREE_INTERNAL_NODE;
+}
 
 struct radix_tree_preload {
     local_lock_t lock;
@@ -162,5 +197,100 @@ int radix_tree_insert(struct radix_tree_root *, unsigned long index, void *);
 
 void *radix_tree_delete_item(struct radix_tree_root *, unsigned long, void *);
 void *radix_tree_delete(struct radix_tree_root *, unsigned long);
+
+/**
+ * radix_tree_next_chunk - find next chunk of slots for iteration
+ *
+ * @root:   radix tree root
+ * @iter:   iterator state
+ * @flags:  RADIX_TREE_ITER_* flags and tag index
+ * Returns: pointer to chunk first slot, or NULL if there no more left
+ *
+ * This function looks up the next chunk in the radix tree starting from
+ * @iter->next_index.  It returns a pointer to the chunk's first slot.
+ * Also it fills @iter with data about chunk: position in the tree (index),
+ * its end (next_index), and constructs a bit mask for tagged iterating (tags).
+ */
+void __rcu **radix_tree_next_chunk(const struct radix_tree_root *,
+                                   struct radix_tree_iter *iter,
+                                   unsigned flags);
+
+/**
+ * radix_tree_next_slot - find next slot in chunk
+ *
+ * @slot:   pointer to current slot
+ * @iter:   pointer to iterator state
+ * @flags:  RADIX_TREE_ITER_*, should be constant
+ * Returns: pointer to next slot, or NULL if there no more left
+ *
+ * This function updates @iter->index in the case of a successful lookup.
+ * For tagged lookup it also eats @iter->tags.
+ *
+ * There are several cases where 'slot' can be passed in as NULL to this
+ * function.  These cases result from the use of radix_tree_iter_resume() or
+ * radix_tree_iter_retry().  In these cases we don't end up dereferencing
+ * 'slot' because either:
+ * a) we are doing tagged iteration and iter->tags has been set to 0, or
+ * b) we are doing non-tagged iteration, and iter->index and iter->next_index
+ *    have been set up so that radix_tree_chunk_size() returns 1 or 0.
+ */
+static __always_inline
+void __rcu **radix_tree_next_slot(void __rcu **slot,
+                                  struct radix_tree_iter *iter,
+                                  unsigned flags)
+{
+    if (flags & RADIX_TREE_ITER_TAGGED) {
+        iter->tags >>= 1;
+        if (unlikely(!iter->tags))
+            return NULL;
+        if (likely(iter->tags & 1ul)) {
+            iter->index = __radix_tree_iter_add(iter, 1);
+            slot++;
+            goto found;
+        }
+        if (!(flags & RADIX_TREE_ITER_CONTIG)) {
+            unsigned offset = __ffs(iter->tags);
+
+            iter->tags >>= offset++;
+            iter->index = __radix_tree_iter_add(iter, offset);
+            slot += offset;
+            goto found;
+        }
+    } else {
+        long count = radix_tree_chunk_size(iter);
+
+        while (--count > 0) {
+            slot++;
+            iter->index = __radix_tree_iter_add(iter, 1);
+
+            if (likely(*slot))
+                goto found;
+            if (flags & RADIX_TREE_ITER_CONTIG) {
+                /* forbid switching to the next chunk */
+                iter->next_index = 0;
+                break;
+            }
+        }
+    }
+    return NULL;
+
+ found:
+    return slot;
+}
+
+/**
+ * radix_tree_for_each_slot - iterate over non-empty slots
+ *
+ * @slot:   the void** variable for pointer to slot
+ * @root:   the struct radix_tree_root pointer
+ * @iter:   the struct radix_tree_iter pointer
+ * @start:  iteration starting index
+ *
+ * @slot points to radix tree slot, @iter->index contains its index.
+ */
+#define radix_tree_for_each_slot(slot, root, iter, start)       \
+    for (slot = radix_tree_iter_init(iter, start) ;         \
+         slot || (slot = radix_tree_next_chunk(root, iter, 0)) ;    \
+         slot = radix_tree_next_slot(slot, iter, 0))
 
 #endif /* _LINUX_RADIX_TREE_H */

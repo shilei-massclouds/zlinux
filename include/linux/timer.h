@@ -116,4 +116,21 @@ static inline void destroy_timer_on_stack(struct timer_list *timer) { }
 
 extern int del_timer(struct timer_list * timer);
 
+/**
+ * timer_setup - prepare a timer for first use
+ * @timer: the timer in question
+ * @callback: the function to call when timer expires
+ * @flags: any TIMER_* flags
+ *
+ * Regular timer initialization should use either DEFINE_TIMER() above,
+ * or timer_setup(). For timers on the stack, timer_setup_on_stack() must
+ * be used and must be balanced with a call to destroy_timer_on_stack().
+ */
+#define timer_setup(timer, callback, flags)         \
+    __init_timer((timer), (callback), (flags))
+
+extern int mod_timer(struct timer_list *timer, unsigned long expires);
+extern int mod_timer_pending(struct timer_list *timer,
+                             unsigned long expires);
+
 #endif /* _LINUX_TIMER_H */

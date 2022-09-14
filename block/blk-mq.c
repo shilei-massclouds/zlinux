@@ -47,6 +47,12 @@
 #include "blk.h"
 #include "blk-mq-tag.h"
 
+enum prep_dispatch {
+    PREP_DISPATCH_OK,
+    PREP_DISPATCH_NO_TAG,
+    PREP_DISPATCH_NO_BUDGET,
+};
+
 static DEFINE_PER_CPU(struct llist_head, blk_cpu_done);
 
 static int blk_mq_realloc_tag_set_tags(struct blk_mq_tag_set *set,
@@ -536,6 +542,24 @@ static void blk_mq_exit_hctx(struct request_queue *q,
     panic("%s: END!\n", __func__);
 }
 
+/**
+ * __blk_mq_run_hw_queue - Run a hardware queue.
+ * @hctx: Pointer to the hardware queue to run.
+ *
+ * Send pending requests to the hardware.
+ */
+static void __blk_mq_run_hw_queue(struct blk_mq_hw_ctx *hctx)
+{
+    /*
+     * We can't run the queue inline with ints disabled. Ensure that
+     * we catch bad users of this early.
+     */
+    WARN_ON_ONCE(in_interrupt());
+
+    blk_mq_run_dispatch_ops(hctx->queue,
+            blk_mq_sched_dispatch_requests(hctx));
+}
+
 static void blk_mq_run_work_fn(struct work_struct *work)
 {
     struct blk_mq_hw_ctx *hctx;
@@ -548,10 +572,7 @@ static void blk_mq_run_work_fn(struct work_struct *work)
     if (blk_mq_hctx_stopped(hctx))
         return;
 
-#if 0
     __blk_mq_run_hw_queue(hctx);
-#endif
-    panic("%s: END!\n", __func__);
 }
 
 static struct blk_mq_hw_ctx *
@@ -1278,13 +1299,17 @@ static void blk_add_rq_to_plug(struct blk_plug *plug,
 {
     struct request *last = rq_list_peek(&plug->mq_list);
 
+    printk("###### %s: 0\n", __func__);
     if (!plug->rq_count) {
         /* */
     } else if (plug->rq_count >= blk_plug_max_rq_count(plug) ||
                (!blk_queue_nomerges(rq->q) &&
                 blk_rq_bytes(last) >= BLK_PLUG_FLUSH_SIZE)) {
+        printk("###### %s: 1\n", __func__);
         blk_mq_flush_plug_list(plug, false);
+        printk("###### %s: 2\n", __func__);
     }
+    printk("###### %s: 3 (%d)\n", __func__, plug->rq_count);
 
     if (!plug->multiple_queues && last && last->q != rq->q)
         plug->multiple_queues = true;
@@ -1999,10 +2024,12 @@ void blk_mq_flush_plug_list(struct blk_plug *plug, bool from_schedule)
 {
     struct request *rq;
 
+    printk("###### %s: 1\n", __func__);
     if (rq_list_empty(plug->mq_list))
         return;
     plug->rq_count = 0;
 
+    printk("###### %s: 2\n", __func__);
     if (!plug->multiple_queues && !plug->has_elevator &&
         !from_schedule) {
 
@@ -2011,6 +2038,7 @@ void blk_mq_flush_plug_list(struct blk_plug *plug, bool from_schedule)
         rq = rq_list_peek(&plug->mq_list);
         q = rq->q;
 
+        printk("###### %s: 2.1\n", __func__);
         /*
          * Peek first request and see if we have a ->queue_rqs() hook.
          * If we do, we can dispatch the whole plug list in one go. We
@@ -2023,10 +2051,13 @@ void blk_mq_flush_plug_list(struct blk_plug *plug, bool from_schedule)
          */
         if (q->mq_ops->queue_rqs &&
             !(rq->mq_hctx->flags & BLK_MQ_F_TAG_QUEUE_SHARED)) {
+            printk("###### %s: 2.2\n", __func__);
             blk_mq_run_dispatch_ops(q,
                                     __blk_mq_flush_plug_list(q, plug));
+            printk("###### %s: 2.3\n", __func__);
             if (rq_list_empty(plug->mq_list))
                 return;
+            printk("###### %s: 2.!\n", __func__);
         }
 
         blk_mq_run_dispatch_ops(q,
@@ -2035,9 +2066,11 @@ void blk_mq_flush_plug_list(struct blk_plug *plug, bool from_schedule)
             return;
     }
 
+    printk("###### %s: 3\n", __func__);
     do {
         blk_mq_dispatch_plug_list(plug, from_schedule);
     } while (!rq_list_empty(plug->mq_list));
+    printk("###### %s: !\n", __func__);
 }
 
 void blk_mq_free_plug_rqs(struct blk_plug *plug)
@@ -2173,6 +2206,62 @@ void blk_mq_run_hw_queue(struct blk_mq_hw_ctx *hctx, bool async)
         __blk_mq_delay_run_hw_queue(hctx, async, 0);
 }
 EXPORT_SYMBOL(blk_mq_run_hw_queue);
+
+struct flush_busy_ctx_data {
+    struct blk_mq_hw_ctx *hctx;
+    struct list_head *list;
+};
+
+static bool flush_busy_ctx(struct sbitmap *sb, unsigned int bitnr,
+                           void *data)
+{
+    struct flush_busy_ctx_data *flush_data = data;
+    struct blk_mq_hw_ctx *hctx = flush_data->hctx;
+    struct blk_mq_ctx *ctx = hctx->ctxs[bitnr];
+    enum hctx_type type = hctx->type;
+
+    spin_lock(&ctx->lock);
+    list_splice_tail_init(&ctx->rq_lists[type], flush_data->list);
+    sbitmap_clear_bit(sb, bitnr);
+    spin_unlock(&ctx->lock);
+    return true;
+}
+
+/*
+ * Process software queues that have been marked busy, splicing them
+ * to the for-dispatch
+ */
+void blk_mq_flush_busy_ctxs(struct blk_mq_hw_ctx *hctx,
+                            struct list_head *list)
+{
+    struct flush_busy_ctx_data data = {
+        .hctx = hctx,
+        .list = list,
+    };
+
+    sbitmap_for_each_set(&hctx->ctx_map, flush_busy_ctx, &data);
+}
+
+/*
+ * Returns true if we did some work AND can potentially do more.
+ */
+bool blk_mq_dispatch_rq_list(struct blk_mq_hw_ctx *hctx,
+                             struct list_head *list,
+                             unsigned int nr_budgets)
+{
+    enum prep_dispatch prep;
+    struct request_queue *q = hctx->queue;
+    struct request *rq, *nxt;
+    int errors, queued;
+    blk_status_t ret = BLK_STS_OK;
+    LIST_HEAD(zone_list);
+    bool needs_resource = false;
+
+    if (list_empty(list))
+        return false;
+
+    panic("%s: END!\n", __func__);
+}
 
 static int __init blk_mq_init(void)
 {

@@ -690,13 +690,10 @@ static inline void sched_submit_work(struct task_struct *tsk)
      * wants to wake up a task to maintain concurrency.
      */
     if (task_flags & (PF_WQ_WORKER | PF_IO_WORKER)) {
-#if 0
         if (task_flags & PF_WQ_WORKER)
             wq_worker_sleeping(tsk);
         else
             io_wq_worker_sleeping(tsk);
-#endif
-        panic("%s: (PF_WQ_WORKER | PF_IO_WORKER)!\n", __func__);
     }
 
     if (tsk_is_pi_blocked(tsk))
@@ -2763,6 +2760,107 @@ int sched_setscheduler_nocheck(struct task_struct *p, int policy,
                                const struct sched_param *param)
 {
     return _sched_setscheduler(p, policy, param, false);
+}
+
+static inline int __normal_prio(int policy, int rt_prio, int nice)
+{
+    int prio;
+
+    if (dl_policy(policy))
+        prio = MAX_DL_PRIO - 1;
+    else if (rt_policy(policy))
+        prio = MAX_RT_PRIO - 1 - rt_prio;
+    else
+        prio = NICE_TO_PRIO(nice);
+
+    return prio;
+}
+
+/*
+ * Calculate the expected normal priority: i.e. priority
+ * without taking RT-inheritance into account. Might be
+ * boosted by interactivity modifiers. Changes upon fork,
+ * setprio syscalls, and whenever the interactivity
+ * estimator recalculates.
+ */
+static inline int normal_prio(struct task_struct *p)
+{
+    return __normal_prio(p->policy, p->rt_priority,
+                         PRIO_TO_NICE(p->static_prio));
+}
+
+/*
+ * Calculate the current priority, i.e. the priority
+ * taken into account by the scheduler. This value might
+ * be boosted by RT tasks, or might be boosted by
+ * interactivity modifiers. Will be RT if the task got
+ * RT-boosted. If not then it returns p->normal_prio.
+ */
+static int effective_prio(struct task_struct *p)
+{
+    p->normal_prio = normal_prio(p);
+    /*
+     * If we are RT tasks or we were boosted to RT priority,
+     * keep the priority unchanged. Otherwise, update priority
+     * to the normal priority:
+     */
+    if (!rt_prio(p->prio))
+        return p->normal_prio;
+    return p->prio;
+}
+
+void set_user_nice(struct task_struct *p, long nice)
+{
+    bool queued, running;
+    int old_prio;
+    struct rq_flags rf;
+    struct rq *rq;
+
+    if (task_nice(p) == nice || nice < MIN_NICE || nice > MAX_NICE)
+        return;
+
+    /*
+     * We have to be careful, if called from sys_setpriority(),
+     * the task might be in the middle of scheduling on another CPU.
+     */
+    rq = task_rq_lock(p, &rf);
+    update_rq_clock(rq);
+
+    /*
+     * The RT priorities are set via sched_setscheduler(), but we still
+     * allow the 'normal' nice value to be set - but as expected
+     * it won't have any effect on scheduling until the task is
+     * SCHED_DEADLINE, SCHED_FIFO or SCHED_RR:
+     */
+    if (task_has_dl_policy(p) || task_has_rt_policy(p)) {
+        p->static_prio = NICE_TO_PRIO(nice);
+        goto out_unlock;
+    }
+    queued = task_on_rq_queued(p);
+    running = task_current(rq, p);
+    if (queued)
+        dequeue_task(rq, p, DEQUEUE_SAVE | DEQUEUE_NOCLOCK);
+    if (running)
+        put_prev_task(rq, p);
+
+    p->static_prio = NICE_TO_PRIO(nice);
+    set_load_weight(p, true);
+    old_prio = p->prio;
+    p->prio = effective_prio(p);
+
+    if (queued)
+        enqueue_task(rq, p, ENQUEUE_RESTORE | ENQUEUE_NOCLOCK);
+    if (running)
+        set_next_task(rq, p);
+
+    /*
+     * If the task increased its priority or is running and
+     * lowered its priority, then reschedule its CPU:
+     */
+    p->sched_class->prio_changed(rq, p, old_prio);
+
+ out_unlock:
+    task_rq_unlock(rq, p, &rf);
 }
 
 void __init sched_init_smp(void)

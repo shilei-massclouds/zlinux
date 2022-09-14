@@ -346,4 +346,81 @@ int sbitmap_test_bit(struct sbitmap *sb, unsigned int bitnr)
  */
 bool sbitmap_any_bit_set(const struct sbitmap *sb);
 
+typedef bool (*sb_for_each_fn)(struct sbitmap *, unsigned int, void *);
+
+/**
+ * __sbitmap_for_each_set() - Iterate over each set bit in a &struct sbitmap.
+ * @start: Where to start the iteration.
+ * @sb: Bitmap to iterate over.
+ * @fn: Callback. Should return true to continue or false to break early.
+ * @data: Pointer to pass to callback.
+ *
+ * This is inline even though it's non-trivial so that the function calls to the
+ * callback will hopefully get optimized away.
+ */
+static inline
+void __sbitmap_for_each_set(struct sbitmap *sb, unsigned int start,
+                            sb_for_each_fn fn, void *data)
+{
+    unsigned int index;
+    unsigned int nr;
+    unsigned int scanned = 0;
+
+    if (start >= sb->depth)
+        start = 0;
+    index = SB_NR_TO_INDEX(sb, start);
+    nr = SB_NR_TO_BIT(sb, start);
+
+    while (scanned < sb->depth) {
+        unsigned long word;
+        unsigned int depth = min_t(unsigned int,
+                       __map_depth(sb, index) - nr,
+                       sb->depth - scanned);
+
+        scanned += depth;
+        word = sb->map[index].word & ~sb->map[index].cleared;
+        if (!word)
+            goto next;
+
+        /*
+         * On the first iteration of the outer loop, we need to add the
+         * bit offset back to the size of the word for find_next_bit().
+         * On all other iterations, nr is zero, so this is a noop.
+         */
+        depth += nr;
+        while (1) {
+            nr = find_next_bit(&word, depth, nr);
+            if (nr >= depth)
+                break;
+            if (!fn(sb, (index << sb->shift) + nr, data))
+                return;
+
+            nr++;
+        }
+ next:
+        nr = 0;
+        if (++index >= sb->map_nr)
+            index = 0;
+    }
+}
+
+static inline
+void sbitmap_clear_bit(struct sbitmap *sb, unsigned int bitnr)
+{
+    clear_bit(SB_NR_TO_BIT(sb, bitnr), __sbitmap_word(sb, bitnr));
+}
+
+/**
+ * sbitmap_for_each_set() - Iterate over each set bit in a &struct sbitmap.
+ * @sb: Bitmap to iterate over.
+ * @fn: Callback. Should return true to continue or false to break early.
+ * @data: Pointer to pass to callback.
+ */
+static inline
+void sbitmap_for_each_set(struct sbitmap *sb, sb_for_each_fn fn,
+                          void *data)
+{
+    __sbitmap_for_each_set(sb, 0, fn, data);
+}
+
 #endif /* __LINUX_SCALE_BITMAP_H */

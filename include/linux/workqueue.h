@@ -269,4 +269,11 @@ struct delayed_work *to_delayed_work(struct work_struct *work)
  */
 #define work_data_bits(work) ((unsigned long *)(&(work)->data))
 
+/**
+ * work_pending - Find out whether a work item is currently pending
+ * @work: The work item in question
+ */
+#define work_pending(work) \
+    test_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(work))
+
 #endif /* _LINUX_WORKQUEUE_H */

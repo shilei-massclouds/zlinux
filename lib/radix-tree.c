@@ -1100,6 +1100,21 @@ void *radix_tree_delete(struct radix_tree_root *root, unsigned long index)
 }
 EXPORT_SYMBOL(radix_tree_delete);
 
+/**
+ * radix_tree_next_chunk - find next chunk of slots for iteration
+ *
+ * @root:   radix tree root
+ * @iter:   iterator state
+ * @flags:  RADIX_TREE_ITER_* flags and tag index
+ * Returns: pointer to chunk first slot, or NULL if iteration is over
+ */
+void __rcu **radix_tree_next_chunk(const struct radix_tree_root *root,
+                                   struct radix_tree_iter *iter,
+                                   unsigned flags)
+{
+    panic("%s: END!\n", __func__);
+}
+
 void __init radix_tree_init(void)
 {
     int ret;
