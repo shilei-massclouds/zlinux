@@ -231,7 +231,8 @@ static inline int blk_mq_get_dispatch_budget(struct request_queue *q)
     return 0;
 }
 
-static inline void blk_mq_set_rq_budget_token(struct request *rq, int token)
+static inline
+void blk_mq_set_rq_budget_token(struct request *rq, int token)
 {
     if (token < 0)
         return;

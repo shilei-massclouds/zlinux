@@ -1349,7 +1349,8 @@ bool __blk_mq_get_driver_tag(struct blk_mq_hw_ctx *hctx, struct request *rq)
  * - take 4 as factor for avoiding to get too small(0) result, and this
  *   factor doesn't matter because EWMA decreases exponentially
  */
-static void blk_mq_update_dispatch_busy(struct blk_mq_hw_ctx *hctx, bool busy)
+static void blk_mq_update_dispatch_busy(struct blk_mq_hw_ctx *hctx,
+                                        bool busy)
 {
     unsigned int ewma;
 
@@ -2242,6 +2243,57 @@ void blk_mq_flush_busy_ctxs(struct blk_mq_hw_ctx *hctx,
     sbitmap_for_each_set(&hctx->ctx_map, flush_busy_ctx, &data);
 }
 
+static enum prep_dispatch blk_mq_prep_dispatch_rq(struct request *rq,
+                                                  bool need_budget)
+{
+    struct blk_mq_hw_ctx *hctx = rq->mq_hctx;
+    int budget_token = -1;
+
+    if (need_budget) {
+        budget_token = blk_mq_get_dispatch_budget(rq->q);
+        if (budget_token < 0) {
+            blk_mq_put_driver_tag(rq);
+            return PREP_DISPATCH_NO_BUDGET;
+        }
+        blk_mq_set_rq_budget_token(rq, budget_token);
+    }
+
+    if (!blk_mq_get_driver_tag(rq)) {
+        panic("%s: 2!\n", __func__);
+    }
+    return PREP_DISPATCH_OK;
+}
+
+static void blk_mq_handle_dev_resource(struct request *rq,
+                                       struct list_head *list)
+{
+    struct request *next =
+        list_first_entry_or_null(list, struct request, queuelist);
+
+    /*
+     * If an I/O scheduler has been configured and we got a driver tag for
+     * the next request already, free it.
+     */
+    if (next)
+        blk_mq_put_driver_tag(next);
+
+    list_add(&rq->queuelist, list);
+    __blk_mq_requeue_request(rq);
+}
+
+static void blk_mq_handle_zone_resource(struct request *rq,
+                                        struct list_head *zone_list)
+{
+    /*
+     * If we end up here it is because we cannot dispatch a request to a
+     * specific zone due to LLD level zone-write locking or other zone
+     * related resource not being available. In this case, set the request
+     * aside in zone_list for retrying it later.
+     */
+    list_add(&rq->queuelist, zone_list);
+    __blk_mq_requeue_request(rq);
+}
+
 /*
  * Returns true if we did some work AND can potentially do more.
  */
@@ -2260,7 +2312,86 @@ bool blk_mq_dispatch_rq_list(struct blk_mq_hw_ctx *hctx,
     if (list_empty(list))
         return false;
 
-    panic("%s: END!\n", __func__);
+    /*
+     * Now process all the entries, sending them to the driver.
+     */
+    errors = queued = 0;
+    do {
+        struct blk_mq_queue_data bd;
+
+        rq = list_first_entry(list, struct request, queuelist);
+
+        WARN_ON_ONCE(hctx != rq->mq_hctx);
+        prep = blk_mq_prep_dispatch_rq(rq, !nr_budgets);
+        if (prep != PREP_DISPATCH_OK)
+            break;
+
+        list_del_init(&rq->queuelist);
+
+        bd.rq = rq;
+
+        /*
+         * Flag last if we have no more requests, or if we have more
+         * but can't assign a driver tag to it.
+         */
+        if (list_empty(list))
+            bd.last = true;
+        else {
+            nxt = list_first_entry(list, struct request, queuelist);
+            bd.last = !blk_mq_get_driver_tag(nxt);
+        }
+
+        /*
+         * once the request is queued to lld, no need to cover the
+         * budget any more
+         */
+        if (nr_budgets)
+            nr_budgets--;
+        ret = q->mq_ops->queue_rq(hctx, &bd);
+        switch (ret) {
+        case BLK_STS_OK:
+            queued++;
+            break;
+        case BLK_STS_RESOURCE:
+            needs_resource = true;
+            fallthrough;
+        case BLK_STS_DEV_RESOURCE:
+            blk_mq_handle_dev_resource(rq, list);
+            goto out;
+        case BLK_STS_ZONE_RESOURCE:
+            /*
+             * Move the request to zone_list and keep going through
+             * the dispatch list to find more requests the drive can
+             * accept.
+             */
+            blk_mq_handle_zone_resource(rq, &zone_list);
+            needs_resource = true;
+            break;
+        default:
+            errors++;
+            blk_mq_end_request(rq, ret);
+        }
+    } while (!list_empty(list));
+ out:
+    if (!list_empty(&zone_list))
+        list_splice_tail_init(&zone_list, list);
+
+    /* If we didn't flush the entire list, we could have told the driver
+     * there was more coming, but that turned out to be a lie.
+     */
+    if ((!list_empty(list) || errors) && q->mq_ops->commit_rqs &&
+        queued)
+        q->mq_ops->commit_rqs(hctx);
+    /*
+     * Any items that need requeuing? Stuff them into hctx->dispatch,
+     * that is where we will continue on next queue run.
+     */
+    if (!list_empty(list)) {
+        panic("%s: 1!\n", __func__);
+    } else
+        blk_mq_update_dispatch_busy(hctx, false);
+
+    return (queued + errors) != 0;
 }
 
 static int __init blk_mq_init(void)

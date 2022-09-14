@@ -80,4 +80,13 @@ static inline void __hash_init(struct hlist_head *ht, unsigned int sz)
 #define hash_add(hashtable, node, key)                      \
     hlist_add_head(node, &hashtable[hash_min(key, HASH_BITS(hashtable))])
 
+/**
+ * hash_del - remove an object from a hashtable
+ * @node: &struct hlist_node of the object to remove
+ */
+static inline void hash_del(struct hlist_node *node)
+{
+    hlist_del_init(node);
+}
+
 #endif /* _LINUX_HASHTABLE_H */

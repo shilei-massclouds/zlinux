@@ -75,6 +75,24 @@ static struct kmem_cache *pwq_cache;
 static struct rcuwait manager_wait =
     __RCUWAIT_INITIALIZER(manager_wait);
 
+struct workqueue_struct *system_wq __read_mostly;
+EXPORT_SYMBOL(system_wq);
+struct workqueue_struct *system_highpri_wq __read_mostly;
+EXPORT_SYMBOL_GPL(system_highpri_wq);
+struct workqueue_struct *system_long_wq __read_mostly;
+EXPORT_SYMBOL_GPL(system_long_wq);
+struct workqueue_struct *system_unbound_wq __read_mostly;
+EXPORT_SYMBOL_GPL(system_unbound_wq);
+struct workqueue_struct *system_freezable_wq __read_mostly;
+EXPORT_SYMBOL_GPL(system_freezable_wq);
+struct workqueue_struct *system_power_efficient_wq __read_mostly;
+EXPORT_SYMBOL_GPL(system_power_efficient_wq);
+struct workqueue_struct *system_freezable_power_efficient_wq
+    __read_mostly;
+EXPORT_SYMBOL_GPL(system_freezable_power_efficient_wq);
+
+static bool wq_numa_enabled;        /* unbound NUMA affinity enabled */
+
 /**
  * for_each_pool - iterate through all worker_pools in the system
  * @pool: iteration cursor
@@ -198,6 +216,15 @@ struct pool_workqueue {
     struct work_struct  unbound_release_work;
     struct rcu_head     rcu;
 } __aligned(1 << WORK_STRUCT_FLAG_BITS);
+
+/*
+ * Structure used to wait for workqueue flush.
+ */
+struct wq_flusher {
+    struct list_head    list;       /* WQ: list of flushers */
+    int         flush_color;    /* WQ: flush color waiting for */
+    struct completion   done;       /* flush completion */
+};
 
 /*
  * The externally visible workqueue.  It relays the issued work items to
@@ -1323,6 +1350,16 @@ static void __init wq_numa_init(void)
 static void wq_update_unbound_numa(struct workqueue_struct *wq, int cpu,
                                    bool online)
 {
+    int node = cpu_to_node(cpu);
+    int cpu_off = online ? -1 : cpu;
+    struct pool_workqueue *old_pwq = NULL, *pwq;
+    struct workqueue_attrs *target_attrs;
+    cpumask_t *cpumask;
+
+    if (!wq_numa_enabled || !(wq->flags & WQ_UNBOUND) ||
+        wq->unbound_attrs->no_numa)
+        return;
+
     panic("%s: END!\n", __func__);
 }
 
@@ -1640,6 +1677,78 @@ static void set_work_pool_and_clear_pending(struct work_struct *work,
 }
 
 /**
+ * put_pwq - put a pool_workqueue reference
+ * @pwq: pool_workqueue to put
+ *
+ * Drop a reference of @pwq.  If its refcnt reaches zero, schedule its
+ * destruction.  The caller should be holding the matching pool->lock.
+ */
+static void put_pwq(struct pool_workqueue *pwq)
+{
+    if (likely(--pwq->refcnt))
+        return;
+    if (WARN_ON_ONCE(!(pwq->wq->flags & WQ_UNBOUND)))
+        return;
+    /*
+     * @pwq can't be released under pool->lock, bounce to
+     * pwq_unbound_release_workfn().  This never recurses on the same
+     * pool->lock as this path is taken only for unbound workqueues and
+     * the release work item is scheduled on a per-cpu workqueue.  To
+     * avoid lockdep warning, unbound pool->locks are given lockdep
+     * subclass of 1 in get_unbound_pool().
+     */
+    schedule_work(&pwq->unbound_release_work);
+}
+
+/**
+ * pwq_dec_nr_in_flight - decrement pwq's nr_in_flight
+ * @pwq: pwq of interest
+ * @work_data: work_data of work which left the queue
+ *
+ * A work either has completed or is removed from pending queue,
+ * decrement nr_in_flight of its pwq and handle workqueue flushing.
+ *
+ * CONTEXT:
+ * raw_spin_lock_irq(pool->lock).
+ */
+static void pwq_dec_nr_in_flight(struct pool_workqueue *pwq,
+                                 unsigned long work_data)
+{
+    int color = get_work_color(work_data);
+
+    if (!(work_data & WORK_STRUCT_INACTIVE)) {
+        pwq->nr_active--;
+        if (!list_empty(&pwq->inactive_works)) {
+            /* one down, submit an inactive one */
+            if (pwq->nr_active < pwq->max_active)
+                pwq_activate_first_inactive(pwq);
+        }
+    }
+
+    pwq->nr_in_flight[color]--;
+
+    /* is flush in progress and are we at the flushing tip? */
+    if (likely(pwq->flush_color != color))
+        goto out_put;
+
+    /* are there still in-flight works? */
+    if (pwq->nr_in_flight[color])
+        goto out_put;
+
+    /* this pwq is done, clear flush_color */
+    pwq->flush_color = -1;
+
+    /*
+     * If this was the last pwq, wake up the first flusher.  It
+     * will handle the rest.
+     */
+    if (atomic_dec_and_test(&pwq->wq->nr_pwqs_to_flush))
+        complete(&pwq->wq->first_flusher->done);
+out_put:
+    put_pwq(pwq);
+}
+
+/**
  * process_one_work - process single work
  * @worker: self
  * @work: work to process
@@ -1756,7 +1865,32 @@ __acquires(&pool->lock)
         //dump_stack();
     }
 
-    panic("%s: END!\n", __func__);
+    /*
+     * The following prevents a kworker from hogging CPU on !PREEMPTION
+     * kernels, where a requeueing work item waiting for something to
+     * happen could deadlock with stop_machine as such work item could
+     * indefinitely requeue itself while all other CPUs are trapped in
+     * stop_machine. At the same time, report a quiescent RCU state so
+     * the same condition doesn't freeze RCU.
+     */
+    cond_resched();
+
+    raw_spin_lock_irq(&pool->lock);
+
+    /* clear cpu intensive status */
+    if (unlikely(cpu_intensive))
+        worker_clr_flags(worker, WORKER_CPU_INTENSIVE);
+
+    /* tag the worker for identification in schedule() */
+    worker->last_func = worker->current_func;
+
+    /* we're done with it, release */
+    hash_del(&worker->hentry);
+    worker->current_work = NULL;
+    worker->current_func = NULL;
+    worker->current_pwq = NULL;
+    worker->current_color = INT_MAX;
+    pwq_dec_nr_in_flight(pwq, work_data);
 }
 
 /**
@@ -1862,8 +1996,7 @@ static int worker_thread(void *__worker)
         }
     } while (keep_working(pool));
 
-    panic("%s: END!\n", __func__);
-
+    worker_set_flags(worker, WORKER_PREP);
  sleep:
     /*
      * pool->lock is held and there's no work to process and no need to
@@ -2115,8 +2248,8 @@ void __init workqueue_init_early(void)
         ordered_wq_attrs[i] = attrs;
     }
 
-#if 0
     system_wq = alloc_workqueue("events", 0, 0);
+#if 0
     system_highpri_wq = alloc_workqueue("events_highpri", WQ_HIGHPRI, 0);
     system_long_wq = alloc_workqueue("events_long", 0, 0);
     system_unbound_wq = alloc_workqueue("events_unbound", WQ_UNBOUND,
@@ -2158,6 +2291,36 @@ void wq_worker_sleeping(struct task_struct *task)
     panic("%s: END!\n", __func__);
 }
 
+/**
+ * queue_work_on - queue work on specific cpu
+ * @cpu: CPU number to execute work on
+ * @wq: workqueue to use
+ * @work: work to queue
+ *
+ * We queue the work to a specific CPU, the caller must ensure it
+ * can't go away.  Callers that fail to ensure that the specified
+ * CPU cannot go away will execute on a randomly chosen CPU.
+ *
+ * Return: %false if @work was already on a queue, %true otherwise.
+ */
+bool queue_work_on(int cpu, struct workqueue_struct *wq,
+                   struct work_struct *work)
+{
+    bool ret = false;
+    unsigned long flags;
+
+    local_irq_save(flags);
+
+    if (!test_and_set_bit(WORK_STRUCT_PENDING_BIT,
+                          work_data_bits(work))) {
+        __queue_work(cpu, wq, work);
+        ret = true;
+    }
+
+    local_irq_restore(flags);
+    return ret;
+}
+EXPORT_SYMBOL(queue_work_on);
 
 /**
  * workqueue_init - bring workqueue subsystem fully online

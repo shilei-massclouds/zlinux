@@ -181,6 +181,42 @@ struct rcu_work {
     struct workqueue_struct *wq;
 };
 
+/*
+ * System-wide workqueues which are always present.
+ *
+ * system_wq is the one used by schedule[_delayed]_work[_on]().
+ * Multi-CPU multi-threaded.  There are users which expect relatively
+ * short queue flush time.  Don't queue works which can run for too
+ * long.
+ *
+ * system_highpri_wq is similar to system_wq but for work items which
+ * require WQ_HIGHPRI.
+ *
+ * system_long_wq is similar to system_wq but may host long running
+ * works.  Queue flushing might take relatively long.
+ *
+ * system_unbound_wq is unbound workqueue.  Workers are not bound to
+ * any specific CPU, not concurrency managed, and all queued works are
+ * executed immediately as long as max_active limit is not reached and
+ * resources are available.
+ *
+ * system_freezable_wq is equivalent to system_wq except that it's
+ * freezable.
+ *
+ * *_power_efficient_wq are inclined towards saving power and converted
+ * into WQ_UNBOUND variants if 'wq_power_efficient' is enabled; otherwise,
+ * they are same as their non-power-efficient counterparts - e.g.
+ * system_power_efficient_wq is identical to system_wq if
+ * 'wq_power_efficient' is disabled.  See WQ_POWER_EFFICIENT for more info.
+ */
+extern struct workqueue_struct *system_wq;
+extern struct workqueue_struct *system_highpri_wq;
+extern struct workqueue_struct *system_long_wq;
+extern struct workqueue_struct *system_unbound_wq;
+extern struct workqueue_struct *system_freezable_wq;
+extern struct workqueue_struct *system_power_efficient_wq;
+extern struct workqueue_struct *system_freezable_power_efficient_wq;
+
 #define WORK_DATA_INIT()    ATOMIC_LONG_INIT((unsigned long)WORK_STRUCT_NO_POOL)
 #define WORK_DATA_STATIC_INIT() \
     ATOMIC_LONG_INIT((unsigned long)(WORK_STRUCT_NO_POOL | WORK_STRUCT_STATIC))
@@ -275,5 +311,56 @@ struct delayed_work *to_delayed_work(struct work_struct *work)
  */
 #define work_pending(work) \
     test_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(work))
+
+extern bool queue_work_on(int cpu, struct workqueue_struct *wq,
+                          struct work_struct *work);
+
+/**
+ * queue_work - queue work on a workqueue
+ * @wq: workqueue to use
+ * @work: work to queue
+ *
+ * Returns %false if @work was already on a queue, %true otherwise.
+ *
+ * We queue the work to the CPU on which it was submitted, but if the CPU dies
+ * it can be processed by another CPU.
+ *
+ * Memory-ordering properties:  If it returns %true, guarantees that all stores
+ * preceding the call to queue_work() in the program order will be visible from
+ * the CPU which will execute @work by the time such work executes, e.g.,
+ *
+ * { x is initially 0 }
+ *
+ *   CPU0               CPU1
+ *
+ *   WRITE_ONCE(x, 1);          [ @work is being executed ]
+ *   r0 = queue_work(wq, work);       r1 = READ_ONCE(x);
+ *
+ * Forbids: r0 == true && r1 == 0
+ */
+static inline
+bool queue_work(struct workqueue_struct *wq, struct work_struct *work)
+{
+    return queue_work_on(WORK_CPU_UNBOUND, wq, work);
+}
+
+/**
+ * schedule_work - put work task in global workqueue
+ * @work: job to be done
+ *
+ * Returns %false if @work was already on the kernel-global workqueue and
+ * %true otherwise.
+ *
+ * This puts a job in the kernel-global workqueue if it was not already
+ * queued and leaves it in the same position on the kernel-global
+ * workqueue otherwise.
+ *
+ * Shares the same memory-ordering properties of queue_work(), cf. the
+ * DocBook header of queue_work().
+ */
+static inline bool schedule_work(struct work_struct *work)
+{
+    return queue_work(system_wq, work);
+}
 
 #endif /* _LINUX_WORKQUEUE_H */
