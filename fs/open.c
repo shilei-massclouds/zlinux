@@ -26,7 +26,7 @@
 #include <linux/fs.h>
 //#include <linux/personality.h>
 #include <linux/pagemap.h>
-//#include <linux/syscalls.h>
+#include <linux/syscalls.h>
 #include <linux/rcupdate.h>
 #if 0
 #include <linux/audit.h>
@@ -203,3 +203,60 @@ int filp_close(struct file *filp, fl_owner_t id)
     return retval;
 }
 EXPORT_SYMBOL(filp_close);
+
+static long do_faccessat(int dfd, const char __user *filename,
+                         int mode, int flags)
+{
+    struct path path;
+    struct inode *inode;
+    int res;
+    unsigned int lookup_flags = LOOKUP_FOLLOW;
+    const struct cred *old_cred = NULL;
+
+    if (mode & ~S_IRWXO)    /* where's F_OK, X_OK, W_OK, R_OK? */
+        return -EINVAL;
+
+    if (flags & ~(AT_EACCESS | AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH))
+        return -EINVAL;
+
+    if (flags & AT_SYMLINK_NOFOLLOW)
+        lookup_flags &= ~LOOKUP_FOLLOW;
+    if (flags & AT_EMPTY_PATH)
+        lookup_flags |= LOOKUP_EMPTY;
+
+    if (!(flags & AT_EACCESS)) {
+#if 0
+        old_cred = access_override_creds();
+        if (!old_cred)
+            return -ENOMEM;
+#endif
+        printk("%s: !AT_EACCESS!\n", __func__);
+    }
+
+ retry:
+    res = user_path_at(dfd, filename, lookup_flags, &path);
+    if (res)
+        goto out;
+
+    panic("%s: END!\n", __func__);
+
+ out_path_release:
+    path_put(&path);
+    if (retry_estale(res, lookup_flags)) {
+        lookup_flags |= LOOKUP_REVAL;
+        goto retry;
+    }
+ out:
+#if 0
+    if (old_cred)
+        revert_creds(old_cred);
+#endif
+
+    return res;
+}
+
+SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename,
+                int, mode)
+{
+    return do_faccessat(dfd, filename, mode, 0);
+}

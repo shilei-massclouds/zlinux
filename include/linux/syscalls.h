@@ -175,4 +175,8 @@ asmlinkage long sys_readlinkat(int dfd, const char __user *path,
 /* kernel/sys.c */
 asmlinkage long sys_newuname(struct new_utsname __user *name);
 
+/* fs/open.c */
+asmlinkage long sys_faccessat(int dfd, const char __user *filename,
+                              int mode);
+
 #endif /* _LINUX_SYSCALLS_H */

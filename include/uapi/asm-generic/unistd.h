@@ -28,5 +28,9 @@ __SYSCALL(__NR_uname, sys_newuname)
 #define __NR_brk 214
 __SYSCALL(__NR_brk, sys_brk)
 
+/* fs/open.c */
+#define __NR_faccessat 48
+__SYSCALL(__NR_faccessat, sys_faccessat)
+
 #undef __NR_syscalls
 #define __NR_syscalls 451
