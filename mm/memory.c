@@ -96,6 +96,13 @@ struct zap_details {
     bool even_cows;             /* Zap COWed private pages too? */
 };
 
+#if defined(SPLIT_RSS_COUNTING)
+#error "NOT SPLIT_RSS_COUNTING!"
+#else
+#define inc_mm_counter_fast(mm, member) inc_mm_counter(mm, member)
+#define dec_mm_counter_fast(mm, member) dec_mm_counter(mm, member)
+#endif
+
 /*
  * Allocate p4d page table.
  * We've already handled the fast-path in-line.
@@ -313,7 +320,7 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
     if (ret)
         goto release;
 
-    //inc_mm_counter_fast(vma->vm_mm, MM_ANONPAGES);
+    inc_mm_counter_fast(vma->vm_mm, MM_ANONPAGES);
     page_add_new_anon_rmap(page, vma, vmf->address, false);
     lru_cache_add_inactive_or_unevictable(page, vma);
 
@@ -379,6 +386,7 @@ static vm_fault_t __do_fault(struct vm_fault *vmf)
     else
         VM_BUG_ON_PAGE(!PageLocked(vmf->page), vmf->page);
 
+    printk("%s: END!\n", __func__);
     return ret;
 }
 
@@ -413,11 +421,11 @@ void do_set_pte(struct vm_fault *vmf, struct page *page, unsigned long addr)
         entry = maybe_mkwrite(pte_mkdirty(entry), vma);
     /* copy-on-write page */
     if (write && !(vma->vm_flags & VM_SHARED)) {
-        //inc_mm_counter_fast(vma->vm_mm, MM_ANONPAGES);
+        inc_mm_counter_fast(vma->vm_mm, MM_ANONPAGES);
         page_add_new_anon_rmap(page, vma, addr, false);
         lru_cache_add_inactive_or_unevictable(page, vma);
     } else {
-        //inc_mm_counter_fast(vma->vm_mm, mm_counter_file(page));
+        inc_mm_counter_fast(vma->vm_mm, mm_counter_file(page));
         page_add_file_rmap(page, vma, false);
     }
     set_pte_at(vma->vm_mm, addr, vmf->pte, entry);
@@ -530,6 +538,7 @@ static vm_fault_t do_cow_fault(struct vm_fault *vmf)
     put_page(vmf->page);
     if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
         goto uncharge_out;
+    printk("%s: END!\n", __func__);
     return ret;
  uncharge_out:
     put_page(vmf->cow_page);
@@ -609,6 +618,7 @@ static vm_fault_t do_read_fault(struct vm_fault *vmf)
     }
 
     ret = __do_fault(vmf);
+    printk("%s: 1!\n", __func__);
     if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
         return ret;
 
@@ -648,6 +658,7 @@ static vm_fault_t do_fault(struct vm_fault *vmf)
         vmf->prealloc_pte = NULL;
     }
 
+    printk("%s: END!\n", __func__);
     return ret;
 }
 
@@ -721,8 +732,9 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
     struct page *new_page = NULL;
     pte_t entry;
     int page_copied = 0;
-    //struct mmu_notifier_range range;
+    struct mmu_notifier_range range;
 
+    printk("%s: 1\n", __func__);
     if (unlikely(anon_vma_prepare(vma)))
         goto oom;
 
@@ -751,12 +763,10 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
 
     __SetPageUptodate(new_page);
 
-#if 0
     mmu_notifier_range_init(&range, MMU_NOTIFY_CLEAR, 0, vma, mm,
                             vmf->address & PAGE_MASK,
                             (vmf->address & PAGE_MASK) + PAGE_SIZE);
     mmu_notifier_invalidate_range_start(&range);
-#endif
 
     /*
      * Re-check the pte - we dropped the lock
@@ -765,14 +775,11 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
     if (likely(pte_same(*vmf->pte, vmf->orig_pte))) {
         if (old_page) {
             if (!PageAnon(old_page)) {
-#if 0
                 dec_mm_counter_fast(mm, mm_counter_file(old_page));
                 inc_mm_counter_fast(mm, MM_ANONPAGES);
-#endif
             }
         } else {
-            //inc_mm_counter_fast(mm, MM_ANONPAGES);
-            panic("%s: 0.2!\n", __func__);
+            inc_mm_counter_fast(mm, MM_ANONPAGES);
         }
         flush_cache_page(vma, vmf->address, pte_pfn(vmf->orig_pte));
         entry = mk_pte(new_page, vma->vm_page_prot);
@@ -786,7 +793,7 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
          * that left a window where the new PTE could be loaded into
          * some TLBs while the old PTE remains in others.
          */
-        //ptep_clear_flush_notify(vma, vmf->address, vmf->pte);
+        ptep_clear_flush_notify(vma, vmf->address, vmf->pte);
         page_add_new_anon_rmap(new_page, vma, vmf->address, false);
         lru_cache_add_inactive_or_unevictable(new_page, vma);
         /*
@@ -794,7 +801,7 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
          * mmu page tables (such as kvm shadow page tables), we want the
          * new page to be mapped directly into the secondary page table.
          */
-        //set_pte_at_notify(mm, vmf->address, vmf->pte, entry);
+        set_pte_at_notify(mm, vmf->address, vmf->pte, entry);
         update_mmu_cache(vma, vmf->address, vmf->pte);
 
         if (old_page) {
@@ -838,7 +845,7 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
      * No need to double call mmu_notifier->invalidate_range() callback as
      * the above ptep_clear_flush_notify() did already call it.
      */
-    //mmu_notifier_invalidate_range_only_end(&range);
+    mmu_notifier_invalidate_range_only_end(&range);
     if (old_page) {
         if (page_copied)
             free_swap_cache(old_page);
@@ -1075,6 +1082,7 @@ __handle_mm_fault(struct vm_area_struct *vma,
 
     barrier();
 
+    //printk("%s: END!\n", __func__);
     return handle_pte_fault(&vmf);
 }
 
@@ -1170,6 +1178,7 @@ handle_mm_fault(struct vm_area_struct *vma, unsigned long address,
 
     mm_account_fault(regs, address, flags, ret);
 
+    //printk("%s: END!\n", __func__);
     return ret;
 }
 

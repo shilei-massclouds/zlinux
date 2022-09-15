@@ -307,6 +307,12 @@ atomic_set_release(atomic_t *v, int i)
 }
 
 static __always_inline long
+atomic_long_inc_return(atomic_long_t *v)
+{
+    return arch_atomic_long_inc_return(v);
+}
+
+static __always_inline long
 atomic_long_dec_return(atomic_long_t *v)
 {
     return arch_atomic_long_dec_return(v);

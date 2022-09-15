@@ -86,3 +86,24 @@ void __mmu_notifier_invalidate_range(struct mm_struct *mm,
 {
     panic("%s: END!\n", __func__);
 }
+
+void __mmu_notifier_change_pte(struct mm_struct *mm,
+                               unsigned long address,
+                               pte_t pte)
+{
+#if 0
+    struct mmu_notifier *subscription;
+    int id;
+
+    id = srcu_read_lock(&srcu);
+    hlist_for_each_entry_rcu(subscription,
+                             &mm->notifier_subscriptions->list, hlist,
+                             srcu_read_lock_held(&srcu)) {
+        if (subscription->ops->change_pte)
+            subscription->ops->change_pte(subscription, mm, address,
+                                          pte);
+    }
+    srcu_read_unlock(&srcu, id);
+#endif
+    panic("%s: END!\n", __func__);
+}

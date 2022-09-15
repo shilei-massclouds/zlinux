@@ -194,6 +194,7 @@ static void read_pages(struct readahead_control *rac)
     struct page *page;
     struct blk_plug plug;
 
+    printk("%s: 1\n", __func__);
     if (!readahead_count(rac))
         return;
 
@@ -307,6 +308,7 @@ void page_cache_ra_unbounded(struct readahead_control *ractl,
     read_pages(ractl);
     filemap_invalidate_unlock_shared(mapping);
     memalloc_nofs_restore(nofs);
+    printk("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL_GPL(page_cache_ra_unbounded);
 
@@ -336,10 +338,12 @@ static void do_page_cache_ra(struct readahead_control *ractl,
         nr_to_read = end_index - index + 1;
 
     page_cache_ra_unbounded(ractl, nr_to_read, lookahead_size);
+    printk("%s: END!\n", __func__);
 }
 
 void page_cache_ra_order(struct readahead_control *ractl,
-                         struct file_ra_state *ra, unsigned int new_order)
+                         struct file_ra_state *ra,
+                         unsigned int new_order)
 {
     struct address_space *mapping = ractl->mapping;
     pgoff_t index = readahead_index(ractl);
@@ -363,6 +367,7 @@ void page_cache_ra_order(struct readahead_control *ractl,
 
  fallback:
     do_page_cache_ra(ractl, ra->size, ra->async_size);
+    printk("%s: END!\n", __func__);
 }
 
 /*
@@ -456,6 +461,7 @@ static void ondemand_readahead(struct readahead_control *ractl,
 
     ractl->_index = ra->start;
     page_cache_ra_order(ractl, ra, order);
+    printk("%s: END!\n", __func__);
 }
 
 void page_cache_sync_ra(struct readahead_control *ractl,
@@ -483,6 +489,7 @@ void page_cache_sync_ra(struct readahead_control *ractl,
     }
 
     ondemand_readahead(ractl, NULL, req_count);
+    printk("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL_GPL(page_cache_sync_ra);
 
@@ -502,5 +509,6 @@ void page_cache_async_ra(struct readahead_control *ractl,
     folio_clear_readahead(folio);
 
     ondemand_readahead(ractl, folio, req_count);
+    printk("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL_GPL(page_cache_async_ra);

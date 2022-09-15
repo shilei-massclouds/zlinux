@@ -20,8 +20,8 @@
 #endif
 #include <linux/sched/signal.h>
 #include <linux/sched/clock.h>
-#if 0
 #include <linux/sched/stat.h>
+#if 0
 #include <linux/sched/nohz.h>
 #endif
 #include <linux/sched/loadavg.h>
@@ -103,7 +103,6 @@ update_ts_time_stats(int cpu, struct tick_sched *ts, ktime_t now,
     ktime_t delta;
 
     if (ts->idle_active) {
-#if 0
         delta = ktime_sub(now, ts->idle_entrytime);
         if (nr_iowait_cpu(cpu) > 0)
             ts->iowait_sleeptime =
@@ -111,8 +110,6 @@ update_ts_time_stats(int cpu, struct tick_sched *ts, ktime_t now,
         else
             ts->idle_sleeptime = ktime_add(ts->idle_sleeptime, delta);
         ts->idle_entrytime = now;
-#endif
-        panic("%s: 1!\n", __func__);
     }
 
     if (last_update_time)
@@ -122,12 +119,9 @@ update_ts_time_stats(int cpu, struct tick_sched *ts, ktime_t now,
 static void tick_nohz_stop_idle(struct tick_sched *ts, ktime_t now)
 {
     update_ts_time_stats(smp_processor_id(), ts, now, NULL);
-#if 0
     ts->idle_active = 0;
 
     sched_clock_idle_wakeup_event();
-#endif
-    panic("%s: END!\n", __func__);
 }
 
 /**

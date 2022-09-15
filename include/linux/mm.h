@@ -997,13 +997,10 @@ static inline unsigned long vma_pages(struct vm_area_struct *vma)
 
 void mm_trace_rss_stat(struct mm_struct *mm, int member, long count);
 
-static inline void add_mm_counter(struct mm_struct *mm, int member, long value)
+static inline
+void add_mm_counter(struct mm_struct *mm, int member, long value)
 {
-#if 0
-    long count = atomic_long_add_return(value, &mm->rss_stat.count[member]);
-
-    mm_trace_rss_stat(mm, member, count);
-#endif
+    atomic_long_add_return(value, &mm->rss_stat.count[member]);
 }
 
 long get_user_pages_remote(struct mm_struct *mm,
@@ -1597,6 +1594,11 @@ static inline int mm_counter_file(struct page *page)
     if (PageSwapBacked(page))
         return MM_SHMEMPAGES;
     return MM_FILEPAGES;
+}
+
+static inline void inc_mm_counter(struct mm_struct *mm, int member)
+{
+    atomic_long_inc_return(&mm->rss_stat.count[member]);
 }
 
 static inline void dec_mm_counter(struct mm_struct *mm, int member)

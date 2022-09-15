@@ -102,8 +102,9 @@ static inline bool access_error(unsigned long cause, struct vm_area_struct *vma)
     return false;
 }
 
-static inline void mm_fault_error(struct pt_regs *regs, unsigned long addr,
-                                  vm_fault_t fault)
+static inline
+void mm_fault_error(struct pt_regs *regs, unsigned long addr,
+                    vm_fault_t fault)
 {
     panic("%s: END!\n", __func__);
 }

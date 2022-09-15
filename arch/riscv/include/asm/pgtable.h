@@ -188,7 +188,8 @@ static inline void set_pte(pte_t *ptep, pte_t pteval)
 void flush_icache_pte(pte_t pte);
 
 static inline void
-set_pte_at(struct mm_struct *mm, unsigned long addr, pte_t *ptep, pte_t pteval)
+set_pte_at(struct mm_struct *mm, unsigned long addr, pte_t *ptep,
+           pte_t pteval)
 {
     if (pte_present(pteval) && pte_exec(pteval))
         flush_icache_pte(pteval);

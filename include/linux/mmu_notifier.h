@@ -346,4 +346,55 @@ void mmu_notifier_invalidate_range(struct mm_struct *mm,
         __mmu_notifier_invalidate_range(mm, start, end);
 }
 
+static inline void
+mmu_notifier_invalidate_range_only_end(struct mmu_notifier_range *range)
+{
+    if (mm_has_notifiers(range->mm))
+        __mmu_notifier_invalidate_range_end(range, true);
+}
+
+extern void __mmu_notifier_change_pte(struct mm_struct *mm,
+                                      unsigned long address, pte_t pte);
+
+static inline
+void mmu_notifier_change_pte(struct mm_struct *mm,
+                             unsigned long address, pte_t pte)
+{
+    if (mm_has_notifiers(mm))
+        __mmu_notifier_change_pte(mm, address, pte);
+}
+
+#define ptep_clear_flush_notify(__vma, __address, __ptep)   \
+({                                                          \
+    unsigned long ___addr = __address & PAGE_MASK;          \
+    struct mm_struct *___mm = (__vma)->vm_mm;               \
+    pte_t ___pte;                                           \
+                                                            \
+    ___pte = ptep_clear_flush(__vma, __address, __ptep);    \
+    mmu_notifier_invalidate_range(___mm, ___addr,           \
+                                  ___addr + PAGE_SIZE);     \
+                                                            \
+    ___pte;                                                 \
+})
+
+/*
+ * set_pte_at_notify() sets the pte _after_ running the notifier.
+ * This is safe to start by updating the secondary MMUs, because the primary MMU
+ * pte invalidate must have already happened with a ptep_clear_flush() before
+ * set_pte_at_notify() has been invoked.  Updating the secondary MMUs first is
+ * required when we change both the protection of the mapping from read-only to
+ * read-write and the pfn (like during copy on write page faults). Otherwise the
+ * old page would remain mapped readonly in the secondary MMUs after the new
+ * page is already writable by some CPU through the primary MMU.
+ */
+#define set_pte_at_notify(__mm, __address, __ptep, __pte)   \
+({                                                          \
+    struct mm_struct *___mm = __mm;                         \
+    unsigned long ___address = __address;                   \
+    pte_t ___pte = __pte;                                   \
+                                                            \
+    mmu_notifier_change_pte(___mm, ___address, ___pte);     \
+    set_pte_at(___mm, ___address, __ptep, ___pte);          \
+})
+
 #endif /* _LINUX_MMU_NOTIFIER_H */

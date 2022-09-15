@@ -429,7 +429,9 @@ static struct page *follow_page_mask(struct vm_area_struct *vma,
  * is, *@locked will be set to 0 and -EBUSY returned.
  */
 static int faultin_page(struct vm_area_struct *vma,
-                        unsigned long address, unsigned int *flags, int *locked)
+                        unsigned long address,
+                        unsigned int *flags,
+                        int *locked)
 {
     unsigned int fault_flags = 0;
     vm_fault_t ret;
@@ -453,6 +455,7 @@ static int faultin_page(struct vm_area_struct *vma,
     }
 
     ret = handle_mm_fault(vma, address, fault_flags, NULL);
+    printk("%s: ######\n", __func__);
     if (ret & VM_FAULT_ERROR) {
         int err = vm_fault_to_errno(ret, *flags);
 

@@ -323,6 +323,7 @@ static struct file *do_sync_mmap_readahead(struct vm_fault *vmf)
     ra->async_size = ra->ra_pages / 4;
     ractl._index = ra->start;
     page_cache_ra_order(&ractl, ra, 0);
+    printk("%s: END!\n", __func__);
     return fpin;
 }
 
@@ -470,9 +471,10 @@ vm_fault_t filemap_fault(struct vm_fault *vmf)
         }
     } else {
         /* No page in the page cache at all */
-        //count_vm_event(PGMAJFAULT);
+        count_vm_event(PGMAJFAULT);
         ret = VM_FAULT_MAJOR;
         fpin = do_sync_mmap_readahead(vmf);
+        printk("%s: 0\n", __func__);
 
      retry_find:
         /*
@@ -547,6 +549,7 @@ vm_fault_t filemap_fault(struct vm_fault *vmf)
     }
 
     vmf->page = folio_file_page(folio, index);
+    printk("%s: END!\n", __func__);
     return ret | VM_FAULT_LOCKED;
 
  page_not_uptodate:

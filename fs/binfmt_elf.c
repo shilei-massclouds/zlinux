@@ -856,7 +856,8 @@ static int load_elf_binary(struct linux_binprm *bprm)
 
     /* Now we do a little grungy work by mmapping the ELF image into
        the correct location in memory. */
-    for(i = 0, elf_ppnt = elf_phdata; i < elf_ex->e_phnum; i++, elf_ppnt++) {
+    for(i = 0, elf_ppnt = elf_phdata; i < elf_ex->e_phnum;
+        i++, elf_ppnt++) {
         int elf_prot, elf_flags;
         unsigned long k, vaddr;
         unsigned long total_size = 0;

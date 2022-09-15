@@ -2863,6 +2863,17 @@ void set_user_nice(struct task_struct *p, long nice)
     task_rq_unlock(rq, p, &rf);
 }
 
+/*
+ * Consumers of these two interfaces, like for example the cpuidle menu
+ * governor, are using nonsensical data. Preferring shallow idle state selection
+ * for a CPU that has IO-wait which might not even end up running the task when
+ * it does become runnable.
+ */
+unsigned int nr_iowait_cpu(int cpu)
+{
+    return atomic_read(&cpu_rq(cpu)->nr_iowait);
+}
+
 void __init sched_init_smp(void)
 {
     /*

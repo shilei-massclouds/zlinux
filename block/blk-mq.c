@@ -931,6 +931,20 @@ static void blk_mq_map_swqueue(struct request_queue *q)
     }
 }
 
+static void blk_mq_requeue_work(struct work_struct *work)
+{
+    struct request_queue *q =
+        container_of(work, struct request_queue, requeue_work.work);
+    LIST_HEAD(rq_list);
+    struct request *rq, *next;
+
+    spin_lock_irq(&q->requeue_lock);
+    list_splice_init(&q->requeue_list, &rq_list);
+    spin_unlock_irq(&q->requeue_lock);
+
+    panic("%s: END!\n", __func__);
+}
+
 int blk_mq_init_allocated_queue(struct blk_mq_tag_set *set,
                                 struct request_queue *q)
 {
@@ -972,9 +986,7 @@ int blk_mq_init_allocated_queue(struct blk_mq_tag_set *set,
     q->queue_flags |= QUEUE_FLAG_MQ_DEFAULT;
     blk_mq_update_poll_flag(q);
 
-#if 0
     INIT_DELAYED_WORK(&q->requeue_work, blk_mq_requeue_work);
-#endif
     INIT_LIST_HEAD(&q->requeue_list);
     spin_lock_init(&q->requeue_lock);
 
@@ -1870,6 +1882,7 @@ bool blk_mq_complete_request_remote(struct request *rq)
         return true;
     }
 
+    printk("+++ +++ %s: END!\n", __func__);
     if (rq->q->nr_hw_queues == 1) {
         blk_mq_raise_softirq(rq);
         return true;
@@ -1890,6 +1903,8 @@ void blk_mq_complete_request(struct request *rq)
 {
     if (!blk_mq_complete_request_remote(rq))
         rq->q->mq_ops->complete(rq);
+
+    printk("%s: END!\n", __func__);
 }
 EXPORT_SYMBOL(blk_mq_complete_request);
 
@@ -1920,6 +1935,8 @@ static void blk_complete_reqs(struct llist_head *list)
 
     llist_for_each_entry_safe(rq, next, entry, ipi_list)
         rq->q->mq_ops->complete(rq);
+
+    printk("%s: END!\n", __func__);
 }
 
 static __latent_entropy void blk_done_softirq(struct softirq_action *h)

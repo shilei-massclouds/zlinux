@@ -225,6 +225,7 @@ static irqreturn_t vm_interrupt(int irq, void *opaque)
             ret |= vring_interrupt(irq, info->vq);
         spin_unlock_irqrestore(&vm_dev->lock, flags);
     }
+    printk("###### %s: ######\n", __func__);
 
     return ret;
 }
