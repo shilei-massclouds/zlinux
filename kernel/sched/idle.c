@@ -290,7 +290,19 @@ static void do_idle(void)
     tick_nohz_idle_exit();
     __current_clr_polling();
 
-    panic("%s: NO implementation!\n", __func__);
+    /*
+     * We promise to call sched_ttwu_pending() and reschedule if
+     * need_resched() is set while polling is set. That means that clearing
+     * polling needs to be visible before doing these things.
+     */
+    smp_mb__after_atomic();
+
+    /*
+     * RCU relies on this call to be done outside of an RCU read-side
+     * critical section.
+     */
+    flush_smp_call_function_from_idle();
+    schedule_idle();
 }
 
 void cpu_startup_entry(enum cpuhp_state state)

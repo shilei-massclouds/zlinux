@@ -155,4 +155,17 @@ struct llist_node *llist_reverse_order(struct llist_node *head);
          (n = llist_entry(pos->member.next, typeof(*n), member), true); \
          pos = n)
 
+/**
+ * llist_empty - tests whether a lock-less list is empty
+ * @head:   the list to test
+ *
+ * Not guaranteed to be accurate or up to date.  Just a quick way to
+ * test whether the list is empty without deleting something from the
+ * list.
+ */
+static inline bool llist_empty(const struct llist_head *head)
+{
+    return READ_ONCE(head->first) == NULL;
+}
+
 #endif /* LLIST_H */

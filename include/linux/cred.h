@@ -48,9 +48,7 @@ struct cred {
     struct user_struct *user;       /* real user ID subscription */
     struct user_namespace *user_ns; /* user_ns the caps and keyrings are
                                        relative to. */
-#if 0
     struct ucounts *ucounts;
-#endif
     struct group_info *group_info;  /* supplementary groups for euid/fsgid */
     /* RCU deletion */
     union {
@@ -207,5 +205,15 @@ static inline void put_cred(const struct cred *_cred)
 })
 
 extern void abort_creds(struct cred *);
+
+static inline void validate_creds(const struct cred *cred)
+{
+}
+static inline void validate_creds_for_do_exit(struct task_struct *tsk)
+{
+}
+static inline void validate_process_creds(void)
+{
+}
 
 #endif /* _LINUX_CRED_H */

@@ -8,7 +8,7 @@ obj-y = fork.o panic.o params.o cpu.o kthread.o exit.o \
 	resource.o module.o user.o cred.o smpboot.o extable.o
 
 obj-y += signal.o sys_ni.o sys.o
-obj-y += user_namespace.o
+obj-y += user_namespace.o ucount.o
 obj-y += utsname.o
 obj-y += kmod.o workqueue.o jump_label.o
 

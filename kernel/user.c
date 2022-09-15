@@ -27,7 +27,6 @@
  * and 1 for... ?
  */
 struct user_namespace init_user_ns = {
-#if 0
     .uid_map = {
         .nr_extents = 1,
         {
@@ -58,7 +57,6 @@ struct user_namespace init_user_ns = {
             },
         },
     },
-#endif
     .ns.count = REFCOUNT_INIT(3),
     .owner = GLOBAL_ROOT_UID,
     .group = GLOBAL_ROOT_GID,

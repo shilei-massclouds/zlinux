@@ -50,9 +50,7 @@ struct cred init_cred = {
     .user           = INIT_USER,
     .user_ns        = &init_user_ns,
     .group_info     = &init_groups,
-#if 0
     .ucounts        = &init_ucounts,
-#endif
 };
 
 /**
@@ -146,11 +144,9 @@ struct cred *prepare_creds(void)
     key_get(new->request_key_auth);
 #endif
 
-#if 0
     new->ucounts = get_ucounts(new->ucounts);
     if (!new->ucounts)
         goto error;
-#endif
 
     return new;
 

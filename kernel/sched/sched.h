@@ -1495,4 +1495,8 @@ static inline long se_weight(struct sched_entity *se)
     return scale_load_down(se->load.weight);
 }
 
+extern void flush_smp_call_function_from_idle(void);
+
+extern void schedule_idle(void);
+
 #endif /* _KERNEL_SCHED_SCHED_H */

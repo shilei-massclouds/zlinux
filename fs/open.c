@@ -16,9 +16,9 @@
 #include <linux/backing-dev.h>
 #if 0
 #include <linux/capability.h>
-#include <linux/securebits.h>
 #include <linux/security.h>
 #endif
+#include <linux/securebits.h>
 #include <linux/mount.h>
 #include <linux/fcntl.h>
 #include <linux/slab.h>
@@ -204,6 +204,92 @@ int filp_close(struct file *filp, fl_owner_t id)
 }
 EXPORT_SYMBOL(filp_close);
 
+/**
+ * override_creds - Override the current process's subjective credentials
+ * @new: The credentials to be assigned
+ *
+ * Install a set of temporary override subjective credentials on the current
+ * process, returning the old set for later reversion.
+ */
+const struct cred *override_creds(const struct cred *new)
+{
+    const struct cred *old = current->cred;
+
+    validate_creds(old);
+    validate_creds(new);
+
+    /*
+     * NOTE! This uses 'get_new_cred()' rather than 'get_cred()'.
+     *
+     * That means that we do not clear the 'non_rcu' flag, since
+     * we are only installing the cred into the thread-synchronous
+     * '->cred' pointer, not the '->real_cred' pointer that is
+     * visible to other threads under RCU.
+     *
+     * Also note that we did validate_creds() manually, not depending
+     * on the validation in 'get_cred()'.
+     */
+    get_new_cred((struct cred *)new);
+    rcu_assign_pointer(current->cred, new);
+
+    return old;
+}
+
+/*
+ * access() needs to use the real uid/gid, not the effective uid/gid.
+ * We do this by temporarily clearing all FS-related capabilities and
+ * switching the fsuid/fsgid around to the real ones.
+ */
+static const struct cred *access_override_creds(void)
+{
+    const struct cred *old_cred;
+    struct cred *override_cred;
+
+    override_cred = prepare_creds();
+    if (!override_cred)
+        return NULL;
+
+    override_cred->fsuid = override_cred->uid;
+    override_cred->fsgid = override_cred->gid;
+
+    if (!issecure(SECURE_NO_SETUID_FIXUP)) {
+        /* Clear the capabilities if we switch to a non-root user */
+        kuid_t root_uid = make_kuid(override_cred->user_ns, 0);
+#if 0
+        if (!uid_eq(override_cred->uid, root_uid))
+            cap_clear(override_cred->cap_effective);
+        else
+            override_cred->cap_effective = override_cred->cap_permitted;
+#endif
+    }
+
+    /*
+     * The new set of credentials can *only* be used in
+     * task-synchronous circumstances, and does not need
+     * RCU freeing, unless somebody then takes a separate
+     * reference to it.
+     *
+     * NOTE! This is _only_ true because this credential
+     * is used purely for override_creds() that installs
+     * it as the subjective cred. Other threads will be
+     * accessing ->real_cred, not the subjective cred.
+     *
+     * If somebody _does_ make a copy of this (using the
+     * 'get_current_cred()' function), that will clear the
+     * non_rcu field, because now that other user may be
+     * expecting RCU freeing. But normal thread-synchronous
+     * cred accesses will keep things non-RCY.
+     */
+    override_cred->non_rcu = 1;
+
+    old_cred = override_creds(override_cred);
+
+    /* override_cred() gets its own ref */
+    put_cred(override_cred);
+
+    return old_cred;
+}
+
 static long do_faccessat(int dfd, const char __user *filename,
                          int mode, int flags)
 {
@@ -225,12 +311,9 @@ static long do_faccessat(int dfd, const char __user *filename,
         lookup_flags |= LOOKUP_EMPTY;
 
     if (!(flags & AT_EACCESS)) {
-#if 0
         old_cred = access_override_creds();
         if (!old_cred)
             return -ENOMEM;
-#endif
-        printk("%s: !AT_EACCESS!\n", __func__);
     }
 
  retry:

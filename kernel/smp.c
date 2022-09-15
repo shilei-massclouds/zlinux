@@ -40,6 +40,9 @@
 #define SCF_WAIT        (1U << 0)
 #define SCF_RUN_LOCAL   (1U << 1)
 
+static DEFINE_PER_CPU_SHARED_ALIGNED(struct llist_head,
+                                     call_single_queue);
+
 static void smp_call_function_many_cond(const struct cpumask *mask,
                                         smp_call_func_t func, void *info,
                                         unsigned int scf_flags,
@@ -205,6 +208,16 @@ void on_each_cpu_cond_mask(smp_cond_func_t cond_func, smp_call_func_t func,
     preempt_disable();
     smp_call_function_many_cond(mask, func, info, scf_flags, cond_func);
     preempt_enable();
+}
+
+void flush_smp_call_function_from_idle(void)
+{
+    unsigned long flags;
+
+    if (llist_empty(this_cpu_ptr(&call_single_queue)))
+        return;
+
+    panic("%s: END!\n", __func__);
 }
 
 /* Called by boot processor to activate the rest. */
