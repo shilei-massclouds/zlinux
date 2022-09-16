@@ -87,4 +87,6 @@ extern void sched_exec(void);
 
 extern void flush_thread(void);
 
+extern __noreturn void do_group_exit(int);
+
 #endif /* _LINUX_SCHED_TASK_H */

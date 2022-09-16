@@ -19,5 +19,7 @@ obj-y += irq/
 obj-y += rcu/
 obj-y += dma/
 obj-y += time/
+obj-y += cgroup/
+
 
 obj-$(CONFIG_SMP) += smp.o

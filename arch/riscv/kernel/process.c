@@ -21,7 +21,7 @@
 //#include <asm/unistd.h>
 #include <asm/processor.h>
 #include <asm/csr.h>
-//#include <asm/stacktrace.h>
+#include <asm/stacktrace.h>
 #include <asm/string.h>
 #include <asm/switch_to.h>
 #include <asm/thread_info.h>
@@ -104,4 +104,16 @@ void start_thread(struct pt_regs *regs, unsigned long pc, unsigned long sp)
 #endif
     regs->epc = pc;
     regs->sp = sp;
+}
+
+void __show_regs(struct pt_regs *regs)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
+void show_regs(struct pt_regs *regs)
+{
+    __show_regs(regs);
+    if (!user_mode(regs))
+        dump_backtrace(regs, NULL, KERN_DEFAULT);
 }

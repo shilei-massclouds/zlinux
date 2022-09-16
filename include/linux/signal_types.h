@@ -9,6 +9,9 @@
 #include <linux/list.h>
 #include <uapi/linux/signal.h>
 
+/* flags values. */
+#define SIGQUEUE_PREALLOC   1
+
 typedef struct kernel_siginfo {
     __SIGINFO;
 } kernel_siginfo_t;

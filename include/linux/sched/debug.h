@@ -5,4 +5,6 @@
 /* Attach to any functions which should be ignored in wchan output. */
 #define __sched     __attribute__((__section__(".sched.text")))
 
+extern void show_regs(struct pt_regs *);
+
 #endif /* _LINUX_SCHED_DEBUG_H */

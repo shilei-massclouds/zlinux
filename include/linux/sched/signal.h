@@ -302,10 +302,29 @@ static inline void signal_wake_up(struct task_struct *t, bool resume)
 #define SIGNAL_STOP_CONTINUED   0x00000002 /* SIGCONT since WCONTINUED reap */
 #define SIGNAL_GROUP_EXIT       0x00000004 /* group exit in progress */
 
+/*
+ * Pending notifications to parent.
+ */
+#define SIGNAL_CLD_STOPPED      0x00000010
+#define SIGNAL_CLD_CONTINUED    0x00000020
+#define SIGNAL_CLD_MASK (SIGNAL_CLD_STOPPED|SIGNAL_CLD_CONTINUED)
+
 static inline void clear_notify_signal(void)
 {
     clear_thread_flag(TIF_NOTIFY_SIGNAL);
     smp_mb__after_atomic();
 }
+
+static inline
+struct task_struct *next_thread(const struct task_struct *p)
+{
+    return list_entry_rcu(p->thread_group.next,
+                          struct task_struct, thread_group);
+}
+
+#define while_each_thread(g, t) \
+    while ((t = next_thread(t)) != g)
+
+extern int zap_other_threads(struct task_struct *p);
 
 #endif /* _LINUX_SCHED_SIGNAL_H */

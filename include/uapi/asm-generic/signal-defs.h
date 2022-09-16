@@ -4,6 +4,25 @@
 
 #include <linux/compiler.h>
 
+#define SA_UNSUPPORTED      0x00000400
+#define SA_EXPOSE_TAGBITS   0x00000800
+
+#ifndef SA_ONSTACK
+#define SA_ONSTACK      0x08000000
+#endif
+#ifndef SA_RESTART
+#define SA_RESTART      0x10000000
+#endif
+#ifndef SA_NODEFER
+#define SA_NODEFER      0x40000000
+#endif
+#ifndef SA_RESETHAND
+#define SA_RESETHAND    0x80000000
+#endif
+
+#define SA_NOMASK   SA_NODEFER
+#define SA_ONESHOT  SA_RESETHAND
+
 #ifndef __ASSEMBLY__
 typedef void __signalfn_t(int);
 typedef __signalfn_t __user *__sighandler_t;
