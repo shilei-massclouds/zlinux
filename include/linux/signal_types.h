@@ -41,4 +41,13 @@ struct k_sigaction {
     struct sigaction sa;
 };
 
+struct ksignal {
+    struct k_sigaction ka;
+    kernel_siginfo_t info;
+    int sig;
+};
+
+/* Used to kill the race between sigaction and forced signals */
+#define SA_IMMUTABLE        0x00800000
+
 #endif /* _LINUX_SIGNAL_TYPES_H */

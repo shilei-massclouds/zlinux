@@ -211,6 +211,17 @@ struct callback_head balance_push_callback = {
     .func = (void (*)(struct callback_head *))balance_push,
 };
 
+/**
+ * task_curr - is this task currently executing on a CPU?
+ * @p: the task in question.
+ *
+ * Return: 1 if the task is currently executing. 0 otherwise.
+ */
+inline int task_curr(const struct task_struct *p)
+{
+    return cpu_curr(task_cpu(p)) == p;
+}
+
 static inline struct cpumask *clear_user_cpus_ptr(struct task_struct *p)
 {
     struct cpumask *user_mask = NULL;
@@ -2898,6 +2909,31 @@ void __sched schedule_idle(void)
         __schedule(SM_NONE);
     } while (need_resched());
 }
+
+/***
+ * kick_process - kick a running thread to enter/exit the kernel
+ * @p: the to-be-kicked thread
+ *
+ * Cause a process which is running on another CPU to enter
+ * kernel-mode, without any delay. (to get signals handled.)
+ *
+ * NOTE: this function doesn't have to take the runqueue lock,
+ * because all it wants to ensure is that the remote task enters
+ * the kernel. If the IPI races and the task has been migrated
+ * to another CPU then no harm is done and the purpose has been
+ * achieved as well.
+ */
+void kick_process(struct task_struct *p)
+{
+    int cpu;
+
+    preempt_disable();
+    cpu = task_cpu(p);
+    if ((cpu != smp_processor_id()) && task_curr(p))
+        smp_send_reschedule(cpu);
+    preempt_enable();
+}
+EXPORT_SYMBOL_GPL(kick_process);
 
 void __init sched_init_smp(void)
 {

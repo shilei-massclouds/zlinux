@@ -204,6 +204,8 @@ static inline void put_cred(const struct cred *_cred)
     ___val;                     \
 })
 
+#define task_ucounts(task)  (task_cred_xxx((task), ucounts))
+
 extern void abort_creds(struct cred *);
 
 static inline void validate_creds(const struct cred *cred)

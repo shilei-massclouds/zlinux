@@ -89,3 +89,14 @@ void tick_broadcast(const struct cpumask *mask)
 {
     send_ipi_mask(mask, IPI_TIMER);
 }
+
+static void send_ipi_single(int cpu, enum ipi_message_type op)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
+void smp_send_reschedule(int cpu)
+{
+    send_ipi_single(cpu, IPI_RESCHEDULE);
+}
+EXPORT_SYMBOL_GPL(smp_send_reschedule);

@@ -28,21 +28,17 @@ static struct signal_struct init_signals = {
     .cred_guard_mutex = __MUTEX_INITIALIZER(init_signals.cred_guard_mutex),
     .exec_update_lock = __RWSEM_INITIALIZER(init_signals.exec_update_lock),
     .posix_timers   = LIST_HEAD_INIT(init_signals.posix_timers),
-#if 0
     .cputimer   = {
         .cputime_atomic = INIT_CPUTIME_ATOMIC,
     },
     INIT_CPU_TIMERS(init_signals)
-#endif
     .pids = {
         [PIDTYPE_PID]   = &init_struct_pid,
         [PIDTYPE_TGID]  = &init_struct_pid,
         [PIDTYPE_PGID]  = &init_struct_pid,
         [PIDTYPE_SID]   = &init_struct_pid,
     },
-#if 0
     INIT_PREV_CPUTIME(init_signals)
-#endif
 };
 
 static struct sighand_struct init_sighand = {

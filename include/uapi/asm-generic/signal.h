@@ -15,10 +15,29 @@
 #define SIGTRAP      5
 #define SIGABRT      6
 #define SIGBUS       7
+#define SIGFPE       8
+#define SIGKILL      9
 
 #define SIGSEGV     11
 
+#define SIGURG      16
 #define SIGCHLD     17
+#define SIGCONT     18
+#define SIGSTOP     19
+#define SIGTSTP     20
+#define SIGTTIN     21
+#define SIGTTOU     22
+
+#define SIGXCPU     24
+#define SIGXFSZ     25
+
+#define SIGWINCH    28
+#define SIGIO       29
+#define SIGPOLL     SIGIO
+#define SIGSYS      31
+
+/* These should not be considered constants from userland.  */
+#define SIGRTMIN    32
 
 #ifndef __ASSEMBLY__
 typedef struct {

@@ -5,9 +5,7 @@
 #include <linux/rculist.h>
 #include <linux/signal.h>
 #include <linux/sched.h>
-/*
 #include <linux/sched/jobctl.h>
-*/
 #include <linux/sched/task.h>
 #include <linux/cred.h>
 #include <linux/refcount.h>
@@ -15,6 +13,10 @@
 #include <linux/mm_types.h>
 #include <asm/ptrace.h>
 #include <linux/ktime.h>
+
+/* These can be the second arg to send_sig_info/send_group_sig_info.  */
+#define SEND_SIG_NOINFO ((struct kernel_siginfo *) 0)
+#define SEND_SIG_PRIV   ((struct kernel_siginfo *) 1)
 
 /*
  * Types defining task->signal and task->sighand and APIs using them:
@@ -25,6 +27,34 @@ struct sighand_struct {
     refcount_t      count;
     wait_queue_head_t   signalfd_wqh;
     struct k_sigaction  action[_NSIG];
+};
+
+/*
+ * This is the atomic variant of task_cputime, which can be used for
+ * storing and updating task_cputime statistics without locking.
+ */
+struct task_cputime_atomic {
+    atomic64_t utime;
+    atomic64_t stime;
+    atomic64_t sum_exec_runtime;
+};
+
+#define INIT_CPUTIME_ATOMIC \
+    (struct task_cputime_atomic) {              \
+        .utime = ATOMIC64_INIT(0),          \
+        .stime = ATOMIC64_INIT(0),          \
+        .sum_exec_runtime = ATOMIC64_INIT(0),       \
+    }
+
+/**
+ * struct thread_group_cputimer - thread group interval timer counts
+ * @cputime_atomic: atomic thread group interval timers.
+ *
+ * This structure contains the version of task_cputime, above, that is
+ * used for thread group CPU timer calculations.
+ */
+struct thread_group_cputimer {
+    struct task_cputime_atomic cputime_atomic;
 };
 
 /*
@@ -79,17 +109,18 @@ struct signal_struct {
     int                 posix_timer_id;
     struct list_head    posix_timers;
 
-#if 0
     /* ITIMER_REAL timer for the process */
     struct hrtimer real_timer;
     ktime_t it_real_incr;
 
+#if 0
     /*
      * ITIMER_PROF and ITIMER_VIRTUAL timers for the process, we use
      * CPUCLOCK_PROF and CPUCLOCK_VIRT for indexing array as these
      * values are defined to 0 and 1 respectively
      */
     struct cpu_itimer it[2];
+#endif
 
     /*
      * Thread group totals for process CPU timers.
@@ -99,7 +130,6 @@ struct signal_struct {
 
     /* Empty if CONFIG_POSIX_TIMERS=n */
     struct posix_cputimers posix_cputimers;
-#endif
 
     /* PID/PID hash table linkage. */
     struct pid *pids[PIDTYPE_MAX];
@@ -123,9 +153,7 @@ struct signal_struct {
     u64 utime, stime, cutime, cstime;
     u64 gtime;
     u64 cgtime;
-#if 0
     struct prev_cputime prev_cputime;
-#endif
     unsigned long nvcsw, nivcsw, cnvcsw, cnivcsw;
     unsigned long min_flt, maj_flt, cmin_flt, cmaj_flt;
     unsigned long inblock, oublock, cinblock, coublock;
@@ -228,8 +256,9 @@ static inline unsigned long task_rlimit(const struct task_struct *task,
     return READ_ONCE(task->signal->rlim[limit].rlim_cur);
 }
 
-static inline unsigned long task_rlimit_max(const struct task_struct *task,
-                                            unsigned int limit)
+static inline
+unsigned long task_rlimit_max(const struct task_struct *task,
+                              unsigned int limit)
 {
     return READ_ONCE(task->signal->rlim[limit].rlim_max);
 }
@@ -249,6 +278,34 @@ int force_sig_fault_to_task(int sig, int code, void __user *addr,
 
 int force_sig_fault(int sig, int code, void __user *addr);
 
-int send_sig_fault(int sig, int code, void __user *addr, struct task_struct *t);
+int send_sig_fault(int sig, int code, void __user *addr,
+                   struct task_struct *t);
+
+extern void signal_wake_up_state(struct task_struct *t,
+                                 unsigned int state);
+
+static inline void signal_wake_up(struct task_struct *t, bool resume)
+{
+    signal_wake_up_state(t, resume ? TASK_WAKEKILL : 0);
+}
+
+#define __for_each_thread(signal, t)    \
+    list_for_each_entry_rcu(t, &(signal)->thread_head, thread_node)
+
+#define for_each_thread(p, t)       \
+    __for_each_thread((p)->signal, t)
+
+/*
+ * Bits in flags field of signal_struct.
+ */
+#define SIGNAL_STOP_STOPPED     0x00000001 /* job control stop in effect */
+#define SIGNAL_STOP_CONTINUED   0x00000002 /* SIGCONT since WCONTINUED reap */
+#define SIGNAL_GROUP_EXIT       0x00000004 /* group exit in progress */
+
+static inline void clear_notify_signal(void)
+{
+    clear_thread_flag(TIF_NOTIFY_SIGNAL);
+    smp_mb__after_atomic();
+}
 
 #endif /* _LINUX_SCHED_SIGNAL_H */

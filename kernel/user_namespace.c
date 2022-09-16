@@ -7,8 +7,8 @@
 #include <linux/user_namespace.h>
 #if 0
 #include <linux/proc_ns.h>
-#include <linux/highuid.h>
 #endif
+#include <linux/highuid.h>
 #include <linux/cred.h>
 #if 0
 #include <linux/securebits.h>
@@ -161,3 +161,109 @@ kuid_t make_kuid(struct user_namespace *ns, uid_t uid)
     return KUIDT_INIT(map_id_down(&ns->uid_map, uid));
 }
 EXPORT_SYMBOL(make_kuid);
+
+/**
+ * map_id_up_max - Find idmap via binary search in ordered idmap array.
+ * Can only be called if number of mappings exceeds UID_GID_MAP_MAX_BASE_EXTENTS.
+ */
+static struct uid_gid_extent *
+map_id_up_max(unsigned extents, struct uid_gid_map *map, u32 id)
+{
+    struct idmap_key key;
+
+    key.map_up = true;
+    key.count = 1;
+    key.id = id;
+
+    return bsearch(&key, map->reverse, extents,
+                   sizeof(struct uid_gid_extent), cmp_map_id);
+}
+
+/**
+ * map_id_up_base - Find idmap via binary search in static extent array.
+ * Can only be called if number of mappings is equal or less than
+ * UID_GID_MAP_MAX_BASE_EXTENTS.
+ */
+static struct uid_gid_extent *
+map_id_up_base(unsigned extents, struct uid_gid_map *map, u32 id)
+{
+    unsigned idx;
+    u32 first, last;
+
+    /* Find the matching extent */
+    for (idx = 0; idx < extents; idx++) {
+        first = map->extent[idx].lower_first;
+        last = first + map->extent[idx].count - 1;
+        if (id >= first && id <= last)
+            return &map->extent[idx];
+    }
+    return NULL;
+}
+
+static u32 map_id_up(struct uid_gid_map *map, u32 id)
+{
+    struct uid_gid_extent *extent;
+    unsigned extents = map->nr_extents;
+    smp_rmb();
+
+    if (extents <= UID_GID_MAP_MAX_BASE_EXTENTS)
+        extent = map_id_up_base(extents, map, id);
+    else
+        extent = map_id_up_max(extents, map, id);
+
+    /* Map the id or note failure */
+    if (extent)
+        id = (id - extent->lower_first) + extent->first;
+    else
+        id = (u32) -1;
+
+    return id;
+}
+
+/**
+ *  from_kuid - Create a uid from a kuid user-namespace pair.
+ *  @targ: The user namespace we want a uid in.
+ *  @kuid: The kernel internal uid to start with.
+ *
+ *  Map @kuid into the user-namespace specified by @targ and
+ *  return the resulting uid.
+ *
+ *  There is always a mapping into the initial user_namespace.
+ *
+ *  If @kuid has no mapping in @targ (uid_t)-1 is returned.
+ */
+uid_t from_kuid(struct user_namespace *targ, kuid_t kuid)
+{
+    /* Map the uid from a global kernel uid */
+    return map_id_up(&targ->uid_map, __kuid_val(kuid));
+}
+EXPORT_SYMBOL(from_kuid);
+
+/**
+ *  from_kuid_munged - Create a uid from a kuid user-namespace pair.
+ *  @targ: The user namespace we want a uid in.
+ *  @kuid: The kernel internal uid to start with.
+ *
+ *  Map @kuid into the user-namespace specified by @targ and
+ *  return the resulting uid.
+ *
+ *  There is always a mapping into the initial user_namespace.
+ *
+ *  Unlike from_kuid from_kuid_munged never fails and always
+ *  returns a valid uid.  This makes from_kuid_munged appropriate
+ *  for use in syscalls like stat and getuid where failing the
+ *  system call and failing to provide a valid uid are not an
+ *  options.
+ *
+ *  If @kuid has no mapping in @targ overflowuid is returned.
+ */
+uid_t from_kuid_munged(struct user_namespace *targ, kuid_t kuid)
+{
+    uid_t uid;
+    uid = from_kuid(targ, kuid);
+
+    if (uid == (uid_t) -1)
+        uid = overflowuid;
+    return uid;
+}
+EXPORT_SYMBOL(from_kuid_munged);

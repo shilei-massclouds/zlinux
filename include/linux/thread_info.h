@@ -42,9 +42,6 @@ static inline int test_ti_thread_flag(struct thread_info *ti, int flag)
     return test_bit(flag, (unsigned long *)&ti->flags);
 }
 
-#define test_thread_flag(flag) \
-    test_ti_thread_flag(current_thread_info(), flag)
-
 #define tif_need_resched() test_thread_flag(TIF_NEED_RESCHED)
 
 static inline void check_object_size(const void *ptr, unsigned long n,
@@ -82,6 +79,21 @@ check_copy_size(const void *addr, size_t bytes, bool is_source)
     check_object_size(addr, bytes, is_source);
     return true;
 }
+
+#define set_thread_flag(flag) \
+    set_ti_thread_flag(current_thread_info(), flag)
+#define clear_thread_flag(flag) \
+    clear_ti_thread_flag(current_thread_info(), flag)
+#define update_thread_flag(flag, value) \
+    update_ti_thread_flag(current_thread_info(), flag, value)
+#define test_and_set_thread_flag(flag) \
+    test_and_set_ti_thread_flag(current_thread_info(), flag)
+#define test_and_clear_thread_flag(flag) \
+    test_and_clear_ti_thread_flag(current_thread_info(), flag)
+#define test_thread_flag(flag) \
+    test_ti_thread_flag(current_thread_info(), flag)
+#define read_thread_flags() \
+    read_ti_thread_flags(current_thread_info())
 
 #endif /* __KERNEL__ */
 

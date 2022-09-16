@@ -10,6 +10,24 @@ typedef union sigval {
     void __user *sival_ptr;
 } sigval_t;
 
+/*
+ * si_code values
+ * Digital reserves positive values for kernel-generated signals.
+ */
+#define SI_USER     0       /* sent by kill, sigsend, raise */
+#define SI_KERNEL   0x80        /* sent by the kernel from somewhere */
+#define SI_QUEUE    -1      /* sent by sigqueue */
+#define SI_TIMER    -2      /* sent by timer expiration */
+#define SI_MESGQ    -3      /* sent by real time mesq state change */
+#define SI_ASYNCIO  -4      /* sent by AIO completion */
+#define SI_SIGIO    -5      /* sent by queued SIGIO */
+#define SI_TKILL    -6      /* sent by tkill system call */
+#define SI_DETHREAD -7      /* sent by execve() killing subsidiary threads */
+#define SI_ASYNCNL  -60     /* sent by glibc async name lookup completion */
+
+#define SI_FROMUSER(siptr)  ((siptr)->si_code <= 0)
+#define SI_FROMKERNEL(siptr)    ((siptr)->si_code > 0)
+
 #define SI_MAX_SIZE 128
 
 #define __ARCH_SI_BAND_T long
@@ -185,5 +203,70 @@ typedef struct siginfo {
 /* hardware memory error detected in process but not consumed: action optional*/
 #define BUS_MCEERR_AO   5
 #define NSIGBUS     5
+
+/*
+ * SIGPOLL (or any other signal without signal specific si_codes) si_codes
+ */
+#define POLL_IN     1   /* data input available */
+#define POLL_OUT    2   /* output buffers available */
+#define POLL_MSG    3   /* input message available */
+#define POLL_ERR    4   /* i/o error */
+#define POLL_PRI    5   /* high priority input available */
+#define POLL_HUP    6   /* device disconnected */
+#define NSIGPOLL    6
+
+/*
+ * SIGSYS si_codes
+ */
+#define SYS_SECCOMP         1   /* seccomp triggered */
+#define SYS_USER_DISPATCH   2   /* syscall user dispatch triggered */
+#define NSIGSYS             2
+
+/*
+ * SIGFPE si_codes
+ */
+#define FPE_INTDIV  1   /* integer divide by zero */
+#define FPE_INTOVF  2   /* integer overflow */
+#define FPE_FLTDIV  3   /* floating point divide by zero */
+#define FPE_FLTOVF  4   /* floating point overflow */
+#define FPE_FLTUND  5   /* floating point underflow */
+#define FPE_FLTRES  6   /* floating point inexact result */
+#define FPE_FLTINV  7   /* floating point invalid operation */
+#define FPE_FLTSUB  8   /* subscript out of range */
+#define __FPE_DECOVF    9   /* decimal overflow */
+#define __FPE_DECDIV    10  /* decimal division by zero */
+#define __FPE_DECERR    11  /* packed decimal error */
+#define __FPE_INVASC    12  /* invalid ASCII digit */
+#define __FPE_INVDEC    13  /* invalid decimal digit */
+#define FPE_FLTUNK      14  /* undiagnosed floating-point exception */
+#define FPE_CONDTRAP    15  /* trap on condition */
+#define NSIGFPE         15
+
+/*
+ * SIGTRAP si_codes
+ */
+#define TRAP_BRKPT  1   /* process breakpoint */
+#define TRAP_TRACE  2   /* process trace trap */
+#define TRAP_BRANCH 3   /* process taken branch trap */
+#define TRAP_HWBKPT 4   /* hardware breakpoint/watchpoint */
+#define TRAP_UNK    5   /* undiagnosed trap */
+#define TRAP_PERF   6   /* perf event with sigtrap=1 */
+#define NSIGTRAP    6
+
+/*
+ * There is an additional set of SIGTRAP si_codes used by ptrace
+ * that are of the form: ((PTRACE_EVENT_XXX << 8) | SIGTRAP)
+ */
+
+/*
+ * SIGCHLD si_codes
+ */
+#define CLD_EXITED  1   /* child has exited */
+#define CLD_KILLED  2   /* child was killed */
+#define CLD_DUMPED  3   /* child terminated abnormally */
+#define CLD_TRAPPED 4   /* traced child has trapped */
+#define CLD_STOPPED 5   /* child has stopped */
+#define CLD_CONTINUED   6   /* stopped child has continued */
+#define NSIGCHLD    6
 
 #endif /* _UAPI_ASM_GENERIC_SIGINFO_H */

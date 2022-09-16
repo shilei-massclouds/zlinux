@@ -42,3 +42,56 @@ struct ucounts *get_ucounts(struct ucounts *ucounts)
     }
     return ucounts;
 }
+
+static void do_dec_rlimit_put_ucounts(struct ucounts *ucounts,
+                                      struct ucounts *last,
+                                      enum ucount_type type)
+{
+    struct ucounts *iter, *next;
+    for (iter = ucounts; iter != last; iter = next) {
+        long dec = atomic_long_sub_return(1, &iter->ucount[type]);
+        WARN_ON_ONCE(dec < 0);
+        next = iter->ns->ucounts;
+        if (dec == 0)
+            put_ucounts(iter);
+    }
+}
+
+long inc_rlimit_get_ucounts(struct ucounts *ucounts,
+                            enum ucount_type type)
+{
+    /* Caller must hold a reference to ucounts */
+    struct ucounts *iter;
+    long max = LONG_MAX;
+    long dec, ret = 0;
+
+    for (iter = ucounts; iter; iter = iter->ns->ucounts) {
+        long new = atomic_long_add_return(1, &iter->ucount[type]);
+        if (new < 0 || new > max)
+            goto unwind;
+        if (iter == ucounts)
+            ret = new;
+        max = READ_ONCE(iter->ns->ucount_max[type]);
+        /*
+         * Grab an extra ucount reference for the caller when
+         * the rlimit count was previously 0.
+         */
+        if (new != 1)
+            continue;
+        if (!get_ucounts(iter))
+            goto dec_unwind;
+    }
+    return ret;
+dec_unwind:
+    dec = atomic_long_sub_return(1, &iter->ucount[type]);
+    WARN_ON_ONCE(dec < 0);
+unwind:
+    do_dec_rlimit_put_ucounts(ucounts, iter, type);
+    return 0;
+}
+
+void dec_rlimit_put_ucounts(struct ucounts *ucounts,
+                            enum ucount_type type)
+{
+    do_dec_rlimit_put_ucounts(ucounts, NULL, type);
+}

@@ -116,4 +116,10 @@ struct ucounts *alloc_ucounts(struct user_namespace *ns, kuid_t uid);
 struct ucounts * __must_check get_ucounts(struct ucounts *ucounts);
 void put_ucounts(struct ucounts *ucounts);
 
+long inc_rlimit_get_ucounts(struct ucounts *ucounts,
+                            enum ucount_type type);
+
+void dec_rlimit_put_ucounts(struct ucounts *ucounts,
+                            enum ucount_type type);
+
 #endif /* _LINUX_USER_H */

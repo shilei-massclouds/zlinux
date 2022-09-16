@@ -80,4 +80,9 @@ void on_each_cpu_cond(smp_cond_func_t cond_func,
     on_each_cpu_cond_mask(cond_func, func, info, wait, cpu_online_mask);
 }
 
+/*
+ * sends a 'reschedule' event to another CPU:
+ */
+extern void smp_send_reschedule(int cpu);
+
 #endif /* __LINUX_SMP_H */

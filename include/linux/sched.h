@@ -477,6 +477,8 @@ struct task_struct {
     int exit_signal;
     /* The signal sent when the parent dies: */
     int pdeath_signal;
+    /* JOBCTL_*, siglock protected: */
+    unsigned long           jobctl;
 
     /* Used for emulating ABI behavior of previous Linux versions: */
     unsigned int personality;
@@ -506,6 +508,7 @@ struct task_struct {
 
     /* Per task flags (PF_*), defined further below: */
     unsigned int flags;
+    unsigned int ptrace;
 
     int on_rq;
 
@@ -543,6 +546,7 @@ struct task_struct {
     struct signal_struct *signal;
     struct sighand_struct __rcu *sighand;
     sigset_t            blocked;
+    sigset_t            real_blocked;
     struct sigpending   pending;
 
     unsigned long       sas_ss_sp;
@@ -883,7 +887,8 @@ static inline int test_tsk_need_resched(struct task_struct *tsk)
  * Set thread flags in other task's structures.
  * See asm/thread_info.h for TIF_xxxx flags available:
  */
-static inline void set_tsk_thread_flag(struct task_struct *tsk, int flag)
+static inline
+void set_tsk_thread_flag(struct task_struct *tsk, int flag)
 {
     set_ti_thread_flag(task_thread_info(tsk), flag);
 }
@@ -938,5 +943,34 @@ static inline void rseq_preempt(struct task_struct *t)
 extern void set_user_nice(struct task_struct *p, long nice);
 
 extern long schedule_timeout_interruptible(long timeout);
+
+extern void kick_process(struct task_struct *tsk);
+
+static inline pid_t task_tgid_nr(struct task_struct *tsk)
+{
+    return tsk->tgid;
+}
+
+/**
+ * is_global_init - check if a task structure is init. Since init
+ * is free to have sub-threads we need to check tgid.
+ * @tsk: Task structure to be checked.
+ *
+ * Check if a task structure is the first user space task the kernel created.
+ *
+ * Return: 1 if the task structure is init. 0 otherwise.
+ */
+static inline int is_global_init(struct task_struct *tsk)
+{
+    return task_tgid_nr(tsk) == 1;
+}
+
+static inline
+pid_t task_tgid_nr_ns(struct task_struct *tsk, struct pid_namespace *ns)
+{
+    return __task_pid_nr_ns(tsk, PIDTYPE_TGID, ns);
+}
+
+extern int task_curr(const struct task_struct *p);
 
 #endif /* _LINUX_SCHED_H */

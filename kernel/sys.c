@@ -13,8 +13,8 @@
 #include <linux/reboot.h>
 #if 0
 #include <linux/prctl.h>
-#include <linux/highuid.h>
 #endif
+#include <linux/highuid.h>
 #include <linux/fs.h>
 #include <linux/kmod.h>
 //#include <linux/perf_event.h>
@@ -86,6 +86,17 @@
 DECLARE_RWSEM(uts_sem);
 
 #define override_architecture(name) 0
+
+/*
+ * this is where the system-wide overflow UID and GID are defined, for
+ * architectures that now have 32-bit UID/GID but didn't in the past
+ */
+
+int overflowuid = DEFAULT_OVERFLOWUID;
+int overflowgid = DEFAULT_OVERFLOWGID;
+
+EXPORT_SYMBOL(overflowuid);
+EXPORT_SYMBOL(overflowgid);
 
 /*
  * Work around broken programs that cannot handle "Linux 3.0".

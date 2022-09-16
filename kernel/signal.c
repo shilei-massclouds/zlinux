@@ -34,10 +34,10 @@
 #include <linux/ptrace.h>
 #endif
 #include <linux/signal.h>
-//#include <linux/signalfd.h>
+#include <linux/signalfd.h>
 #include <linux/ratelimit.h>
-#if 0
 #include <linux/task_work.h>
+#if 0
 #include <linux/capability.h>
 #include <linux/freezer.h>
 #endif
@@ -50,9 +50,9 @@
 #include <linux/compiler.h>
 #if 0
 #include <linux/posix-timers.h>
-#include <linux/cgroup.h>
 #include <linux/audit.h>
 #endif
+#include <linux/cgroup.h>
 
 #include <asm/param.h>
 #include <linux/uaccess.h>
@@ -63,11 +63,35 @@
 #include <asm/cacheflush.h>
 //#include <asm/syscall.h>    /* for syscall_get_* */
 
+#define CREATE_TRACE_POINTS
+#include <trace/events/signal.h>
+
+enum sig_handler {
+    HANDLER_CURRENT, /* If reachable use the current handler */
+    HANDLER_SIG_DFL, /* Always use SIG_DFL handler semantics */
+    HANDLER_EXIT,    /* Only visible as the process exit code */
+};
+
+static const struct {
+    unsigned char limit, layout;
+} sig_sicodes[] = {
+    [SIGILL]  = { NSIGILL,  SIL_FAULT },
+    [SIGFPE]  = { NSIGFPE,  SIL_FAULT },
+    [SIGSEGV] = { NSIGSEGV, SIL_FAULT },
+    [SIGBUS]  = { NSIGBUS,  SIL_FAULT },
+    [SIGTRAP] = { NSIGTRAP, SIL_FAULT },
+    [SIGCHLD] = { NSIGCHLD, SIL_CHLD },
+    [SIGPOLL] = { NSIGPOLL, SIL_POLL },
+    [SIGSYS]  = { NSIGSYS,  SIL_SYS },
+};
+
 /*
  * SLAB caches for signal bits.
  */
 
 static struct kmem_cache *sigqueue_cachep;
+
+int print_fatal_signals __read_mostly;
 
 /*
  * Flush all handlers for a task.
@@ -87,15 +111,608 @@ flush_signal_handlers(struct task_struct *t, int force_default)
     }
 }
 
+/*
+ * Re-calculate pending state from the set of locally pending
+ * signals, globally pending signals, and blocked signals.
+ */
+static inline
+bool has_pending_signals(sigset_t *signal, sigset_t *blocked)
+{
+    unsigned long ready;
+    long i;
+
+    switch (_NSIG_WORDS) {
+    default:
+        for (i = _NSIG_WORDS, ready = 0; --i >= 0 ;)
+            ready |= signal->sig[i] &~ blocked->sig[i];
+        break;
+
+    case 4: ready  = signal->sig[3] &~ blocked->sig[3];
+        ready |= signal->sig[2] &~ blocked->sig[2];
+        ready |= signal->sig[1] &~ blocked->sig[1];
+        ready |= signal->sig[0] &~ blocked->sig[0];
+        break;
+
+    case 2: ready  = signal->sig[1] &~ blocked->sig[1];
+        ready |= signal->sig[0] &~ blocked->sig[0];
+        break;
+
+    case 1: ready  = signal->sig[0] &~ blocked->sig[0];
+    }
+    return ready != 0;
+}
+
+#define PENDING(p,b) has_pending_signals(&(p)->signal, (b))
+
+static bool recalc_sigpending_tsk(struct task_struct *t)
+{
+    if ((t->jobctl & (JOBCTL_PENDING_MASK | JOBCTL_TRAP_FREEZE)) ||
+        PENDING(&t->pending, &t->blocked) ||
+        PENDING(&t->signal->shared_pending, &t->blocked) ||
+        cgroup_task_frozen(t)) {
+        set_tsk_thread_flag(t, TIF_SIGPENDING);
+        return true;
+    }
+
+    /*
+     * We must never clear the flag in another thread, or in current
+     * when it's possible the current syscall is returning -ERESTART*.
+     * So we don't clear it here, and only callers who know they should do.
+     */
+    return false;
+}
+
+/*
+ * After recalculating TIF_SIGPENDING, we need to make sure the task wakes up.
+ * This is superfluous when called on current, the wakeup is a harmless no-op.
+ */
+void recalc_sigpending_and_wake(struct task_struct *t)
+{
+    if (recalc_sigpending_tsk(t))
+        signal_wake_up(t, 0);
+}
+
+enum siginfo_layout siginfo_layout(unsigned sig, int si_code)
+{
+    enum siginfo_layout layout = SIL_KILL;
+    if ((si_code > SI_USER) && (si_code < SI_KERNEL)) {
+        if ((sig < ARRAY_SIZE(sig_sicodes)) &&
+            (si_code <= sig_sicodes[sig].limit)) {
+            layout = sig_sicodes[sig].layout;
+            /* Handle the exceptions */
+            if ((sig == SIGBUS) &&
+                (si_code >= BUS_MCEERR_AR) && (si_code <= BUS_MCEERR_AO))
+                layout = SIL_FAULT_MCEERR;
+            else if ((sig == SIGSEGV) && (si_code == SEGV_BNDERR))
+                layout = SIL_FAULT_BNDERR;
+            else if ((sig == SIGSEGV) && (si_code == SEGV_PKUERR))
+                layout = SIL_FAULT_PKUERR;
+            else if ((sig == SIGTRAP) && (si_code == TRAP_PERF))
+                layout = SIL_FAULT_PERF_EVENT;
+            else if (IS_ENABLED(CONFIG_SPARC) &&
+                 (sig == SIGILL) && (si_code == ILL_ILLTRP))
+                layout = SIL_FAULT_TRAPNO;
+            else if (IS_ENABLED(CONFIG_ALPHA) &&
+                 ((sig == SIGFPE) ||
+                  ((sig == SIGTRAP) && (si_code == TRAP_UNK))))
+                layout = SIL_FAULT_TRAPNO;
+        }
+        else if (si_code <= NSIGPOLL)
+            layout = SIL_POLL;
+    } else {
+        if (si_code == SI_TIMER)
+            layout = SIL_TIMER;
+        else if (si_code == SI_SIGIO)
+            layout = SIL_POLL;
+        else if (si_code < 0)
+            layout = SIL_RT;
+    }
+    return layout;
+}
+
+static inline bool has_si_pid_and_uid(struct kernel_siginfo *info)
+{
+    bool ret = false;
+    switch (siginfo_layout(info->si_signo, info->si_code)) {
+    case SIL_KILL:
+    case SIL_CHLD:
+    case SIL_RT:
+        ret = true;
+        break;
+    case SIL_TIMER:
+    case SIL_POLL:
+    case SIL_FAULT:
+    case SIL_FAULT_TRAPNO:
+    case SIL_FAULT_MCEERR:
+    case SIL_FAULT_BNDERR:
+    case SIL_FAULT_PKUERR:
+    case SIL_FAULT_PERF_EVENT:
+    case SIL_SYS:
+        ret = false;
+        break;
+    }
+    return ret;
+}
+
+static void __user *sig_handler(struct task_struct *t, int sig)
+{
+    return t->sighand->action[sig - 1].sa.sa_handler;
+}
+
+static inline bool sig_handler_ignored(void __user *handler, int sig)
+{
+    /* Is it explicitly or implicitly ignored? */
+    return handler == SIG_IGN ||
+        (handler == SIG_DFL && sig_kernel_ignore(sig));
+}
+
+static bool sig_task_ignored(struct task_struct *t, int sig, bool force)
+{
+    void __user *handler;
+
+    handler = sig_handler(t, sig);
+
+    /* SIGKILL and SIGSTOP may not be sent to the global init */
+    if (unlikely(is_global_init(t) && sig_kernel_only(sig)))
+        return true;
+
+    if (unlikely(t->signal->flags & SIGNAL_UNKILLABLE) &&
+        handler == SIG_DFL && !(force && sig_kernel_only(sig)))
+        return true;
+
+    /* Only allow kernel generated signals to this kthread */
+    if (unlikely((t->flags & PF_KTHREAD) &&
+                 (handler == SIG_KTHREAD_KERNEL) && !force))
+        return true;
+
+    return sig_handler_ignored(handler, sig);
+}
+
+static bool sig_ignored(struct task_struct *t, int sig, bool force)
+{
+    /*
+     * Blocked signals are never ignored, since the
+     * signal handler may change by the time it is
+     * unblocked.
+     */
+    if (sigismember(&t->blocked, sig) ||
+        sigismember(&t->real_blocked, sig))
+        return false;
+
+    /*
+     * Tracers may want to know about even ignored signal unless it
+     * is SIGKILL which can't be reported anyway but can be ignored
+     * by SIGNAL_UNKILLABLE task.
+     */
+    if (t->ptrace && sig != SIGKILL)
+        return false;
+
+    return sig_task_ignored(t, sig, force);
+}
+
+/*
+ * Handle magic process-wide effects of stop/continue signals. Unlike
+ * the signal actions, these happen immediately at signal-generation
+ * time regardless of blocking, ignoring, or handling.  This does the
+ * actual continuing for SIGCONT, but not the actual stopping for stop
+ * signals. The process stop is done as a signal action for SIG_DFL.
+ *
+ * Returns true if the signal should be actually delivered, otherwise
+ * it should be dropped.
+ */
+static bool prepare_signal(int sig, struct task_struct *p, bool force)
+{
+    struct signal_struct *signal = p->signal;
+    struct task_struct *t;
+    sigset_t flush;
+
+    if (signal->flags & SIGNAL_GROUP_EXIT) {
+        if (signal->core_state)
+            return sig == SIGKILL;
+        /*
+         * The process is in the middle of dying, nothing to do.
+         */
+    } else if (sig_kernel_stop(sig)) {
+#if 0
+        /*
+         * This is a stop signal.  Remove SIGCONT from all queues.
+         */
+        siginitset(&flush, sigmask(SIGCONT));
+        flush_sigqueue_mask(&flush, &signal->shared_pending);
+        for_each_thread(p, t)
+            flush_sigqueue_mask(&flush, &t->pending);
+#endif
+        panic("%s: sig_kernel_stop!\n", __func__);
+    } else if (sig == SIGCONT) {
+        panic("%s: SIGCONT!\n", __func__);
+    }
+
+    return !sig_ignored(p, sig, force);
+}
+
+static inline bool legacy_queue(struct sigpending *signals, int sig)
+{
+    return (sig < SIGRTMIN) && sigismember(&signals->signal, sig);
+}
+
+static inline int is_si_special(const struct kernel_siginfo *info)
+{
+    return info <= SEND_SIG_PRIV;
+}
+
+static inline void print_dropped_signal(int sig)
+{
+    static DEFINE_RATELIMIT_STATE(ratelimit_state, 5 * HZ, 10);
+
+    if (!print_fatal_signals)
+        return;
+
+    if (!__ratelimit(&ratelimit_state))
+        return;
+
+    pr_info("%s/%d: reached RLIMIT_SIGPENDING, dropped signal %d\n",
+            current->comm, current->pid, sig);
+}
+
+/*
+ * allocate a new signal queue record
+ * - this may be called without locks if and only if t == current, otherwise an
+ *   appropriate lock must be held to stop the target task from exiting
+ */
+static struct sigqueue *
+__sigqueue_alloc(int sig, struct task_struct *t, gfp_t gfp_flags,
+                 int override_rlimit, const unsigned int sigqueue_flags)
+{
+    struct sigqueue *q = NULL;
+    struct ucounts *ucounts = NULL;
+    long sigpending;
+
+    /*
+     * Protect access to @t credentials. This can go away when all
+     * callers hold rcu read lock.
+     *
+     * NOTE! A pending signal will hold on to the user refcount,
+     * and we get/put the refcount only when the sigpending count
+     * changes from/to zero.
+     */
+    rcu_read_lock();
+    ucounts = task_ucounts(t);
+    sigpending = inc_rlimit_get_ucounts(ucounts,
+                                        UCOUNT_RLIMIT_SIGPENDING);
+    rcu_read_unlock();
+    if (!sigpending)
+        return NULL;
+
+    if (override_rlimit ||
+        likely(sigpending <= task_rlimit(t, RLIMIT_SIGPENDING))) {
+        q = kmem_cache_alloc(sigqueue_cachep, gfp_flags);
+    } else {
+        print_dropped_signal(sig);
+    }
+
+    if (unlikely(q == NULL)) {
+        dec_rlimit_put_ucounts(ucounts, UCOUNT_RLIMIT_SIGPENDING);
+    } else {
+        INIT_LIST_HEAD(&q->list);
+        q->flags = sigqueue_flags;
+        q->ucounts = ucounts;
+    }
+    return q;
+}
+
+/*
+ * Test if P wants to take SIG.  After we've checked all threads with this,
+ * it's equivalent to finding no threads not blocking SIG.  Any threads not
+ * blocking SIG were ruled out because they are not running and already
+ * have pending signals.  Such threads will dequeue from the shared queue
+ * as soon as they're available, so putting the signal on the shared queue
+ * will be equivalent to sending it to one such thread.
+ */
+static inline bool wants_signal(int sig, struct task_struct *p)
+{
+    if (sigismember(&p->blocked, sig))
+        return false;
+
+    if (p->flags & PF_EXITING)
+        return false;
+
+    if (sig == SIGKILL)
+        return true;
+
+    if (task_is_stopped_or_traced(p))
+        return false;
+
+    return task_curr(p) || !task_sigpending(p);
+}
+
+static void complete_signal(int sig, struct task_struct *p,
+                            enum pid_type type)
+{
+    struct signal_struct *signal = p->signal;
+    struct task_struct *t;
+
+    /*
+     * Now find a thread we can wake up to take the signal off the queue.
+     *
+     * If the main thread wants the signal, it gets first crack.
+     * Probably the least surprising to the average bear.
+     */
+    if (wants_signal(sig, p))
+        t = p;
+    else if ((type == PIDTYPE_PID) || thread_group_empty(p))
+        /*
+         * There is just one thread and it does not need to be woken.
+         * It will dequeue unblocked signals before it runs again.
+         */
+        return;
+    else {
+        panic("%s: 1!\n", __func__);
+    }
+
+    /*
+     * Found a killable thread.  If the signal will be fatal,
+     * then start taking the whole group down immediately.
+     */
+    if (sig_fatal(p, sig) &&
+        (signal->core_state || !(signal->flags & SIGNAL_GROUP_EXIT)) &&
+        !sigismember(&t->real_blocked, sig) &&
+        (sig == SIGKILL || !p->ptrace)) {
+        /*
+         * This signal will be fatal to the whole group.
+         */
+        if (!sig_kernel_coredump(sig)) {
+            panic("%s: 2!\n", __func__);
+        }
+    }
+
+    /*
+     * The signal is already in the shared-pending queue.
+     * Tell the chosen thread to wake up and dequeue it.
+     */
+    signal_wake_up(t, sig == SIGKILL);
+    return;
+}
+
+static int __send_signal(int sig, struct kernel_siginfo *info,
+                         struct task_struct *t,
+                         enum pid_type type, bool force)
+{
+    struct sigpending *pending;
+    struct sigqueue *q;
+    int override_rlimit;
+    int ret = 0, result;
+
+    assert_spin_locked(&t->sighand->siglock);
+
+    result = TRACE_SIGNAL_IGNORED;
+    if (!prepare_signal(sig, t, force))
+        goto ret;
+
+    pending = (type != PIDTYPE_PID) ?
+        &t->signal->shared_pending : &t->pending;
+    /*
+     * Short-circuit ignored signals and support queuing
+     * exactly one non-rt signal, so that we can get more
+     * detailed information about the cause of the signal.
+     */
+    result = TRACE_SIGNAL_ALREADY_PENDING;
+    if (legacy_queue(pending, sig))
+        goto ret;
+
+    result = TRACE_SIGNAL_DELIVERED;
+    /*
+     * Skip useless siginfo allocation for SIGKILL and kernel threads.
+     */
+    if ((sig == SIGKILL) || (t->flags & PF_KTHREAD))
+        goto out_set;
+
+    /*
+     * Real-time signals must be queued if sent by sigqueue, or
+     * some other real-time mechanism.  It is implementation
+     * defined whether kill() does so.  We attempt to do so, on
+     * the principle of least surprise, but since kill is not
+     * allowed to fail with EAGAIN when low on memory we just
+     * make sure at least one signal gets delivered and don't
+     * pass on the info struct.
+     */
+    if (sig < SIGRTMIN)
+        override_rlimit = (is_si_special(info) || info->si_code >= 0);
+    else
+        override_rlimit = 0;
+
+    q = __sigqueue_alloc(sig, t, GFP_ATOMIC, override_rlimit, 0);
+
+    if (q) {
+        list_add_tail(&q->list, &pending->list);
+        switch ((unsigned long) info) {
+        case (unsigned long) SEND_SIG_NOINFO:
+            clear_siginfo(&q->info);
+            q->info.si_signo = sig;
+            q->info.si_errno = 0;
+            q->info.si_code = SI_USER;
+            q->info.si_pid = task_tgid_nr_ns(current,
+                                             task_active_pid_ns(t));
+            rcu_read_lock();
+            q->info.si_uid =
+                from_kuid_munged(task_cred_xxx(t, user_ns),
+                                 current_uid());
+            rcu_read_unlock();
+            break;
+        case (unsigned long) SEND_SIG_PRIV:
+            clear_siginfo(&q->info);
+            q->info.si_signo = sig;
+            q->info.si_errno = 0;
+            q->info.si_code = SI_KERNEL;
+            q->info.si_pid = 0;
+            q->info.si_uid = 0;
+            break;
+        default:
+            copy_siginfo(&q->info, info);
+            break;
+        }
+    } else if (!is_si_special(info) &&
+               sig >= SIGRTMIN && info->si_code != SI_USER) {
+        /*
+         * Queue overflow, abort.  We may abort if the
+         * signal was rt and sent by user using something
+         * other than kill().
+         */
+        result = TRACE_SIGNAL_OVERFLOW_FAIL;
+        ret = -EAGAIN;
+        goto ret;
+    } else {
+        panic("%s: else!\n", __func__);
+    }
+
+ out_set:
+    signalfd_notify(t, sig);
+    sigaddset(&pending->signal, sig);
+
+    /* Let multiprocess signals appear after on-going forks */
+    if (type > PIDTYPE_TGID) {
+#if 0
+        struct multiprocess_signals *delayed;
+        hlist_for_each_entry(delayed, &t->signal->multiprocess, node) {
+            sigset_t *signal = &delayed->signal;
+            /* Can't queue both a stop and a continue signal */
+            if (sig == SIGCONT)
+                sigdelsetmask(signal, SIG_KERNEL_STOP_MASK);
+            else if (sig_kernel_stop(sig))
+                sigdelset(signal, SIGCONT);
+            sigaddset(signal, sig);
+        }
+#endif
+        panic("%s: PIDTYPE_TGID!\n", __func__);
+    }
+
+    complete_signal(sig, t, type);
+
+ ret:
+    return ret;
+}
+
+static int send_signal(int sig, struct kernel_siginfo *info,
+                       struct task_struct *t, enum pid_type type)
+{
+    /* Should SIGKILL or SIGSTOP be received by a pid namespace init? */
+    bool force = false;
+
+    if (info == SEND_SIG_NOINFO) {
+        /* Force if sent from an ancestor pid namespace */
+        force = !task_pid_nr_ns(current, task_active_pid_ns(t));
+    } else if (info == SEND_SIG_PRIV) {
+        /* Don't ignore kernel generated signals */
+        force = true;
+    } else if (has_si_pid_and_uid(info)) {
+        panic("%s: has_si_pid_and_uid!\n", __func__);
+    }
+    return __send_signal(sig, info, t, type, force);
+}
+
+/*
+ * Force a signal that the process can't ignore: if necessary
+ * we unblock the signal and change any SIG_IGN to SIG_DFL.
+ *
+ * Note: If we unblock the signal, we always reset it to SIG_DFL,
+ * since we do not want to have a signal handler that was blocked
+ * be invoked when user space had explicitly blocked it.
+ *
+ * We don't want to have recursive SIGSEGV's etc, for example,
+ * that is why we also clear SIGNAL_UNKILLABLE.
+ */
+static int
+force_sig_info_to_task(struct kernel_siginfo *info,
+                       struct task_struct *t,
+                       enum sig_handler handler)
+{
+    unsigned long int flags;
+    int ret, blocked, ignored;
+    struct k_sigaction *action;
+    int sig = info->si_signo;
+
+    spin_lock_irqsave(&t->sighand->siglock, flags);
+    action = &t->sighand->action[sig-1];
+    ignored = action->sa.sa_handler == SIG_IGN;
+    blocked = sigismember(&t->blocked, sig);
+    if (blocked || ignored || (handler != HANDLER_CURRENT)) {
+        action->sa.sa_handler = SIG_DFL;
+        if (handler == HANDLER_EXIT)
+            action->sa.sa_flags |= SA_IMMUTABLE;
+        if (blocked) {
+            sigdelset(&t->blocked, sig);
+            recalc_sigpending_and_wake(t);
+        }
+    }
+    /*
+     * Don't clear SIGNAL_UNKILLABLE for traced tasks, users won't expect
+     * debugging to leave init killable. But HANDLER_EXIT is always fatal.
+     */
+    if (action->sa.sa_handler == SIG_DFL &&
+        (!t->ptrace || (handler == HANDLER_EXIT)))
+        t->signal->flags &= ~SIGNAL_UNKILLABLE;
+    ret = send_signal(sig, info, t, PIDTYPE_PID);
+    spin_unlock_irqrestore(&t->sighand->siglock, flags);
+
+    return ret;
+}
+
 int force_sig_fault_to_task(int sig, int code, void __user *addr,
                             struct task_struct *t)
 {
-    panic("%s: END!\n", __func__);
+    struct kernel_siginfo info;
+
+    clear_siginfo(&info);
+    info.si_signo = sig;
+    info.si_errno = 0;
+    info.si_code  = code;
+    info.si_addr  = addr;
+    return force_sig_info_to_task(&info, t, HANDLER_CURRENT);
 }
 
 int force_sig_fault(int sig, int code, void __user *addr)
 {
     return force_sig_fault_to_task(sig, code, addr, current);
+}
+
+/*
+ * Tell a process that it has a new active signal..
+ *
+ * NOTE! we rely on the previous spin_lock to
+ * lock interrupts for us! We can only be called with
+ * "siglock" held, and the local interrupt must
+ * have been disabled when that got acquired!
+ *
+ * No need to set need_resched since signal event passing
+ * goes through ->blocked
+ */
+void signal_wake_up_state(struct task_struct *t, unsigned int state)
+{
+    set_tsk_thread_flag(t, TIF_SIGPENDING);
+    /*
+     * TASK_WAKEKILL also means wake it up in the stopped/traced/killable
+     * case. We don't check t->state here because there is a race with it
+     * executing another processor and just now entering stopped state.
+     * By using wake_up_state, we ensure the process will wake up and
+     * handle its death signal.
+     */
+    if (!wake_up_state(t, state | TASK_INTERRUPTIBLE))
+        kick_process(t);
+}
+
+bool get_signal(struct ksignal *ksig)
+{
+    struct sighand_struct *sighand = current->sighand;
+    struct signal_struct *signal = current->signal;
+    int signr;
+
+    clear_notify_signal();
+    if (unlikely(task_work_pending(current)))
+        task_work_run();
+
+    if (!task_sigpending(current))
+        return false;
+
+    panic("%s: END!\n", __func__);
 }
 
 static inline void siginfo_buildtime_checks(void)

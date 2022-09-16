@@ -94,7 +94,6 @@ int __init init_chdir(const char *filename)
     if (error)
         return error;
     error = path_permission(&path, MAY_EXEC | MAY_CHDIR);
-    printk("%s: error(%d)\n", __func__);
     if (!error)
         set_fs_pwd(current->fs, &path);
     path_put(&path);
