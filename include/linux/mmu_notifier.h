@@ -397,4 +397,9 @@ void mmu_notifier_change_pte(struct mm_struct *mm,
     set_pte_at(___mm, ___address, __ptep, ___pte);          \
 })
 
+static inline void mmu_notifier_subscriptions_init(struct mm_struct *mm)
+{
+    mm->notifier_subscriptions = NULL;
+}
+
 #endif /* _LINUX_MMU_NOTIFIER_H */

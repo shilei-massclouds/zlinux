@@ -50,7 +50,6 @@
 #include <linux/key.h>
 #include <linux/binfmts.h>
 #include <linux/mman.h>
-#include <linux/mmu_notifier.h>
 #include <linux/capability.h>
 #include <linux/cgroup.h>
 #include <linux/security.h>
@@ -91,6 +90,7 @@
 #include <linux/ptrace.h>
 */
 
+#include <linux/mmu_notifier.h>
 #include <linux/oom.h>
 #include <linux/compiler.h>
 #include <linux/vmacache.h>
@@ -1229,17 +1229,13 @@ mm_init(struct mm_struct *mm, struct task_struct *p,
     mm->map_count = 0;
     mm->locked_vm = 0;
     atomic64_set(&mm->pinned_vm, 0);
-#if 0
     memset(&mm->rss_stat, 0, sizeof(mm->rss_stat));
-#endif
     spin_lock_init(&mm->page_table_lock);
     spin_lock_init(&mm->arg_lock);
     mm_init_cpumask(mm);
     mm_init_aio(mm);
     RCU_INIT_POINTER(mm->exe_file, NULL);
-#if 0
     mmu_notifier_subscriptions_init(mm);
-#endif
     init_tlb_flush_pending(mm);
     hugetlb_count_init(mm);
 
