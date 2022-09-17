@@ -24,8 +24,8 @@
 #include <linux/slab.h>
 #include <linux/sched/task.h>
 #include <linux/sched/task_stack.h>
-/*
 #include <linux/sched/cputime.h>
+/*
 #include <linux/seq_file.h>
 #include <linux/rtmutex.h>
 */
@@ -561,6 +561,64 @@ static int copy_mm(unsigned long clone_flags, struct task_struct *tsk)
 }
 
 /*
+ * Initialize POSIX timer handling for a thread group.
+ */
+static void posix_cpu_timers_init_group(struct signal_struct *sig)
+{
+    struct posix_cputimers *pct = &sig->posix_cputimers;
+    unsigned long cpu_limit;
+
+    cpu_limit = READ_ONCE(sig->rlim[RLIMIT_CPU].rlim_cur);
+    posix_cputimers_group_init(pct, cpu_limit);
+}
+
+static int copy_signal(unsigned long clone_flags, struct task_struct *tsk)
+{
+    struct signal_struct *sig;
+
+    if (clone_flags & CLONE_THREAD)
+        return 0;
+
+    sig = kmem_cache_zalloc(signal_cachep, GFP_KERNEL);
+    tsk->signal = sig;
+    if (!sig)
+        return -ENOMEM;
+
+    sig->nr_threads = 1;
+    atomic_set(&sig->live, 1);
+    refcount_set(&sig->sigcnt, 1);
+
+    /* list_add(thread_node, thread_head) without INIT_LIST_HEAD() */
+    sig->thread_head = (struct list_head)LIST_HEAD_INIT(tsk->thread_node);
+    tsk->thread_node = (struct list_head)LIST_HEAD_INIT(sig->thread_head);
+
+    init_waitqueue_head(&sig->wait_chldexit);
+    sig->curr_target = tsk;
+    init_sigpending(&sig->shared_pending);
+    INIT_HLIST_HEAD(&sig->multiprocess);
+    seqlock_init(&sig->stats_lock);
+    prev_cputime_init(&sig->prev_cputime);
+
+    INIT_LIST_HEAD(&sig->posix_timers);
+    hrtimer_init(&sig->real_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+    sig->real_timer.function = it_real_fn;
+
+    task_lock(current->group_leader);
+    memcpy(sig->rlim, current->signal->rlim, sizeof sig->rlim);
+    task_unlock(current->group_leader);
+
+    posix_cpu_timers_init_group(sig);
+
+    sig->oom_score_adj = current->signal->oom_score_adj;
+    sig->oom_score_adj_min = current->signal->oom_score_adj_min;
+
+    mutex_init(&sig->cred_guard_mutex);
+    init_rwsem(&sig->exec_update_lock);
+
+    return 0;
+}
+
+/*
  * This creates a new process as a copy of the old one,
  * but does not actually start it yet.
  *
@@ -574,7 +632,7 @@ copy_process(struct pid *pid, int trace, int node,
 {
     int pidfd = -1, retval;
     struct task_struct *p;
-    //struct multiprocess_signals delayed;
+    struct multiprocess_signals delayed;
     struct file *pidfile = NULL;
     u64 clone_flags = args->flags;
     struct nsproxy *nsp = current->nsproxy;
@@ -643,7 +701,6 @@ copy_process(struct pid *pid, int trace, int node,
             return ERR_PTR(-EINVAL);
     }
 
-#if 0
     /*
      * Force any signals received before this point to be delivered
      * before the fork happens.  Collect up signals sent to multiple
@@ -661,7 +718,6 @@ copy_process(struct pid *pid, int trace, int node,
     retval = -ERESTARTNOINTR;
     if (task_sigpending(current))
         goto fork_out;
-#endif
 
     retval = -ENOMEM;
     p = dup_task_struct(current, node);
@@ -775,11 +831,9 @@ copy_process(struct pid *pid, int trace, int node,
     retval = copy_sighand(clone_flags, p);
     if (retval)
         goto bad_fork_cleanup_fs;
-#if 0
     retval = copy_signal(clone_flags, p);
     if (retval)
         goto bad_fork_cleanup_sighand;
-#endif
     retval = copy_mm(clone_flags, p);
     if (retval)
         goto bad_fork_cleanup_signal;
@@ -876,9 +930,9 @@ copy_process(struct pid *pid, int trace, int node,
         p->exit_signal = args->exit_signal;
     }
 
-#if 0
     spin_lock(&current->sighand->siglock);
 
+#if 0
     /*
      * Copy seccomp details explicitly here, in case they were changed
      * before holding sighand lock.
@@ -917,11 +971,8 @@ copy_process(struct pid *pid, int trace, int node,
     }
 
     total_forks++;
-#if 0
     hlist_del_init(&delayed.node);
     spin_unlock(&current->sighand->siglock);
-    syscall_tracepoint_update(p);
-#endif
     write_unlock_irq(&tasklist_lock);
 
 #if 0
@@ -996,7 +1047,7 @@ copy_process(struct pid *pid, int trace, int node,
  fork_out:
     panic("%s: ERROR!\n", __func__);
     spin_lock_irq(&current->sighand->siglock);
-    //hlist_del_init(&delayed.node);
+    hlist_del_init(&delayed.node);
     spin_unlock_irq(&current->sighand->siglock);
     return ERR_PTR(retval);
 }

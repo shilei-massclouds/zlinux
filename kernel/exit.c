@@ -128,7 +128,7 @@ EXPORT_SYMBOL_GPL(rcuwait_wake_up);
 
 void __noreturn do_exit(long code)
 {
-    panic("%s: NOT-implemented!\n", __func__);
+    panic("%s: NOT-implemented code(%ld)!\n", __func__, code);
 }
 
 /*
@@ -139,6 +139,8 @@ void __noreturn
 do_group_exit(int exit_code)
 {
     struct signal_struct *sig = current->signal;
+
+    printk("%s: ...\n", __func__);
 
     if (sig->flags & SIGNAL_GROUP_EXIT)
         exit_code = sig->group_exit_code;

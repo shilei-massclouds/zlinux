@@ -57,6 +57,11 @@ struct thread_group_cputimer {
     struct task_cputime_atomic cputime_atomic;
 };
 
+struct multiprocess_signals {
+    sigset_t signal;
+    struct hlist_node node;
+};
+
 /*
  * NOTE! "signal_struct" does not have its own
  * locking, because a shared signal_struct always
@@ -326,5 +331,7 @@ struct task_struct *next_thread(const struct task_struct *p)
     while ((t = next_thread(t)) != g)
 
 extern int zap_other_threads(struct task_struct *p);
+
+extern void recalc_sigpending(void);
 
 #endif /* _LINUX_SCHED_SIGNAL_H */

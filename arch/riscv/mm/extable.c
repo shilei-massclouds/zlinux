@@ -13,6 +13,36 @@
 #include <asm/asm-extable.h>
 #include <asm/ptrace.h>
 
+static inline unsigned long
+get_ex_fixup(const struct exception_table_entry *ex)
+{
+    return ((unsigned long)&ex->fixup + ex->fixup);
+}
+
+static bool
+ex_handler_fixup(const struct exception_table_entry *ex, struct pt_regs *regs)
+{
+    regs->epc = get_ex_fixup(ex);
+    return true;
+}
+
+static bool
+ex_handler_uaccess_err_zero(const struct exception_table_entry *ex,
+                            struct pt_regs *regs)
+{
+#if 0
+    int reg_err = FIELD_GET(EX_DATA_REG_ERR, ex->data);
+    int reg_zero = FIELD_GET(EX_DATA_REG_ZERO, ex->data);
+
+    regs_set_gpr(regs, reg_err * sizeof(unsigned long), -EFAULT);
+    regs_set_gpr(regs, reg_zero * sizeof(unsigned long), 0);
+
+    regs->epc = get_ex_fixup(ex);
+#endif
+    panic("%s: END!\n", __func__);
+    return true;
+}
+
 bool fixup_exception(struct pt_regs *regs)
 {
     const struct exception_table_entry *ex;
@@ -21,7 +51,6 @@ bool fixup_exception(struct pt_regs *regs)
     if (!ex)
         return false;
 
-#if 0
     switch (ex->type) {
     case EX_TYPE_FIXUP:
         return ex_handler_fixup(ex, regs);
@@ -32,6 +61,4 @@ bool fixup_exception(struct pt_regs *regs)
     }
 
     BUG();
-#endif
-    panic("%s: END!\n", __func__);
 }

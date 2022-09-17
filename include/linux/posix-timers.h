@@ -86,4 +86,6 @@ static inline void posix_cputimers_init(struct posix_cputimers *pct)
     pct->bases[2].nextevt = U64_MAX;
 }
 
+void posix_cputimers_group_init(struct posix_cputimers *pct, u64 cpu_limit);
+
 #endif /* _linux_POSIX_TIMERS_H */

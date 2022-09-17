@@ -133,4 +133,7 @@ extern int mod_timer(struct timer_list *timer, unsigned long expires);
 extern int mod_timer_pending(struct timer_list *timer,
                              unsigned long expires);
 
+struct hrtimer;
+extern enum hrtimer_restart it_real_fn(struct hrtimer *);
+
 #endif /* _LINUX_TIMER_H */

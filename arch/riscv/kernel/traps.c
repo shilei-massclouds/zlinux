@@ -29,6 +29,7 @@ void do_trap(struct pt_regs *regs, int signo, int code, unsigned long addr)
 {
     struct task_struct *tsk = current;
 
+    printk("--- --- %s: signo(%d)\n", __func__, signo);
 #if 0
     if (show_unhandled_signals && unhandled_signal(tsk, signo)
         && printk_ratelimit()) {
@@ -48,6 +49,8 @@ static void do_trap_error(struct pt_regs *regs, int signo, int code,
 {
     current->thread.bad_cause = regs->cause;
 
+    printk("--- --- %s: signo(%d:%s) addr(%lx)\n",
+           __func__, signo, str, addr);
     if (user_mode(regs)) {
         do_trap(regs, signo, code, addr);
     } else {

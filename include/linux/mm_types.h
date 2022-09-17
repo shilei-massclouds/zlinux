@@ -572,6 +572,29 @@ enum vm_fault_reason {
      VM_FAULT_SIGSEGV | VM_FAULT_HWPOISON | \
      VM_FAULT_HWPOISON_LARGE | VM_FAULT_FALLBACK)
 
+struct vm_special_mapping {
+    const char *name;   /* The name, e.g. "[vdso]". */
+
+    /*
+     * If .fault is not provided, this points to a
+     * NULL-terminated array of pages that back the special mapping.
+     *
+     * This must not be NULL unless .fault is provided.
+     */
+    struct page **pages;
+
+    /*
+     * If non-NULL, then this is called to resolve page faults
+     * on the special mapping.  If used, .pages is not checked.
+     */
+    vm_fault_t (*fault)(const struct vm_special_mapping *sm,
+                        struct vm_area_struct *vma,
+                        struct vm_fault *vmf);
+
+    int (*mremap)(const struct vm_special_mapping *sm,
+                  struct vm_area_struct *new_vma);
+};
+
 static inline void *folio_get_private(struct folio *folio)
 {
     return folio->private;

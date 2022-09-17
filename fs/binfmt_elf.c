@@ -607,6 +607,7 @@ static unsigned long load_elf_interp(struct elfhdr *interp_elf_ex,
                 error = -ENOMEM;
                 goto out;
             }
+            printk("%s: (%lx, %lx)\n", __func__, load_addr, k);
 
             /*
              * Find the end of the file mapping for this phdr, and
@@ -625,6 +626,7 @@ static unsigned long load_elf_interp(struct elfhdr *interp_elf_ex,
                 last_bss = k;
                 bss_prot = elf_prot;
             }
+            printk("%s: bss(%lx, %lx)\n", __func__, elf_bss, last_bss);
         }
     }
 
@@ -1107,13 +1109,9 @@ static int load_elf_binary(struct linux_binprm *bprm)
 
     set_binfmt(&elf_format);
 
-#if 0
-#ifdef ARCH_HAS_SETUP_ADDITIONAL_PAGES
     retval = ARCH_SETUP_ADDITIONAL_PAGES(bprm, elf_ex, !!interpreter);
     if (retval < 0)
         goto out;
-#endif /* ARCH_HAS_SETUP_ADDITIONAL_PAGES */
-#endif
 
     retval = create_elf_tables(bprm, elf_ex, interp_load_addr,
                                e_entry, phdr_addr);

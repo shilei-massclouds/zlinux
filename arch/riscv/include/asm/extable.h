@@ -24,4 +24,11 @@ struct exception_table_entry {
 
 bool fixup_exception(struct pt_regs *regs);
 
+static inline
+bool ex_handler_bpf(const struct exception_table_entry *ex,
+                    struct pt_regs *regs)
+{
+    return false;
+}
+
 #endif /* _ASM_RISCV_EXTABLE_H */

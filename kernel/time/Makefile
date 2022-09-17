@@ -4,4 +4,4 @@ obj-y += clocksource.o jiffies.o timekeeping.o ntp.o #timer_list.o
 obj-y += tick-oneshot.o tick-sched.o
 obj-y += tick-common.o clockevents.o
 obj-y += sched_clock.o tick-broadcast.o
-
+obj-y += itimer.o posix-cpu-timers.o # posix-timers.o posix-clock.o

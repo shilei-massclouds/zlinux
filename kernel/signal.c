@@ -522,6 +522,7 @@ static int __send_signal(int sig, struct kernel_siginfo *info,
 
     q = __sigqueue_alloc(sig, t, GFP_ATOMIC, override_rlimit, 0);
 
+    printk("--- --- %s: sig(%d)\n", __func__, sig);
     if (q) {
         list_add_tail(&q->list, &pending->list);
         switch ((unsigned long) info) {
@@ -629,6 +630,7 @@ force_sig_info_to_task(struct kernel_siginfo *info,
     int ret, blocked, ignored;
     struct k_sigaction *action;
     int sig = info->si_signo;
+    printk("--- --- %s: sig(%d)\n", __func__, sig);
 
     spin_lock_irqsave(&t->sighand->siglock, flags);
     action = &t->sighand->action[sig-1];
@@ -736,7 +738,6 @@ void recalc_sigpending(void)
 {
     if (!recalc_sigpending_tsk(current))
         clear_thread_flag(TIF_SIGPENDING);
-
 }
 EXPORT_SYMBOL(recalc_sigpending);
 
@@ -777,6 +778,7 @@ static int dequeue_synchronous_signal(kernel_siginfo_t *info)
         /* Synchronous signals have a positive si_code */
         if ((q->info.si_code > SI_USER) &&
             (sigmask(q->info.si_signo) & SYNCHRONOUS_MASK)) {
+            printk("%s: signr(%d)\n", __func__, q->info.si_signo);
             sync = q;
             goto next;
         }
@@ -910,6 +912,7 @@ bool get_signal(struct ksignal *ksig)
          */
         type = PIDTYPE_PID;
         signr = dequeue_synchronous_signal(&ksig->info);
+        printk("%s: signr(%d)\n", __func__, signr);
         if (!signr)
             signr = dequeue_signal(current, &current->blocked,
                                    &ksig->info, &type);
@@ -986,7 +989,6 @@ bool get_signal(struct ksignal *ksig)
              */
             //do_coredump(&ksig->info);
         }
-
 
         /*
          * PF_IO_WORKER threads will catch and exit on fatal signals

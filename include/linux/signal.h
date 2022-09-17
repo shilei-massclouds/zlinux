@@ -130,4 +130,10 @@ static inline void sigaddset(sigset_t *set, int _sig)
 
 extern bool get_signal(struct ksignal *ksig);
 
+static inline void init_sigpending(struct sigpending *sig)
+{
+    sigemptyset(&sig->signal);
+    INIT_LIST_HEAD(&sig->list);
+}
+
 #endif /* _LINUX_SIGNAL_H */
