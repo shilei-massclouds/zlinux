@@ -310,11 +310,13 @@ static long do_faccessat(int dfd, const char __user *filename,
     if (flags & AT_EMPTY_PATH)
         lookup_flags |= LOOKUP_EMPTY;
 
+#if 0
     if (!(flags & AT_EACCESS)) {
         old_cred = access_override_creds();
         if (!old_cred)
             return -ENOMEM;
     }
+#endif
 
  retry:
     res = user_path_at(dfd, filename, lookup_flags, &path);
@@ -330,6 +332,7 @@ static long do_faccessat(int dfd, const char __user *filename,
         goto retry;
     }
  out:
+    printk("%s: res(%d)\n", __func__, res);
 #if 0
     if (old_cred)
         revert_creds(old_cred);

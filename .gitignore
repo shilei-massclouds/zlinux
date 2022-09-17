@@ -62,3 +62,6 @@ tags
 
 !scripts/Makefile.lib
 include/generated/*
+
+tools/mk_rootfs/init
+tools/mk_rootfs/rootfs.ext2

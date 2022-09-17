@@ -118,6 +118,8 @@ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
 {
     struct new_utsname tmp;
 
+    printk("%s: ...\n", __func__);
+
     down_read(&uts_sem);
     memcpy(&tmp, utsname(), sizeof(tmp));
 
