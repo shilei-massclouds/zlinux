@@ -92,7 +92,6 @@ void flush_thread(void)
 void start_thread(struct pt_regs *regs, unsigned long pc, unsigned long sp)
 {
     regs->status = SR_PIE;
-#if 0
     if (has_fpu()) {
         regs->status |= SR_FS_INITIAL;
         /*
@@ -101,7 +100,6 @@ void start_thread(struct pt_regs *regs, unsigned long pc, unsigned long sp)
          */
         fstate_restore(current, regs);
     }
-#endif
     regs->epc = pc;
     regs->sp = sp;
 }

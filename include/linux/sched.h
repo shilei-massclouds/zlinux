@@ -643,6 +643,9 @@ struct task_struct {
     pid_t               pid;
     pid_t               tgid;
 
+    /* Canary value for the -fstack-protector GCC feature: */
+    unsigned long       stack_canary;
+
     /* Empty if CONFIG_POSIX_CPUTIMERS=n */
     struct posix_cputimers      posix_cputimers;
 

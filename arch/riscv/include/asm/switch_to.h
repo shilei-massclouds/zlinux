@@ -22,10 +22,33 @@ do {                                        \
     ((last) = __switch_to(__prev, __next)); \
 } while (0)
 
+extern void __fstate_save(struct task_struct *save_to);
+extern void __fstate_restore(struct task_struct *restore_from);
+
 static inline void fstate_off(struct task_struct *task,
                               struct pt_regs *regs)
 {
     regs->status = (regs->status & ~SR_FS) | SR_FS_OFF;
+}
+
+extern struct static_key_false cpu_hwcap_fpu;
+static __always_inline bool has_fpu(void)
+{
+    return static_branch_likely(&cpu_hwcap_fpu);
+}
+
+static inline void __fstate_clean(struct pt_regs *regs)
+{
+    regs->status = (regs->status & ~SR_FS) | SR_FS_CLEAN;
+}
+
+static inline void fstate_restore(struct task_struct *task,
+                  struct pt_regs *regs)
+{
+    if ((regs->status & SR_FS) != SR_FS_OFF) {
+        __fstate_restore(task);
+        __fstate_clean(regs);
+    }
 }
 
 #endif /* _ASM_RISCV_SWITCH_TO_H */

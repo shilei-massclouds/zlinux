@@ -14,8 +14,11 @@
 #define SR_SPP  _AC(0x00000100, UL) /* Previously Supervisor */
 #define SR_SUM  _AC(0x00040000, UL) /* Supervisor User Memory Access */
 
-#define SR_FS       _AC(0x00006000, UL) /* Floating-point Status */
-#define SR_FS_OFF   _AC(0x00000000, UL)
+#define SR_FS           _AC(0x00006000, UL) /* Floating-point Status */
+#define SR_FS_OFF       _AC(0x00000000, UL)
+#define SR_FS_INITIAL   _AC(0x00002000, UL)
+#define SR_FS_CLEAN     _AC(0x00004000, UL)
+#define SR_FS_DIRTY     _AC(0x00006000, UL)
 
 /* SATP flags */
 #define SATP_MODE_39    _AC(0x8000000000000000, UL)

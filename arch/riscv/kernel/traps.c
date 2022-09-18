@@ -30,6 +30,7 @@ void do_trap(struct pt_regs *regs, int signo, int code, unsigned long addr)
     struct task_struct *tsk = current;
 
     printk("--- --- %s: signo(%d)\n", __func__, signo);
+    printk("--- --- %s: inst(%lx)\n", __func__, regs->badaddr);
 #if 0
     if (show_unhandled_signals && unhandled_signal(tsk, signo)
         && printk_ratelimit()) {
