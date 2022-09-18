@@ -401,7 +401,6 @@ create_elf_tables(struct linux_binprm *bprm, const struct elfhdr *exec,
         *elf_info++ = val; \
     } while (0)
 
-#ifdef ARCH_DLINFO
     /*
      * ARCH_DLINFO must come first so PPC can do its special alignment of
      * AUXV.
@@ -409,7 +408,6 @@ create_elf_tables(struct linux_binprm *bprm, const struct elfhdr *exec,
      * ARCH_DLINFO changes
      */
     ARCH_DLINFO;
-#endif
 
     NEW_AUX_ENT(AT_HWCAP, ELF_HWCAP);
     NEW_AUX_ENT(AT_PAGESZ, ELF_EXEC_PAGESIZE);
@@ -422,12 +420,10 @@ create_elf_tables(struct linux_binprm *bprm, const struct elfhdr *exec,
         flags |= AT_FLAGS_PRESERVE_ARGV0;
     NEW_AUX_ENT(AT_FLAGS, flags);
     NEW_AUX_ENT(AT_ENTRY, e_entry);
-#if 0
     NEW_AUX_ENT(AT_UID, from_kuid_munged(cred->user_ns, cred->uid));
     NEW_AUX_ENT(AT_EUID, from_kuid_munged(cred->user_ns, cred->euid));
     NEW_AUX_ENT(AT_GID, from_kgid_munged(cred->user_ns, cred->gid));
     NEW_AUX_ENT(AT_EGID, from_kgid_munged(cred->user_ns, cred->egid));
-#endif
     NEW_AUX_ENT(AT_SECURE, bprm->secureexec);
     NEW_AUX_ENT(AT_RANDOM, (elf_addr_t)(unsigned long)u_rand_bytes);
     NEW_AUX_ENT(AT_EXECFN, bprm->exec);

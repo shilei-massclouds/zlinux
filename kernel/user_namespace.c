@@ -267,3 +267,50 @@ uid_t from_kuid_munged(struct user_namespace *targ, kuid_t kuid)
     return uid;
 }
 EXPORT_SYMBOL(from_kuid_munged);
+
+/**
+ *  from_kgid - Create a gid from a kgid user-namespace pair.
+ *  @targ: The user namespace we want a gid in.
+ *  @kgid: The kernel internal gid to start with.
+ *
+ *  Map @kgid into the user-namespace specified by @targ and
+ *  return the resulting gid.
+ *
+ *  There is always a mapping into the initial user_namespace.
+ *
+ *  If @kgid has no mapping in @targ (gid_t)-1 is returned.
+ */
+gid_t from_kgid(struct user_namespace *targ, kgid_t kgid)
+{
+    /* Map the gid from a global kernel gid */
+    return map_id_up(&targ->gid_map, __kgid_val(kgid));
+}
+EXPORT_SYMBOL(from_kgid);
+
+/**
+ *  from_kgid_munged - Create a gid from a kgid user-namespace pair.
+ *  @targ: The user namespace we want a gid in.
+ *  @kgid: The kernel internal gid to start with.
+ *
+ *  Map @kgid into the user-namespace specified by @targ and
+ *  return the resulting gid.
+ *
+ *  There is always a mapping into the initial user_namespace.
+ *
+ *  Unlike from_kgid from_kgid_munged never fails and always
+ *  returns a valid gid.  This makes from_kgid_munged appropriate
+ *  for use in syscalls like stat and getgid where failing the
+ *  system call and failing to provide a valid gid are not options.
+ *
+ *  If @kgid has no mapping in @targ overflowgid is returned.
+ */
+gid_t from_kgid_munged(struct user_namespace *targ, kgid_t kgid)
+{
+    gid_t gid;
+    gid = from_kgid(targ, kgid);
+
+    if (gid == (gid_t) -1)
+        gid = overflowgid;
+    return gid;
+}
+EXPORT_SYMBOL(from_kgid_munged);
