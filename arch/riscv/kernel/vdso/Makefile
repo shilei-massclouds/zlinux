@@ -36,6 +36,11 @@ $(obj)/vdso.so.dbg: $(obj)/vdso.lds $(obj-vdso) FORCE
 LDFLAGS_vdso.so.dbg = -shared -S -soname=linux-vdso.so.1 \
 	--build-id=sha1 --hash-style=both --eh-frame-hdr
 
+# strip rule for the .so file
+$(obj)/%.so: OBJCOPYFLAGS := -S
+$(obj)/%.so: $(obj)/%.so.dbg FORCE
+	$(call if_changed,objcopy)
+
 # Generate VDSO offsets using helper script
 gen-vdsosym := $(srctree)/$(src)/gen_vdso_offsets.sh
 quiet_cmd_vdsosym = VDSOSYM $@
@@ -59,3 +64,5 @@ quiet_cmd_vdso_install = INSTALL $@
 vdso.so: $(obj)/vdso.so.dbg
 	@mkdir -p $(MODLIB)/vdso
 	$(call cmd,vdso_install)
+
+vdso_install: vdso.so

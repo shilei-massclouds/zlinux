@@ -618,11 +618,16 @@ static vm_fault_t do_read_fault(struct vm_fault *vmf)
     }
 
     ret = __do_fault(vmf);
-    printk("%s: 1!\n", __func__);
-    if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
+    if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE |
+                        VM_FAULT_RETRY)))
         return ret;
 
-    panic("%s: END!\n", __func__);
+    ret |= finish_fault(vmf);
+    unlock_page(vmf->page);
+    if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE |
+                        VM_FAULT_RETRY)))
+        put_page(vmf->page);
+    return ret;
 }
 
 /*

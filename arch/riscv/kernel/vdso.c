@@ -57,7 +57,33 @@ static int __setup_additional_pages(struct mm_struct *mm,
     /* Be sure to map the data page */
     vdso_mapping_len = vdso_text_len + VVAR_SIZE;
 
-    panic("%s: END!\n", __func__);
+    vdso_base = get_unmapped_area(NULL, 0, vdso_mapping_len, 0, 0);
+    if (IS_ERR_VALUE(vdso_base)) {
+        ret = ERR_PTR(vdso_base);
+        goto up_fail;
+    }
+
+    ret = _install_special_mapping(mm, vdso_base, VVAR_SIZE,
+                                   (VM_READ | VM_MAYREAD | VM_PFNMAP),
+                                   vdso_info.dm);
+    if (IS_ERR(ret))
+        goto up_fail;
+
+    vdso_base += VVAR_SIZE;
+    mm->context.vdso = (void *)vdso_base;
+    ret = _install_special_mapping(mm, vdso_base, vdso_text_len,
+                                   (VM_READ | VM_EXEC | VM_MAYREAD |
+                                    VM_MAYWRITE | VM_MAYEXEC),
+                                   vdso_info.cm);
+
+    if (IS_ERR(ret))
+        goto up_fail;
+
+    return 0;
+
+ up_fail:
+    mm->context.vdso = NULL;
+    return PTR_ERR(ret);
 }
 
 int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
@@ -85,7 +111,25 @@ static int __init __vdso_init(void)
         return -EINVAL;
     }
 
-    panic("%s: END!\n", __func__);
+    vdso_info.vdso_pages =
+        (vdso_info.vdso_code_end -
+         vdso_info.vdso_code_start) >> PAGE_SHIFT;
+
+    vdso_pagelist = kcalloc(vdso_info.vdso_pages,
+                            sizeof(struct page *),
+                            GFP_KERNEL);
+    if (vdso_pagelist == NULL)
+        return -ENOMEM;
+
+    /* Grab the vDSO code pages. */
+    pfn = sym_to_pfn(vdso_info.vdso_code_start);
+
+    for (i = 0; i < vdso_info.vdso_pages; i++)
+        vdso_pagelist[i] = pfn_to_page(pfn + i);
+
+    vdso_info.cm->pages = vdso_pagelist;
+
+    return 0;
 }
 
 static vm_fault_t

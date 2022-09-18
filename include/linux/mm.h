@@ -1623,4 +1623,10 @@ static inline int folio_nid(const struct folio *folio)
     return page_to_nid(&folio->page);
 }
 
+extern struct vm_area_struct *
+_install_special_mapping(struct mm_struct *mm,
+                         unsigned long addr, unsigned long len,
+                         unsigned long flags,
+                         const struct vm_special_mapping *spec);
+
 #endif /* _LINUX_MM_H */

@@ -127,6 +127,8 @@ extern phys_addr_t phys_ram_base;
 
 #define page_to_phys(page)  (pfn_to_phys(page_to_pfn(page)))
 
+#define sym_to_pfn(x)       __phys_to_pfn(__pa_symbol(x))
+
 #define pfn_valid(pfn) \
     (((pfn) >= ARCH_PFN_OFFSET) && (((pfn) - ARCH_PFN_OFFSET) < max_mapnr))
 

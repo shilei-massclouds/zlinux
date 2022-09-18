@@ -399,7 +399,8 @@ static int acct_stack_growth(struct vm_area_struct *vma,
     return 0;
 }
 
-void vm_stat_account(struct mm_struct *mm, vm_flags_t flags, long npages)
+void vm_stat_account(struct mm_struct *mm, vm_flags_t flags,
+                     long npages)
 {
     WRITE_ONCE(mm->total_vm, READ_ONCE(mm->total_vm)+npages);
 
@@ -690,7 +691,8 @@ find_vma_prev(struct mm_struct *mm, unsigned long addr,
     return vma;
 }
 
-static unsigned long unmapped_area_topdown(struct vm_unmapped_area_info *info)
+static unsigned long
+unmapped_area_topdown(struct vm_unmapped_area_info *info)
 {
     panic("%s: END!\n", __func__);
 }
@@ -2376,6 +2378,152 @@ void unlink_file_vma(struct vm_area_struct *vma)
         __remove_shared_vm_struct(vma, file, mapping);
         i_mmap_unlock_write(mapping);
     }
+}
+
+static struct vm_area_struct *__install_special_mapping(
+    struct mm_struct *mm,
+    unsigned long addr, unsigned long len,
+    unsigned long vm_flags, void *priv,
+    const struct vm_operations_struct *ops)
+{
+    int ret;
+    struct vm_area_struct *vma;
+
+    vma = vm_area_alloc(mm);
+    if (unlikely(vma == NULL))
+        return ERR_PTR(-ENOMEM);
+
+    vma->vm_start = addr;
+    vma->vm_end = addr + len;
+
+    vma->vm_flags = vm_flags | mm->def_flags |
+        VM_DONTEXPAND | VM_SOFTDIRTY;
+    vma->vm_flags &= VM_LOCKED_CLEAR_MASK;
+    vma->vm_page_prot = vm_get_page_prot(vma->vm_flags);
+
+    vma->vm_ops = ops;
+    vma->vm_private_data = priv;
+
+    ret = insert_vm_struct(mm, vma);
+    if (ret)
+        goto out;
+
+    vm_stat_account(mm, vma->vm_flags, len >> PAGE_SHIFT);
+
+    //perf_event_mmap(vma);
+
+    return vma;
+
+ out:
+    vm_area_free(vma);
+    return ERR_PTR(ret);
+}
+
+static vm_fault_t special_mapping_fault(struct vm_fault *vmf);
+
+/*
+ * Having a close hook prevents vma merging regardless of flags.
+ */
+static void special_mapping_close(struct vm_area_struct *vma)
+{
+}
+
+static const char *special_mapping_name(struct vm_area_struct *vma)
+{
+    return ((struct vm_special_mapping *)vma->vm_private_data)->name;
+}
+
+static int special_mapping_mremap(struct vm_area_struct *new_vma)
+{
+#if 0
+    struct vm_special_mapping *sm = new_vma->vm_private_data;
+
+    if (WARN_ON_ONCE(current->mm != new_vma->vm_mm))
+        return -EFAULT;
+
+    if (sm->mremap)
+        return sm->mremap(sm, new_vma);
+#endif
+    panic("%s: END!\n", __func__);
+
+    return 0;
+}
+
+static int special_mapping_split(struct vm_area_struct *vma,
+                                 unsigned long addr)
+{
+    /*
+     * Forbid splitting special mappings - kernel has expectations over
+     * the number of pages in mapping. Together with VM_DONTEXPAND
+     * the size of vma should stay the same over the special mapping's
+     * lifetime.
+     */
+    return -EINVAL;
+}
+
+static const struct vm_operations_struct special_mapping_vmops = {
+    .close = special_mapping_close,
+    .fault = special_mapping_fault,
+    .mremap = special_mapping_mremap,
+    .name = special_mapping_name,
+    /* vDSO code relies that VVAR can't be accessed remotely */
+    .access = NULL,
+    .may_split = special_mapping_split,
+};
+
+static const struct vm_operations_struct legacy_special_mapping_vmops = {
+    .close = special_mapping_close,
+    .fault = special_mapping_fault,
+};
+
+static vm_fault_t special_mapping_fault(struct vm_fault *vmf)
+{
+    struct vm_area_struct *vma = vmf->vma;
+    pgoff_t pgoff;
+    struct page **pages;
+
+    if (vma->vm_ops == &legacy_special_mapping_vmops) {
+        pages = vma->vm_private_data;
+    } else {
+        struct vm_special_mapping *sm = vma->vm_private_data;
+
+        if (sm->fault)
+            return sm->fault(sm, vmf->vma, vmf);
+
+        pages = sm->pages;
+    }
+
+    for (pgoff = vmf->pgoff; pgoff && *pages; ++pages)
+        pgoff--;
+
+    if (*pages) {
+        struct page *page = *pages;
+        get_page(page);
+        vmf->page = page;
+        return 0;
+    }
+
+    return VM_FAULT_SIGBUS;
+}
+
+/*
+ * Called with mm->mmap_lock held for writing.
+ * Insert a new vma covering the given region, with the given flags.
+ * Its pages are supplied by the given array of struct page *.
+ * The array can be shorter than len >> PAGE_SHIFT if it's null-terminated.
+ * The region past the last page supplied will always produce SIGBUS.
+ * The array pointer and the pages it points to are assumed to stay alive
+ * for as long as this mapping might exist.
+ */
+struct vm_area_struct *
+_install_special_mapping(struct mm_struct *mm,
+                         unsigned long addr, unsigned long len,
+                         unsigned long vm_flags,
+                         const struct vm_special_mapping *spec)
+{
+    return __install_special_mapping(mm, addr, len, vm_flags,
+                                     (void *)spec,
+                                     &special_mapping_vmops);
 }
 
 /*
