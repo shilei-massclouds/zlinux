@@ -41,9 +41,18 @@ __SYSCALL(__NR_clock_getres, sys_clock_getres)
 #define __NR_rt_sigreturn 139
 __SYSCALL(__NR_rt_sigreturn, sys_rt_sigreturn)
 
+#define __NR_getcpu 168
+__SYSCALL(__NR_getcpu, sys_getcpu)
+
 /* kernel/time.c */
 #define __NR_gettimeofday 169
 __SYSCALL(__NR_gettimeofday, sys_gettimeofday)
+
+/*
+ * Architectures may provide up to 16 syscalls of their own
+ * starting with this value.
+ */
+#define __NR_arch_specific_syscall 244
 
 #undef __NR_syscalls
 #define __NR_syscalls 451

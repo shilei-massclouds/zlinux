@@ -64,6 +64,8 @@ extern void start_thread(struct pt_regs *regs, unsigned long pc,
     .sp = sizeof(init_stack) + (long)&init_stack,   \
 }
 
+extern void riscv_fill_hwcap(void);
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* _ASM_RISCV_PROCESSOR_H */

@@ -8,7 +8,7 @@
  */
 
 #include <asm/ptrace.h>
-//#include <asm/syscall.h>
+#include <asm/syscall.h>
 #include <asm/thread_info.h>
 #include <asm/switch_to.h>
 //#include <linux/audit.h>

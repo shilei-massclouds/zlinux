@@ -8,8 +8,8 @@
 
 #include <linux/signal.h>
 #include <linux/uaccess.h>
-#if 0
 #include <linux/syscalls.h>
+#if 0
 #include <linux/resume_user_mode.h>
 #endif
 #include <linux/linkage.h>
@@ -55,5 +55,10 @@ void do_notify_resume(struct pt_regs *regs,
     if (thread_info_flags & _TIF_NOTIFY_RESUME)
         resume_user_mode_work(regs);
 #endif
+    panic("%s: NO implementation!\n", __func__);
+}
+
+SYSCALL_DEFINE0(rt_sigreturn)
+{
     panic("%s: NO implementation!\n", __func__);
 }

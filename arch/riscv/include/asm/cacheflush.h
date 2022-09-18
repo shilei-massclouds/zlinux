@@ -13,6 +13,9 @@ static inline void local_flush_icache_all(void)
     asm volatile ("fence.i" ::: "memory");
 }
 
+void flush_icache_all(void);
+void flush_icache_mm(struct mm_struct *mm, bool local);
+
 #define PG_dcache_clean PG_arch_1
 
 static inline void flush_dcache_page(struct page *page)
@@ -21,6 +24,12 @@ static inline void flush_dcache_page(struct page *page)
         clear_bit(PG_dcache_clean, &page->flags);
 }
 #define ARCH_IMPLEMENTS_FLUSH_DCACHE_PAGE 1
+
+/*
+ * Bits in sys_riscv_flush_icache()'s flags argument.
+ */
+#define SYS_RISCV_FLUSH_ICACHE_LOCAL 1UL
+#define SYS_RISCV_FLUSH_ICACHE_ALL   (SYS_RISCV_FLUSH_ICACHE_LOCAL)
 
 #include <asm-generic/cacheflush.h>
 

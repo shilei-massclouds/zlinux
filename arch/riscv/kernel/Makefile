@@ -8,6 +8,7 @@ extra-y += vmlinux.lds
 
 obj-y   += soc.o
 obj-y   += cpu.o
+obj-y   += cpufeature.o
 obj-y   += entry.o
 obj-y   += irq.o
 obj-y   += reset.o
@@ -24,8 +25,10 @@ obj-y	+= cpu_ops_spinwait.o
 obj-y   += ptrace.o
 obj-y   += syscall_table.o
 obj-y	+= jump_label.o
+obj-y   += sys_riscv.o
+obj-y   += cacheinfo.o
 
-obj-y	+= vdso.o #vdso/
+obj-y	+= vdso.o vdso/
 obj-$(CONFIG_RISCV_SBI)	+= sbi.o
 
 clean:

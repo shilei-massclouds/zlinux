@@ -141,3 +141,24 @@ unsigned long __msecs_to_jiffies(const unsigned int m)
     return _msecs_to_jiffies(m);
 }
 EXPORT_SYMBOL(__msecs_to_jiffies);
+
+SYSCALL_DEFINE2(gettimeofday, struct __kernel_old_timeval __user *, tv,
+                struct timezone __user *, tz)
+{
+#if 0
+    if (likely(tv != NULL)) {
+        struct timespec64 ts;
+
+        ktime_get_real_ts64(&ts);
+        if (put_user(ts.tv_sec, &tv->tv_sec) ||
+            put_user(ts.tv_nsec / 1000, &tv->tv_usec))
+            return -EFAULT;
+    }
+    if (unlikely(tz != NULL)) {
+        if (copy_to_user(tz, &sys_tz, sizeof(sys_tz)))
+            return -EFAULT;
+    }
+    return 0;
+#endif
+    panic("%s: END!\n", __func__);
+}

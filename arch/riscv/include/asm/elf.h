@@ -11,7 +11,7 @@
 //#include <uapi/asm/elf.h>
 //#include <asm/auxvec.h>
 #include <asm/byteorder.h>
-//#include <asm/cacheinfo.h>
+#include <asm/cacheinfo.h>
 
 /*
  * These are used to set parameters in the core dumps.
@@ -66,5 +66,13 @@ extern int arch_setup_additional_pages(struct linux_binprm *bprm,
  * that it will "exec", and that there is sufficient room for the brk.
  */
 #define ELF_ET_DYN_BASE ((TASK_SIZE / 3) * 2)
+
+/*
+ * This yields a mask that user programs can use to figure out what
+ * instruction set this CPU supports.  This could be done in user space,
+ * but it's not easy, and we've already done it here.
+ */
+#define ELF_HWCAP   (elf_hwcap)
+extern unsigned long elf_hwcap;
 
 #endif /* _ASM_RISCV_ELF_H */

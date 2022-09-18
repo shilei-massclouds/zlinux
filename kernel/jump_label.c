@@ -243,6 +243,36 @@ static void static_key_set_entries(struct static_key *key,
     key->type |= type;
 }
 
+void static_key_enable_cpuslocked(struct static_key *key)
+{
+    STATIC_KEY_CHECK_USE(key);
+
+    if (atomic_read(&key->enabled) > 0) {
+        WARN_ON_ONCE(atomic_read(&key->enabled) != 1);
+        return;
+    }
+
+    jump_label_lock();
+    if (atomic_read(&key->enabled) == 0) {
+        atomic_set(&key->enabled, -1);
+        jump_label_update(key);
+        /*
+         * See static_key_slow_inc().
+         */
+        atomic_set_release(&key->enabled, 1);
+    }
+    jump_label_unlock();
+}
+EXPORT_SYMBOL_GPL(static_key_enable_cpuslocked);
+
+void static_key_enable(struct static_key *key)
+{
+    cpus_read_lock();
+    static_key_enable_cpuslocked(key);
+    cpus_read_unlock();
+}
+EXPORT_SYMBOL_GPL(static_key_enable);
+
 void __init jump_label_init(void)
 {
     struct jump_entry *iter_start = __start___jump_table;

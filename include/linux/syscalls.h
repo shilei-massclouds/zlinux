@@ -131,6 +131,12 @@ static inline int is_syscall_trace_event(struct trace_event_call *tp_event)
     return 0;
 }
 
+#ifndef SYSCALL_DEFINE0
+#define SYSCALL_DEFINE0(sname)                  \
+    asmlinkage long sys_##sname(void);          \
+    asmlinkage long sys_##sname(void)
+#endif /* SYSCALL_DEFINE0 */
+
 #define SYSCALL_DEFINE1(name, ...) SYSCALL_DEFINEx(1, _##name, __VA_ARGS__)
 #define SYSCALL_DEFINE2(name, ...) SYSCALL_DEFINEx(2, _##name, __VA_ARGS__)
 #define SYSCALL_DEFINE3(name, ...) SYSCALL_DEFINEx(3, _##name, __VA_ARGS__)
@@ -178,5 +184,29 @@ asmlinkage long sys_newuname(struct new_utsname __user *name);
 /* fs/open.c */
 asmlinkage long sys_faccessat(int dfd, const char __user *filename,
                               int mode);
+
+asmlinkage long
+sys_clock_settime(clockid_t which_clock,
+                  const struct __kernel_timespec __user *tp);
+asmlinkage long
+sys_clock_gettime(clockid_t which_clock,
+                  struct __kernel_timespec __user *tp);
+asmlinkage long
+sys_clock_getres(clockid_t which_clock,
+                 struct __kernel_timespec __user *tp);
+
+asmlinkage long
+sys_getcpu(unsigned __user *cpu, unsigned __user *node,
+           struct getcpu_cache __user *cache);
+
+/* kernel/time.c */
+asmlinkage long
+sys_gettimeofday(struct __kernel_old_timeval __user *tv,
+                 struct timezone __user *tz);
+asmlinkage long
+sys_settimeofday(struct __kernel_old_timeval __user *tv,
+                 struct timezone __user *tz);
+asmlinkage long sys_adjtimex(struct __kernel_timex __user *txc_p);
+asmlinkage long sys_adjtimex_time32(struct old_timex32 __user *txc_p);
 
 #endif /* _LINUX_SYSCALLS_H */

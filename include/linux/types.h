@@ -154,6 +154,7 @@ typedef u32 __kernel_dev_t;
 
 typedef __kernel_dev_t      dev_t;
 typedef __kernel_loff_t     loff_t;
+typedef __kernel_off_t      off_t;
 
 /* bsd */
 typedef unsigned char       u_char;

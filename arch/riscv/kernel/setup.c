@@ -243,9 +243,7 @@ void __init setup_arch(char **cmdline_p)
 
     setup_smp();
 
-#if 0
     riscv_fill_hwcap();
-#endif
 }
 
 void free_initmem(void)

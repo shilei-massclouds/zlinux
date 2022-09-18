@@ -61,7 +61,7 @@
 #include <asm/siginfo.h>
 #endif
 #include <asm/cacheflush.h>
-//#include <asm/syscall.h>    /* for syscall_get_* */
+#include <asm/syscall.h>    /* for syscall_get_* */
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/signal.h>
