@@ -73,3 +73,57 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 
     return ret;
 }
+
+static int __init __vdso_init(void)
+{
+    unsigned int i;
+    struct page **vdso_pagelist;
+    unsigned long pfn;
+
+    if (memcmp(vdso_info.vdso_code_start, "\177ELF", 4)) {
+        pr_err("vDSO is not a valid ELF object!\n");
+        return -EINVAL;
+    }
+
+    panic("%s: END!\n", __func__);
+}
+
+static vm_fault_t
+vvar_fault(const struct vm_special_mapping *sm,
+           struct vm_area_struct *vma, struct vm_fault *vmf)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static int vdso_mremap(const struct vm_special_mapping *sm,
+                       struct vm_area_struct *new_vma)
+{
+    current->mm->context.vdso = (void *)new_vma->vm_start;
+
+    return 0;
+}
+
+enum rv_vdso_map {
+    RV_VDSO_MAP_VVAR,
+    RV_VDSO_MAP_VDSO,
+};
+
+static struct vm_special_mapping rv_vdso_maps[] __ro_after_init = {
+    [RV_VDSO_MAP_VVAR] = {
+        .name   = "[vvar]",
+        .fault = vvar_fault,
+    },
+    [RV_VDSO_MAP_VDSO] = {
+        .name   = "[vdso]",
+        .mremap = vdso_mremap,
+    },
+};
+
+static int __init vdso_init(void)
+{
+    vdso_info.dm = &rv_vdso_maps[RV_VDSO_MAP_VVAR];
+    vdso_info.cm = &rv_vdso_maps[RV_VDSO_MAP_VDSO];
+
+    return __vdso_init();
+}
+arch_initcall(vdso_init);

@@ -179,6 +179,9 @@ KBUILD_VMLINUX_LIBS := $(filter-out %/, $(libs-y))
 
 export KBUILD_VMLINUX_OBJS KBUILD_VMLINUX_LIBS
 
+MODLIB  = $(INSTALL_MOD_PATH)/lib/modules/$(KERNELRELEASE)
+export MODLIB
+
 vmlinux-deps := $(KBUILD_LDS) $(KBUILD_VMLINUX_OBJS) $(KBUILD_VMLINUX_LIBS)
 
 ARCH_POSTLINK := $(wildcard $(srctree)/arch/$(SRCARCH)/Makefile.postlink)

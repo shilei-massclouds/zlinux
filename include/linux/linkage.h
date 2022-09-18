@@ -116,6 +116,15 @@
 #define SYM_FUNC_END(name) SYM_END(name, SYM_T_FUNC)
 #endif
 
+/*
+ * For assembly routines.
+ *
+ * Note when using these that you must specify the appropriate
+ * alignment directives yourself
+ */
+#define __PAGE_ALIGNED_DATA .section ".data..page_aligned", "aw"
+#define __PAGE_ALIGNED_BSS  .section ".bss..page_aligned", "aw"
+
 #endif /* __ASSEMBLY__ */
 
 #endif /* _LINUX_LINKAGE_H */
