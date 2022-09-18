@@ -89,7 +89,8 @@ void flush_thread(void)
     memset(&current->thread.fstate, 0, sizeof(current->thread.fstate));
 }
 
-void start_thread(struct pt_regs *regs, unsigned long pc, unsigned long sp)
+void start_thread(struct pt_regs *regs, unsigned long pc,
+                  unsigned long sp)
 {
     regs->status = SR_PIE;
     if (has_fpu()) {

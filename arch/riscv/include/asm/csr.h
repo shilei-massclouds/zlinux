@@ -20,6 +20,8 @@
 #define SR_FS_CLEAN     _AC(0x00004000, UL)
 #define SR_FS_DIRTY     _AC(0x00006000, UL)
 
+#define SR_SD   _AC(0x8000000000000000, UL) /* FS/XS dirty */
+
 /* SATP flags */
 #define SATP_MODE_39    _AC(0x8000000000000000, UL)
 #define SATP_MODE_48    _AC(0x9000000000000000, UL)
