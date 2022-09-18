@@ -3,7 +3,7 @@
 #define _UAPI_LINUX_TIME_H
 
 #include <linux/types.h>
-//#include <linux/time_types.h>
+#include <linux/time_types.h>
 
 /*
  * The IDs of the various system clocks (for POSIX.1b interval timers):
@@ -34,5 +34,10 @@
  * The various flags for setting POSIX.1b interval timers:
  */
 #define TIMER_ABSTIME               0x01
+
+struct timezone {
+    int tz_minuteswest; /* minutes west of Greenwich */
+    int tz_dsttime; /* type of dst correction */
+};
 
 #endif /* _UAPI_LINUX_TIME_H */

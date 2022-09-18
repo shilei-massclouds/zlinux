@@ -27,6 +27,10 @@ core-y += arch/riscv/
 
 libs-y += arch/riscv/lib/
 
+prepare: vdso_prepare
+vdso_prepare: prepare0
+	$(Q)$(MAKE) $(build)=arch/riscv/kernel/vdso include/generated/vdso-offsets.h
+
 # Default target when executing plain make
 boot := arch/riscv/boot
 KBUILD_IMAGE := $(boot)/Image.gz
