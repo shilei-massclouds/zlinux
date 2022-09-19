@@ -393,4 +393,6 @@ extern void shrink_dcache_sb(struct super_block *);
 extern void shrink_dcache_parent(struct dentry *);
 extern void shrink_dcache_for_umount(struct super_block *);
 
+extern seqlock_t rename_lock;
+
 #endif  /* __LINUX_DCACHE_H */

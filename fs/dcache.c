@@ -981,16 +981,12 @@ struct dentry *d_lookup(const struct dentry *parent, const struct qstr *name)
     struct dentry *dentry;
     unsigned seq;
 
-#if 0
     do {
         seq = read_seqbegin(&rename_lock);
         dentry = __d_lookup(parent, name);
         if (dentry)
             break;
     } while (read_seqretry(&rename_lock, seq));
-#else
-    dentry = __d_lookup(parent, name);
-#endif
     return dentry;
 }
 EXPORT_SYMBOL(d_lookup);
@@ -1222,7 +1218,7 @@ seqretry:
          * Note that raw_seqcount_begin still *does* smp_rmb(), so
          * we are still guaranteed NUL-termination of ->d_name.name.
          */
-        //seq = raw_seqcount_begin(&dentry->d_seq);
+        seq = raw_seqcount_begin(&dentry->d_seq);
         if (dentry->d_parent != parent)
             continue;
         if (d_unhashed(dentry))
@@ -1235,13 +1231,11 @@ seqretry:
                 continue;
             tlen = dentry->d_name.len;
             tname = dentry->d_name.name;
-#if 0
             /* we want a consistent (name,len) pair */
             if (read_seqcount_retry(&dentry->d_seq, seq)) {
                 cpu_relax();
                 goto seqretry;
             }
-#endif
             if (parent->d_op->d_compare(dentry, tlen, tname, name) != 0)
                 continue;
         } else {
@@ -1310,30 +1304,26 @@ struct dentry *d_alloc_parallel(struct dentry *parent,
  retry:
     rcu_read_lock();
     seq = smp_load_acquire(&parent->d_inode->i_dir_seq);
-    //r_seq = read_seqbegin(&rename_lock);
+    r_seq = read_seqbegin(&rename_lock);
     dentry = __d_lookup_rcu(parent, name, &d_seq);
     if (unlikely(dentry)) {
         if (!lockref_get_not_dead(&dentry->d_lockref)) {
             rcu_read_unlock();
             goto retry;
         }
-#if 0
         if (read_seqcount_retry(&dentry->d_seq, d_seq)) {
             rcu_read_unlock();
             dput(dentry);
             goto retry;
         }
-#endif
         rcu_read_unlock();
         dput(new);
         return dentry;
     }
-#if 0
     if (unlikely(read_seqretry(&rename_lock, r_seq))) {
         rcu_read_unlock();
         goto retry;
     }
-#endif
     if (unlikely(seq & 1)) {
         rcu_read_unlock();
         goto retry;

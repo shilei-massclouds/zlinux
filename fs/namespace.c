@@ -642,6 +642,37 @@ struct mount *__lookup_mnt(struct vfsmount *mnt, struct dentry *dentry)
     return NULL;
 }
 
+/* call under rcu_read_lock */
+int __legitimize_mnt(struct vfsmount *bastard, unsigned seq)
+{
+    struct mount *mnt;
+    if (read_seqretry(&mount_lock, seq))
+        return 1;
+    if (bastard == NULL)
+        return 0;
+    mnt = real_mount(bastard);
+    mnt_add_count(mnt, 1);
+    smp_mb();           // see mntput_no_expire()
+    if (likely(!read_seqretry(&mount_lock, seq)))
+        return 0;
+
+    panic("%s: END!\n", __func__);
+}
+
+/* call under rcu_read_lock */
+bool legitimize_mnt(struct vfsmount *bastard, unsigned seq)
+{
+    int res = __legitimize_mnt(bastard, seq);
+    if (likely(!res))
+        return true;
+    if (unlikely(res < 0)) {
+        rcu_read_unlock();
+        mntput(bastard);
+        rcu_read_lock();
+    }
+    return false;
+}
+
 /*
  * lookup_mnt - Return the first child mount mounted at path
  *
@@ -665,16 +696,11 @@ struct vfsmount *lookup_mnt(const struct path *path)
     unsigned seq;
 
     rcu_read_lock();
-#if 0
     do {
         seq = read_seqbegin(&mount_lock);
         child_mnt = __lookup_mnt(path->mnt, path->dentry);
         m = child_mnt ? &child_mnt->mnt : NULL;
     } while (!legitimize_mnt(m, seq));
-#else
-    child_mnt = __lookup_mnt(path->mnt, path->dentry);
-    m = child_mnt ? &child_mnt->mnt : NULL;
-#endif
     rcu_read_unlock();
     return m;
 }

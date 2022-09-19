@@ -105,3 +105,5 @@ static inline bool is_anon_ns(struct mnt_namespace *ns)
 {
     return ns->seq == 0;
 }
+
+extern seqlock_t mount_lock;

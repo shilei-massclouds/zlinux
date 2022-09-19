@@ -633,10 +633,90 @@ static inline int do___read_seqcount_retry(const seqcount_t *s, unsigned start)
 #define read_seqcount_retry(s, start) \
     do_read_seqcount_retry(seqprop_ptr(s), start)
 
-static inline int do_read_seqcount_retry(const seqcount_t *s, unsigned start)
+static inline
+int do_read_seqcount_retry(const seqcount_t *s, unsigned start)
 {
     smp_rmb();
     return do___read_seqcount_retry(s, start);
 }
+
+/**
+ * read_seqretry() - end a seqlock_t read side section
+ * @sl: Pointer to seqlock_t
+ * @start: count, from read_seqbegin()
+ *
+ * read_seqretry closes the read side critical section of given seqlock_t.
+ * If the critical section was invalid, it must be ignored (and typically
+ * retried).
+ *
+ * Return: true if a read section retry is required, else false
+ */
+static inline
+unsigned read_seqretry(const seqlock_t *sl, unsigned start)
+{
+    /*
+     * Assume not nested: read_seqretry() may be called multiple times when
+     * completing read critical section.
+     */
+    return read_seqcount_retry(&sl->seqcount, start);
+}
+
+/**
+ * read_seqbegin() - start a seqlock_t read side critical section
+ * @sl: Pointer to seqlock_t
+ *
+ * Return: count, to be passed to read_seqretry()
+ */
+static inline unsigned read_seqbegin(const seqlock_t *sl)
+{
+    unsigned ret = read_seqcount_begin(&sl->seqcount);
+
+    return ret;
+}
+
+/**
+ * raw_read_seqcount() - read the raw seqcount_t counter value
+ * @s: Pointer to seqcount_t or any of the seqcount_LOCKNAME_t variants
+ *
+ * raw_read_seqcount opens a read critical section of the given
+ * seqcount_t, without any lockdep checking, and without checking or
+ * masking the sequence counter LSB. Calling code is responsible for
+ * handling that.
+ *
+ * Return: count to be passed to read_seqcount_retry()
+ */
+#define raw_read_seqcount(s)                        \
+({                                  \
+    unsigned __seq = seqprop_sequence(s);               \
+                                    \
+    smp_rmb();                          \
+    __seq;                              \
+})
+
+/**
+ * raw_seqcount_begin() - begin a seqcount_t read critical section w/o
+ *                        lockdep and w/o counter stabilization
+ * @s: Pointer to seqcount_t or any of the seqcount_LOCKNAME_t variants
+ *
+ * raw_seqcount_begin opens a read critical section of the given
+ * seqcount_t. Unlike read_seqcount_begin(), this function will not wait
+ * for the count to stabilize. If a writer is active when it begins, it
+ * will fail the read_seqcount_retry() at the end of the read critical
+ * section instead of stabilizing at the beginning of it.
+ *
+ * Use this only in special kernel hot paths where the read section is
+ * small and has a high probability of success through other external
+ * means. It will save a single branching instruction.
+ *
+ * Return: count to be passed to read_seqcount_retry()
+ */
+#define raw_seqcount_begin(s)                       \
+({                                  \
+    /*                              \
+     * If the counter is odd, let read_seqcount_retry() fail    \
+     * by decrementing the counter.                 \
+     */                             \
+    raw_read_seqcount(s) & ~1;                  \
+})
 
 #endif /* __LINUX_SEQLOCK_H */

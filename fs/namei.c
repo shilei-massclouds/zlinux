@@ -199,15 +199,12 @@ static int set_root(struct nameidata *nd)
     if (nd->flags & LOOKUP_RCU) {
         unsigned seq;
 
-#if 0
         do {
             seq = read_seqcount_begin(&fs->seq);
             nd->root = fs->root;
-            nd->root_seq = __read_seqcount_begin(&nd->root.dentry->d_seq);
+            nd->root_seq =
+                __read_seqcount_begin(&nd->root.dentry->d_seq);
         } while (read_seqcount_retry(&fs->seq, seq));
-#else
-        nd->root = fs->root;
-#endif
     } else {
         get_fs_root(fs, &nd->root);
         nd->state |= ND_ROOT_GRABBED;
@@ -234,11 +231,9 @@ static int nd_jump_root(struct nameidata *nd)
         nd->path = nd->root;
         d = nd->path.dentry;
         nd->inode = d->d_inode;
-#if 0
         nd->seq = nd->root_seq;
         if (unlikely(read_seqcount_retry(&d->d_seq, nd->seq)))
             return -ECHILD;
-#endif
     } else {
         path_put(&nd->path);
         nd->path = nd->root;
@@ -267,10 +262,8 @@ static const char *path_init(struct nameidata *nd, unsigned flags)
     nd->flags = flags;
     nd->state |= ND_JUMPED;
 
-#if 0
     nd->m_seq = __read_seqcount_begin(&mount_lock.seqcount);
     nd->r_seq = __read_seqcount_begin(&rename_lock.seqcount);
-#endif
     smp_rmb();
 
     if (nd->state & ND_ROOT_PRESET) {
@@ -308,17 +301,12 @@ static const char *path_init(struct nameidata *nd, unsigned flags)
             struct fs_struct *fs = current->fs;
             unsigned seq;
 
-#if 0
             do {
                 seq = read_seqcount_begin(&fs->seq);
                 nd->path = fs->pwd;
                 nd->inode = nd->path.dentry->d_inode;
                 nd->seq = __read_seqcount_begin(&nd->path.dentry->d_seq);
             } while (read_seqcount_retry(&fs->seq, seq));
-#else
-            nd->path = fs->pwd;
-            nd->inode = nd->path.dentry->d_inode;
-#endif
         } else {
             panic("%s: NOT LOOKUP_RCU!\n", __func__);
         }
@@ -473,7 +461,6 @@ static struct dentry *lookup_fast(struct nameidata *nd,
          * the dentry name information from lookup.
          */
         *inode = d_backing_inode(dentry);
-#if 0
         if (unlikely(read_seqcount_retry(&dentry->d_seq, seq)))
             return ERR_PTR(-ECHILD);
 
@@ -486,7 +473,6 @@ static struct dentry *lookup_fast(struct nameidata *nd,
          */
         if (unlikely(__read_seqcount_retry(&parent->d_seq, nd->seq)))
             return ERR_PTR(-ECHILD);
-#endif
 
         *seqp = seq;
         status = d_revalidate(dentry, nd->flags);
@@ -548,7 +534,7 @@ static bool __follow_mount_rcu(struct nameidata *nd, struct path *path,
                 path->mnt = &mounted->mnt;
                 dentry = path->dentry = mounted->mnt.mnt_root;
                 nd->state |= ND_JUMPED;
-                //*seqp = read_seqcount_begin(&dentry->d_seq);
+                *seqp = read_seqcount_begin(&dentry->d_seq);
                 *inode = dentry->d_inode;
                 /*
                  * We don't need to re-check ->d_seq after this
@@ -559,10 +545,8 @@ static bool __follow_mount_rcu(struct nameidata *nd, struct path *path,
                 flags = dentry->d_flags;
                 continue;
             }
-#if 0
             if (read_seqretry(&mount_lock, nd->m_seq))
                 return false;
-#endif
         }
         return !(flags & DCACHE_NEED_AUTOMOUNT);
     }
@@ -574,14 +558,51 @@ static bool __follow_mount_rcu(struct nameidata *nd, struct path *path,
  * positive right under us.  Use of smp_load_acquire() provides a barrier
  * sufficient for ->d_inode and ->d_flags consistency.
  */
-static int __traverse_mounts(struct path *path, unsigned flags, bool *jumped,
-                             int *count, unsigned lookup_flags)
+static int __traverse_mounts(struct path *path, unsigned flags,
+                             bool *jumped, int *count,
+                             unsigned lookup_flags)
 {
     struct vfsmount *mnt = path->mnt;
     bool need_mntput = false;
     int ret = 0;
 
-    panic("%s: END!\n", __func__);
+    while (flags & DCACHE_MANAGED_DENTRY) {
+        /* Allow the filesystem to manage the transit without i_mutex
+         * being held. */
+        if (flags & DCACHE_MANAGE_TRANSIT) {
+            ret = path->dentry->d_op->d_manage(path, false);
+            flags = smp_load_acquire(&path->dentry->d_flags);
+            if (ret < 0)
+                break;
+        }
+
+        if (flags & DCACHE_MOUNTED) {   // something's mounted on it..
+            struct vfsmount *mounted = lookup_mnt(path);
+            if (mounted) {      // ... in our namespace
+                dput(path->dentry);
+                if (need_mntput)
+                    mntput(path->mnt);
+                path->mnt = mounted;
+                path->dentry = dget(mounted->mnt_root);
+                // here we know it's positive
+                flags = path->dentry->d_flags;
+                need_mntput = true;
+                continue;
+            }
+        }
+
+        panic("%s: 1!\n", __func__);
+    }
+
+    if (ret == -EISDIR)
+        ret = 0;
+    // possible if you race with several mount --move
+    if (need_mntput && path->mnt == mnt)
+        mntput(path->mnt);
+    if (!ret && unlikely(d_flags_negative(flags)))
+        ret = -ENOENT;
+    *jumped = need_mntput;
+    return ret;
 }
 
 static inline int traverse_mounts(struct path *path, bool *jumped,
