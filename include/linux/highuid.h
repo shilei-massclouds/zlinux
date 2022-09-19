@@ -40,4 +40,14 @@ extern void __bad_gid(void);
 #define DEFAULT_OVERFLOWUID 65534
 #define DEFAULT_OVERFLOWGID 65534
 
+#define __convert_uid(size, uid) (uid)
+#define __convert_gid(size, gid) (gid)
+
+/* uid/gid input should be always 32bit uid_t */
+#define SET_UID(var, uid) \
+    do { (var) = __convert_uid(sizeof(var), (uid)); } while (0)
+
+#define SET_GID(var, gid) \
+    do { (var) = __convert_gid(sizeof(var), (gid)); } while (0)
+
 #endif /* _LINUX_HIGHUID_H */

@@ -27,4 +27,10 @@ static __always_inline dev_t new_decode_dev(u32 dev)
     return MKDEV(major, minor);
 }
 
+/* acceptable for old filesystems */
+static __always_inline bool old_valid_dev(dev_t dev)
+{
+    return MAJOR(dev) < 256 && MINOR(dev) < 256;
+}
+
 #endif /* _LINUX_KDEV_T_H */

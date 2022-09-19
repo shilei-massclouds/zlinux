@@ -590,6 +590,9 @@ static inline struct ext2_inode_info *EXT2_I(struct inode *inode)
 #define EXT2_TOPDIR_FL          FS_TOPDIR_FL    /* Top of directory hierarchies*/
 #define EXT2_RESERVED_FL        FS_RESERVED_FL  /* reserved for ext2 lib */
 
+#define EXT2_FL_USER_VISIBLE    FS_FL_USER_VISIBLE      /* User visible flags */
+#define EXT2_FL_USER_MODIFIABLE FS_FL_USER_MODIFIABLE   /* User modifiable flags */
+
 /* dir.c */
 extern const struct file_operations ext2_dir_operations;
 

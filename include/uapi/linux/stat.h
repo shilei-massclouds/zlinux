@@ -68,4 +68,28 @@
 
 #endif
 
+/*
+ * Attributes to be found in stx_attributes and masked in stx_attributes_mask.
+ *
+ * These give information about the features or the state of a file that might
+ * be of use to ordinary userspace programs such as GUIs or ls rather than
+ * specialised tools.
+ *
+ * Note that the flags marked [I] correspond to the FS_IOC_SETFLAGS flags
+ * semantically.  Where possible, the numerical value is picked to correspond
+ * also.  Note that the DAX attribute indicates that the file is in the CPU
+ * direct access state.  It does not correspond to the per-inode flag that
+ * some filesystems support.
+ *
+ */
+#define STATX_ATTR_COMPRESSED       0x00000004 /* [I] File is compressed by the fs */
+#define STATX_ATTR_IMMUTABLE        0x00000010 /* [I] File is marked immutable */
+#define STATX_ATTR_APPEND       0x00000020 /* [I] File is append-only */
+#define STATX_ATTR_NODUMP       0x00000040 /* [I] File is not to be dumped */
+#define STATX_ATTR_ENCRYPTED        0x00000800 /* [I] File requires key to decrypt in fs */
+#define STATX_ATTR_AUTOMOUNT        0x00001000 /* Dir: Automount trigger */
+#define STATX_ATTR_MOUNT_ROOT       0x00002000 /* Root of a mount */
+#define STATX_ATTR_VERITY       0x00100000 /* [I] Verity protected file */
+#define STATX_ATTR_DAX          0x00200000 /* File is currently in DAX state */
+
 #endif /* _UAPI_LINUX_STAT_H */

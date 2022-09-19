@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-make
+make -j4
 make install
 cd ../qemu
 ./qstart.sh

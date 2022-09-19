@@ -43,9 +43,7 @@
 #include <linux/stddef.h>
 #include <linux/mount.h>
 #include <linux/cred.h>
-#if 0
 #include <linux/mnt_idmapping.h>
-#endif
 #include <linux/slab.h>
 #include <linux/time64.h>
 
@@ -1370,6 +1368,20 @@ extern void unlock_new_inode(struct inode *);
 
 extern void iget_failed(struct inode *);
 
+/**
+ * i_uid_into_mnt - map an inode's i_uid down into a mnt_userns
+ * @mnt_userns: user namespace of the mount the inode was found from
+ * @inode: inode to map
+ *
+ * Return: the inode's i_uid mapped down according to @mnt_userns.
+ * If the inode's i_uid has no mapping INVALID_UID is returned.
+ */
+static inline
+struct user_namespace *i_user_ns(const struct inode *inode)
+{
+    return inode->i_sb->s_user_ns;
+}
+
 /* Helper functions so that in most cases filesystems will
  * not need to deal directly with kuid_t and kgid_t and can
  * instead deal with the raw numeric values that are stored
@@ -1723,5 +1735,40 @@ ssize_t call_read_iter(struct file *file, struct kiocb *kio,
 {
     return file->f_op->read_iter(kio, iter);
 }
+
+int vfs_fstatat(int dfd, const char __user *filename,
+                struct kstat *stat, int flags);
+int vfs_fstat(int fd, struct kstat *stat);
+
+static inline
+int vfs_stat(const char __user *filename, struct kstat *stat)
+{
+    return vfs_fstatat(AT_FDCWD, filename, stat, 0);
+}
+
+static inline
+kuid_t i_uid_into_mnt(struct user_namespace *mnt_userns,
+                      const struct inode *inode)
+{
+    return mapped_kuid_fs(mnt_userns, i_user_ns(inode), inode->i_uid);
+}
+
+/**
+ * i_gid_into_mnt - map an inode's i_gid down into a mnt_userns
+ * @mnt_userns: user namespace of the mount the inode was found from
+ * @inode: inode to map
+ *
+ * Return: the inode's i_gid mapped down according to @mnt_userns.
+ * If the inode's i_gid has no mapping INVALID_GID is returned.
+ */
+static inline
+kgid_t i_gid_into_mnt(struct user_namespace *mnt_userns,
+                      const struct inode *inode)
+{
+    return mapped_kgid_fs(mnt_userns, i_user_ns(inode), inode->i_gid);
+}
+
+void generic_fillattr(struct user_namespace *, struct inode *,
+                      struct kstat *);
 
 #endif /* _LINUX_FS_H */

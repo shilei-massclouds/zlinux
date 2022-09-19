@@ -2,9 +2,7 @@
 #ifndef _LINUX_STAT_H
 #define _LINUX_STAT_H
 
-#if 0
 #include <asm/stat.h>
-#endif
 #include <uapi/linux/stat.h>
 #include <linux/uidgid.h>
 

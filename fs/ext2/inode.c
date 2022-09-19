@@ -391,10 +391,33 @@ int ext2_setattr(struct user_namespace *mnt_userns, struct dentry *dentry,
     panic("%s: END!\n", __func__);
 }
 
-int ext2_getattr(struct user_namespace *mnt_userns, const struct path *path,
-                 struct kstat *stat, u32 request_mask, unsigned int query_flags)
+int ext2_getattr(struct user_namespace *mnt_userns,
+                 const struct path *path,
+                 struct kstat *stat,
+                 u32 request_mask,
+                 unsigned int query_flags)
 {
-    panic("%s: END!\n", __func__);
+    struct inode *inode = d_inode(path->dentry);
+    struct ext2_inode_info *ei = EXT2_I(inode);
+    unsigned int flags;
+
+    flags = ei->i_flags & EXT2_FL_USER_VISIBLE;
+    if (flags & EXT2_APPEND_FL)
+        stat->attributes |= STATX_ATTR_APPEND;
+    if (flags & EXT2_COMPR_FL)
+        stat->attributes |= STATX_ATTR_COMPRESSED;
+    if (flags & EXT2_IMMUTABLE_FL)
+        stat->attributes |= STATX_ATTR_IMMUTABLE;
+    if (flags & EXT2_NODUMP_FL)
+        stat->attributes |= STATX_ATTR_NODUMP;
+    stat->attributes_mask |= (STATX_ATTR_APPEND |
+            STATX_ATTR_COMPRESSED |
+            STATX_ATTR_ENCRYPTED |
+            STATX_ATTR_IMMUTABLE |
+            STATX_ATTR_NODUMP);
+
+    generic_fillattr(&init_user_ns, inode, stat);
+    return 0;
 }
 
 /*
