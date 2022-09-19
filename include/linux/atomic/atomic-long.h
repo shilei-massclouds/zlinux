@@ -158,4 +158,10 @@ arch_atomic_long_sub_return(long i, atomic_long_t *v)
     return arch_atomic64_sub_return(i, v);
 }
 
+static __always_inline bool
+arch_atomic_long_add_unless(atomic_long_t *v, long a, long u)
+{
+    return arch_atomic64_add_unless(v, a, u);
+}
+
 #endif /* _LINUX_ATOMIC_LONG_H */

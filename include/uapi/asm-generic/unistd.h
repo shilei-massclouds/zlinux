@@ -61,6 +61,9 @@ __SYSCALL(__NR_gettimeofday, sys_gettimeofday)
 #define __NR_brk 214
 __SYSCALL(__NR_brk, sys_brk)
 
+#define __NR3264_mmap 222
+__SYSCALL(__NR3264_mmap, sys_mmap)
+
 /*
  * Architectures may provide up to 16 syscalls of their own
  * starting with this value.

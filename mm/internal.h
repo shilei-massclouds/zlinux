@@ -462,4 +462,19 @@ void folio_putback_lru(struct folio *folio);
 
 void putback_lru_page(struct page *page);
 
+extern unsigned long
+__must_check vm_mmap_pgoff(struct file *, unsigned long,
+                           unsigned long, unsigned long,
+                           unsigned long, unsigned long);
+
+static inline void try_to_unmap_flush(void)
+{
+}
+static inline void try_to_unmap_flush_dirty(void)
+{
+}
+static inline void flush_tlb_batched_pending(struct mm_struct *mm)
+{
+}
+
 #endif  /* __MM_INTERNAL_H */

@@ -16,3 +16,4 @@ obj-y += io-wq.o
 obj-y += ramfs/
 obj-y += ext2/
 obj-y += proc/
+obj-y += hugetlbfs/

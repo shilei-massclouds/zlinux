@@ -5,60 +5,51 @@
  *  Copyright (C) 1991, 1992, 1993, 1994  Linus Torvalds
  */
 
-//#include <linux/kernel_stat.h>
+#include <linux/kernel_stat.h>
 #include <linux/mm.h>
-#include <linux/hugetlb.h>
+#include <linux/mm_inline.h>
 #include <linux/sched/mm.h>
 #include <linux/sched/coredump.h>
+//#include <linux/sched/numa_balancing.h>
 #include <linux/sched/task.h>
-#if 0
-#include <linux/sched/numa_balancing.h>
+#include <linux/hugetlb.h>
 #include <linux/mman.h>
-#endif
 #include <linux/swap.h>
 #include <linux/highmem.h>
 #include <linux/pagemap.h>
 #include <linux/memremap.h>
-#if 0
 #include <linux/ksm.h>
-#endif
 #include <linux/rmap.h>
 #include <linux/export.h>
 //#include <linux/delayacct.h>
 #include <linux/init.h>
-/*
-#include <linux/pfn_t.h>
+//#include <linux/pfn_t.h>
 #include <linux/writeback.h>
 #include <linux/memcontrol.h>
-#include <linux/swapops.h>
-*/
 #include <linux/mmu_notifier.h>
+#include <linux/swapops.h>
 #include <linux/elf.h>
 #include <linux/gfp.h>
 #include <linux/migrate.h>
 #include <linux/string.h>
-/*
-#include <linux/dma-debug.h>
+#if 0
 #include <linux/debugfs.h>
 #include <linux/userfaultfd_k.h>
+#endif
 #include <linux/dax.h>
-*/
 #include <linux/oom.h>
 #include <linux/numa.h>
+//#include <linux/perf_event.h>
 #include <linux/ptrace.h>
 #include <linux/vmalloc.h>
-/*
-#include <linux/perf_event.h>
-
-#include <trace/events/kmem.h>
+//#include <trace/events/kmem.h>
 
 #include <asm/io.h>
 #include <asm/mmu_context.h>
-*/
-#include <asm/tlb.h>
-#include <linux/uaccess.h>
-#include <asm/tlbflush.h>
 #include <asm/pgalloc.h>
+#include <linux/uaccess.h>
+#include <asm/tlb.h>
+#include <asm/tlbflush.h>
 
 #include "pgalloc-track.h"
 #include "internal.h"
@@ -1260,13 +1251,116 @@ check_pfn:
     return pfn_to_page(pfn);
 }
 
+static inline void init_rss_vec(int *rss)
+{
+    memset(rss, 0, sizeof(int) * NR_MM_COUNTERS);
+}
+
+static inline void add_mm_rss_vec(struct mm_struct *mm, int *rss)
+{
+    int i;
+
+    if (current->mm == mm)
+        sync_mm_rss(mm);
+    for (i = 0; i < NR_MM_COUNTERS; i++)
+        if (rss[i])
+            add_mm_counter(mm, i, rss[i]);
+}
+
+static unsigned long
+zap_pte_range(struct mmu_gather *tlb,
+              struct vm_area_struct *vma, pmd_t *pmd,
+              unsigned long addr, unsigned long end,
+              struct zap_details *details)
+{
+    struct mm_struct *mm = tlb->mm;
+    int force_flush = 0;
+    int rss[NR_MM_COUNTERS];
+    spinlock_t *ptl;
+    pte_t *start_pte;
+    pte_t *pte;
+    swp_entry_t entry;
+
+    tlb_change_page_size(tlb, PAGE_SIZE);
+
+ again:
+    init_rss_vec(rss);
+    start_pte = pte_offset_map_lock(mm, pmd, addr, &ptl);
+    pte = start_pte;
+    flush_tlb_batched_pending(mm);
+    arch_enter_lazy_mmu_mode();
+    do {
+        pte_t ptent = *pte;
+        struct page *page;
+
+        if (pte_none(ptent))
+            continue;
+
+        if (need_resched())
+            break;
+
+        if (pte_present(ptent)) {
+            panic("%s: 0!\n", __func__);
+        }
+
+        panic("%s: 1!\n", __func__);
+    } while (pte++, addr += PAGE_SIZE, addr != end);
+
+    add_mm_rss_vec(mm, rss);
+    arch_leave_lazy_mmu_mode();
+
+    /* Do the actual TLB flush before dropping ptl */
+    if (force_flush)
+        tlb_flush_mmu_tlbonly(tlb);
+    pte_unmap_unlock(start_pte, ptl);
+
+    /*
+     * If we forced a TLB flush (either due to running out of
+     * batch buffers or because we needed to flush dirty TLB
+     * entries before releasing the ptl), free the batched
+     * memory too. Restart if we didn't do everything.
+     */
+    if (force_flush) {
+        force_flush = 0;
+        tlb_flush_mmu(tlb);
+    }
+
+    if (addr != end) {
+        cond_resched();
+        goto again;
+    }
+
+    return addr;
+}
+
 static inline
 unsigned long zap_pmd_range(struct mmu_gather *tlb,
                             struct vm_area_struct *vma, pud_t *pud,
                             unsigned long addr, unsigned long end,
                             struct zap_details *details)
 {
-    panic("%s: END!\n", __func__);
+    pmd_t *pmd;
+    unsigned long next;
+
+    pmd = pmd_offset(pud, addr);
+    do {
+        next = pmd_addr_end(addr, end);
+
+        /*
+         * Here there can be other concurrent MADV_DONTNEED or
+         * trans huge page faults running, and if the pmd is
+         * none or trans huge it can change under us. This is
+         * because MADV_DONTNEED holds the mmap_lock in read
+         * mode.
+         */
+        if (pmd_none_or_trans_huge_or_clear_bad(pmd))
+            goto next;
+        next = zap_pte_range(tlb, vma, pmd, addr, next, details);
+next:
+        cond_resched();
+    } while (pmd++, addr = next, addr != end);
+
+    return addr;
 }
 
 static inline

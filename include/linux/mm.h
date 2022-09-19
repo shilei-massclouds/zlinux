@@ -1629,4 +1629,12 @@ _install_special_mapping(struct mm_struct *mm,
                          unsigned long flags,
                          const struct vm_special_mapping *spec);
 
+#if defined(SPLIT_RSS_COUNTING)
+void sync_mm_rss(struct mm_struct *mm);
+#else
+static inline void sync_mm_rss(struct mm_struct *mm)
+{
+}
+#endif
+
 #endif /* _LINUX_MM_H */

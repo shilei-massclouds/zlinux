@@ -261,4 +261,8 @@ sys_pwritev(unsigned long fd, const struct iovec __user *vec,
             unsigned long vlen, unsigned long pos_l,
             unsigned long pos_h);
 
+unsigned long ksys_mmap_pgoff(unsigned long addr, unsigned long len,
+                              unsigned long prot, unsigned long flags,
+                              unsigned long fd, unsigned long pgoff);
+
 #endif /* _LINUX_SYSCALLS_H */

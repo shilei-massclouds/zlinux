@@ -17,6 +17,30 @@
 
 #include <asm/hugetlb.h>
 
+#define HSTATE_NAME_LEN 32
+/* Defines one hugetlb page size */
+struct hstate {
+    struct mutex resize_lock;
+    int next_nid_to_alloc;
+    int next_nid_to_free;
+    unsigned int order;
+    unsigned int demote_order;
+    unsigned long mask;
+    unsigned long max_huge_pages;
+    unsigned long nr_huge_pages;
+    unsigned long free_huge_pages;
+    unsigned long resv_huge_pages;
+    unsigned long surplus_huge_pages;
+    unsigned long nr_overcommit_huge_pages;
+    struct list_head hugepage_activelist;
+    struct list_head hugepage_freelists[MAX_NUMNODES];
+    unsigned int max_huge_pages_node[MAX_NUMNODES];
+    unsigned int nr_huge_pages_node[MAX_NUMNODES];
+    unsigned int free_huge_pages_node[MAX_NUMNODES];
+    unsigned int surplus_huge_pages_node[MAX_NUMNODES];
+    char name[HSTATE_NAME_LEN];
+};
+
 typedef struct { unsigned long pd; } hugepd_t;
 
 #ifndef arch_make_huge_pte
@@ -63,5 +87,23 @@ static inline bool is_file_hugepages(struct file *file)
 }
 
 void free_huge_page(struct page *page);
+
+static inline struct hstate *hstate_inode(struct inode *i)
+{
+#if 0
+    return HUGETLBFS_SB(i->i_sb)->hstate;
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+static inline struct hstate *hstate_file(struct file *f)
+{
+    return hstate_inode(file_inode(f));
+}
+
+static inline unsigned long huge_page_size(struct hstate *h)
+{
+    return (unsigned long)PAGE_SIZE << h->order;
+}
 
 #endif /* _LINUX_HUGETLB_H */

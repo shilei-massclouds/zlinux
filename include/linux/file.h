@@ -67,4 +67,10 @@ static inline struct fd fdget_raw(unsigned int fd)
     return __to_fd(__fdget_raw(fd));
 }
 
+extern struct file *fget(unsigned int fd);
+extern struct file *fget_many(unsigned int fd, unsigned int refs);
+extern struct file *fget_raw(unsigned int fd);
+extern struct file *fget_task(struct task_struct *task, unsigned int fd);
+extern unsigned long __fdget(unsigned int fd);
+
 #endif /* __LINUX_FILE_H */

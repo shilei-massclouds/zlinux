@@ -436,6 +436,122 @@ static inline int pte_unused(pte_t pte)
 }
 #endif
 
+static inline int pud_trans_huge(pud_t pud)
+{
+    return 0;
+}
+
+#ifndef pmd_read_atomic
+static inline pmd_t pmd_read_atomic(pmd_t *pmdp)
+{
+    /*
+     * Depend on compiler for an atomic pmd read. NOTE: this is
+     * only going to work, if the pmdval_t isn't larger than
+     * an unsigned long.
+     */
+    return *pmdp;
+}
+#endif
+
+/*
+ * This function is meant to be used by sites walking pagetables with
+ * the mmap_lock held in read mode to protect against MADV_DONTNEED and
+ * transhuge page faults. MADV_DONTNEED can convert a transhuge pmd
+ * into a null pmd and the transhuge page fault can convert a null pmd
+ * into an hugepmd or into a regular pmd (if the hugepage allocation
+ * fails). While holding the mmap_lock in read mode the pmd becomes
+ * stable and stops changing under us only if it's not null and not a
+ * transhuge pmd. When those races occurs and this function makes a
+ * difference vs the standard pmd_none_or_clear_bad, the result is
+ * undefined so behaving like if the pmd was none is safe (because it
+ * can return none anyway). The compiler level barrier() is critically
+ * important to compute the two checks atomically on the same pmdval.
+ *
+ * For 32bit kernels with a 64bit large pmd_t this automatically takes
+ * care of reading the pmd atomically to avoid SMP race conditions
+ * against pmd_populate() when the mmap_lock is hold for reading by the
+ * caller (a special atomic read not done by "gcc" as in the generic
+ * version above, is also needed when THP is disabled because the page
+ * fault can populate the pmd from under us).
+ */
+static inline int pmd_none_or_trans_huge_or_clear_bad(pmd_t *pmd)
+{
+    pmd_t pmdval = pmd_read_atomic(pmd);
+    /*
+     * The barrier will stabilize the pmdval in a register or on
+     * the stack so that it will stop changing under the code.
+     *
+     * When CONFIG_TRANSPARENT_HUGEPAGE=y on x86 32bit PAE,
+     * pmd_read_atomic is allowed to return a not atomic pmdval
+     * (for example pointing to an hugepage that has never been
+     * mapped in the pmd). The below checks will only care about
+     * the low part of the pmd with 32bit PAE x86 anyway, with the
+     * exception of pmd_none(). So the important thing is that if
+     * the low part of the pmd is found null, the high part will
+     * be also null or the pmd_none() check below would be
+     * confused.
+     */
+
+    /*
+     * !pmd_present() checks for pmd migration entries
+     *
+     * The complete check uses is_pmd_migration_entry() in linux/swapops.h
+     * But using that requires moving current function and pmd_trans_unstable()
+     * to linux/swapops.h to resolve dependency, which is too much code move.
+     *
+     * !pmd_present() is equivalent to is_pmd_migration_entry() currently,
+     * because !pmd_present() pages can only be under migration not swapped
+     * out.
+     *
+     * pmd_none() is preserved for future condition checks on pmd migration
+     * entries and not confusing with this function name, although it is
+     * redundant with !pmd_present().
+     */
+    if (pmd_none(pmdval) || pmd_trans_huge(pmdval))
+        return 1;
+    if (unlikely(pmd_bad(pmdval))) {
+        pmd_clear_bad(pmd);
+        return 1;
+    }
+    return 0;
+}
+
+/* See pmd_none_or_trans_huge_or_clear_bad for discussion. */
+static inline int pud_none_or_trans_huge_or_dev_or_clear_bad(pud_t *pud)
+{
+    pud_t pudval = READ_ONCE(*pud);
+
+    if (pud_none(pudval) || pud_trans_huge(pudval) ||
+        pud_devmap(pudval))
+        return 1;
+    if (unlikely(pud_bad(pudval))) {
+        pud_clear_bad(pud);
+        return 1;
+    }
+    return 0;
+}
+
+/*
+ * A facility to provide lazy MMU batching.  This allows PTE updates and
+ * page invalidations to be delayed until a call to leave lazy MMU mode
+ * is issued.  Some architectures may benefit from doing this, and it is
+ * beneficial for both shadow and direct mode hypervisors, which may batch
+ * the PTE updates which happen during this window.  Note that using this
+ * interface requires that read hazards be removed from the code.  A read
+ * hazard could result in the direct mode hypervisor case, since the actual
+ * write to the page tables may not yet have taken place, so reads though
+ * a raw PTE pointer after it has been modified are not guaranteed to be
+ * up to date.  This mode can only be entered and left under the protection of
+ * the page table locks for all page tables which may be modified.  In the UP
+ * case, this is required so that preemption is disabled, and in the SMP case,
+ * it must synchronize the delayed page table writes properly on other CPUs.
+ */
+#ifndef __HAVE_ARCH_ENTER_LAZY_MMU_MODE
+#define arch_enter_lazy_mmu_mode()  do {} while (0)
+#define arch_leave_lazy_mmu_mode()  do {} while (0)
+#define arch_flush_lazy_mmu_mode()  do {} while (0)
+#endif
+
 #endif /* !__ASSEMBLY__ */
 
 /*

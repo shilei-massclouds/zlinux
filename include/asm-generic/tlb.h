@@ -260,4 +260,6 @@ void tlb_end_vma(struct mmu_gather *tlb, struct vm_area_struct *vma)
 }
 #endif
 
+void tlb_flush_mmu(struct mmu_gather *tlb);
+
 #endif /* _ASM_GENERIC__TLB_H */

@@ -22,4 +22,14 @@
 #define HPAGE_PUD_MASK ({ BUILD_BUG(); 0; })
 #define HPAGE_PUD_SIZE ({ BUILD_BUG(); 0; })
 
+static inline int is_swap_pmd(pmd_t pmd)
+{
+    return 0;
+}
+
+static inline bool folio_test_pmd_mappable(struct folio *folio)
+{
+    return false;
+}
+
 #endif /* _LINUX_HUGE_MM_H */
