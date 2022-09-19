@@ -174,10 +174,6 @@ static inline int is_syscall_trace_event(struct trace_event_call *tp_event)
 /* mm/nommu.c, also with MMU */
 asmlinkage long sys_brk(unsigned long brk);
 
-/* fs/stat.c */
-asmlinkage long sys_readlinkat(int dfd, const char __user *path,
-                               char __user *buf, int bufsiz);
-
 /* kernel/sys.c */
 asmlinkage long sys_newuname(struct new_utsname __user *name);
 
@@ -222,5 +218,15 @@ asmlinkage long sys_close(unsigned int fd);
 asmlinkage long
 sys_close_range(unsigned int fd, unsigned int max_fd,
                 unsigned int flags);
+
+/* fs/stat.c */
+asmlinkage long
+sys_readlinkat(int dfd, const char __user *path, char __user *buf,
+               int bufsiz);
+asmlinkage long
+sys_newfstatat(int dfd, const char __user *filename,
+               struct stat __user *statbuf, int flag);
+asmlinkage long
+sys_newfstat(unsigned int fd, struct stat __user *statbuf);
 
 #endif /* _LINUX_SYSCALLS_H */

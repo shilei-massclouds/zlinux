@@ -51,3 +51,84 @@ SYSCALL_DEFINE4(readlinkat, int, dfd, const char __user *, pathname,
 {
     return do_readlinkat(dfd, pathname, buf, bufsiz);
 }
+
+int getname_statx_lookup_flags(int flags)
+{
+    int lookup_flags = 0;
+
+    if (!(flags & AT_SYMLINK_NOFOLLOW))
+        lookup_flags |= LOOKUP_FOLLOW;
+    if (!(flags & AT_NO_AUTOMOUNT))
+        lookup_flags |= LOOKUP_AUTOMOUNT;
+    if (flags & AT_EMPTY_PATH)
+        lookup_flags |= LOOKUP_EMPTY;
+
+    return lookup_flags;
+}
+
+/**
+ * vfs_statx - Get basic and extra attributes by filename
+ * @dfd: A file descriptor representing the base dir for a relative filename
+ * @filename: The name of the file of interest
+ * @flags: Flags to control the query
+ * @stat: The result structure to fill in.
+ * @request_mask: STATX_xxx flags indicating what the caller wants
+ *
+ * This function is a wrapper around vfs_getattr().  The main difference is
+ * that it uses a filename and base directory to determine the file location.
+ * Additionally, the use of AT_SYMLINK_NOFOLLOW in flags will prevent a symlink
+ * at the given name from being referenced.
+ *
+ * 0 will be returned on success, and a -ve error code if unsuccessful.
+ */
+static int vfs_statx(int dfd, struct filename *filename, int flags,
+                     struct kstat *stat, u32 request_mask)
+{
+    struct path path;
+    unsigned int lookup_flags = getname_statx_lookup_flags(flags);
+    int error;
+
+    if (flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |
+                  AT_EMPTY_PATH | AT_STATX_SYNC_TYPE))
+        return -EINVAL;
+
+ retry:
+    error = filename_lookup(dfd, filename, lookup_flags, &path, NULL);
+    if (error)
+        goto out;
+
+    panic("%s: END!\n", __func__);
+
+ out:
+    return error;
+}
+
+int vfs_fstatat(int dfd, const char __user *filename,
+                struct kstat *stat, int flags)
+{
+    int ret;
+    int statx_flags = flags | AT_NO_AUTOMOUNT;
+    struct filename *name;
+
+    name = getname_flags(filename,
+                         getname_statx_lookup_flags(statx_flags), NULL);
+    ret = vfs_statx(dfd, name, statx_flags, stat, STATX_BASIC_STATS);
+    putname(name);
+
+    return ret;
+}
+
+SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
+                struct stat __user *, statbuf, int, flag)
+{
+    struct kstat stat;
+    int error;
+
+    error = vfs_fstatat(dfd, filename, &stat, flag);
+    if (error)
+        return error;
+#if 0
+    return cp_new_stat(&stat, statbuf);
+#endif
+    panic("%s: END!\n", __func__);
+}

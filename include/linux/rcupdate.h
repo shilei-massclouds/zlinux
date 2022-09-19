@@ -344,6 +344,40 @@ static inline void rcu_read_lock_sched(void)
     __acquire(RCU_SCHED);
 }
 
+/**
+ * rcu_read_unlock_sched() - marks the end of a RCU-classic critical section
+ *
+ * See rcu_read_lock_sched() for more information.
+ */
+static inline void rcu_read_unlock_sched(void)
+{
+    __release(RCU_SCHED);
+    preempt_enable();
+}
+
+/**
+ * rcu_dereference_sched_check() - rcu_dereference_sched with debug checking
+ * @p: The pointer to read, prior to dereferencing
+ * @c: The conditions under which the dereference will take place
+ *
+ * This is the RCU-sched counterpart to rcu_dereference_check().
+ * However, please note that starting in v5.0 kernels, vanilla RCU grace
+ * periods wait for preempt_disable() regions of code in addition to
+ * regions of code demarked by rcu_read_lock() and rcu_read_unlock().
+ * This means that synchronize_rcu(), call_rcu, and friends all take not
+ * only rcu_read_lock() but also rcu_read_lock_sched() into account.
+ */
+#define rcu_dereference_sched_check(p, c) \
+    __rcu_dereference_check((p), __UNIQUE_ID(rcu))
+
+/**
+ * rcu_dereference_sched() - fetch RCU-sched-protected pointer for dereferencing
+ * @p: The pointer to read, prior to dereferencing
+ *
+ * Makes rcu_dereference_check() do the dirty work.
+ */
+#define rcu_dereference_sched(p) rcu_dereference_sched_check(p, 0)
+
 #include <linux/rcutree.h>
 
 #endif /* __LINUX_RCUPDATE_H */

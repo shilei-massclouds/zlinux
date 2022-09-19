@@ -27,6 +27,9 @@ __SYSCALL(__NR_openat, sys_openat)
 #define __NR_readlinkat 78
 __SYSCALL(__NR_readlinkat, sys_readlinkat)
 
+#define __NR3264_fstatat 79
+__SYSCALL(__NR3264_fstatat, sys_newfstatat)
+
 #define __NR_clock_gettime 113
 __SYSCALL(__NR_clock_gettime, sys_clock_gettime)
 

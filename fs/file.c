@@ -492,7 +492,15 @@ void fd_install(unsigned int fd, struct file *file)
 
     rcu_read_lock_sched();
 
-    panic("%s: END!\n", __func__);
+    if (unlikely(files->resize_in_progress)) {
+        panic("%s: 1!\n", __func__);
+    }
+    /* coupled with smp_wmb() in expand_fdtable() */
+    smp_rmb();
+    fdt = rcu_dereference_sched(files->fdt);
+    BUG_ON(fdt->fd[fd] != NULL);
+    rcu_assign_pointer(fdt->fd[fd], file);
+    rcu_read_unlock_sched();
 }
 
 static void __put_unused_fd(struct files_struct *files, unsigned int fd)

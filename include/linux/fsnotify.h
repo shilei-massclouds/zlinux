@@ -17,6 +17,19 @@
 #include <linux/slab.h>
 #include <linux/bug.h>
 
+/* Notify this dentry's parent about a child's events. */
+static inline
+int fsnotify_parent(struct dentry *dentry, __u32 mask,
+                    const void *data, int data_type)
+{
+    struct inode *inode = d_inode(dentry);
+
+    if (atomic_long_read(&inode->i_sb->s_fsnotify_connectors) == 0)
+        return 0;
+
+    panic("%s: END!\n", __func__);
+}
+
 static inline int fsnotify_file(struct file *file, __u32 mask)
 {
     const struct path *path = &file->f_path;
@@ -24,11 +37,8 @@ static inline int fsnotify_file(struct file *file, __u32 mask)
     if (file->f_mode & FMODE_NONOTIFY)
         return 0;
 
-#if 0
     return fsnotify_parent(path->dentry, mask, path,
                            FSNOTIFY_EVENT_PATH);
-#endif
-    panic("%s: END!\n", __func__);
 }
 
 /*
