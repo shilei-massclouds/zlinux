@@ -67,6 +67,9 @@ __SYSCALL(__NR_brk, sys_brk)
 #define __NR3264_mmap 222
 __SYSCALL(__NR3264_mmap, sys_mmap)
 
+#define __NR_mprotect 226
+__SYSCALL(__NR_mprotect, sys_mprotect)
+
 /*
  * Architectures may provide up to 16 syscalls of their own
  * starting with this value.

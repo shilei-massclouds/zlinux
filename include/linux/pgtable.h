@@ -552,6 +552,18 @@ static inline int pud_none_or_trans_huge_or_dev_or_clear_bad(pud_t *pud)
 #define arch_flush_lazy_mmu_mode()  do {} while (0)
 #endif
 
+#ifndef __HAVE_ARCH_PFN_MODIFY_ALLOWED
+static inline bool pfn_modify_allowed(unsigned long pfn, pgprot_t prot)
+{
+    return true;
+}
+
+static inline bool arch_has_pfn_modify_check(void)
+{
+    return false;
+}
+#endif /* !_HAVE_ARCH_PFN_MODIFY_ALLOWED */
+
 #endif /* !__ASSEMBLY__ */
 
 /*

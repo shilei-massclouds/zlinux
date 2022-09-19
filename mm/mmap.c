@@ -326,7 +326,8 @@ int insert_vm_struct(struct mm_struct *mm, struct vm_area_struct *vma)
  * Return true if the calling process may expand its vm space by the passed
  * number of pages
  */
-bool may_expand_vm(struct mm_struct *mm, vm_flags_t flags, unsigned long npages)
+bool may_expand_vm(struct mm_struct *mm, vm_flags_t flags,
+                   unsigned long npages)
 {
     if (mm->total_vm + npages > rlimit(RLIMIT_AS) >> PAGE_SHIFT)
         return false;
@@ -2542,6 +2543,19 @@ _install_special_mapping(struct mm_struct *mm,
     return __install_special_mapping(mm, addr, len, vm_flags,
                                      (void *)spec,
                                      &special_mapping_vmops);
+}
+
+/*
+ * Split a vma into two pieces at address 'addr', a new vma is allocated
+ * either for the first part or the tail.
+ */
+int split_vma(struct mm_struct *mm, struct vm_area_struct *vma,
+              unsigned long addr, int new_below)
+{
+    if (mm->map_count >= sysctl_max_map_count)
+        return -ENOMEM;
+
+    return __split_vma(mm, vma, addr, new_below);
 }
 
 unsigned long ksys_mmap_pgoff(unsigned long addr, unsigned long len,

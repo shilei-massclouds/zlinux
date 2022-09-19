@@ -367,7 +367,8 @@ out:
  * walker has a good chance of avoiding scanning the whole hierarchy when it
  * searches where page is mapped.
  */
-int anon_vma_clone(struct vm_area_struct *dst, struct vm_area_struct *src)
+int anon_vma_clone(struct vm_area_struct *dst,
+                   struct vm_area_struct *src)
 {
     struct anon_vma_chain *avc, *pavc;
     struct anon_vma *root = NULL;
@@ -387,7 +388,6 @@ int anon_vma_clone(struct vm_area_struct *dst, struct vm_area_struct *src)
             panic("%s: 0!\n", __func__);
         }
 
-#if 0
         anon_vma = pavc->anon_vma;
         root = lock_anon_vma_root(root, anon_vma);
         anon_vma_chain_link(dst, avc, anon_vma);
@@ -403,9 +403,6 @@ int anon_vma_clone(struct vm_area_struct *dst, struct vm_area_struct *src)
         if (!dst->anon_vma && src->anon_vma &&
             anon_vma != src->anon_vma && anon_vma->degree < 2)
             dst->anon_vma = anon_vma;
-#endif
-
-        panic("%s: 1!\n", __func__);
     }
     if (dst->anon_vma)
         dst->anon_vma->degree++;

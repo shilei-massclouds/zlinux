@@ -5,7 +5,7 @@ obj-y := mmzone.o vmstat.o percpu.o page-writeback.o slab_common.o util.o \
 obj-y += memblock.o list_lru.o migrate.o mempool.o mmap.o vmacache.o mlock.o
 obj-y += ioremap.o shmem.o filemap.o folio-compat.o rmap.o interval_tree.o
 obj-y += backing-dev.o swap.o hugetlb.o truncate.o gup.o readahead.o mm_init.o
-obj-y += vmscan.o swapfile.o pagewalk.o page_vma_mapped.o
+obj-y += vmscan.o swapfile.o pagewalk.o page_vma_mapped.o mprotect.o
 
 obj-$(CONFIG_SLAB) += slab.o workingset.o
 

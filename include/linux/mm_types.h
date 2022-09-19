@@ -398,6 +398,9 @@ static inline atomic_t *compound_pincount_ptr(struct page *page)
  */
 typedef __bitwise unsigned int vm_fault_t;
 
+#define NULL_VM_UFFD_CTX ((struct vm_userfaultfd_ctx) {})
+struct vm_userfaultfd_ctx {};
+
 /*
  * This struct describes a virtual memory area. There is one of these
  * per VM-area/task. A VM area is any part of the process virtual memory
@@ -475,9 +478,7 @@ struct vm_area_struct {
 
     atomic_long_t swap_readahead_info;
     struct vm_region *vm_region;    /* NOMMU mapping region */
-#if 0
     struct vm_userfaultfd_ctx vm_userfaultfd_ctx;
-#endif
 } __randomize_layout;
 
 /**
@@ -621,8 +622,6 @@ static inline cpumask_t *mm_cpumask(struct mm_struct *mm)
     return (struct cpumask *)&mm->cpu_bitmap;
 }
 
-#define NULL_VM_UFFD_CTX ((struct vm_userfaultfd_ctx) {})
-struct vm_userfaultfd_ctx {};
 
 struct mmu_gather;
 extern void tlb_gather_mmu(struct mmu_gather *tlb, struct mm_struct *mm);

@@ -153,6 +153,12 @@ struct pt_regs;
 /* Bits set in the VMA until the stack is in its final location */
 #define VM_STACK_INCOMPLETE_SETUP   (VM_RAND_READ | VM_SEQ_READ)
 
+/* Arch-specific flags to clear when updating VM flags on protection change */
+#ifndef VM_ARCH_CLEAR
+# define VM_ARCH_CLEAR  VM_NONE
+#endif
+#define VM_FLAGS_CLEAR  (ARCH_VM_PKEY_FLAGS | VM_ARCH_CLEAR)
+
 /*
  * Default maximum number of active map areas, this limits the number of vmas
  * per mm struct. Users can overwrite this number by sysctl but there is a
@@ -1636,5 +1642,29 @@ static inline void sync_mm_rss(struct mm_struct *mm)
 {
 }
 #endif
+
+extern int __split_vma(struct mm_struct *, struct vm_area_struct *,
+                       unsigned long addr, int new_below);
+extern int split_vma(struct mm_struct *, struct vm_area_struct *,
+                     unsigned long addr, int new_below);
+
+int vma_wants_writenotify(struct vm_area_struct *vma,
+                          pgprot_t vm_page_prot);
+
+/*
+ * Flags used by change_protection().  For now we make it a bitmap so
+ * that we can pass in multiple flags just like parameters.  However
+ * for now all the callers are only use one of the flags at the same
+ * time.
+ */
+/* Whether we should allow dirty bit accounting */
+#define  MM_CP_DIRTY_ACCT                  (1UL << 0)
+/* Whether this protection change is for NUMA hints */
+#define  MM_CP_PROT_NUMA                   (1UL << 1)
+/* Whether this change is for write protecting */
+#define  MM_CP_UFFD_WP                     (1UL << 2) /* do wp */
+#define  MM_CP_UFFD_WP_RESOLVE             (1UL << 3) /* Resolve wp */
+#define  MM_CP_UFFD_WP_ALL \
+    (MM_CP_UFFD_WP | MM_CP_UFFD_WP_RESOLVE)
 
 #endif /* _LINUX_MM_H */
