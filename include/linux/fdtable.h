@@ -10,7 +10,7 @@
 #include <linux/compiler.h>
 #include <linux/spinlock.h>
 #include <linux/rcupdate.h>
-//#include <linux/nospec.h>
+#include <linux/nospec.h>
 #include <linux/types.h>
 #include <linux/init.h>
 #include <linux/fs.h>
@@ -73,5 +73,19 @@ extern struct kmem_cache *files_cachep;
 void put_files_struct(struct files_struct *fs);
 
 int unshare_files(void);
+
+/*
+ * The caller must ensure that fd table isn't shared or hold rcu or file lock
+ */
+static inline struct file *files_lookup_fd_raw(struct files_struct *files, unsigned int fd)
+{
+    struct fdtable *fdt = rcu_dereference_raw(files->fdt);
+
+    if (fd < fdt->max_fds) {
+        fd = array_index_nospec(fd, fdt->max_fds);
+        return rcu_dereference_raw(fdt->fd[fd]);
+    }
+    return NULL;
+}
 
 #endif /* __LINUX_FDTABLE_H */

@@ -16,5 +16,6 @@
 #define EOPENSTALE      518 /* open found a stale dentry */
 #define ENOPARAM        519 /* Parameter not supported */
 #define ENOTSUPP        524 /* Operation is not supported */
+#define EIOCBQUEUED     529 /* iocb queued, will get completion event */
 
 #endif /* _LINUX_ERRNO_H */

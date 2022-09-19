@@ -229,7 +229,8 @@ do {                                        \
     typeof(p) local = READ_ONCE(p); \
     ((typeof(*p) __force __kernel *)(local)); \
 })
-#define rcu_dereference_raw(p) __rcu_dereference_raw(p, __UNIQUE_ID(rcu))
+#define rcu_dereference_raw(p) \
+    __rcu_dereference_raw(p, __UNIQUE_ID(rcu))
 
 #define __rcu_access_pointer(p, local, space) \
 ({ \

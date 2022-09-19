@@ -198,7 +198,55 @@ static size_t
 copy_page_to_iter_iovec(struct page *page, size_t offset, size_t bytes,
                         struct iov_iter *i)
 {
-    panic("%s: END!\n", __func__);
+    size_t skip, copy, left, wanted;
+    const struct iovec *iov;
+    char __user *buf;
+    void *kaddr, *from;
+
+    if (unlikely(bytes > i->count))
+        bytes = i->count;
+
+    if (unlikely(!bytes))
+        return 0;
+
+    might_fault();
+    wanted = bytes;
+    iov = i->iov;
+    skip = i->iov_offset;
+    buf = iov->iov_base + skip;
+    copy = min(bytes, iov->iov_len - skip);
+
+    /* Too bad - revert to non-atomic kmap */
+
+    kaddr = kmap(page);
+    from = kaddr + offset;
+    left = copyout(buf, from, copy);
+    copy -= left;
+    skip += copy;
+    from += copy;
+    bytes -= copy;
+    while (unlikely(!left && bytes)) {
+        iov++;
+        buf = iov->iov_base;
+        copy = min(bytes, iov->iov_len);
+        left = copyout(buf, from, copy);
+        copy -= left;
+        skip = copy;
+        from += copy;
+        bytes -= copy;
+    }
+    kunmap(page);
+
+done:
+    if (skip == iov->iov_len) {
+        iov++;
+        skip = 0;
+    }
+    i->count -= wanted - bytes;
+    i->nr_segs -= iov - i->iov;
+    i->iov = iov;
+    i->iov_offset = skip;
+    return wanted - bytes;
 }
 
 static size_t copy_pipe_to_iter(const void *addr, size_t bytes,
@@ -265,3 +313,20 @@ size_t copy_page_to_iter(struct page *page, size_t offset, size_t bytes,
     return res;
 }
 EXPORT_SYMBOL(copy_page_to_iter);
+
+void iov_iter_init(struct iov_iter *i, unsigned int direction,
+                   const struct iovec *iov, unsigned long nr_segs,
+                   size_t count)
+{
+    WARN_ON(direction & ~(READ | WRITE));
+    *i = (struct iov_iter) {
+        .iter_type = ITER_IOVEC,
+        .nofault = false,
+        .data_source = direction,
+        .iov = iov,
+        .nr_segs = nr_segs,
+        .iov_offset = 0,
+        .count = count
+    };
+}
+EXPORT_SYMBOL(iov_iter_init);

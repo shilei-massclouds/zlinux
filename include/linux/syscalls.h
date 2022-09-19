@@ -229,4 +229,36 @@ sys_newfstatat(int dfd, const char __user *filename,
 asmlinkage long
 sys_newfstat(unsigned int fd, struct stat __user *statbuf);
 
+/* fs/read_write.c */
+asmlinkage long
+sys_llseek(unsigned int fd, unsigned long offset_high,
+           unsigned long offset_low, loff_t __user *result,
+           unsigned int whence);
+asmlinkage long
+sys_lseek(unsigned int fd, off_t offset, unsigned int whence);
+asmlinkage long
+sys_read(unsigned int fd, char __user *buf, size_t count);
+asmlinkage long
+sys_write(unsigned int fd, const char __user *buf, size_t count);
+asmlinkage long
+sys_readv(unsigned long fd, const struct iovec __user *vec,
+          unsigned long vlen);
+asmlinkage long
+sys_writev(unsigned long fd, const struct iovec __user *vec,
+           unsigned long vlen);
+asmlinkage long
+sys_pread64(unsigned int fd, char __user *buf, size_t count,
+            loff_t pos);
+asmlinkage long
+sys_pwrite64(unsigned int fd, const char __user *buf,
+             size_t count, loff_t pos);
+asmlinkage long
+sys_preadv(unsigned long fd, const struct iovec __user *vec,
+           unsigned long vlen, unsigned long pos_l,
+           unsigned long pos_h);
+asmlinkage long
+sys_pwritev(unsigned long fd, const struct iovec __user *vec,
+            unsigned long vlen, unsigned long pos_l,
+            unsigned long pos_h);
+
 #endif /* _LINUX_SYSCALLS_H */

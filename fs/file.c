@@ -518,5 +518,90 @@ void put_unused_fd(unsigned int fd)
     __put_unused_fd(files, fd);
     spin_unlock(&files->file_lock);
 }
-
 EXPORT_SYMBOL(put_unused_fd);
+
+void __f_unlock_pos(struct file *f)
+{
+    mutex_unlock(&f->f_pos_lock);
+}
+
+static inline
+struct file *__fget_files_rcu(struct files_struct *files,
+                              unsigned int fd, fmode_t mask,
+                              unsigned int refs)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static struct file *
+__fget_files(struct files_struct *files, unsigned int fd,
+             fmode_t mask, unsigned int refs)
+{
+    struct file *file;
+
+    rcu_read_lock();
+    file = __fget_files_rcu(files, fd, mask, refs);
+    rcu_read_unlock();
+
+    return file;
+}
+
+static inline
+struct file *__fget(unsigned int fd, fmode_t mask, unsigned int refs)
+{
+    return __fget_files(current->files, fd, mask, refs);
+}
+
+/*
+ * Lightweight file lookup - no refcnt increment if fd table isn't shared.
+ *
+ * You can use this instead of fget if you satisfy all of the following
+ * conditions:
+ * 1) You must call fput_light before exiting the syscall and returning control
+ *    to userspace (i.e. you cannot remember the returned struct file * after
+ *    returning to userspace).
+ * 2) You must not call filp_close on the returned struct file * in between
+ *    calls to fget_light and fput_light.
+ * 3) You must not clone the current task in between the calls to fget_light
+ *    and fput_light.
+ *
+ * The fput_needed flag returned by fget_light should be passed to the
+ * corresponding fput_light.
+ */
+static unsigned long __fget_light(unsigned int fd, fmode_t mask)
+{
+    struct files_struct *files = current->files;
+    struct file *file;
+
+    if (atomic_read(&files->count) == 1) {
+        file = files_lookup_fd_raw(files, fd);
+        if (!file || unlikely(file->f_mode & mask))
+            return 0;
+        return (unsigned long)file;
+    } else {
+        file = __fget(fd, mask, 1);
+        if (!file)
+            return 0;
+        return FDPUT_FPUT | (unsigned long)file;
+    }
+}
+
+unsigned long __fdget(unsigned int fd)
+{
+    return __fget_light(fd, FMODE_PATH);
+}
+EXPORT_SYMBOL(__fdget);
+
+unsigned long __fdget_pos(unsigned int fd)
+{
+    unsigned long v = __fdget(fd);
+    struct file *file = (struct file *)(v & ~3);
+
+    if (file && (file->f_mode & FMODE_ATOMIC_POS)) {
+        if (file_count(file) > 1) {
+            v |= FDPUT_POS_UNLOCK;
+            mutex_lock(&file->f_pos_lock);
+        }
+    }
+    return v;
+}

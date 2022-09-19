@@ -48,4 +48,22 @@ static inline void __kunmap_atomic(void *addr)
     preempt_enable();
 }
 
+static inline struct page *kmap_to_page(void *addr)
+{
+    return virt_to_page(addr);
+}
+
+static inline void *kmap(struct page *page)
+{
+    might_sleep();
+    return page_address(page);
+}
+
+static inline void kunmap_high(struct page *page) { }
+static inline void kmap_flush_unused(void) { }
+
+static inline void kunmap(struct page *page)
+{
+}
+
 #endif /* _LINUX_HIGHMEM_INTERNAL_H */

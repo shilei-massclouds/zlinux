@@ -1717,4 +1717,11 @@ extern struct filename *getname(const char __user *);
 extern struct filename *getname_kernel(const char *);
 extern void putname(struct filename *name);
 
+static inline
+ssize_t call_read_iter(struct file *file, struct kiocb *kio,
+                       struct iov_iter *iter)
+{
+    return file->f_op->read_iter(kio, iter);
+}
+
 #endif /* _LINUX_FS_H */

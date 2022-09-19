@@ -54,4 +54,12 @@ static inline void fsnotify_open(struct file *file)
     fsnotify_file(file, mask);
 }
 
+/*
+ * fsnotify_access - file was read
+ */
+static inline void fsnotify_access(struct file *file)
+{
+    fsnotify_file(file, FS_ACCESS);
+}
+
 #endif  /* _LINUX_FS_NOTIFY_H */
