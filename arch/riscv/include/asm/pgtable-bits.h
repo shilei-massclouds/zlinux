@@ -37,4 +37,10 @@
 
 #define _PAGE_PFN_SHIFT 10
 
+/* Set of bits to preserve across pte_modify() */
+#define _PAGE_CHG_MASK \
+    (~(unsigned long)(_PAGE_PRESENT | _PAGE_READ |  \
+                      _PAGE_WRITE | _PAGE_EXEC |    \
+                      _PAGE_USER | _PAGE_GLOBAL))
+
 #endif /* _ASM_RISCV_PGTABLE_BITS_H */

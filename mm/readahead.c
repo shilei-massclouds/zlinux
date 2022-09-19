@@ -194,7 +194,6 @@ static void read_pages(struct readahead_control *rac)
     struct page *page;
     struct blk_plug plug;
 
-    printk("%s: 1\n", __func__);
     if (!readahead_count(rac))
         return;
 

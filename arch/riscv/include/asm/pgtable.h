@@ -395,6 +395,19 @@ static inline int ptep_clear_flush_young(struct vm_area_struct *vma,
     return ptep_test_and_clear_young(vma, address, ptep);
 }
 
+/* Modify page protection bits */
+static inline pte_t pte_modify(pte_t pte, pgprot_t newprot)
+{
+    return __pte((pte_val(pte) & _PAGE_CHG_MASK) | pgprot_val(newprot));
+}
+
+/* static inline pte_t pte_rdprotect(pte_t pte) */
+
+static inline pte_t pte_wrprotect(pte_t pte)
+{
+    return __pte(pte_val(pte) & ~(_PAGE_WRITE));
+}
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* _ASM_RISCV_PGTABLE_H */

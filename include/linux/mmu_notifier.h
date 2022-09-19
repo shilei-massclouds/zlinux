@@ -300,7 +300,8 @@ mmu_notifier_range_init(struct mmu_notifier_range *range,
     range->flags = flags;
 }
 
-extern int __mmu_notifier_invalidate_range_start(struct mmu_notifier_range *r);
+extern int
+__mmu_notifier_invalidate_range_start(struct mmu_notifier_range *r);
 
 static inline void
 mmu_notifier_invalidate_range_start(struct mmu_notifier_range *range)

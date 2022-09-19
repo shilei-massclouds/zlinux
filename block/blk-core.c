@@ -44,10 +44,10 @@
 #include <linux/debugfs.h>
 #include <linux/bpf.h>
 #include <linux/psi.h>
-#include <linux/part_stat.h>
 #include <linux/sched/sysctl.h>
-#include <linux/blk-crypto.h>
 #endif
+#include <linux/part_stat.h>
+#include <linux/blk-crypto.h>
 #include <linux/blk-mq.h>
 #include <linux/idr.h>
 #include <linux/percpu-refcount.h>
@@ -811,3 +811,20 @@ int kblockd_mod_delayed_work_on(int cpu, struct delayed_work *dwork,
     return mod_delayed_work_on(cpu, kblockd_workqueue, dwork, delay);
 }
 EXPORT_SYMBOL(kblockd_mod_delayed_work_on);
+
+void update_io_ticks(struct block_device *part, unsigned long now,
+                     bool end)
+{
+    unsigned long stamp;
+
+ again:
+    stamp = READ_ONCE(part->bd_stamp);
+    if (unlikely(time_after(now, stamp))) {
+        if (likely(cmpxchg(&part->bd_stamp, stamp, now) == stamp))
+            __part_stat_add(part, io_ticks, end ? now - stamp : 1);
+    }
+    if (part->bd_partno) {
+        part = bdev_whole(part);
+        goto again;
+    }
+}

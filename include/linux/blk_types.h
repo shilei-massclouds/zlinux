@@ -125,7 +125,7 @@ enum req_flag_bits {
 struct block_device {
     sector_t        bd_start_sect;
     sector_t        bd_nr_sectors;
-    //struct disk_stats __percpu *bd_stats;
+    struct disk_stats __percpu *bd_stats;
     unsigned long   bd_stamp;
     bool            bd_read_only;   /* read-only policy */
     dev_t           bd_dev;
@@ -335,6 +335,27 @@ static inline bool op_is_sync(unsigned int op)
 {
     return (op & REQ_OP_MASK) == REQ_OP_READ ||
         (op & (REQ_SYNC | REQ_FUA | REQ_PREFLUSH));
+}
+
+enum stat_group {
+    STAT_READ,
+    STAT_WRITE,
+    STAT_DISCARD,
+    STAT_FLUSH,
+
+    NR_STAT_GROUPS
+};
+
+static inline bool op_is_discard(unsigned int op)
+{
+    return (op & REQ_OP_MASK) == REQ_OP_DISCARD;
+}
+
+static inline int op_stat_group(unsigned int op)
+{
+    if (op_is_discard(op))
+        return STAT_DISCARD;
+    return op_is_write(op);
 }
 
 #endif /* __LINUX_BLK_TYPES_H */

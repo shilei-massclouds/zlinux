@@ -1667,4 +1667,7 @@ int vma_wants_writenotify(struct vm_area_struct *vma,
 #define  MM_CP_UFFD_WP_ALL \
     (MM_CP_UFFD_WP | MM_CP_UFFD_WP_RESOLVE)
 
+extern void vm_stat_account(struct mm_struct *, vm_flags_t,
+                            long npages);
+
 #endif /* _LINUX_MM_H */

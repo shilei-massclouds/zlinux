@@ -4,10 +4,8 @@
 
 #include <linux/memblock.h> /* for max_pfn/max_low_pfn */
 #include <linux/blk-mq.h>
-#if 0
 #include <linux/blk-crypto.h>
 #include "blk-crypto-internal.h"
-#endif
 
 /*
  * Plug flush limits
@@ -296,5 +294,16 @@ static inline bool blk_discard_mergable(struct request *req)
         return true;
     return false;
 }
+
+static inline
+void req_set_nomerge(struct request_queue *q, struct request *req)
+{
+    req->cmd_flags |= REQ_NOMERGE;
+    if (req == q->last_merge)
+        q->last_merge = NULL;
+}
+
+void update_io_ticks(struct block_device *part, unsigned long now,
+                     bool end);
 
 #endif /* BLK_INTERNAL_H */

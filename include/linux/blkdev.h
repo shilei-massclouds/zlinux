@@ -200,9 +200,9 @@ struct request_queue {
 
 #if 0
     struct blk_queue_stats  *stats;
+#endif
     struct rq_qos       *rq_qos;
 
-#endif
     const struct blk_mq_ops *mq_ops;
 
     /* sw queues */
@@ -821,5 +821,18 @@ unsigned short queue_max_discard_segments(const struct request_queue *q)
 
 int kblockd_mod_delayed_work_on(int cpu, struct delayed_work *dwork,
                                 unsigned long delay);
+
+static inline
+unsigned int blk_queue_get_max_sectors(struct request_queue *q, int op)
+{
+    if (unlikely(op == REQ_OP_DISCARD || op == REQ_OP_SECURE_ERASE))
+        return min(q->limits.max_discard_sectors,
+                   UINT_MAX >> SECTOR_SHIFT);
+
+    if (unlikely(op == REQ_OP_WRITE_ZEROES))
+        return q->limits.max_write_zeroes_sectors;
+
+    return q->limits.max_sectors;
+}
 
 #endif /* _LINUX_BLKDEV_H */

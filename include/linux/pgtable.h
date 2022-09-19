@@ -7,6 +7,11 @@
 
 #ifndef __ASSEMBLY__
 
+#include <linux/mm_types.h>
+#include <linux/bug.h>
+#include <linux/errno.h>
+#include <asm-generic/pgtable_uffd.h>
+
 #define pte_offset_map(dir, address) pte_offset_kernel((dir), (address))
 #define pte_unmap(pte) ((void)(pte)) /* NOP */
 
@@ -563,6 +568,129 @@ static inline bool arch_has_pfn_modify_check(void)
     return false;
 }
 #endif /* !_HAVE_ARCH_PFN_MODIFY_ALLOWED */
+
+static inline
+pte_t __ptep_modify_prot_start(struct vm_area_struct *vma,
+                               unsigned long addr,
+                               pte_t *ptep)
+{
+    /*
+     * Get the current pte state, but zero it out to make it
+     * non-present, preventing the hardware from asynchronously
+     * updating it.
+     */
+    return ptep_get_and_clear(vma->vm_mm, addr, ptep);
+}
+
+/*
+ * Start a pte protection read-modify-write transaction, which
+ * protects against asynchronous hardware modifications to the pte.
+ * The intention is not to prevent the hardware from making pte
+ * updates, but to prevent any updates it may make from being lost.
+ *
+ * This does not protect against other software modifications of the
+ * pte; the appropriate pte lock must be held over the transaction.
+ *
+ * Note that this interface is intended to be batchable, meaning that
+ * ptep_modify_prot_commit may not actually update the pte, but merely
+ * queue the update to be done at some later time.  The update must be
+ * actually committed before the pte lock is released, however.
+ */
+static inline
+pte_t ptep_modify_prot_start(struct vm_area_struct *vma,
+                             unsigned long addr,
+                             pte_t *ptep)
+{
+    return __ptep_modify_prot_start(vma, addr, ptep);
+}
+
+static inline
+void __ptep_modify_prot_commit(struct vm_area_struct *vma,
+                               unsigned long addr,
+                               pte_t *ptep, pte_t pte)
+{
+    /*
+     * The pte is non-present, so there's no hardware state to
+     * preserve.
+     */
+    set_pte_at(vma->vm_mm, addr, ptep, pte);
+}
+
+/*
+ * Commit an update to a pte, leaving any hardware-controlled bits in
+ * the PTE unmodified.
+ */
+static inline
+void ptep_modify_prot_commit(struct vm_area_struct *vma,
+                             unsigned long addr,
+                             pte_t *ptep, pte_t old_pte, pte_t pte)
+{
+    __ptep_modify_prot_commit(vma, addr, ptep, pte);
+}
+
+#ifndef pte_mk_savedwrite
+#define pte_mk_savedwrite pte_mkwrite
+#endif
+
+static inline int pte_soft_dirty(pte_t pte)
+{
+    return 0;
+}
+
+static inline int pmd_soft_dirty(pmd_t pmd)
+{
+    return 0;
+}
+
+static inline pte_t pte_mksoft_dirty(pte_t pte)
+{
+    return pte;
+}
+
+static inline pmd_t pmd_mksoft_dirty(pmd_t pmd)
+{
+    return pmd;
+}
+
+static inline pte_t pte_clear_soft_dirty(pte_t pte)
+{
+    return pte;
+}
+
+static inline pmd_t pmd_clear_soft_dirty(pmd_t pmd)
+{
+    return pmd;
+}
+
+static inline pte_t pte_swp_mksoft_dirty(pte_t pte)
+{
+    return pte;
+}
+
+static inline int pte_swp_soft_dirty(pte_t pte)
+{
+    return 0;
+}
+
+static inline pte_t pte_swp_clear_soft_dirty(pte_t pte)
+{
+    return pte;
+}
+
+static inline pmd_t pmd_swp_mksoft_dirty(pmd_t pmd)
+{
+    return pmd;
+}
+
+static inline int pmd_swp_soft_dirty(pmd_t pmd)
+{
+    return 0;
+}
+
+static inline pmd_t pmd_swp_clear_soft_dirty(pmd_t pmd)
+{
+    return pmd;
+}
 
 #endif /* !__ASSEMBLY__ */
 

@@ -19,7 +19,7 @@
 //#include <linux/cgroup.h>
 #include <linux/highmem.h>
 //#include <linux/sched/sysctl.h>
-//#include <linux/blk-crypto.h>
+#include <linux/blk-crypto.h>
 #include <linux/xarray.h>
 
 #include "blk.h"

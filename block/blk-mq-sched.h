@@ -45,4 +45,17 @@ static inline bool blk_mq_sched_has_work(struct blk_mq_hw_ctx *hctx)
 
 void blk_mq_sched_dispatch_requests(struct blk_mq_hw_ctx *hctx);
 
+static inline bool
+blk_mq_sched_allow_merge(struct request_queue *q, struct request *rq,
+                         struct bio *bio)
+{
+    if (rq->rq_flags & RQF_ELV) {
+        struct elevator_queue *e = q->elevator;
+
+        if (e->type->ops.allow_merge)
+            return e->type->ops.allow_merge(q, rq, bio);
+    }
+    return true;
+}
+
 #endif /* BLK_MQ_SCHED_H */

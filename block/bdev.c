@@ -28,8 +28,8 @@
 #include <linux/mount.h>
 #if 0
 #include <linux/uio.h>
-#include <linux/part_stat.h>
 #endif
+#include <linux/part_stat.h>
 #include <linux/namei.h>
 #include <linux/uaccess.h>
 #include <linux/fs_context.h>
@@ -141,13 +141,11 @@ struct block_device *bdev_alloc(struct gendisk *disk, u8 partno)
     bdev->bd_partno = partno;
     bdev->bd_inode = inode;
     bdev->bd_queue = disk->queue;
-    //bdev->bd_stats = alloc_percpu(struct disk_stats);
-#if 0
+    bdev->bd_stats = alloc_percpu(struct disk_stats);
     if (!bdev->bd_stats) {
         iput(inode);
         return NULL;
     }
-#endif
     bdev->bd_disk = disk;
     return bdev;
 }

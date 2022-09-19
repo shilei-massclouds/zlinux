@@ -36,12 +36,163 @@
 
 #include "internal.h"
 
+/*
+ * Used when setting automatic NUMA hinting protection where it is
+ * critical that a numa hinting PMD is not confused with a bad PMD.
+ */
+static inline int pmd_none_or_clear_bad_unless_trans_huge(pmd_t *pmd)
+{
+    pmd_t pmdval = pmd_read_atomic(pmd);
+
+    if (pmd_none(pmdval))
+        return 1;
+    if (pmd_trans_huge(pmdval))
+        return 0;
+    if (unlikely(pmd_bad(pmdval))) {
+        pmd_clear_bad(pmd);
+        return 1;
+    }
+
+    return 0;
+}
+
+static unsigned long
+change_pte_range(struct vm_area_struct *vma, pmd_t *pmd,
+                 unsigned long addr, unsigned long end,
+                 pgprot_t newprot, unsigned long cp_flags)
+{
+    pte_t *pte, oldpte;
+    spinlock_t *ptl;
+    unsigned long pages = 0;
+    int target_node = NUMA_NO_NODE;
+    bool dirty_accountable = cp_flags & MM_CP_DIRTY_ACCT;
+    bool prot_numa = cp_flags & MM_CP_PROT_NUMA;
+    bool uffd_wp = cp_flags & MM_CP_UFFD_WP;
+    bool uffd_wp_resolve = cp_flags & MM_CP_UFFD_WP_RESOLVE;
+
+    /*
+     * Can be called with only the mmap_lock for reading by
+     * prot_numa so we must check the pmd isn't constantly
+     * changing from under us from pmd_none to pmd_trans_huge
+     * and/or the other way around.
+     */
+    if (pmd_trans_unstable(pmd))
+        return 0;
+
+    /*
+     * The pmd points to a regular pte so the pmd can't change
+     * from under us even if the mmap_lock is only hold for
+     * reading.
+     */
+    pte = pte_offset_map_lock(vma->vm_mm, pmd, addr, &ptl);
+
+    /* Get target node for single threaded private VMAs */
+    if (prot_numa && !(vma->vm_flags & VM_SHARED) &&
+        atomic_read(&vma->vm_mm->mm_users) == 1)
+        target_node = numa_node_id();
+
+    flush_tlb_batched_pending(vma->vm_mm);
+    arch_enter_lazy_mmu_mode();
+    do {
+        oldpte = *pte;
+        if (pte_present(oldpte)) {
+            pte_t ptent;
+            bool preserve_write = prot_numa && pte_write(oldpte);
+
+            /*
+             * Avoid trapping faults against the zero or KSM
+             * pages. See similar comment in change_huge_pmd.
+             */
+            if (prot_numa) {
+                panic("%s: prot_numa!\n", __func__);
+            }
+            oldpte = ptep_modify_prot_start(vma, addr, pte);
+            ptent = pte_modify(oldpte, newprot);
+            if (preserve_write)
+                ptent = pte_mk_savedwrite(ptent);
+
+            if (uffd_wp) {
+                ptent = pte_wrprotect(ptent);
+                ptent = pte_mkuffd_wp(ptent);
+            } else if (uffd_wp_resolve) {
+                /*
+                 * Leave the write bit to be handled
+                 * by PF interrupt handler, then
+                 * things like COW could be properly
+                 * handled.
+                 */
+                ptent = pte_clear_uffd_wp(ptent);
+            }
+
+            /* Avoid taking write faults for known dirty pages */
+            if (dirty_accountable && pte_dirty(ptent) &&
+                (pte_soft_dirty(ptent) ||
+                 !(vma->vm_flags & VM_SOFTDIRTY))) {
+                ptent = pte_mkwrite(ptent);
+            }
+            ptep_modify_prot_commit(vma, addr, pte, oldpte, ptent);
+            pages++;
+        } else if (is_swap_pte(oldpte)) {
+            panic("%s: 2!\n", __func__);
+        }
+    } while (pte++, addr += PAGE_SIZE, addr != end);
+
+    arch_leave_lazy_mmu_mode();
+    pte_unmap_unlock(pte - 1, ptl);
+
+    return pages;
+}
+
 static inline unsigned long
 change_pmd_range(struct vm_area_struct *vma,
                  pud_t *pud, unsigned long addr, unsigned long end,
                  pgprot_t newprot, unsigned long cp_flags)
 {
-    panic("%s: END!\n", __func__);
+    pmd_t *pmd;
+    unsigned long next;
+    unsigned long pages = 0;
+    unsigned long nr_huge_updates = 0;
+    struct mmu_notifier_range range;
+
+    range.start = 0;
+
+    pmd = pmd_offset(pud, addr);
+    do {
+        unsigned long this_pages;
+
+        next = pmd_addr_end(addr, end);
+
+        /*
+         * Automatic NUMA balancing walks the tables with mmap_lock
+         * held for read. It's possible a parallel update to occur
+         * between pmd_trans_huge() and a pmd_none_or_clear_bad()
+         * check leading to a false positive and clearing.
+         * Hence, it's necessary to atomically read the PMD value
+         * for all the checks.
+         */
+        if (!is_swap_pmd(*pmd) && !pmd_devmap(*pmd) &&
+            pmd_none_or_clear_bad_unless_trans_huge(pmd))
+            goto next;
+
+        /* invoke the mmu notifier if the pmd is populated */
+        if (!range.start) {
+            mmu_notifier_range_init(&range,
+                                    MMU_NOTIFY_PROTECTION_VMA, 0,
+                                    vma, vma->vm_mm, addr, end);
+            mmu_notifier_invalidate_range_start(&range);
+        }
+
+        this_pages = change_pte_range(vma, pmd, addr, next, newprot,
+                                      cp_flags);
+        pages += this_pages;
+ next:
+        cond_resched();
+    } while (pmd++, addr = next, addr != end);
+
+    if (range.start)
+        mmu_notifier_invalidate_range_end(&range);
+
+    return pages;
 }
 
 static inline unsigned long
@@ -109,7 +260,12 @@ change_protection_range(struct vm_area_struct *vma,
                                   cp_flags);
     } while (pgd++, addr = next, addr != end);
 
-    panic("%s: END!\n", __func__);
+    /* Only flush the TLB if we actually modified any entries: */
+    if (pages)
+        flush_tlb_range(vma, start, end);
+    dec_tlb_flush_pending(mm);
+
+    return pages;
 }
 
 unsigned long change_protection(struct vm_area_struct *vma,
@@ -235,7 +391,18 @@ mprotect_fixup(struct vm_area_struct *vma,
     change_protection(vma, start, end, vma->vm_page_prot,
                       dirty_accountable ? MM_CP_DIRTY_ACCT : 0);
 
-    panic("%s: success!\n", __func__);
+    /*
+     * Private VM_LOCKED VMA becoming writable: trigger COW to avoid major
+     * fault on access.
+     */
+    if ((oldflags & (VM_WRITE | VM_SHARED | VM_LOCKED)) == VM_LOCKED &&
+        (newflags & VM_WRITE)) {
+        populate_vma_page_range(vma, start, end, NULL);
+    }
+
+    vm_stat_account(mm, oldflags, -nrpages);
+    vm_stat_account(mm, newflags, nrpages);
+    //perf_event_mmap(vma);
     return 0;
 
  fail:
@@ -363,11 +530,20 @@ static int do_mprotect_pkey(unsigned long start, size_t len,
         if (error)
             goto out;
 
-        panic("%s: 1!\n", __func__);
+        nstart = tmp;
+
+        if (nstart < prev->vm_end)
+            nstart = prev->vm_end;
+        if (nstart >= end)
+            goto out;
+
+        vma = prev->vm_next;
+        if (!vma || vma->vm_start != nstart) {
+            error = -ENOMEM;
+            goto out;
+        }
+        prot = reqprot;
     }
-
-    panic("%s: END!\n", __func__);
-
  out:
     mmap_write_unlock(current->mm);
     return error;
