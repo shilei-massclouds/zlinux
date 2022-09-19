@@ -24,4 +24,6 @@ extern int __get_unused_fd_flags(unsigned flags, unsigned long nofile);
 extern int get_unused_fd_flags(unsigned flags);
 extern void put_unused_fd(unsigned int fd);
 
+extern void fd_install(unsigned int fd, struct file *file);
+
 #endif /* __LINUX_FILE_H */

@@ -2008,3 +2008,9 @@ int user_path_at_empty(int dfd, const char __user *name, unsigned flags,
     return ret;
 }
 EXPORT_SYMBOL(user_path_at_empty);
+
+struct filename *
+getname(const char __user * filename)
+{
+    return getname_flags(filename, 0, NULL);
+}

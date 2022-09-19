@@ -16,21 +16,16 @@
 #define __SYSCALL(x, y)
 #endif
 
-/* fs/stat.c */
-#define __NR_readlinkat 78
-__SYSCALL(__NR_readlinkat, sys_readlinkat)
-
-/* kernel/sys.c */
-#define __NR_uname 160
-__SYSCALL(__NR_uname, sys_newuname)
-
-/* mm/nommu.c, also with MMU */
-#define __NR_brk 214
-__SYSCALL(__NR_brk, sys_brk)
-
 /* fs/open.c */
 #define __NR_faccessat 48
 __SYSCALL(__NR_faccessat, sys_faccessat)
+
+#define __NR_openat 56
+__SYSCALL(__NR_openat, sys_openat)
+
+/* fs/stat.c */
+#define __NR_readlinkat 78
+__SYSCALL(__NR_readlinkat, sys_readlinkat)
 
 #define __NR_clock_gettime 113
 __SYSCALL(__NR_clock_gettime, sys_clock_gettime)
@@ -41,12 +36,20 @@ __SYSCALL(__NR_clock_getres, sys_clock_getres)
 #define __NR_rt_sigreturn 139
 __SYSCALL(__NR_rt_sigreturn, sys_rt_sigreturn)
 
+/* kernel/sys.c */
+#define __NR_uname 160
+__SYSCALL(__NR_uname, sys_newuname)
+
 #define __NR_getcpu 168
 __SYSCALL(__NR_getcpu, sys_getcpu)
 
 /* kernel/time.c */
 #define __NR_gettimeofday 169
 __SYSCALL(__NR_gettimeofday, sys_gettimeofday)
+
+/* mm/nommu.c, also with MMU */
+#define __NR_brk 214
+__SYSCALL(__NR_brk, sys_brk)
 
 /*
  * Architectures may provide up to 16 syscalls of their own

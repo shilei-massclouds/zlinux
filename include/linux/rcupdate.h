@@ -323,6 +323,27 @@ static inline int rcu_preempt_depth(void)
     return 0;
 }
 
+/**
+ * rcu_read_lock_sched() - mark the beginning of a RCU-sched critical section
+ *
+ * This is equivalent to rcu_read_lock(), but also disables preemption.
+ * Read-side critical sections can also be introduced by anything else that
+ * disables preemption, including local_irq_disable() and friends.  However,
+ * please note that the equivalence to rcu_read_lock() applies only to
+ * v5.0 and later.  Before v5.0, rcu_read_lock() and rcu_read_lock_sched()
+ * were unrelated.
+ *
+ * Note that rcu_read_lock_sched() and the matching rcu_read_unlock_sched()
+ * must occur in the same context, for example, it is illegal to invoke
+ * rcu_read_unlock_sched() from process context if the matching
+ * rcu_read_lock_sched() was invoked from an NMI handler.
+ */
+static inline void rcu_read_lock_sched(void)
+{
+    preempt_disable();
+    __acquire(RCU_SCHED);
+}
+
 #include <linux/rcutree.h>
 
 #endif /* __LINUX_RCUPDATE_H */

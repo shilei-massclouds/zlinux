@@ -1142,8 +1142,6 @@ extern struct kmem_cache *names_cachep;
 #define __getname()         kmem_cache_alloc(names_cachep, GFP_KERNEL)
 #define __putname(name)     kmem_cache_free(names_cachep, (void *)(name))
 
-extern void putname(struct filename *name);
-
 /* fs/dcache.c -- generic fs support functions */
 extern bool is_subdir(struct dentry *, struct dentry *);
 extern bool path_is_under(const struct path *, const struct path *);
@@ -1254,8 +1252,6 @@ static inline void inode_unlock_shared(struct inode *inode)
 {
     up_read(&inode->i_rwsem);
 }
-
-extern struct filename *getname_kernel(const char *);
 
 extern int generic_file_mmap(struct file *, struct vm_area_struct *);
 
@@ -1714,5 +1710,11 @@ static inline void i_mmap_unlock_read(struct address_space *mapping)
 {
     up_read(&mapping->i_mmap_rwsem);
 }
+
+extern struct filename *getname_flags(const char __user *, int, int *);
+extern struct filename *getname_uflags(const char __user *, int);
+extern struct filename *getname(const char __user *);
+extern struct filename *getname_kernel(const char *);
+extern void putname(struct filename *name);
 
 #endif /* _LINUX_FS_H */

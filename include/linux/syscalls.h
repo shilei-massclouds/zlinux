@@ -209,4 +209,18 @@ sys_settimeofday(struct __kernel_old_timeval __user *tv,
 asmlinkage long sys_adjtimex(struct __kernel_timex __user *txc_p);
 asmlinkage long sys_adjtimex_time32(struct old_timex32 __user *txc_p);
 
+asmlinkage long
+sys_openat(int dfd, const char __user *filename, int flags,
+           umode_t mode);
+
+asmlinkage long
+sys_openat2(int dfd, const char __user *filename,
+            struct open_how *how, size_t size);
+
+asmlinkage long sys_close(unsigned int fd);
+
+asmlinkage long
+sys_close_range(unsigned int fd, unsigned int max_fd,
+                unsigned int flags);
+
 #endif /* _LINUX_SYSCALLS_H */

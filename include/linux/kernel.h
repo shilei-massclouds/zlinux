@@ -168,4 +168,14 @@ void do_exit(long error_code) __noreturn;
 
 extern unsigned long long memparse(const char *ptr, char **retptr);
 
+/**
+ * upper_32_bits - return bits 32-63 of a number
+ * @n: the number we're accessing
+ *
+ * A basic shift-right of a 64- or 32-bit quantity.  Use this to suppress
+ * the "right shift count >= width of type" warning when that quantity is
+ * 32-bits.
+ */
+#define upper_32_bits(n) ((u32)(((n) >> 16) >> 16))
+
 #endif /* _LINUX_KERNEL_H */
