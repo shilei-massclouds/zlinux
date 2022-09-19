@@ -32,8 +32,8 @@
 #include <linux/audit.h>
 #include <linux/falloc.h>
 #include <linux/ima.h>
-#include <linux/dnotify.h>
 #endif
+#include <linux/dnotify.h>
 #include <linux/fs_struct.h>
 #include <linux/compat.h>
 #include <linux/mnt_idmapping.h>
@@ -193,11 +193,8 @@ int filp_close(struct file *filp, fl_owner_t id)
         retval = filp->f_op->flush(filp, id);
 
     if (likely(!(filp->f_mode & FMODE_PATH))) {
-#if 0
-        dnotify_flush(filp, id);
+        //dnotify_flush(filp, id);
         locks_remove_posix(filp, id);
-#endif
-        panic("%s: FMODE_PATH!\n", __func__);
     }
     fput(filp);
     return retval;
@@ -532,4 +529,23 @@ SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename,
     if (force_o_largefile())
         flags |= O_LARGEFILE;
     return do_sys_open(dfd, filename, flags, mode);
+}
+
+/*
+ * Careful here! We test whether the file pointer is NULL before
+ * releasing the fd. This ensures that one clone task can't release
+ * an fd while another clone is opening it.
+ */
+SYSCALL_DEFINE1(close, unsigned int, fd)
+{
+    int retval = close_fd(fd);
+
+    /* can't restart close syscall because file table entry was cleared */
+    if (unlikely(retval == -ERESTARTSYS ||
+                 retval == -ERESTARTNOINTR ||
+                 retval == -ERESTARTNOHAND ||
+                 retval == -ERESTART_RESTARTBLOCK))
+        retval = -EINTR;
+
+    return retval;
 }

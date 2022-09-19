@@ -23,6 +23,9 @@ __SYSCALL(__NR_faccessat, sys_faccessat)
 #define __NR_openat 56
 __SYSCALL(__NR_openat, sys_openat)
 
+#define __NR_close 57
+__SYSCALL(__NR_close, sys_close)
+
 /* fs/read_write.c */
 #define __NR_read 63
 __SYSCALL(__NR_read, sys_read)

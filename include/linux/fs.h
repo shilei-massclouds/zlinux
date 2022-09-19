@@ -1774,6 +1774,10 @@ extern struct timespec64 current_time(struct inode *inode);
 struct timespec64 timestamp_truncate(struct timespec64 t,
                                      struct inode *inode);
 
+extern void locks_remove_posix(struct file *, fl_owner_t);
+
+#define locks_inode(f) file_inode(f)
+
 #define get_file_rcu_many(x, cnt)   \
     atomic_long_add_unless(&(x)->f_count, (cnt), 0)
 

@@ -665,3 +665,50 @@ struct file *fget(unsigned int fd)
     return __fget(fd, FMODE_PATH, 1);
 }
 EXPORT_SYMBOL(fget);
+
+/**
+ * pick_file - return file associatd with fd
+ * @files: file struct to retrieve file from
+ * @fd: file descriptor to retrieve file for
+ *
+ * If this functions returns an EINVAL error pointer the fd was beyond the
+ * current maximum number of file descriptors for that fdtable.
+ *
+ * Returns: The file associated with @fd, on error returns an error pointer.
+ */
+static struct file *pick_file(struct files_struct *files, unsigned fd)
+{
+    struct file *file;
+    struct fdtable *fdt;
+
+    spin_lock(&files->file_lock);
+    fdt = files_fdtable(files);
+    if (fd >= fdt->max_fds) {
+        file = ERR_PTR(-EINVAL);
+        goto out_unlock;
+    }
+    file = fdt->fd[fd];
+    if (!file) {
+        file = ERR_PTR(-EBADF);
+        goto out_unlock;
+    }
+    rcu_assign_pointer(fdt->fd[fd], NULL);
+    __put_unused_fd(files, fd);
+
+ out_unlock:
+    spin_unlock(&files->file_lock);
+    return file;
+}
+
+int close_fd(unsigned fd)
+{
+    struct files_struct *files = current->files;
+    struct file *file;
+
+    file = pick_file(files, fd);
+    if (IS_ERR(file))
+        return -EBADF;
+
+    return filp_close(file, files);
+}
+EXPORT_SYMBOL(close_fd); /* for ksys_close() */

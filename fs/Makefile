@@ -17,3 +17,4 @@ obj-y += ramfs/
 obj-y += ext2/
 obj-y += proc/
 obj-y += hugetlbfs/
+obj-y += locks.o

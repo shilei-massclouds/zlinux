@@ -88,4 +88,6 @@ static inline struct file *files_lookup_fd_raw(struct files_struct *files, unsig
     return NULL;
 }
 
+extern int close_fd(unsigned int fd);
+
 #endif /* __LINUX_FDTABLE_H */

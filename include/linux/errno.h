@@ -12,6 +12,8 @@
  */
 #define ERESTARTSYS     512
 #define ERESTARTNOINTR  513
+#define ERESTARTNOHAND  514 /* restart if no handler.. */
+#define ERESTART_RESTARTBLOCK 516 /* restart by calling sys_restart_syscall */
 #define EPROBE_DEFER    517 /* Driver requests probe retry */
 #define EOPENSTALE      518 /* open found a stale dentry */
 #define ENOPARAM        519 /* Parameter not supported */
