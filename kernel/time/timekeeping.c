@@ -945,6 +945,15 @@ static int change_clocksource(void *data)
     return 0;
 }
 
+static inline struct timespec64 tk_xtime(const struct timekeeper *tk)
+{
+    struct timespec64 ts;
+
+    ts.tv_sec = tk->xtime_sec;
+    ts.tv_nsec = (long)(tk->tkr_mono.xtime_nsec >> tk->tkr_mono.shift);
+    return ts;
+}
+
 /**
  * timekeeping_notify - Install a new clock source
  * @clock:      pointer to the clock source
@@ -962,3 +971,16 @@ int timekeeping_notify(struct clocksource *clock)
     tick_clock_notify();
     return tk->tkr_mono.clock == clock ? 0 : -1;
 }
+
+void ktime_get_coarse_real_ts64(struct timespec64 *ts)
+{
+    struct timekeeper *tk = &tk_core.timekeeper;
+    unsigned int seq;
+
+    do {
+        seq = read_seqcount_begin(&tk_core.seq);
+
+        *ts = tk_xtime(tk);
+    } while (read_seqcount_retry(&tk_core.seq, seq));
+}
+EXPORT_SYMBOL(ktime_get_coarse_real_ts64);

@@ -876,6 +876,64 @@ void unlock_new_inode(struct inode *inode)
 }
 EXPORT_SYMBOL(unlock_new_inode);
 
+/**
+ * current_time - Return FS time
+ * @inode: inode.
+ *
+ * Return the current time truncated to the time granularity supported by
+ * the fs.
+ *
+ * Note that inode and inode->sb cannot be NULL.
+ * Otherwise, the function warns and returns time without truncation.
+ */
+struct timespec64 current_time(struct inode *inode)
+{
+    struct timespec64 now;
+
+    ktime_get_coarse_real_ts64(&now);
+
+    if (unlikely(!inode->i_sb)) {
+        WARN(1, "current_time() called with uninitialized super_block"
+             " in the inode");
+        return now;
+    }
+
+    return timestamp_truncate(now, inode);
+}
+EXPORT_SYMBOL(current_time);
+
+/**
+ * timestamp_truncate - Truncate timespec to a granularity
+ * @t: Timespec
+ * @inode: inode being updated
+ *
+ * Truncate a timespec to the granularity supported by the fs
+ * containing the inode. Always rounds down. gran must
+ * not be 0 nor greater than a second (NSEC_PER_SEC, or 10^9 ns).
+ */
+struct timespec64 timestamp_truncate(struct timespec64 t,
+                                     struct inode *inode)
+{
+    struct super_block *sb = inode->i_sb;
+    unsigned int gran = sb->s_time_gran;
+
+    t.tv_sec = clamp(t.tv_sec, sb->s_time_min, sb->s_time_max);
+    if (unlikely(t.tv_sec == sb->s_time_max || t.tv_sec == sb->s_time_min))
+        t.tv_nsec = 0;
+
+    /* Avoid division in the common cases 1 ns and 1 s. */
+    if (gran == 1)
+        ; /* nothing */
+    else if (gran == NSEC_PER_SEC)
+        t.tv_nsec = 0;
+    else if (gran > 1 && gran < NSEC_PER_SEC)
+        t.tv_nsec -= t.tv_nsec % gran;
+    else
+        WARN(1, "invalid file time granularity: %u", gran);
+    return t;
+}
+EXPORT_SYMBOL(timestamp_truncate);
+
 /*
  * Initialize the waitqueues and inode hash table.
  */

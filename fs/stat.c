@@ -198,11 +198,9 @@ void generic_fillattr(struct user_namespace *mnt_userns,
     stat->gid = i_gid_into_mnt(mnt_userns, inode);
     stat->rdev = inode->i_rdev;
     stat->size = i_size_read(inode);
-#if 0
     stat->atime = inode->i_atime;
     stat->mtime = inode->i_mtime;
     stat->ctime = inode->i_ctime;
-#endif
     stat->blksize = i_blocksize(inode);
     stat->blocks = inode->i_blocks;
 }

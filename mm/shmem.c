@@ -414,7 +414,8 @@ shmem_get_inode(struct super_block *sb, const struct inode *dir,
         inode->i_ino = ino;
         inode_init_owner(&init_user_ns, inode, dir, mode);
         inode->i_blocks = 0;
-        //inode->i_atime = inode->i_mtime = inode->i_ctime = current_time(inode);
+        inode->i_atime = inode->i_mtime = inode->i_ctime =
+            current_time(inode);
         inode->i_generation = prandom_u32();
         info = SHMEM_I(inode);
         memset(info, 0, (char *)inode - (char *)info);
@@ -422,7 +423,7 @@ shmem_get_inode(struct super_block *sb, const struct inode *dir,
         atomic_set(&info->stop_eviction, 0);
         info->seals = F_SEAL_SEAL;
         info->flags = flags & VM_NORESERVE;
-        //info->i_crtime = inode->i_mtime;
+        info->i_crtime = inode->i_mtime;
         INIT_LIST_HEAD(&info->shrinklist);
         INIT_LIST_HEAD(&info->swaplist);
         //simple_xattrs_init(&info->xattrs);
@@ -477,7 +478,7 @@ shmem_mknod(struct user_namespace *mnt_userns, struct inode *dir,
 #endif
         error = 0;
         dir->i_size += BOGO_DIRENT_SIZE;
-        //dir->i_ctime = dir->i_mtime = current_time(dir);
+        dir->i_ctime = dir->i_mtime = current_time(dir);
         d_instantiate(dentry, inode);
         dget(dentry); /* Extra count - pin the dentry in core */
     }

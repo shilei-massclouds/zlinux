@@ -77,7 +77,7 @@ static int pseudo_fs_fill_super(struct super_block *s, struct fs_context *fc)
      */
     root->i_ino = 1;
     root->i_mode = S_IFDIR | S_IRUSR | S_IWUSR;
-    //root->i_atime = root->i_mtime = root->i_ctime = current_time(root);
+    root->i_atime = root->i_mtime = root->i_ctime = current_time(root);
     s->s_root = d_make_root(root);
     if (!s->s_root)
         return -ENOMEM;
@@ -272,7 +272,7 @@ int simple_link(struct dentry *old_dentry,
 {
     struct inode *inode = d_inode(old_dentry);
 
-    //inode->i_ctime = dir->i_ctime = dir->i_mtime = current_time(inode);
+    inode->i_ctime = dir->i_ctime = dir->i_mtime = current_time(inode);
     inc_nlink(inode);
     ihold(inode);
     dget(dentry);
@@ -285,8 +285,8 @@ int simple_unlink(struct inode *dir, struct dentry *dentry)
 {
     struct inode *inode = d_inode(dentry);
 
-#if 0
     inode->i_ctime = dir->i_ctime = dir->i_mtime = current_time(inode);
+#if 0
     drop_nlink(inode);
     dput(dentry);
 #endif

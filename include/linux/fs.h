@@ -537,11 +537,9 @@ struct inode {
     };
     dev_t           i_rdev;
     loff_t          i_size;
-#if 0
     struct timespec64   i_atime;
     struct timespec64   i_mtime;
     struct timespec64   i_ctime;
-#endif
     spinlock_t          i_lock; /* i_blocks, i_bytes, maybe i_size */
     unsigned short      i_bytes;
     u8                  i_blkbits;
@@ -1770,5 +1768,10 @@ kgid_t i_gid_into_mnt(struct user_namespace *mnt_userns,
 
 void generic_fillattr(struct user_namespace *, struct inode *,
                       struct kstat *);
+
+extern struct timespec64 current_time(struct inode *inode);
+
+struct timespec64 timestamp_truncate(struct timespec64 t,
+                                     struct inode *inode);
 
 #endif /* _LINUX_FS_H */

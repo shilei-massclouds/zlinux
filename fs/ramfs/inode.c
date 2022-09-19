@@ -100,7 +100,7 @@ ramfs_mknod(struct user_namespace *mnt_userns, struct inode *dir,
         d_instantiate(dentry, inode);
         dget(dentry);   /* Extra count - pin the dentry in core */
         error = 0;
-        //dir->i_mtime = dir->i_ctime = current_time(dir);
+        dir->i_mtime = dir->i_ctime = current_time(dir);
     }
     return error;
 }
@@ -162,9 +162,9 @@ struct inode *ramfs_get_inode(struct super_block *sb,
         inode->i_mapping->a_ops = &ram_aops;
         mapping_set_gfp_mask(inode->i_mapping, GFP_HIGHUSER);
         mapping_set_unevictable(inode->i_mapping);
-#if 0
-        inode->i_atime = inode->i_mtime = inode->i_ctime = current_time(inode);
-#endif
+        inode->i_atime = inode->i_mtime = inode->i_ctime =
+            current_time(inode);
+
         switch (mode & S_IFMT) {
         default:
             init_special_inode(inode, mode, dev);

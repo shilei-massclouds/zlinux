@@ -264,13 +264,11 @@ struct inode *ext2_iget(struct super_block *sb, unsigned long ino)
     set_nlink(inode, le16_to_cpu(raw_inode->i_links_count));
 #endif
     inode->i_size = le32_to_cpu(raw_inode->i_size);
-#if 0
     inode->i_atime.tv_sec = (signed)le32_to_cpu(raw_inode->i_atime);
     inode->i_ctime.tv_sec = (signed)le32_to_cpu(raw_inode->i_ctime);
     inode->i_mtime.tv_sec = (signed)le32_to_cpu(raw_inode->i_mtime);
     inode->i_atime.tv_nsec = inode->i_mtime.tv_nsec =
         inode->i_ctime.tv_nsec = 0;
-#endif
     ei->i_dtime = le32_to_cpu(raw_inode->i_dtime);
     /* We now have enough fields to check if the inode was active or not.
      * This is needed because nfsd might try to access dead inodes
