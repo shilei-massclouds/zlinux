@@ -34,8 +34,8 @@
 #include <linux/string.h>
 #if 0
 #include <linux/debugfs.h>
-#include <linux/userfaultfd_k.h>
 #endif
+#include <linux/userfaultfd_k.h>
 #include <linux/dax.h>
 #include <linux/oom.h>
 #include <linux/numa.h>
@@ -278,7 +278,23 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 
     /* Use the zero-page for reads */
     if (!(vmf->flags & FAULT_FLAG_WRITE)) {
-        panic("%s: mm_forbids_zeropage!\n", __func__);
+        entry = pte_mkspecial(pfn_pte(my_zero_pfn(vmf->address),
+                                      vma->vm_page_prot));
+        vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd,
+                                       vmf->address, &vmf->ptl);
+        if (!pte_none(*vmf->pte)) {
+            update_mmu_tlb(vma, vmf->address, vmf->pte);
+            goto unlock;
+        }
+        ret = check_stable_address_space(vma->vm_mm);
+        if (ret)
+            goto unlock;
+        /* Deliver the page fault to userland, check inside PT lock */
+        if (userfaultfd_missing(vma)) {
+            pte_unmap_unlock(vmf->pte, vmf->ptl);
+            return handle_userfault(vmf, VM_UFFD_MISSING);
+        }
+        goto setpte;
     }
 
     /* Allocate our own private page. */
@@ -322,6 +338,7 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
     update_mmu_cache(vma, vmf->address, vmf->pte);
  unlock:
     pte_unmap_unlock(vmf->pte, vmf->ptl);
+    printk("%s: FAULT_FLAG_WRITE ret(%d)\n", __func__, ret);
     return ret;
  release:
     put_page(page);
@@ -1078,7 +1095,7 @@ __handle_mm_fault(struct vm_area_struct *vma,
 
     barrier();
 
-    //printk("%s: END!\n", __func__);
+    printk("+++ %s: END!\n", __func__);
     return handle_pte_fault(&vmf);
 }
 
