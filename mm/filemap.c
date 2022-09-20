@@ -226,6 +226,7 @@ vm_fault_t filemap_map_pages(struct vm_fault *vmf,
     }
 
     addr = vma->vm_start + ((start_pgoff - vma->vm_pgoff) << PAGE_SHIFT);
+
     vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd, addr, &vmf->ptl);
 
     do {
@@ -241,8 +242,15 @@ vm_fault_t filemap_map_pages(struct vm_fault *vmf,
         vmf->pte += xas.xa_index - last_pgoff;
         last_pgoff = xas.xa_index;
 
+        printk("+++ +++ 1 %s: file(%s) addr(%lx) size(%lx)\n",
+               __func__,
+               file->f_path.dentry->d_name.name,
+               addr, end_pgoff - start_pgoff);
+
         if (!pte_none(*vmf->pte))
             goto unlock;
+
+        printk("+++ +++ 2 %s: !\n", __func__);
 
         /* We're about to handle the fault */
         if (vmf->address == addr)
@@ -608,6 +616,7 @@ int generic_file_mmap(struct file *file, struct vm_area_struct *vma)
         return -ENOEXEC;
     file_accessed(file);
     vma->vm_ops = &generic_file_vm_ops;
+    printk("%s: !\n", __func__);
     return 0;
 }
 EXPORT_SYMBOL(generic_file_mmap);

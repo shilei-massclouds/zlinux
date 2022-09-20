@@ -305,10 +305,40 @@ void flush_dcache_folio(struct folio *folio)
 EXPORT_SYMBOL(flush_dcache_folio);
 #endif
 
-void arch_pick_mmap_layout(struct mm_struct *mm, struct rlimit *rlim_stack)
+/*
+ * Leave enough space between the mmap area and the stack to honour ulimit in
+ * the face of randomisation.
+ */
+#define MIN_GAP     (SZ_128M)
+#define MAX_GAP     (STACK_TOP / 6 * 5)
+
+static unsigned long
+mmap_base(unsigned long rnd, struct rlimit *rlim_stack)
 {
-    mm->mmap_base = TASK_UNMAPPED_BASE;
-    mm->get_unmapped_area = arch_get_unmapped_area;
+    unsigned long gap = rlim_stack->rlim_cur;
+    unsigned long pad = stack_guard_gap;
+
+    /* Account for stack randomization if necessary */
+    if (current->flags & PF_RANDOMIZE)
+        pad += (STACK_RND_MASK << PAGE_SHIFT);
+
+    /* Values close to RLIM_INFINITY can overflow. */
+    if (gap + pad > gap)
+        gap += pad;
+
+    if (gap < MIN_GAP)
+        gap = MIN_GAP;
+    else if (gap > MAX_GAP)
+        gap = MAX_GAP;
+
+    return PAGE_ALIGN(STACK_TOP - gap - rnd);
+}
+
+void arch_pick_mmap_layout(struct mm_struct *mm,
+                           struct rlimit *rlim_stack)
+{
+    mm->mmap_base = mmap_base(0, rlim_stack);
+    mm->get_unmapped_area = arch_get_unmapped_area_topdown;
 }
 
 unsigned long randomize_stack_top(unsigned long stack_top)
@@ -338,6 +368,11 @@ unsigned long vm_mmap_pgoff(struct file *file, unsigned long addr,
     if (mmap_write_lock_killable(mm))
         return -EINTR;
     ret = do_mmap(file, addr, len, prot, flag, pgoff, &populate, &uf);
+    if (file && file->f_path.dentry) {
+        printk("%s: file(%s) ret(%lx) addr(%lx, %lx) populate(%d)\n",
+               __func__, file->f_path.dentry->d_name.name,
+               ret, addr, len, populate);
+    }
     mmap_write_unlock(mm);
     if (populate)
         mm_populate(ret, populate);
@@ -354,7 +389,8 @@ unsigned long vm_mmap(struct file *file, unsigned long addr,
     if (unlikely(offset_in_page(offset)))
         return -EINVAL;
 
-    return vm_mmap_pgoff(file, addr, len, prot, flag, offset >> PAGE_SHIFT);
+    return vm_mmap_pgoff(file, addr, len, prot, flag,
+                         offset >> PAGE_SHIFT);
 }
 EXPORT_SYMBOL(vm_mmap);
 

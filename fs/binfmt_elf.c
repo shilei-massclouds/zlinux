@@ -244,9 +244,10 @@ static inline int make_prot(u32 p_flags, struct arch_elf_state *arch_state,
     return arch_elf_adjust_prot(prot, arch_state, has_interp, is_interp);
 }
 
-static unsigned long elf_map(struct file *filep, unsigned long addr,
-                             const struct elf_phdr *eppnt, int prot, int type,
-                             unsigned long total_size)
+static unsigned long
+elf_map(struct file *filep, unsigned long addr,
+        const struct elf_phdr *eppnt, int prot, int type,
+        unsigned long total_size)
 {
     unsigned long map_addr;
     unsigned long size = eppnt->p_filesz + ELF_PAGEOFFSET(eppnt->p_vaddr);
@@ -573,6 +574,9 @@ static unsigned long load_elf_interp(struct elfhdr *interp_elf_ex,
             else if (no_base && interp_elf_ex->e_type == ET_DYN)
                 load_addr = -vaddr;
 
+            printk("###### %s: load_addr(%lx) vaddr(%lx)\n",
+                   __func__, load_addr, vaddr);
+
             map_addr = elf_map(interpreter, load_addr + vaddr,
                                eppnt, elf_prot, elf_type, total_size);
             total_size = 0;
@@ -580,6 +584,7 @@ static unsigned long load_elf_interp(struct elfhdr *interp_elf_ex,
             if (BAD_ADDR(map_addr))
                 goto out;
 
+            printk("###### %s: map_addr(%lx)\n", __func__, map_addr);
             if (!load_addr_set &&
                 interp_elf_ex->e_type == ET_DYN) {
                 load_addr = map_addr - ELF_PAGESTART(vaddr);
@@ -599,7 +604,7 @@ static unsigned long load_elf_interp(struct elfhdr *interp_elf_ex,
                 error = -ENOMEM;
                 goto out;
             }
-            printk("%s: (%lx, %lx)\n", __func__, load_addr, k);
+            printk("###### %s: (%lx, %lx)\n", __func__, load_addr, k);
 
             /*
              * Find the end of the file mapping for this phdr, and
@@ -618,7 +623,6 @@ static unsigned long load_elf_interp(struct elfhdr *interp_elf_ex,
                 last_bss = k;
                 bss_prot = elf_prot;
             }
-            printk("%s: bss(%lx, %lx)\n", __func__, elf_bss, last_bss);
         }
     }
 
@@ -639,6 +643,7 @@ static unsigned long load_elf_interp(struct elfhdr *interp_elf_ex,
      */
     elf_bss = ELF_PAGEALIGN(elf_bss);
     last_bss = ELF_PAGEALIGN(last_bss);
+    printk("%s: bss(%lx, %lx)\n", __func__, elf_bss, last_bss);
     /* Finally, if there is still more bss to allocate, do it. */
     if (last_bss > elf_bss) {
         error = vm_brk_flags(elf_bss, last_bss - elf_bss,

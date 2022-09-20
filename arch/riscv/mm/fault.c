@@ -126,6 +126,9 @@ asmlinkage void do_page_fault(struct pt_regs *regs)
     cause = regs->cause;
     addr = regs->badaddr;
 
+    printk("+++ +++ %s: cause(%d) addr(%lx)\n",
+           __func__, cause, addr);
+
     tsk = current;
     mm = tsk->mm;
 
@@ -255,5 +258,6 @@ asmlinkage void do_page_fault(struct pt_regs *regs)
         mm_fault_error(regs, addr, fault);
         return;
     }
+    printk("######### %s: END!\n", __func__);
     return;
 }

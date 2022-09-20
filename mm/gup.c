@@ -544,10 +544,11 @@ static int faultin_page(struct vm_area_struct *vma,
  * instead of __get_user_pages. __get_user_pages should be used only if
  * you need some special @gup_flags.
  */
-static long __get_user_pages(struct mm_struct *mm,
-                             unsigned long start, unsigned long nr_pages,
-                             unsigned int gup_flags, struct page **pages,
-                             struct vm_area_struct **vmas, int *locked)
+static long
+__get_user_pages(struct mm_struct *mm,
+                 unsigned long start, unsigned long nr_pages,
+                 unsigned int gup_flags, struct page **pages,
+                 struct vm_area_struct **vmas, int *locked)
 {
     long ret = 0, i = 0;
     struct vm_area_struct *vma = NULL;
@@ -555,6 +556,8 @@ static long __get_user_pages(struct mm_struct *mm,
 
     if (!nr_pages)
         return 0;
+
+    printk("%s: (%lx, %lx)\n", __func__, start, nr_pages);
 
     start = untagged_addr(start);
 

@@ -436,6 +436,7 @@ void do_set_pte(struct vm_fault *vmf, struct page *page, unsigned long addr)
         inc_mm_counter_fast(vma->vm_mm, mm_counter_file(page));
         page_add_file_rmap(page, vma, false);
     }
+    printk("%s: addr(%lx) entry(%lx)\n", __func__, addr, entry);
     set_pte_at(vma->vm_mm, addr, vmf->pte, entry);
 }
 
@@ -1479,6 +1480,7 @@ static void unmap_single_vma(struct mmu_gather *tlb,
                 i_mmap_unlock_write(vma->vm_file->f_mapping);
             }
 #endif
+            panic("%s: END!\n", __func__);
         } else
             unmap_page_range(tlb, vma, start, end, details);
     }

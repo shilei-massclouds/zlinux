@@ -75,4 +75,8 @@ extern int arch_setup_additional_pages(struct linux_binprm *bprm,
 #define ELF_HWCAP   (elf_hwcap)
 extern unsigned long elf_hwcap;
 
+#ifdef CONFIG_64BIT
+#define STACK_RND_MASK      (0x3ffff >> (PAGE_SHIFT - 12))
+#endif
+
 #endif /* _ASM_RISCV_ELF_H */

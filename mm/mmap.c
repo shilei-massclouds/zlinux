@@ -695,7 +695,105 @@ find_vma_prev(struct mm_struct *mm, unsigned long addr,
 static unsigned long
 unmapped_area_topdown(struct vm_unmapped_area_info *info)
 {
-    panic("%s: END!\n", __func__);
+    struct mm_struct *mm = current->mm;
+    struct vm_area_struct *vma;
+    unsigned long length, low_limit, high_limit, gap_start, gap_end;
+
+    printk("%s: 1 high_limit(%lx)\n", __func__, info->high_limit);
+    /* Adjust search length to account for worst case alignment overhead */
+    length = info->length + info->align_mask;
+    if (length < info->length)
+        return -ENOMEM;
+
+    /*
+     * Adjust search limits by the desired length.
+     * See implementation comment at top of unmapped_area().
+     */
+    gap_end = info->high_limit;
+    if (gap_end < length)
+        return -ENOMEM;
+    high_limit = gap_end - length;
+
+    if (info->low_limit > high_limit)
+        return -ENOMEM;
+    low_limit = info->low_limit + length;
+
+    printk("%s: 2 (%lx)\n", __func__, gap_end);
+    /* Check highest gap, which does not precede any rbtree node */
+    gap_start = mm->highest_vm_end;
+    if (gap_start <= high_limit)
+        goto found_highest;
+
+    /* Check if rbtree root looks promising */
+    if (RB_EMPTY_ROOT(&mm->mm_rb))
+        return -ENOMEM;
+    vma = rb_entry(mm->mm_rb.rb_node, struct vm_area_struct, vm_rb);
+    if (vma->rb_subtree_gap < length)
+        return -ENOMEM;
+
+    while (true) {
+        /* Visit right subtree if it looks promising */
+        gap_start = vma->vm_prev ? vm_end_gap(vma->vm_prev) : 0;
+        if (gap_start <= high_limit && vma->vm_rb.rb_right) {
+            struct vm_area_struct *right =
+                rb_entry(vma->vm_rb.rb_right,
+                     struct vm_area_struct, vm_rb);
+            if (right->rb_subtree_gap >= length) {
+                vma = right;
+                continue;
+            }
+        }
+
+check_current:
+        /* Check if current node has a suitable gap */
+        gap_end = vm_start_gap(vma);
+        printk("%s: 3 (%lx)\n", __func__, gap_end);
+        if (gap_end < low_limit)
+            return -ENOMEM;
+        if (gap_start <= high_limit &&
+            gap_end > gap_start && gap_end - gap_start >= length)
+            goto found;
+
+        /* Visit left subtree if it looks promising */
+        if (vma->vm_rb.rb_left) {
+            struct vm_area_struct *left =
+                rb_entry(vma->vm_rb.rb_left,
+                     struct vm_area_struct, vm_rb);
+            if (left->rb_subtree_gap >= length) {
+                vma = left;
+                continue;
+            }
+        }
+
+        /* Go back up the rbtree to find next candidate node */
+        while (true) {
+            struct rb_node *prev = &vma->vm_rb;
+            if (!rb_parent(prev))
+                return -ENOMEM;
+            vma = rb_entry(rb_parent(prev),
+                       struct vm_area_struct, vm_rb);
+            if (prev == vma->vm_rb.rb_right) {
+                gap_start = vma->vm_prev ?
+                    vm_end_gap(vma->vm_prev) : 0;
+                goto check_current;
+            }
+        }
+    }
+
+ found:
+    /* We found a suitable gap. Clip it with the original high_limit. */
+    if (gap_end > info->high_limit)
+        gap_end = info->high_limit;
+
+ found_highest:
+    printk("%s: gap_end(%lx)\n", __func__, gap_end);
+    /* Compute highest gap address at the desired alignment */
+    gap_end -= info->length;
+    gap_end -= (gap_end - info->align_offset) & info->align_mask;
+
+    VM_BUG_ON(gap_end < info->low_limit);
+    VM_BUG_ON(gap_end < gap_start);
+    return gap_end;
 }
 
 static unsigned long unmapped_area(struct vm_unmapped_area_info *info)
@@ -821,6 +919,61 @@ unsigned long vm_unmapped_area(struct vm_unmapped_area_info *info)
     return addr;
 }
 
+unsigned long
+arch_get_unmapped_area_topdown(struct file *filp, unsigned long addr,
+                               unsigned long len, unsigned long pgoff,
+                               unsigned long flags)
+{
+    struct vm_area_struct *vma, *prev;
+    struct mm_struct *mm = current->mm;
+    struct vm_unmapped_area_info info;
+    const unsigned long mmap_end = arch_get_mmap_end(addr);
+
+    printk("+++ 1 %s: addr(%lx) mmap_end(%lx)\n",
+           __func__, addr, mmap_end);
+    /* requested length too big for entire address space */
+    if (len > mmap_end - mmap_min_addr)
+        return -ENOMEM;
+
+    if (flags & MAP_FIXED)
+        return addr;
+
+    /* requesting a specific address */
+    if (addr) {
+        addr = PAGE_ALIGN(addr);
+        vma = find_vma_prev(mm, addr, &prev);
+        if (mmap_end - len >= addr && addr >= mmap_min_addr &&
+                (!vma || addr + len <= vm_start_gap(vma)) &&
+                (!prev || addr >= vm_end_gap(prev)))
+            return addr;
+    }
+
+    info.flags = VM_UNMAPPED_AREA_TOPDOWN;
+    info.length = len;
+    info.low_limit = max(PAGE_SIZE, mmap_min_addr);
+    printk("%s: mmap_base(%lx)\n", __func__, mm->mmap_base);
+    info.high_limit = arch_get_mmap_base(addr, mm->mmap_base);
+    info.align_mask = 0;
+    info.align_offset = 0;
+    addr = vm_unmapped_area(&info);
+
+    /*
+     * A failed mmap() very likely causes application failure,
+     * so fall back to the bottom-up function here. This scenario
+     * can happen with large stack limits and large mmap()
+     * allocations.
+     */
+    if (offset_in_page(addr)) {
+        VM_BUG_ON(addr != -ENOMEM);
+        info.flags = 0;
+        info.low_limit = TASK_UNMAPPED_BASE;
+        info.high_limit = mmap_end;
+        addr = vm_unmapped_area(&info);
+    }
+
+    return addr;
+}
+
 /* Get an address range which is currently unmapped.
  * For shmat() with addr=0.
  *
@@ -841,6 +994,7 @@ arch_get_unmapped_area(struct file *filp, unsigned long addr,
     struct vm_unmapped_area_info info;
     const unsigned long mmap_end = arch_get_mmap_end(addr);
 
+    printk("+++ 1 %s: addr(%lx)\n", __func__, addr);
     if (len > mmap_end - mmap_min_addr)
         return -ENOMEM;
 
@@ -1032,10 +1186,12 @@ get_unmapped_area(struct file *file, unsigned long addr, unsigned long len,
         get_area = shmem_get_unmapped_area;
     }
 
+    printk("+++ 1 %s: addr(%lx)\n", __func__, addr);
     addr = get_area(file, addr, len, pgoff, flags);
     if (IS_ERR_VALUE(addr))
         return addr;
 
+    printk("+++ 2 %s: addr(%lx)\n", __func__, addr);
     if (addr > TASK_SIZE - len)
         return -ENOMEM;
     if (offset_in_page(addr))
@@ -1402,7 +1558,6 @@ count_vma_pages_range(struct mm_struct *mm,
  */
 static inline int accountable_mapping(struct file *file, vm_flags_t vm_flags)
 {
-#if 0
     /*
      * hugetlb has its own accounting separate from the core VM
      * VM_HUGETLB may not be set yet so we cannot check for that flag.
@@ -1410,9 +1565,8 @@ static inline int accountable_mapping(struct file *file, vm_flags_t vm_flags)
     if (file && is_file_hugepages(file))
         return 0;
 
-    return (vm_flags & (VM_NORESERVE | VM_SHARED | VM_WRITE)) == VM_WRITE;
-#endif
-    panic("%s: END!\n", __func__);
+    return (vm_flags & (VM_NORESERVE | VM_SHARED | VM_WRITE)) ==
+        VM_WRITE;
 }
 
 /*
@@ -1873,15 +2027,32 @@ vma_merge(struct mm_struct *mm,
      * Can this new request be merged in front of next?
      */
     if (next && end == next->vm_start &&
-        can_vma_merge_before(next, vm_flags, anon_vma, file, pgoff+pglen,
-                             vm_userfaultfd_ctx, anon_name)) {
-        panic("%s: front!\n", __func__);
+        can_vma_merge_before(next, vm_flags, anon_vma, file,
+                             pgoff+pglen, vm_userfaultfd_ctx,
+                             anon_name)) {
+        if (prev && addr < prev->vm_end)    /* case 4 */
+            err = __vma_adjust(prev, prev->vm_start,
+                               addr, prev->vm_pgoff, NULL, next);
+        else {                  /* cases 3, 8 */
+            err = __vma_adjust(area, addr, next->vm_end,
+                               next->vm_pgoff - pglen, NULL, next);
+            /*
+             * In case 3 area is already equal to next and
+             * this is a noop, but in case 8 "area" has
+             * been removed and next was expanded over it.
+             */
+            area = next;
+        }
+        if (err)
+            return NULL;
+        return area;
     }
 
     return NULL;
 }
 
-static pgprot_t vm_pgprot_modify(pgprot_t oldprot, unsigned long vm_flags)
+static pgprot_t vm_pgprot_modify(pgprot_t oldprot,
+                                 unsigned long vm_flags)
 {
     return pgprot_modify(oldprot, vm_get_page_prot(vm_flags));
 }
@@ -1951,12 +2122,10 @@ unsigned long mmap_region(struct file *file, unsigned long addr,
     /*
      * Private writable mapping: check memory availability
      */
-#if 0
     if (accountable_mapping(file, vm_flags)) {
         charged = len >> PAGE_SHIFT;
         vm_flags |= VM_ACCOUNT;
     }
-#endif
 
     /*
      * Can we just expand an old mapping?
@@ -1991,6 +2160,12 @@ unsigned long mmap_region(struct file *file, unsigned long addr,
         }
 
         vma->vm_file = get_file(file);
+
+        printk("+++ +++ %s: file(%s) (%lx, %lx) prot(%lx) flags(%lx)\n",
+               __func__, vma->vm_file->f_path.dentry->d_name.name,
+               vma->vm_start, vma->vm_end, vma->vm_page_prot,
+               vma->vm_flags);
+
         error = call_mmap(file, vma);
         if (error)
             goto unmap_and_free_vma;
@@ -2122,6 +2297,7 @@ unsigned long do_mmap(struct file *file, unsigned long addr,
     if (mm->map_count > sysctl_max_map_count)
         return -ENOMEM;
 
+    printk("%s: addr(%lx)\n", __func__, addr);
     /* Obtain the address to map to. we verify (or select) it and ensure
      * that it represents a valid section of the address space.
      */

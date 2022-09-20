@@ -1677,7 +1677,8 @@ static inline bool vma_is_dax(const struct vm_area_struct *vma)
     return vma->vm_file && IS_DAX(vma->vm_file->f_mapping->host);
 }
 
-static inline int call_mmap(struct file *file, struct vm_area_struct *vma)
+static inline
+int call_mmap(struct file *file, struct vm_area_struct *vma)
 {
     return file->f_op->mmap(file, vma);
 }

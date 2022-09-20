@@ -220,6 +220,11 @@ ssize_t ksys_read(unsigned int fd, char __user *buf, size_t count)
             pos = *ppos;
             ppos = &pos;
         }
+
+        printk("%s: file(%s) pos(%llx) count(%x)\n",
+               __func__, f.file->f_path.dentry->d_name.name,
+               pos, count);
+
         ret = vfs_read(f.file, buf, count, ppos);
         if (ret >= 0 && ppos)
             f.file->f_pos = pos;
