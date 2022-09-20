@@ -49,6 +49,7 @@ static int do_readlinkat(int dfd, const char __user *pathname,
 SYSCALL_DEFINE4(readlinkat, int, dfd, const char __user *, pathname,
                 char __user *, buf, int, bufsiz)
 {
+    printk("--------- %s: ...\n", __func__);
     return do_readlinkat(dfd, pathname, buf, bufsiz);
 }
 
@@ -164,6 +165,7 @@ SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
     struct kstat stat;
     int error;
 
+    printk("--------- %s: ...\n", __func__);
     error = vfs_fstatat(dfd, filename, &stat, flag);
     if (error)
         return error;
@@ -315,6 +317,7 @@ SYSCALL_DEFINE2(newfstat, unsigned int, fd,
     struct kstat stat;
     int error = vfs_fstat(fd, &stat);
 
+    printk("--------- %s: ...\n", __func__);
     if (!error)
         error = cp_new_stat(&stat, statbuf);
 
@@ -327,6 +330,7 @@ SYSCALL_DEFINE2(newstat, const char __user *, filename,
     struct kstat stat;
     int error = vfs_stat(filename, &stat);
 
+    printk("--------- %s: ...\n", __func__);
     if (error)
         return error;
     return cp_new_stat(&stat, statbuf);

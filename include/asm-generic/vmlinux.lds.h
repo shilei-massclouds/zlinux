@@ -125,6 +125,8 @@
         *(.noinstr.text)            \
         __noinstr_text_end = .;
 
+#define TEXT_CFI_JT
+
 /*
  * .text section. Map to function alignment to avoid address changes
  * during second ld run in second ld pass when generating System.map
@@ -133,13 +135,18 @@
  * code elimination is enabled, so these sections should be converted
  * to use ".." first.
  */
-#define TEXT_TEXT       \
-    ALIGN_FUNCTION();   \
-    *(.text.hot TEXT_MAIN .text.fixup .text.unlikely) \
-    NOINSTR_TEXT        \
-    *(.text..refcount)  \
-    *(.ref.text)        \
-    MEM_KEEP(init.text*)\
+#define TEXT_TEXT                           \
+        ALIGN_FUNCTION();                   \
+        *(.text.hot .text.hot.*)            \
+        *(TEXT_MAIN .text.fixup)            \
+        *(.text.unlikely .text.unlikely.*)  \
+        *(.text.unknown .text.unknown.*)    \
+        NOINSTR_TEXT                        \
+        *(.text..refcount)                  \
+        *(.ref.text)                        \
+        *(.text.asan.* .text.tsan.*)        \
+        TEXT_CFI_JT                         \
+    MEM_KEEP(init.text*)                    \
     MEM_KEEP(exit.text*)
 
 /*
@@ -189,6 +196,10 @@
 #define DATA_DATA       \
     *(DATA_MAIN)        \
     *(.ref.data)        \
+    *(.data..shared_aligned) /* percpu related */           \
+    MEM_KEEP(init.data*)                        \
+    MEM_KEEP(exit.data*)                        \
+    *(.data.unlikely)                       \
     __start_once = .;   \
     *(.data.once)       \
     __end_once = .;     \
@@ -392,6 +403,44 @@
         __sched_text_start = .;     \
         *(.sched.text)              \
         __sched_text_end = .;
+
+/* spinlock.text is aling to function alignment to secure we have same
+ * address even at second ld pass when generating System.map */
+#define LOCK_TEXT                           \
+        ALIGN_FUNCTION();                   \
+        __lock_text_start = .;              \
+        *(.spinlock.text)                   \
+        __lock_text_end = .;
+
+#define CPUIDLE_TEXT                \
+        ALIGN_FUNCTION();           \
+        __cpuidle_text_start = .;   \
+        *(.cpuidle.text)            \
+        __cpuidle_text_end = .;
+
+#define KPROBES_TEXT                            \
+        ALIGN_FUNCTION();                   \
+        __kprobes_text_start = .;               \
+        *(.kprobes.text)                    \
+        __kprobes_text_end = .;
+
+#define ENTRY_TEXT                          \
+        ALIGN_FUNCTION();                   \
+        __entry_text_start = .;                 \
+        *(.entry.text)                      \
+        __entry_text_end = .;
+
+#define IRQENTRY_TEXT                           \
+        ALIGN_FUNCTION();                   \
+        __irqentry_text_start = .;              \
+        *(.irqentry.text)                   \
+        __irqentry_text_end = .;
+
+#define SOFTIRQENTRY_TEXT                   \
+        ALIGN_FUNCTION();                   \
+        __softirqentry_text_start = .;      \
+        *(.softirqentry.text)               \
+        __softirqentry_text_end = .;
 
 #define EXIT_DISCARDS               \
     EXIT_TEXT                       \

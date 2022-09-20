@@ -225,6 +225,7 @@ asmlinkage void do_page_fault(struct pt_regs *regs)
      * the fault.
      */
     fault = handle_mm_fault(vma, addr, flags, regs);
+    printk("######### %s: fault(%x)\n", __func__, fault);
 
 #if 0
     /*

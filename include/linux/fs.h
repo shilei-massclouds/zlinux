@@ -1741,6 +1741,7 @@ int vfs_fstat(int fd, struct kstat *stat);
 static inline
 int vfs_stat(const char __user *filename, struct kstat *stat)
 {
+    printk("--------- %s: ...\n", __func__);
     return vfs_fstatat(AT_FDCWD, filename, stat, 0);
 }
 

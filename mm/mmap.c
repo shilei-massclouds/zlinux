@@ -2264,7 +2264,7 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
     bool downgraded = false;
     LIST_HEAD(uf);
 
-    printk("%s: brk(%lu)\n", __func__, brk);
+    printk("--------- %s: ... brk(%lx:%lx)\n", __func__, brk, mm->brk);
 
     if (mmap_write_lock_killable(mm))
         return -EINTR;

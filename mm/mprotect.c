@@ -546,11 +546,13 @@ static int do_mprotect_pkey(unsigned long start, size_t len,
     }
  out:
     mmap_write_unlock(current->mm);
+    printk("--------- %s: ok!\n", __func__);
     return error;
 }
 
 SYSCALL_DEFINE3(mprotect, unsigned long, start, size_t, len,
                 unsigned long, prot)
 {
+    printk("--------- %s: [%lx, %x] ...\n", __func__, start, len);
     return do_mprotect_pkey(start, len, prot, -1);
 }

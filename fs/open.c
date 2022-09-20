@@ -341,6 +341,7 @@ static long do_faccessat(int dfd, const char __user *filename,
 SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename,
                 int, mode)
 {
+    printk("--------- %s: ...\n", __func__);
     return do_faccessat(dfd, filename, mode, 0);
 }
 
@@ -528,6 +529,7 @@ SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename,
 {
     if (force_o_largefile())
         flags |= O_LARGEFILE;
+    printk("--------- %s: ...\n", __func__);
     return do_sys_open(dfd, filename, flags, mode);
 }
 
@@ -540,6 +542,7 @@ SYSCALL_DEFINE1(close, unsigned int, fd)
 {
     int retval = close_fd(fd);
 
+    printk("--------- %s: ...\n", __func__);
     /* can't restart close syscall because file table entry was cleared */
     if (unlikely(retval == -ERESTARTSYS ||
                  retval == -ERESTARTNOINTR ||

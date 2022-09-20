@@ -705,6 +705,7 @@ int close_fd(unsigned fd)
     struct files_struct *files = current->files;
     struct file *file;
 
+    printk("--------- %s: ...\n", __func__);
     file = pick_file(files, fd);
     if (IS_ERR(file))
         return -EBADF;

@@ -455,7 +455,7 @@ static int faultin_page(struct vm_area_struct *vma,
     }
 
     ret = handle_mm_fault(vma, address, fault_flags, NULL);
-    printk("%s: ######\n", __func__);
+    printk("%s: #########\n", __func__);
     if (ret & VM_FAULT_ERROR) {
         int err = vm_fault_to_errno(ret, *flags);
 
