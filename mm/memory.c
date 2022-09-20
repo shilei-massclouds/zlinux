@@ -1191,7 +1191,7 @@ handle_mm_fault(struct vm_area_struct *vma, unsigned long address,
 
     mm_account_fault(regs, address, flags, ret);
 
-    //printk("%s: END!\n", __func__);
+    printk("+++ %s: END!\n", __func__);
     return ret;
 }
 
