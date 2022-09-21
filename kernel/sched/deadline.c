@@ -405,6 +405,40 @@ static enum hrtimer_restart inactive_task_timer(struct hrtimer *timer)
     panic("%s: NO implementation!\n", __func__);
 }
 
+/*
+ * We must be sure that accepting a new task (or allowing changing the
+ * parameters of an existing one) is consistent with the bandwidth
+ * constraints. If yes, this function also accordingly updates the currently
+ * allocated bandwidth to reflect the new situation.
+ *
+ * This function is called while holding p's rq->lock.
+ */
+int sched_dl_overflow(struct task_struct *p, int policy,
+                      const struct sched_attr *attr)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
+/*
+ * This function initializes the sched_dl_entity of a newly becoming
+ * SCHED_DEADLINE task.
+ *
+ * Only the static values are considered here, the actual runtime and the
+ * absolute deadline will be properly calculated when the task is enqueued
+ * for the first time with its new policy.
+ */
+void __setparam_dl(struct task_struct *p, const struct sched_attr *attr)
+{
+    struct sched_dl_entity *dl_se = &p->dl;
+
+    dl_se->dl_runtime = attr->sched_runtime;
+    dl_se->dl_deadline = attr->sched_deadline;
+    dl_se->dl_period = attr->sched_period ?: dl_se->dl_deadline;
+    dl_se->flags = attr->sched_flags & SCHED_DL_FLAGS;
+    dl_se->dl_bw = to_ratio(dl_se->dl_period, dl_se->dl_runtime);
+    dl_se->dl_density = to_ratio(dl_se->dl_deadline, dl_se->dl_runtime);
+}
+
 void init_dl_inactive_task_timer(struct sched_dl_entity *dl_se)
 {
     struct hrtimer *timer = &dl_se->inactive_timer;

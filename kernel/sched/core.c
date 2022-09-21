@@ -2588,7 +2588,33 @@ int wake_up_state(struct task_struct *p, unsigned int state)
 
 void sched_set_stop_task(int cpu, struct task_struct *stop)
 {
-    panic("%s: NO implementation!\n", __func__);
+    static struct lock_class_key stop_pi_lock;
+    struct sched_param param = { .sched_priority = MAX_RT_PRIO - 1 };
+    struct task_struct *old_stop = cpu_rq(cpu)->stop;
+
+    if (stop) {
+        /*
+         * Make it appear like a SCHED_FIFO task, its something
+         * userspace knows about and won't get confused about.
+         *
+         * Also, it will make PI more or less work without too
+         * much confusion -- but then, stop work should not
+         * rely on PI working anyway.
+         */
+        sched_setscheduler_nocheck(stop, SCHED_FIFO, &param);
+
+        stop->sched_class = &stop_sched_class;
+    }
+
+    cpu_rq(cpu)->stop = stop;
+
+    if (old_stop) {
+        /*
+         * Reset it back to a normal scheduling class so that
+         * it can die in pieces.
+         */
+        old_stop->sched_class = &rt_sched_class;
+    }
 }
 
 /*
@@ -2618,6 +2644,125 @@ void set_cpus_allowed_common(struct task_struct *p,
 
     cpumask_copy(&p->cpus_mask, new_mask);
     p->nr_cpus_allowed = cpumask_weight(new_mask);
+}
+
+static inline int __normal_prio(int policy, int rt_prio, int nice)
+{
+    int prio;
+
+    if (dl_policy(policy))
+        prio = MAX_DL_PRIO - 1;
+    else if (rt_policy(policy))
+        prio = MAX_RT_PRIO - 1 - rt_prio;
+    else
+        prio = NICE_TO_PRIO(nice);
+
+    return prio;
+}
+
+static inline
+int __rt_effective_prio(struct task_struct *pi_task, int prio)
+{
+    if (pi_task)
+        prio = min(prio, pi_task->prio);
+
+    return prio;
+}
+
+static inline int rt_effective_prio(struct task_struct *p, int prio)
+{
+    struct task_struct *pi_task = rt_mutex_get_top_task(p);
+
+    return __rt_effective_prio(pi_task, prio);
+}
+
+/*
+ * Calculate the expected normal priority: i.e. priority
+ * without taking RT-inheritance into account. Might be
+ * boosted by interactivity modifiers. Changes upon fork,
+ * setprio syscalls, and whenever the interactivity
+ * estimator recalculates.
+ */
+static inline int normal_prio(struct task_struct *p)
+{
+    return __normal_prio(p->policy, p->rt_priority,
+                         PRIO_TO_NICE(p->static_prio));
+}
+
+/*
+ * sched_setparam() passes in -1 for its policy, to let the functions
+ * it calls know not to change it.
+ */
+#define SETPARAM_POLICY -1
+
+static void __setscheduler_params(struct task_struct *p,
+        const struct sched_attr *attr)
+{
+    int policy = attr->sched_policy;
+
+    if (policy == SETPARAM_POLICY)
+        policy = p->policy;
+
+    p->policy = policy;
+
+    if (dl_policy(policy))
+        __setparam_dl(p, attr);
+    else if (fair_policy(policy))
+        p->static_prio = NICE_TO_PRIO(attr->sched_nice);
+
+    /*
+     * __sched_setscheduler() ensures attr->sched_priority == 0 when
+     * !rt_policy. Always setting this ensures that things like
+     * getparam()/getattr() don't report silly values for !rt tasks.
+     */
+    p->rt_priority = attr->sched_priority;
+    p->normal_prio = normal_prio(p);
+    set_load_weight(p, true);
+}
+
+static void __setscheduler_prio(struct task_struct *p, int prio)
+{
+    if (dl_prio(prio))
+        p->sched_class = &dl_sched_class;
+    else if (rt_prio(prio))
+        p->sched_class = &rt_sched_class;
+    else
+        p->sched_class = &fair_sched_class;
+
+    p->prio = prio;
+}
+
+/*
+ * switched_from, switched_to and prio_changed must _NOT_ drop rq->lock,
+ * use the balance_callback list if you want balancing.
+ *
+ * this means any call to check_class_changed() must be followed by a call to
+ * balance_callback().
+ */
+static inline
+void check_class_changed(struct rq *rq, struct task_struct *p,
+                         const struct sched_class *prev_class,
+                         int oldprio)
+{
+    if (prev_class != p->sched_class) {
+        if (prev_class->switched_from)
+            prev_class->switched_from(rq, p);
+
+        p->sched_class->switched_to(rq, p);
+    } else if (oldprio != p->prio || dl_task(p))
+        p->sched_class->prio_changed(rq, p, oldprio);
+}
+
+static inline
+void balance_callbacks(struct rq *rq, struct callback_head *head)
+{
+    unsigned long flags;
+
+    if (unlikely(head)) {
+        raw_spin_rq_lock_irqsave(rq, flags);
+        do_balance_callbacks(rq, head);
+        raw_spin_rq_unlock_irqrestore(rq, flags);
+    }
 }
 
 static int __sched_setscheduler(struct task_struct *p,
@@ -2724,8 +2869,92 @@ static int __sched_setscheduler(struct task_struct *p,
     }
 
  change:
+    if (user) {
+        panic("%s: user!\n", __func__);
+    }
 
-    panic("%s: END!\n", __func__);
+    /* Re-check policy now with rq lock held: */
+    if (unlikely(oldpolicy != -1 && oldpolicy != p->policy)) {
+        policy = oldpolicy = -1;
+        task_rq_unlock(rq, p, &rf);
+        if (pi)
+            cpuset_read_unlock();
+        goto recheck;
+    }
+
+    /*
+     * If setscheduling to SCHED_DEADLINE (or changing the parameters
+     * of a SCHED_DEADLINE task) we need to check if enough bandwidth
+     * is available.
+     */
+    if ((dl_policy(policy) || dl_task(p)) &&
+        sched_dl_overflow(p, policy, attr)) {
+        retval = -EBUSY;
+        goto unlock;
+    }
+
+    p->sched_reset_on_fork = reset_on_fork;
+    oldprio = p->prio;
+
+    newprio = __normal_prio(policy, attr->sched_priority,
+                            attr->sched_nice);
+    if (pi) {
+        /*
+         * Take priority boosted tasks into account. If the new
+         * effective priority is unchanged, we just store the new
+         * normal parameters and do not touch the scheduler class and
+         * the runqueue. This will be done when the task deboost
+         * itself.
+         */
+        newprio = rt_effective_prio(p, newprio);
+        if (newprio == oldprio)
+            queue_flags &= ~DEQUEUE_MOVE;
+    }
+
+    queued = task_on_rq_queued(p);
+    running = task_current(rq, p);
+    if (queued)
+        dequeue_task(rq, p, queue_flags);
+    if (running)
+        put_prev_task(rq, p);
+
+    prev_class = p->sched_class;
+
+    if (!(attr->sched_flags & SCHED_FLAG_KEEP_PARAMS)) {
+        __setscheduler_params(p, attr);
+        __setscheduler_prio(p, newprio);
+    }
+    __setscheduler_uclamp(p, attr);
+
+    if (queued) {
+        /*
+         * We enqueue to tail when the priority of a task is
+         * increased (user space view).
+         */
+        if (oldprio < p->prio)
+            queue_flags |= ENQUEUE_HEAD;
+
+        enqueue_task(rq, p, queue_flags);
+    }
+    if (running)
+        set_next_task(rq, p);
+
+    check_class_changed(rq, p, prev_class, oldprio);
+
+    /* Avoid rq from going away on us: */
+    preempt_disable();
+    head = splice_balance_callbacks(rq);
+    task_rq_unlock(rq, p, &rf);
+
+    if (pi) {
+        cpuset_read_unlock();
+        rt_mutex_adjust_pi(p);
+    }
+
+    /* Run balance callbacks after we've adjusted the PI chain: */
+    balance_callbacks(rq, head);
+    preempt_enable();
+
     return 0;
 
  unlock:
@@ -2771,33 +3000,6 @@ int sched_setscheduler_nocheck(struct task_struct *p, int policy,
                                const struct sched_param *param)
 {
     return _sched_setscheduler(p, policy, param, false);
-}
-
-static inline int __normal_prio(int policy, int rt_prio, int nice)
-{
-    int prio;
-
-    if (dl_policy(policy))
-        prio = MAX_DL_PRIO - 1;
-    else if (rt_policy(policy))
-        prio = MAX_RT_PRIO - 1 - rt_prio;
-    else
-        prio = NICE_TO_PRIO(nice);
-
-    return prio;
-}
-
-/*
- * Calculate the expected normal priority: i.e. priority
- * without taking RT-inheritance into account. Might be
- * boosted by interactivity modifiers. Changes upon fork,
- * setprio syscalls, and whenever the interactivity
- * estimator recalculates.
- */
-static inline int normal_prio(struct task_struct *p)
-{
-    return __normal_prio(p->policy, p->rt_priority,
-                         PRIO_TO_NICE(p->static_prio));
 }
 
 /*
@@ -2934,6 +3136,22 @@ void kick_process(struct task_struct *p)
     preempt_enable();
 }
 EXPORT_SYMBOL_GPL(kick_process);
+
+unsigned long to_ratio(u64 period, u64 runtime)
+{
+    if (runtime == RUNTIME_INF)
+        return BW_UNIT;
+
+    /*
+     * Doing this here saves a lot of checks in all
+     * the calling paths, and returning zero seems
+     * safe for them anyway.
+     */
+    if (period == 0)
+        return 0;
+
+    return div64_u64(runtime << BW_SHIFT, period);
+}
 
 void __init sched_init_smp(void)
 {

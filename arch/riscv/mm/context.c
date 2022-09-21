@@ -18,6 +18,10 @@
 
 DEFINE_STATIC_KEY_FALSE(use_asid_allocator);
 
+static unsigned long asid_bits;
+static unsigned long num_asids;
+static unsigned long asid_mask;
+
 static void set_mm_asid(struct mm_struct *mm, unsigned int cpu)
 {
     panic("%s: END!\n", __func__);
@@ -90,3 +94,19 @@ void switch_mm(struct mm_struct *prev, struct mm_struct *next,
 
     flush_icache_deferred(next, cpu);
 }
+
+static int __init asids_init(void)
+{
+    unsigned long old;
+
+    /* Figure-out number of ASID bits in HW */
+    old = csr_read(CSR_SATP);
+    asid_bits = old | (SATP_ASID_MASK << SATP_ASID_SHIFT);
+    csr_write(CSR_SATP, asid_bits);
+    asid_bits = (csr_read(CSR_SATP) >> SATP_ASID_SHIFT)  & SATP_ASID_MASK;
+    asid_bits = fls_long(asid_bits);
+    csr_write(CSR_SATP, old);
+
+    panic("%s: END!\n", __func__);
+}
+early_initcall(asids_init);

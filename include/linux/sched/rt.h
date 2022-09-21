@@ -27,7 +27,8 @@ static inline int rt_task(struct task_struct *p)
 /*
  * Must hold either p->pi_lock or task_rq(p)->lock.
  */
-static inline struct task_struct *rt_mutex_get_top_task(struct task_struct *p)
+static inline
+struct task_struct *rt_mutex_get_top_task(struct task_struct *p)
 {
     return p->pi_top_task;
 }

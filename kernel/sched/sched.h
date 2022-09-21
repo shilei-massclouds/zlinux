@@ -84,6 +84,13 @@
 #include "cpupri.h"
 #include "cpudeadline.h"
 
+#define BW_SHIFT        20
+#define BW_UNIT         (1 << BW_SHIFT)
+#define RATIO_SHIFT     8
+#define MAX_BW_BITS     (64 - BW_SHIFT)
+#define MAX_BW          ((1ULL << MAX_BW_BITS) - 1)
+unsigned long to_ratio(u64 period, u64 runtime);
+
 #define cap_scale(v, s) ((v)*(s) >> SCHED_CAPACITY_SHIFT)
 
 #define SCA_CHECK           0x01
@@ -171,7 +178,8 @@ static const __maybe_unused unsigned int sysctl_sched_features =
     0;
 #undef SCHED_FEAT
 
-#define sched_feat(x) !!(sysctl_sched_features & (1UL << __SCHED_FEAT_##x))
+#define sched_feat(x) \
+    !!(sysctl_sched_features & (1UL << __SCHED_FEAT_##x))
 
 #define DEQUEUE_SLEEP       0x01
 #define DEQUEUE_SAVE        0x02 /* Matches ENQUEUE_RESTORE */
@@ -180,8 +188,11 @@ static const __maybe_unused unsigned int sysctl_sched_features =
 
 #define ENQUEUE_WAKEUP      0x01
 #define ENQUEUE_RESTORE     0x02
+#define ENQUEUE_MOVE        0x04
 #define ENQUEUE_NOCLOCK     0x08
 
+#define ENQUEUE_HEAD        0x10
+#define ENQUEUE_REPLENISH   0x20
 #define ENQUEUE_MIGRATED    0x40
 
 #define const_debug const
@@ -1500,5 +1511,28 @@ static inline long se_weight(struct sched_entity *se)
 extern void flush_smp_call_function_from_idle(void);
 
 extern void schedule_idle(void);
+
+extern int
+sched_dl_overflow(struct task_struct *p, int policy,
+                  const struct sched_attr *attr);
+
+extern void __setparam_dl(struct task_struct *p,
+                          const struct sched_attr *attr);
+
+extern struct callback_head balance_push_callback;
+
+static inline void
+queue_balance_callback(struct rq *rq,
+               struct callback_head *head,
+               void (*func)(struct rq *rq))
+{
+    if (unlikely(head->next ||
+                 rq->balance_callback == &balance_push_callback))
+        return;
+
+    head->func = (void (*)(struct callback_head *))func;
+    head->next = rq->balance_callback;
+    rq->balance_callback = head;
+}
 
 #endif /* _KERNEL_SCHED_SCHED_H */

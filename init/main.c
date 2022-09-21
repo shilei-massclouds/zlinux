@@ -263,6 +263,14 @@ static void __init do_basic_setup(void)
     do_initcalls();
 }
 
+static void __init do_pre_smp_initcalls(void)
+{
+    initcall_entry_t *fn;
+
+    for (fn = __initcall_start; fn < __initcall0_start; fn++)
+        do_one_initcall(initcall_from_entry(fn));
+}
+
 static noinline void __init kernel_init_freeable(void)
 {
     /* Now the scheduler is fully set up and can do blocking allocations */
@@ -285,7 +293,9 @@ static noinline void __init kernel_init_freeable(void)
     init_mm_internals();
 
     rcu_init_tasks_generic();
+#endif
     do_pre_smp_initcalls();
+#if 0
     lockup_detector_init();
 #endif
 

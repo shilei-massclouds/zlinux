@@ -61,6 +61,22 @@
 #include "pelt.h"
 //#include "autogroup.h"
 
+/*
+ * Targeted preemption latency for CPU-bound tasks:
+ *
+ * NOTE: this latency value is not the same as the concept of
+ * 'timeslice length' - timeslices in CFS are of variable length
+ * and have no persistent notion like in traditional, time-slice
+ * based scheduling concepts.
+ *
+ * (to see the precise effective timeslice length of your workload,
+ *  run vmstat and monitor the context-switches (cs) field)
+ *
+ * (default: 6ms * (1 + ilog(ncpus)), units: nanoseconds)
+ */
+unsigned int sysctl_sched_latency           = 6000000ULL;
+static unsigned int normalized_sysctl_sched_latency = 6000000ULL;
+
 /* Walk up scheduling entities hierarchy */
 #define for_each_sched_entity(se) \
     for (; se; se = se->parent)
@@ -134,6 +150,14 @@ static const u64 cfs_bandwidth_slack_period = 5 * NSEC_PER_MSEC;
  * (default SCHED_TUNABLESCALING_LOG = *(1+ilog(ncpus))
  */
 unsigned int sysctl_sched_tunable_scaling = SCHED_TUNABLESCALING_LOG;
+
+/*
+ * Minimal preemption granularity for CPU-bound tasks:
+ *
+ * (default: 0.75 msec * (1 + ilog(ncpus)), units: nanoseconds)
+ */
+unsigned int sysctl_sched_min_granularity           = 750000ULL;
+static unsigned int normalized_sysctl_sched_min_granularity = 750000ULL;
 
 /*
  * This value is kept at sysctl_sched_latency/sysctl_sched_min_granularity
@@ -2502,14 +2526,187 @@ static void rq_offline_fair(struct rq *rq)
  * and everything must be accessed through the @rq and @curr passed in
  * parameters.
  */
-static void task_tick_fair(struct rq *rq, struct task_struct *curr, int queued)
+static void task_tick_fair(struct rq *rq, struct task_struct *curr,
+                           int queued)
 {
     panic("%s: NO implementation!", __func__);
 }
 
+static inline bool vruntime_normalized(struct task_struct *p)
+{
+    struct sched_entity *se = &p->se;
+
+    /*
+     * In both the TASK_ON_RQ_QUEUED and TASK_ON_RQ_MIGRATING cases,
+     * the dequeue_entity(.flags=0) will already have normalized the
+     * vruntime.
+     */
+    if (p->on_rq)
+        return true;
+
+    /*
+     * When !on_rq, vruntime of the task has usually NOT been normalized.
+     * But there are some cases where it has already been normalized:
+     *
+     * - A forked child which is waiting for being woken up by
+     *   wake_up_new_task().
+     * - A task which has been woken up by try_to_wake_up() and
+     *   waiting for actually being woken up by sched_ttwu_pending().
+     */
+    if (!se->sum_exec_runtime ||
+        (READ_ONCE(p->__state) == TASK_WAKING && p->sched_remote_wakeup))
+        return true;
+
+    return false;
+}
+
+/*
+ * We calculate the vruntime slice of a to-be-inserted task.
+ *
+ * vs = s/w
+ */
+static u64 sched_vslice(struct cfs_rq *cfs_rq, struct sched_entity *se)
+{
+#if 0
+    return calc_delta_fair(sched_slice(cfs_rq, se), se);
+#endif
+    panic("%s: NO implementation!", __func__);
+}
+
+static void
+place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se,
+             int initial)
+{
+    u64 vruntime = cfs_rq->min_vruntime;
+
+    /*
+     * The 'current' period is already promised to the current tasks,
+     * however the extra weight of the new task will slow them down a
+     * little, place the new task so that it fits in the slot that
+     * stays open at the end.
+     */
+    if (initial && sched_feat(START_DEBIT))
+        vruntime += sched_vslice(cfs_rq, se);
+
+    /* sleeps up to a single latency don't count. */
+    if (!initial) {
+        unsigned long thresh;
+
+        if (se_is_idle(se))
+            thresh = sysctl_sched_min_granularity;
+        else
+            thresh = sysctl_sched_latency;
+
+        /*
+         * Halve their sleep time's effect, to allow
+         * for a gentler effect of sleepers:
+         */
+        if (sched_feat(GENTLE_FAIR_SLEEPERS))
+            thresh >>= 1;
+
+        vruntime -= thresh;
+    }
+
+
+    /* ensure we never gain time by being placed backwards. */
+    se->vruntime = max_vruntime(se->vruntime, vruntime);
+}
+
+static inline
+void add_tg_cfs_propagate(struct cfs_rq *cfs_rq, long runnable_sum)
+{
+    cfs_rq->propagate = 1;
+    cfs_rq->prop_runnable_sum += runnable_sum;
+}
+
+/**
+ * detach_entity_load_avg - detach this entity from its cfs_rq load avg
+ * @cfs_rq: cfs_rq to detach from
+ * @se: sched_entity to detach
+ *
+ * Must call update_cfs_rq_load_avg() before this, since we rely on
+ * cfs_rq->avg.last_update_time being current.
+ */
+static void detach_entity_load_avg(struct cfs_rq *cfs_rq,
+                                   struct sched_entity *se)
+{
+    dequeue_load_avg(cfs_rq, se);
+    sub_positive(&cfs_rq->avg.util_avg, se->avg.util_avg);
+    sub_positive(&cfs_rq->avg.util_sum, se->avg.util_sum);
+    /* See update_cfs_rq_load_avg() */
+    cfs_rq->avg.util_sum =
+        max_t(u32, cfs_rq->avg.util_sum,
+              cfs_rq->avg.util_avg * PELT_MIN_DIVIDER);
+
+    sub_positive(&cfs_rq->avg.runnable_avg, se->avg.runnable_avg);
+    sub_positive(&cfs_rq->avg.runnable_sum, se->avg.runnable_sum);
+    /* See update_cfs_rq_load_avg() */
+    cfs_rq->avg.runnable_sum = max_t(u32, cfs_rq->avg.runnable_sum,
+                          cfs_rq->avg.runnable_avg * PELT_MIN_DIVIDER);
+
+    add_tg_cfs_propagate(cfs_rq, -se->avg.load_sum);
+
+    cfs_rq_util_change(cfs_rq, 0);
+}
+
+/*
+ * Propagate the changes of the sched_entity across the tg tree to make it
+ * visible to the root
+ */
+static void propagate_entity_cfs_rq(struct sched_entity *se)
+{
+    struct cfs_rq *cfs_rq;
+
+    list_add_leaf_cfs_rq(cfs_rq_of(se));
+
+    /* Start to propagate at parent */
+    se = se->parent;
+
+    for_each_sched_entity(se) {
+        cfs_rq = cfs_rq_of(se);
+
+        if (!cfs_rq_throttled(cfs_rq)){
+            update_load_avg(cfs_rq, se, UPDATE_TG);
+            list_add_leaf_cfs_rq(cfs_rq);
+            continue;
+        }
+
+        if (list_add_leaf_cfs_rq(cfs_rq))
+            break;
+    }
+}
+
+static void detach_entity_cfs_rq(struct sched_entity *se)
+{
+    struct cfs_rq *cfs_rq = cfs_rq_of(se);
+
+    /* Catch up with the cfs_rq and remove our load when we leave */
+    update_load_avg(cfs_rq, se, 0);
+    detach_entity_load_avg(cfs_rq, se);
+    update_tg_load_avg(cfs_rq);
+    propagate_entity_cfs_rq(se);
+}
+
+static void detach_task_cfs_rq(struct task_struct *p)
+{
+    struct sched_entity *se = &p->se;
+    struct cfs_rq *cfs_rq = cfs_rq_of(se);
+
+    if (!vruntime_normalized(p)) {
+        /*
+         * Fix up our vruntime so that the current sleep doesn't
+         * cause 'unlimited' sleep bonus.
+         */
+        place_entity(cfs_rq, se, 0);
+        se->vruntime -= cfs_rq->min_vruntime;
+    }
+
+    detach_entity_cfs_rq(se);
+}
+
 static void switched_from_fair(struct rq *rq, struct task_struct *p)
 {
-    panic("%s: NO implementation!", __func__);
+    detach_task_cfs_rq(p);
 }
 
 /*

@@ -14,6 +14,12 @@ typedef struct rt_rq *rt_rq_iter_t;
 
 static DEFINE_PER_CPU(cpumask_var_t, local_cpu_mask);
 
+static DEFINE_PER_CPU(struct callback_head, rt_push_head);
+static DEFINE_PER_CPU(struct callback_head, rt_pull_head);
+
+static void push_rt_tasks(struct rq *);
+static void pull_rt_task(struct rq *);
+
 #define for_each_rt_rq(rt_rq, iter, rq) \
     for ((void) iter, rt_rq = &rq->rt; rt_rq; rt_rq = NULL)
 
@@ -158,6 +164,20 @@ prio_changed_rt(struct rq *rq, struct task_struct *p, int oldprio)
     panic("%s: END!\n", __func__);
 }
 
+static inline int has_pushable_tasks(struct rq *rq)
+{
+    return !plist_head_empty(&rq->rt.pushable_tasks);
+}
+
+static inline void rt_queue_push_tasks(struct rq *rq)
+{
+    if (!has_pushable_tasks(rq))
+        return;
+
+    queue_balance_callback(rq, &per_cpu(rt_push_head, rq->cpu),
+                           push_rt_tasks);
+}
+
 /*
  * When switching a task to RT, we may overload the runqueue
  * with RT tasks. In this case we try to push them off to
@@ -165,7 +185,26 @@ prio_changed_rt(struct rq *rq, struct task_struct *p, int oldprio)
  */
 static void switched_to_rt(struct rq *rq, struct task_struct *p)
 {
-    panic("%s: END!\n", __func__);
+    /*
+     * If we are running, update the avg_rt tracking, as the running time
+     * will now on be accounted into the latter.
+     */
+    if (task_current(rq, p)) {
+        update_rt_rq_load_avg(rq_clock_pelt(rq), rq, 0);
+        return;
+    }
+
+    /*
+     * If we are not running we may need to preempt the current
+     * running task. If that current running task is also an RT task
+     * then see if we can move to another run queue.
+     */
+    if (task_on_rq_queued(p)) {
+        if (p->nr_cpus_allowed > 1 && rq->rt.overloaded)
+            rt_queue_push_tasks(rq);
+        if (p->prio < rq->curr->prio && cpu_online(cpu_of(rq)))
+            resched_curr(rq);
+    }
 }
 
 /*
@@ -395,6 +434,23 @@ void __init init_sched_rt_class(void)
         zalloc_cpumask_var_node(&per_cpu(local_cpu_mask, i),
                                 GFP_KERNEL, cpu_to_node(i));
     }
+}
+
+/*
+ * If the current CPU has more than one RT task, see if the non
+ * running task can migrate over to a CPU that is running a task
+ * of lesser priority.
+ */
+static int push_rt_task(struct rq *rq, bool pull)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static void push_rt_tasks(struct rq *rq)
+{
+    /* push_rt_task will return true if it moved an RT */
+    while (push_rt_task(rq, false))
+        ;
 }
 
 DEFINE_SCHED_CLASS(rt) = {

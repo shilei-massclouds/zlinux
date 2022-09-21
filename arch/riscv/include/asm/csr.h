@@ -70,6 +70,15 @@
 #define SR_PIE  SR_SPIE
 #define SR_PP   SR_SPP
 
+/* SATP flags */
+#define SATP_PPN        _AC(0x00000FFFFFFFFFFF, UL)
+#define SATP_MODE_39    _AC(0x8000000000000000, UL)
+#define SATP_MODE_48    _AC(0x9000000000000000, UL)
+#define SATP_MODE_57    _AC(0xa000000000000000, UL)
+#define SATP_ASID_BITS  16
+#define SATP_ASID_SHIFT 44
+#define SATP_ASID_MASK  _AC(0xFFFF, UL)
+
 /* Exception causes */
 #define EXC_INST_MISALIGNED 0
 #define EXC_INST_ACCESS     1

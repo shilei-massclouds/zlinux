@@ -111,4 +111,13 @@ static inline void plist_node_init(struct plist_node *node, int prio)
     INIT_LIST_HEAD(&node->node_list);
 }
 
+/**
+ * plist_head_empty - return !0 if a plist_head is empty
+ * @head:   &struct plist_head pointer
+ */
+static inline int plist_head_empty(const struct plist_head *head)
+{
+    return list_empty(&head->node_list);
+}
+
 #endif /* _LINUX_PLIST_H_ */
