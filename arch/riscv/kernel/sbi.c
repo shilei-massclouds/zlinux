@@ -337,3 +337,24 @@ void sbi_set_timer(uint64_t stime_value)
 {
     __sbi_set_timer(stime_value);
 }
+
+/**
+ * sbi_remote_sfence_vma_asid() - Execute SFENCE.VMA instructions on given
+ * remote harts for a virtual address range belonging to a specific ASID.
+ *
+ * @cpu_mask: A cpu mask containing all the target harts.
+ * @start: Start of the virtual address
+ * @size: Total size of the virtual address range.
+ * @asid: The value of address space identifier (ASID).
+ *
+ * Return: 0 on success, appropriate linux error code otherwise.
+ */
+int sbi_remote_sfence_vma_asid(const struct cpumask *cpu_mask,
+                               unsigned long start,
+                               unsigned long size,
+                               unsigned long asid)
+{
+    return __sbi_rfence(SBI_EXT_RFENCE_REMOTE_SFENCE_VMA_ASID,
+                        cpu_mask, start, size, asid, 0);
+}
+EXPORT_SYMBOL(sbi_remote_sfence_vma_asid);

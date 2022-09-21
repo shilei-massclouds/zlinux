@@ -198,3 +198,16 @@ int __bitmap_equal(const unsigned long *bitmap1,
     return 1;
 }
 EXPORT_SYMBOL(__bitmap_equal);
+
+unsigned long *bitmap_alloc(unsigned int nbits, gfp_t flags)
+{
+    return kmalloc_array(BITS_TO_LONGS(nbits), sizeof(unsigned long),
+                         flags);
+}
+EXPORT_SYMBOL(bitmap_alloc);
+
+unsigned long *bitmap_zalloc(unsigned int nbits, gfp_t flags)
+{
+    return bitmap_alloc(nbits, flags | __GFP_ZERO);
+}
+EXPORT_SYMBOL(bitmap_zalloc);

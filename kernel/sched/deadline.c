@@ -258,9 +258,46 @@ static void check_preempt_curr_dl(struct rq *rq, struct task_struct *p,
     panic("%s: NO implementation!\n", __func__);
 }
 
-static int balance_dl(struct rq *rq, struct task_struct *p, struct rq_flags *rf)
+static inline int on_dl_rq(struct sched_dl_entity *dl_se)
 {
+    return !RB_EMPTY_NODE(&dl_se->rb_node);
+}
+
+static int push_dl_task(struct rq *rq);
+
+static inline
+bool need_pull_dl_task(struct rq *rq, struct task_struct *prev)
+{
+    return rq->online && dl_task(prev);
+}
+
+static void pull_dl_task(struct rq *this_rq)
+{
+    int this_cpu = this_rq->cpu, cpu;
+    struct task_struct *p, *push_task;
+    bool resched = false;
+    struct rq *src_rq;
+    u64 dmin = LONG_MAX;
+
     panic("%s: NO implementation!\n", __func__);
+}
+
+static int balance_dl(struct rq *rq, struct task_struct *p,
+                      struct rq_flags *rf)
+{
+    if (!on_dl_rq(&p->dl) && need_pull_dl_task(rq, p)) {
+        /*
+         * This is OK, because current is on_cpu, which avoids it being
+         * picked for load-balance and preemption/IRQs are still
+         * disabled avoiding further scheduler activity on it and we've
+         * not yet started the picking loop.
+         */
+        rq_unpin_lock(rq, rf);
+        pull_dl_task(rq);
+        rq_repin_lock(rq, rf);
+    }
+
+    return sched_stop_runnable(rq) || sched_dl_runnable(rq);
 }
 
 static void enqueue_task_dl(struct rq *rq, struct task_struct *p, int flags)

@@ -11,8 +11,27 @@ void flush_tlb_all(void)
     sbi_remote_sfence_vma(NULL, 0, -1);
 }
 
-static void __sbi_tlb_flush_range(struct mm_struct *mm, unsigned long start,
-                  unsigned long size, unsigned long stride)
+static inline void local_flush_tlb_all_asid(unsigned long asid)
+{
+    __asm__ __volatile__ ("sfence.vma x0, %0"
+                          :
+                          : "r" (asid)
+                          : "memory");
+}
+
+static inline
+void local_flush_tlb_page_asid(unsigned long addr, unsigned long asid)
+{
+    __asm__ __volatile__ ("sfence.vma %0, %1"
+                          :
+                          : "r" (addr), "r" (asid)
+                          : "memory");
+}
+
+static void __sbi_tlb_flush_range(struct mm_struct *mm,
+                                  unsigned long start,
+                                  unsigned long size,
+                                  unsigned long stride)
 {
     struct cpumask *cmask = mm_cpumask(mm);
     unsigned int cpuid;
@@ -25,7 +44,6 @@ static void __sbi_tlb_flush_range(struct mm_struct *mm, unsigned long start,
     /* check if the tlbflush needs to be sent to other CPUs */
     broadcast = cpumask_any_but(cmask, cpuid) < nr_cpu_ids;
     if (static_branch_unlikely(&use_asid_allocator)) {
-#if 0
         unsigned long asid = atomic_long_read(&mm->context.id);
 
         if (broadcast) {
@@ -35,8 +53,6 @@ static void __sbi_tlb_flush_range(struct mm_struct *mm, unsigned long start,
         } else {
             local_flush_tlb_all_asid(asid);
         }
-#endif
-        panic("%s: END!\n", __func__);
     } else {
         if (broadcast) {
             sbi_remote_sfence_vma(cmask, start, size);

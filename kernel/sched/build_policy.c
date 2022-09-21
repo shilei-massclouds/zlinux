@@ -13,9 +13,9 @@
  */
 
 /* Headers: */
+#include <linux/sched/cputime.h>
 #if 0
 #include <linux/sched/clock.h>
-#include <linux/sched/cputime.h>
 #include <linux/sched/posix-timers.h>
 #endif
 #include <linux/sched/rt.h>
@@ -38,8 +38,8 @@
 
 #if 0
 #include "autogroup.h"
-#include "stats.h"
 #endif
+#include "stats.h"
 #include "pelt.h"
 
 /* Source code modules: */

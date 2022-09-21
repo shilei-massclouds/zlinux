@@ -261,13 +261,59 @@ static void check_preempt_curr_rt(struct rq *rq, struct task_struct *p,
     panic("%s: END!\n", __func__);
 }
 
-static int balance_rt(struct rq *rq, struct task_struct *p, struct rq_flags *rf)
+static inline
+bool need_pull_rt_task(struct rq *rq, struct task_struct *prev)
 {
+    /* Try to pull RT tasks here if we lower this rq's prio */
+    return rq->online && rq->rt.highest_prio.curr > prev->prio;
+}
+
+static inline int on_rt_rq(struct sched_rt_entity *rt_se)
+{
+    return rt_se->on_rq;
+}
+
+static inline int rt_overloaded(struct rq *rq)
+{
+    return atomic_read(&rq->rd->rto_count);
+}
+
+static void pull_rt_task(struct rq *this_rq)
+{
+    int this_cpu = this_rq->cpu, cpu;
+    bool resched = false;
+    struct task_struct *p, *push_task;
+    struct rq *src_rq;
+    int rt_overload_count = rt_overloaded(this_rq);
+
+    if (likely(!rt_overload_count))
+        return;
+
     panic("%s: END!\n", __func__);
 }
 
+static int balance_rt(struct rq *rq, struct task_struct *p,
+                      struct rq_flags *rf)
+{
+    if (!on_rt_rq(&p->rt) && need_pull_rt_task(rq, p)) {
+        /*
+         * This is OK, because current is on_cpu, which avoids it being
+         * picked for load-balance and preemption/IRQs are still
+         * disabled avoiding further scheduler activity on it and we've
+         * not yet started the picking loop.
+         */
+        rq_unpin_lock(rq, rf);
+        pull_rt_task(rq);
+        rq_repin_lock(rq, rf);
+    }
+
+    return sched_stop_runnable(rq) || sched_dl_runnable(rq) ||
+        sched_rt_runnable(rq);
+}
+
 /* Will lock the rq it finds */
-static struct rq *find_lock_lowest_rq(struct task_struct *task, struct rq *rq)
+static struct rq *find_lock_lowest_rq(struct task_struct *task,
+                                      struct rq *rq)
 {
     panic("%s: END!\n", __func__);
 }

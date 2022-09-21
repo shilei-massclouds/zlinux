@@ -27,4 +27,6 @@ void rcu_irq_enter_irqson(void);
 void rcu_irq_exit_irqson(void);
 bool rcu_is_idle_cpu(int cpu);
 
+void rcu_momentary_dyntick_idle(void);
+
 #endif /* __LINUX_RCUTREE_H */

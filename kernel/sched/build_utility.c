@@ -16,9 +16,9 @@
 #include <linux/sched/task_stack.h>
 #include <linux/sched/clock.h>
 #include <linux/cpuset.h>
+#include <linux/sched/cputime.h>
 #if 0
 #include <linux/cpufreq.h>
-#include <linux/sched/cputime.h>
 #include <linux/sched/loadavg.h>
 #include <linux/sched/rseq_api.h>
 
@@ -56,10 +56,10 @@
 #include "sched.h"
 #if 0
 #include "sched-pelt.h"
-#include "stats.h"
 #include "autogroup.h"
 
 #endif
+#include "stats.h"
 
 #include "clock.c"
 

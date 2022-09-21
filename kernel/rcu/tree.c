@@ -424,6 +424,29 @@ void rcu_idle_exit(void)
 }
 EXPORT_SYMBOL_GPL(rcu_idle_exit);
 
+/*
+ * Let the RCU core know that this CPU has gone through the scheduler,
+ * which is a quiescent state.  This is called when the need for a
+ * quiescent state is urgent, so we burn an atomic operation and full
+ * memory barriers to let the RCU core know about it, regardless of what
+ * this CPU might (or might not) do in the near future.
+ *
+ * We inform the RCU core by emulating a zero-duration dyntick-idle period.
+ *
+ * The caller must have disabled interrupts and must not be idle.
+ */
+notrace void rcu_momentary_dyntick_idle(void)
+{
+    int seq;
+
+    raw_cpu_write(rcu_data.rcu_need_heavy_qs, false);
+    seq = rcu_dynticks_inc(2);
+    /* It is illegal to call this from idle state. */
+    WARN_ON_ONCE(!(seq & 0x1));
+    rcu_preempt_deferred_qs(current);
+}
+EXPORT_SYMBOL_GPL(rcu_momentary_dyntick_idle);
+
 #if 0
 #include "tree_stall.h"
 #include "tree_exp.h"

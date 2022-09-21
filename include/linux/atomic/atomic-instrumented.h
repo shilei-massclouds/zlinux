@@ -342,4 +342,10 @@ atomic_long_add_unless(atomic_long_t *v, long a, long u)
     return arch_atomic_long_add_unless(v, a, u);
 }
 
+static __always_inline void
+atomic64_add(s64 i, atomic64_t *v)
+{
+    arch_atomic64_add(i, v);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */

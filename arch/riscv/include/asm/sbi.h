@@ -146,4 +146,9 @@ int sbi_remote_sfence_vma(const struct cpumask *cpu_mask,
 
 void sbi_set_timer(uint64_t stime_value);
 
+int sbi_remote_sfence_vma_asid(const struct cpumask *cpu_mask,
+                               unsigned long start,
+                               unsigned long size,
+                               unsigned long asid);
+
 #endif /* _ASM_RISCV_SBI_H */

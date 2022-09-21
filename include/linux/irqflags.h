@@ -54,4 +54,12 @@ static inline void lockdep_hardirqs_off(unsigned long ip) { }
 #define stop_critical_timings() do { } while (0)
 #define start_critical_timings() do { } while (0)
 
+#define raw_local_save_flags(flags)         \
+    do {                        \
+        typecheck(unsigned long, flags);    \
+        flags = arch_local_save_flags();    \
+    } while (0)
+
+#define local_save_flags(flags) raw_local_save_flags(flags)
+
 #endif /* _LINUX_TRACE_IRQFLAGS_H */

@@ -22,9 +22,115 @@ static unsigned long asid_bits;
 static unsigned long num_asids;
 static unsigned long asid_mask;
 
-static void set_mm_asid(struct mm_struct *mm, unsigned int cpu)
+static atomic_long_t current_version;
+
+static DEFINE_PER_CPU(atomic_long_t, active_context);
+static DEFINE_PER_CPU(unsigned long, reserved_context);
+
+static DEFINE_RAW_SPINLOCK(context_lock);
+static cpumask_t context_tlb_flush_pending;
+static unsigned long *context_asid_map;
+
+static bool check_update_reserved_context(unsigned long cntx,
+                                          unsigned long newcntx)
 {
     panic("%s: END!\n", __func__);
+}
+
+static unsigned long __new_context(struct mm_struct *mm)
+{
+    static u32 cur_idx = 1;
+    unsigned long cntx = atomic_long_read(&mm->context.id);
+    unsigned long asid, ver = atomic_long_read(&current_version);
+
+    if (cntx != 0) {
+        unsigned long newcntx = ver | (cntx & asid_mask);
+
+        /*
+         * If our current CONTEXT was active during a rollover, we
+         * can continue to use it and this was just a false alarm.
+         */
+        if (check_update_reserved_context(cntx, newcntx))
+            return newcntx;
+
+        /*
+         * We had a valid CONTEXT in a previous life, so try to
+         * re-use it if possible.
+         */
+        if (!__test_and_set_bit(cntx & asid_mask, context_asid_map))
+            return newcntx;
+    }
+
+    /*
+     * Allocate a free ASID. If we can't find one then increment
+     * current_version and flush all ASIDs.
+     */
+    asid = find_next_zero_bit(context_asid_map, num_asids, cur_idx);
+    if (asid != num_asids)
+        goto set_asid;
+
+    panic("%s: END!\n", __func__);
+
+ set_asid:
+    __set_bit(asid, context_asid_map);
+    cur_idx = asid;
+    return asid | ver;
+}
+
+static void set_mm_asid(struct mm_struct *mm, unsigned int cpu)
+{
+    unsigned long flags;
+    bool need_flush_tlb = false;
+    unsigned long cntx, old_active_cntx;
+
+    cntx = atomic_long_read(&mm->context.id);
+
+    /*
+     * If our active_context is non-zero and the context matches the
+     * current_version, then we update the active_context entry with a
+     * relaxed cmpxchg.
+     *
+     * Following is how we handle racing with a concurrent rollover:
+     *
+     * - We get a zero back from the cmpxchg and end up waiting on the
+     *   lock. Taking the lock synchronises with the rollover and so
+     *   we are forced to see the updated verion.
+     *
+     * - We get a valid context back from the cmpxchg then we continue
+     *   using old ASID because __flush_context() would have marked ASID
+     *   of active_context as used and next context switch we will
+     *   allocate new context.
+     */
+    old_active_cntx = atomic_long_read(&per_cpu(active_context, cpu));
+    if (old_active_cntx &&
+        ((cntx & ~asid_mask) == atomic_long_read(&current_version)) &&
+        atomic_long_cmpxchg_relaxed(&per_cpu(active_context, cpu),
+                                    old_active_cntx, cntx))
+        goto switch_mm_fast;
+
+    raw_spin_lock_irqsave(&context_lock, flags);
+
+    /* Check that our ASID belongs to the current_version. */
+    cntx = atomic_long_read(&mm->context.id);
+    if ((cntx & ~asid_mask) != atomic_long_read(&current_version)) {
+        cntx = __new_context(mm);
+        atomic_long_set(&mm->context.id, cntx);
+    }
+
+    if (cpumask_test_and_clear_cpu(cpu, &context_tlb_flush_pending))
+        need_flush_tlb = true;
+
+    atomic_long_set(&per_cpu(active_context, cpu), cntx);
+
+    raw_spin_unlock_irqrestore(&context_lock, flags);
+
+ switch_mm_fast:
+    csr_write(CSR_SATP, virt_to_pfn(mm->pgd) |
+          ((cntx & asid_mask) << SATP_ASID_SHIFT) |
+          satp_mode);
+
+    if (need_flush_tlb)
+        local_flush_tlb_all();
 }
 
 static void set_mm_noasid(struct mm_struct *mm)
@@ -103,10 +209,46 @@ static int __init asids_init(void)
     old = csr_read(CSR_SATP);
     asid_bits = old | (SATP_ASID_MASK << SATP_ASID_SHIFT);
     csr_write(CSR_SATP, asid_bits);
-    asid_bits = (csr_read(CSR_SATP) >> SATP_ASID_SHIFT)  & SATP_ASID_MASK;
+    asid_bits =
+        (csr_read(CSR_SATP) >> SATP_ASID_SHIFT) & SATP_ASID_MASK;
     asid_bits = fls_long(asid_bits);
     csr_write(CSR_SATP, old);
 
-    panic("%s: END!\n", __func__);
+    /*
+     * In the process of determining number of ASID bits (above)
+     * we polluted the TLB of current HART so let's do TLB flushed
+     * to remove unwanted TLB enteries.
+     */
+    local_flush_tlb_all();
+
+    /* Pre-compute ASID details */
+    if (asid_bits) {
+        num_asids = 1 << asid_bits;
+        asid_mask = num_asids - 1;
+    }
+
+    /*
+     * Use ASID allocator only if number of HW ASIDs are
+     * at-least twice more than CPUs
+     */
+    if (num_asids > (2 * num_possible_cpus())) {
+        atomic_long_set(&current_version, num_asids);
+
+        context_asid_map = bitmap_zalloc(num_asids, GFP_KERNEL);
+        if (!context_asid_map)
+            panic("Failed to allocate bitmap for %lu ASIDs\n",
+                  num_asids);
+
+        __set_bit(0, context_asid_map);
+
+        static_branch_enable(&use_asid_allocator);
+
+        pr_info("ASID allocator using %lu bits (%lu entries)\n",
+                asid_bits, num_asids);
+    } else {
+        pr_info("ASID allocator disabled (%lu bits)\n", asid_bits);
+    }
+
+    return 0;
 }
 early_initcall(asids_init);
