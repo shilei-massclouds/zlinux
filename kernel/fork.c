@@ -725,15 +725,12 @@ copy_process(struct pid *pid, int trace, int node,
         goto fork_out;
 
     if (args->io_thread) {
-        panic("%s: NO support for io_thread\n", __func__);
-#if 0
         /*
          * Mark us an IO worker, and block any signal that isn't
          * fatal or STOP
          */
         p->flags |= PF_IO_WORKER;
         siginitsetinv(&p->blocked, sigmask(SIGKILL)|sigmask(SIGSTOP));
-#endif
     }
 
     p->set_child_tid = (clone_flags & CLONE_CHILD_SETTID) ?
@@ -776,14 +773,14 @@ copy_process(struct pid *pid, int trace, int node,
     p->vfork_done = NULL;
     spin_lock_init(&p->alloc_lock);
 
-#if 0
     init_sigpending(&p->pending);
 
     p->utime = p->stime = p->gtime = 0;
-#endif
 
     p->io_uring = NULL;
-    //memset(&p->rss_stat, 0, sizeof(p->rss_stat));
+#if defined(SPLIT_RSS_COUNTING)
+    memset(&p->rss_stat, 0, sizeof(p->rss_stat));
+#endif
 
     p->default_timer_slack_ns = current->timer_slack_ns;
 

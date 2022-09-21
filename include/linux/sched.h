@@ -472,6 +472,9 @@ struct task_struct {
 
     /* Per-thread vma caching: */
     struct vmacache     vmacache;
+#ifdef SPLIT_RSS_COUNTING
+    struct task_rss_stat        rss_stat;
+#endif
 
     int exit_state;
     int exit_code;
@@ -719,6 +722,10 @@ struct task_struct {
 
     /* Stack plugging: */
     struct blk_plug         *plug;
+
+    u64             utime;
+    u64             stime;
+    u64             gtime;
 
     struct prev_cputime     prev_cputime;
 

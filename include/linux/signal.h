@@ -136,4 +136,17 @@ static inline void init_sigpending(struct sigpending *sig)
     INIT_LIST_HEAD(&sig->list);
 }
 
+static inline void siginitsetinv(sigset_t *set, unsigned long mask)
+{
+    set->sig[0] = ~mask;
+    switch (_NSIG_WORDS) {
+    default:
+        memset(&set->sig[1], -1, sizeof(long)*(_NSIG_WORDS-1));
+        break;
+    case 2: set->sig[1] = -1;
+        break;
+    case 1: ;
+    }
+}
+
 #endif /* _LINUX_SIGNAL_H */
