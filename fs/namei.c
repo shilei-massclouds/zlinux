@@ -1465,7 +1465,19 @@ int inode_permission(struct user_namespace *mnt_userns,
         return retval;
 
     if (unlikely(mask & MAY_WRITE)) {
-        panic("%s: MAY_WRITE!\n", __func__);
+        /*
+         * Nobody gets write access to an immutable file.
+         */
+        if (IS_IMMUTABLE(inode))
+            return -EPERM;
+
+        /*
+         * Updating mtime will likely cause i_uid and i_gid to be
+         * written back improperly if their true value is unknown
+         * to the vfs.
+         */
+        if (HAS_UNMAPPED_ID(mnt_userns, inode))
+            return -EACCES;
     }
 
     retval = do_inode_permission(mnt_userns, inode, mask);

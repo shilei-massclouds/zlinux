@@ -36,6 +36,7 @@
 #include <linux/rmap.h>
 #include <linux/unistd.h>
 #include <linux/utsname.h>
+#include <linux/file.h>
 
 #include <asm/setup.h>
 #include "z_tests.h"
@@ -271,6 +272,21 @@ static void __init do_pre_smp_initcalls(void)
         do_one_initcall(initcall_from_entry(fn));
 }
 
+/* Open /dev/console, for stdin/stdout/stderr, this should never fail */
+void __init console_on_rootfs(void)
+{
+    struct file *file = filp_open("/dev/console", O_RDWR, 0);
+
+    if (IS_ERR(file)) {
+        pr_err("Warning: unable to open an initial console.\n");
+        return;
+    }
+    init_dup(file);
+    init_dup(file);
+    init_dup(file);
+    fput(file);
+}
+
 static noinline void __init kernel_init_freeable(void)
 {
     /* Now the scheduler is fully set up and can do blocking allocations */
@@ -313,9 +329,7 @@ static noinline void __init kernel_init_freeable(void)
 
     do_basic_setup();
 
-#if 0
     console_on_rootfs();
-#endif
 
     /*
      * check if there is an early userspace init.  If yes, let it do all

@@ -8,7 +8,7 @@
 #include <linux/namei.h>
 #include <linux/fs.h>
 #include <linux/fs_struct.h>
-//#include <linux/file.h>
+#include <linux/file.h>
 #include <linux/init_syscalls.h>
 #include "internal.h"
 
@@ -98,6 +98,18 @@ int __init init_chdir(const char *filename)
         set_fs_pwd(current->fs, &path);
     path_put(&path);
     return error;
+}
+
+int __init init_dup(struct file *file)
+{
+    int fd;
+
+    fd = get_unused_fd_flags(0);
+    if (fd < 0)
+        return fd;
+    fd_install(fd, get_file(file));
+    printk("%s: fd(%d)\n", __func__, fd);
+    return 0;
 }
 
 int __init init_chroot(const char *filename)

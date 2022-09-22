@@ -517,6 +517,52 @@ static long do_sys_openat2(int dfd, const char __user *filename,
     return fd;
 }
 
+/**
+ * file_open_name - open file and return file pointer
+ *
+ * @name:   struct filename containing path to open
+ * @flags:  open flags as per the open(2) second argument
+ * @mode:   mode for the new file if O_CREAT is set, else ignored
+ *
+ * This is the helper to open a file from kernelspace if you really
+ * have to.  But in generally you should not do this, so please move
+ * along, nothing to see here..
+ */
+struct file *file_open_name(struct filename *name, int flags,
+                            umode_t mode)
+{
+    struct open_flags op;
+    struct open_how how = build_open_how(flags, mode);
+    int err = build_open_flags(&how, &op);
+    if (err)
+        return ERR_PTR(err);
+    return do_filp_open(AT_FDCWD, name, &op);
+}
+
+/**
+ * filp_open - open file and return file pointer
+ *
+ * @filename:   path to open
+ * @flags:  open flags as per the open(2) second argument
+ * @mode:   mode for the new file if O_CREAT is set, else ignored
+ *
+ * This is the helper to open a file from kernelspace if you really
+ * have to.  But in generally you should not do this, so please move
+ * along, nothing to see here..
+ */
+struct file *filp_open(const char *filename, int flags, umode_t mode)
+{
+    struct filename *name = getname_kernel(filename);
+    struct file *file = ERR_CAST(name);
+
+    if (!IS_ERR(name)) {
+        file = file_open_name(name, flags, mode);
+        putname(name);
+    }
+    return file;
+}
+EXPORT_SYMBOL(filp_open);
+
 long do_sys_open(int dfd, const char __user *filename, int flags,
                  umode_t mode)
 {

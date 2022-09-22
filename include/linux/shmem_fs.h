@@ -2,10 +2,10 @@
 #ifndef __SHMEM_FS_H
 #define __SHMEM_FS_H
 
-#if 0
 #include <linux/file.h>
 #include <linux/swap.h>
 #include <linux/mempolicy.h>
+#if 0
 #include <linux/xattr.h>
 #endif
 #include <linux/pagemap.h>

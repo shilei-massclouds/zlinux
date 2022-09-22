@@ -1648,6 +1648,11 @@ static inline struct file *get_file(struct file *f)
 
 #define file_count(x)   atomic_long_read(&(x)->f_count)
 
+extern struct file *file_open_name(struct filename *, int, umode_t);
+extern struct file *filp_open(const char *, int, umode_t);
+extern struct file *file_open_root(const struct path *,
+                                   const char *, int, umode_t);
+
 extern int filp_close(struct file *, fl_owner_t id);
 
 static inline int mapping_map_writable(struct address_space *mapping)
@@ -1782,5 +1787,13 @@ extern void locks_remove_posix(struct file *, fl_owner_t);
 
 #define get_file_rcu_many(x, cnt)   \
     atomic_long_add_unless(&(x)->f_count, (cnt), 0)
+
+static inline
+bool HAS_UNMAPPED_ID(struct user_namespace *mnt_userns,
+                     struct inode *inode)
+{
+    return !uid_valid(i_uid_into_mnt(mnt_userns, inode)) ||
+           !gid_valid(i_gid_into_mnt(mnt_userns, inode));
+}
 
 #endif /* _LINUX_FS_H */

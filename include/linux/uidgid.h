@@ -66,4 +66,14 @@ static inline bool uid_eq(kuid_t left, kuid_t right)
     return __kuid_val(left) == __kuid_val(right);
 }
 
+static inline bool uid_valid(kuid_t uid)
+{
+    return __kuid_val(uid) != (uid_t) -1;
+}
+
+static inline bool gid_valid(kgid_t gid)
+{
+    return __kgid_val(gid) != (gid_t) -1;
+}
+
 #endif /* _LINUX_UIDGID_H */

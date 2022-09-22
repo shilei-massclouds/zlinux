@@ -27,11 +27,60 @@
 
 #include "internal.h"
 
+static DEFINE_SPINLOCK(cdev_lock);
+
+static struct kobject *cdev_get(struct cdev *p)
+{
+#if 0
+    struct module *owner = p->owner;
+    struct kobject *kobj;
+
+    if (owner && !try_module_get(owner))
+        return NULL;
+    kobj = kobject_get_unless_zero(&p->kobj);
+    if (!kobj)
+        module_put(owner);
+    return kobj;
+#endif
+    panic("%s: END!\n", __func__);
+}
+
 /*
  * Called every time a character special file is opened
  */
 static int chrdev_open(struct inode *inode, struct file *filp)
 {
+    const struct file_operations *fops;
+    struct cdev *p;
+    struct cdev *new = NULL;
+    int ret = 0;
+
+    spin_lock(&cdev_lock);
+    p = inode->i_cdev;
+    if (!p) {
+#if 0
+        struct kobject *kobj;
+        int idx;
+        spin_unlock(&cdev_lock);
+        kobj = kobj_lookup(cdev_map, inode->i_rdev, &idx);
+        if (!kobj)
+            return -ENXIO;
+        new = container_of(kobj, struct cdev, kobj);
+        spin_lock(&cdev_lock);
+        /* Check i_cdev again in case somebody beat us to it while
+           we dropped the lock. */
+        p = inode->i_cdev;
+        if (!p) {
+            inode->i_cdev = p = new;
+            list_add(&inode->i_devices, &p->list);
+            new = NULL;
+        } else if (!cdev_get(p))
+            ret = -ENXIO;
+#endif
+        panic("%s: !p\n", __func__);
+    } else if (!cdev_get(p))
+        ret = -ENXIO;
+
     panic("%s: END!\n", __func__);
 }
 
