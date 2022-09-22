@@ -239,3 +239,46 @@ SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf,
     printk("--------- %s: ...\n", __func__);
     return ksys_read(fd, buf, count);
 }
+
+ssize_t vfs_write(struct file *file, const char __user *buf,
+                  size_t count, loff_t *pos)
+{
+    ssize_t ret;
+
+    if (!(file->f_mode & FMODE_WRITE))
+        return -EBADF;
+    if (!(file->f_mode & FMODE_CAN_WRITE))
+        return -EINVAL;
+    if (unlikely(!access_ok(buf, count)))
+        return -EFAULT;
+
+    panic("%s: END!\n", __func__);
+}
+
+ssize_t ksys_write(unsigned int fd, const char __user *buf,
+                   size_t count)
+{
+    struct fd f = fdget_pos(fd);
+    ssize_t ret = -EBADF;
+
+    if (f.file) {
+        loff_t pos, *ppos = file_ppos(f.file);
+        if (ppos) {
+            pos = *ppos;
+            ppos = &pos;
+        }
+        ret = vfs_write(f.file, buf, count, ppos);
+        if (ret >= 0 && ppos)
+            f.file->f_pos = pos;
+        fdput_pos(f);
+    }
+
+    return ret;
+}
+
+SYSCALL_DEFINE3(write, unsigned int, fd, const char __user *, buf,
+                size_t, count)
+{
+    printk("--------- %s: fd(%u) ...\n", __func__, fd);
+    return ksys_write(fd, buf, count);
+}

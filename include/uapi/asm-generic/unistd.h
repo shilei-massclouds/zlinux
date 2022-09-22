@@ -30,6 +30,9 @@ __SYSCALL(__NR_close, sys_close)
 #define __NR_read 63
 __SYSCALL(__NR_read, sys_read)
 
+#define __NR_write 64
+__SYSCALL(__NR_write, sys_write)
+
 /* fs/stat.c */
 #define __NR_readlinkat 78
 __SYSCALL(__NR_readlinkat, sys_readlinkat)
