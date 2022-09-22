@@ -319,7 +319,6 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
     if (!(vmf->flags & FAULT_FLAG_WRITE)) {
         entry = pte_mkspecial(pfn_pte(my_zero_pfn(vmf->address),
                                       vma->vm_page_prot));
-        printk("%s: addr(%lx) entry(%lx)\n", __func__, vmf->address, entry);
         vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd,
                                        vmf->address, &vmf->ptl);
         if (!pte_none(*vmf->pte)) {
@@ -372,8 +371,6 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
     lru_cache_add_inactive_or_unevictable(page, vma);
 
  setpte:
-    printk("%s: ret(%d) pte(%lx) entry(%lx)\n",
-           __func__, ret, vmf->pte, entry);
     set_pte_at(vma->vm_mm, vmf->address, vmf->pte, entry);
 
     /* No need to invalidate - it was non-present before */
@@ -435,7 +432,6 @@ static vm_fault_t __do_fault(struct vm_fault *vmf)
     else
         VM_BUG_ON_PAGE(!PageLocked(vmf->page), vmf->page);
 
-    printk("%s: END!\n", __func__);
     return ret;
 }
 
@@ -478,7 +474,6 @@ void do_set_pte(struct vm_fault *vmf, struct page *page,
         inc_mm_counter_fast(vma->vm_mm, mm_counter_file(page));
         page_add_file_rmap(page, vma, false);
     }
-    printk("%s: addr(%lx) entry(%lx)\n", __func__, addr, entry);
     set_pte_at(vma->vm_mm, addr, vmf->pte, entry);
 }
 
@@ -589,7 +584,6 @@ static vm_fault_t do_cow_fault(struct vm_fault *vmf)
     put_page(vmf->page);
     if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
         goto uncharge_out;
-    printk("%s: END!\n", __func__);
     return ret;
  uncharge_out:
     put_page(vmf->cow_page);
@@ -646,9 +640,6 @@ static vm_fault_t do_fault_around(struct vm_fault *vmf)
                      vmf->vma->vm_pgoff - 1,
                      start_pgoff + nr_pages - 1);
 
-    printk("+++ +++ 1 %s: pmd(%lx) (%lx)!\n",
-           __func__, vmf->pmd, *vmf->pmd);
-
     if (pmd_none(*vmf->pmd)) {
         vmf->prealloc_pte = pte_alloc_one(vmf->vma->vm_mm);
         if (!vmf->prealloc_pte)
@@ -670,39 +661,21 @@ static vm_fault_t do_read_fault(struct vm_fault *vmf)
      */
     if (vma->vm_ops->map_pages &&
         fault_around_bytes >> PAGE_SHIFT > 1) {
-        printk("%s: 0.1 address(%lx)\n", __func__, vmf->address);
         ret = do_fault_around(vmf);
-        printk("%s: 0.2 ret(%x)\n", __func__, ret);
-#if 0
-        {
-            if (vmf->address == 0xfffffff7f03000) {
-                //unsigned long *p = 0xfffffff7f03000;
-                unsigned long *p = 0xfffffff7f03000;
-                printk("%s: 0.2.5 ...\n", __func__, ret);
-                barrier();
-                printk("%s: test (%lx)\n", __func__, *p);
-                printk("%s: 0.2.5 ok!\n", __func__, ret);
-            }
-        }
-#endif
-        printk("%s: 0.3\n", __func__);
         if (ret)
             return ret;
     }
 
-    printk("%s: 1\n", __func__);
     ret = __do_fault(vmf);
     if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE |
                         VM_FAULT_RETRY)))
         return ret;
-    printk("%s: 2 ret(%u)\n", __func__, ret);
 
     ret |= finish_fault(vmf);
     unlock_page(vmf->page);
     if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE |
                         VM_FAULT_RETRY)))
         put_page(vmf->page);
-    printk("%s: 3 ret(%u)\n", __func__, ret);
     return ret;
 }
 
@@ -739,7 +712,6 @@ static vm_fault_t do_fault(struct vm_fault *vmf)
         vmf->prealloc_pte = NULL;
     }
 
-    printk("%s: END!\n", __func__);
     return ret;
 }
 
@@ -815,7 +787,6 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
     int page_copied = 0;
     struct mmu_notifier_range range;
 
-    printk("%s: 1\n", __func__);
     if (unlikely(anon_vma_prepare(vma)))
         goto oom;
 
@@ -1079,8 +1050,6 @@ static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
         else
             return do_fault(vmf);
     }
-
-    printk("+++++++++++++++++ %s: HAS vmf->pte!\n", __func__);
 
     if (!pte_present(vmf->orig_pte))
         return do_swap_page(vmf);

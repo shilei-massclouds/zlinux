@@ -228,10 +228,6 @@ vm_fault_t filemap_map_pages(struct vm_fault *vmf,
     addr = vma->vm_start +
         ((start_pgoff - vma->vm_pgoff) << PAGE_SHIFT);
 
-    printk("+++ +++ 0 %s: pmd(%lx) mm(%lx) active_mm(%lx) pgd(%lx)!\n",
-           __func__, vmf->pmd, current->mm, current->active_mm,
-           current->mm->pgd);
-
     vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd, addr,
                                    &vmf->ptl);
 
@@ -248,20 +244,12 @@ vm_fault_t filemap_map_pages(struct vm_fault *vmf,
         vmf->pte += xas.xa_index - last_pgoff;
         last_pgoff = xas.xa_index;
 
-        printk("+++ +++ 1 %s: file(%s) addr(%lx) size(%lx)\n",
-               __func__,
-               file->f_path.dentry->d_name.name,
-               addr, end_pgoff - start_pgoff);
-
         if (!pte_none(*vmf->pte))
             goto unlock;
 
         /* We're about to handle the fault */
         if (vmf->address == addr)
             ret = VM_FAULT_NOPAGE;
-
-        printk("+++ +++ 2 %s: pte(%lx) ret(%x)!\n",
-               __func__, vmf->pte, ret);
 
         do_set_pte(vmf, page, addr);
         /* no need to invalidate: a not-present page won't be cached */
@@ -338,7 +326,6 @@ static struct file *do_sync_mmap_readahead(struct vm_fault *vmf)
     ra->async_size = ra->ra_pages / 4;
     ractl._index = ra->start;
     page_cache_ra_order(&ractl, ra, 0);
-    printk("%s: END!\n", __func__);
     return fpin;
 }
 
@@ -489,7 +476,6 @@ vm_fault_t filemap_fault(struct vm_fault *vmf)
         count_vm_event(PGMAJFAULT);
         ret = VM_FAULT_MAJOR;
         fpin = do_sync_mmap_readahead(vmf);
-        printk("%s: 0\n", __func__);
 
      retry_find:
         /*
@@ -564,7 +550,6 @@ vm_fault_t filemap_fault(struct vm_fault *vmf)
     }
 
     vmf->page = folio_file_page(folio, index);
-    printk("%s: END!\n", __func__);
     return ret | VM_FAULT_LOCKED;
 
  page_not_uptodate:
@@ -623,7 +608,6 @@ int generic_file_mmap(struct file *file, struct vm_area_struct *vma)
         return -ENOEXEC;
     file_accessed(file);
     vma->vm_ops = &generic_file_vm_ops;
-    printk("%s: !\n", __func__);
     return 0;
 }
 EXPORT_SYMBOL(generic_file_mmap);
@@ -1848,7 +1832,6 @@ void page_endio(struct page *page, bool is_write, int err)
             struct address_space *mapping;
 
             SetPageError(page);
-            printk("%s: before page_mapping ...\n", __func__);
             mapping = page_mapping(page);
             if (mapping)
                 mapping_set_error(mapping, err);
