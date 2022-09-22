@@ -534,6 +534,8 @@ static int copy_mm(unsigned long clone_flags, struct task_struct *tsk)
     tsk->mm = NULL;
     tsk->active_mm = NULL;
 
+    printk("%s: pgd(%lx)\n", __func__, current->active_mm->pgd);
+
     /*
      * Are we cloning a kernel thread?
      *

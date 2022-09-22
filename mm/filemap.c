@@ -225,9 +225,15 @@ vm_fault_t filemap_map_pages(struct vm_fault *vmf,
         goto out;
     }
 
-    addr = vma->vm_start + ((start_pgoff - vma->vm_pgoff) << PAGE_SHIFT);
+    addr = vma->vm_start +
+        ((start_pgoff - vma->vm_pgoff) << PAGE_SHIFT);
 
-    vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd, addr, &vmf->ptl);
+    printk("+++ +++ 0 %s: pmd(%lx) mm(%lx) active_mm(%lx) pgd(%lx)!\n",
+           __func__, vmf->pmd, current->mm, current->active_mm,
+           current->mm->pgd);
+
+    vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd, addr,
+                                   &vmf->ptl);
 
     do {
      again:
@@ -250,11 +256,12 @@ vm_fault_t filemap_map_pages(struct vm_fault *vmf,
         if (!pte_none(*vmf->pte))
             goto unlock;
 
-        printk("+++ +++ 2 %s: !\n", __func__);
-
         /* We're about to handle the fault */
         if (vmf->address == addr)
             ret = VM_FAULT_NOPAGE;
+
+        printk("+++ +++ 2 %s: pte(%lx) ret(%x)!\n",
+               __func__, vmf->pte, ret);
 
         do_set_pte(vmf, page, addr);
         /* no need to invalidate: a not-present page won't be cached */

@@ -259,5 +259,17 @@ asmlinkage void do_page_fault(struct pt_regs *regs)
         return;
     }
     printk("######### %s: END!\n", __func__);
+#if 0
+    printk("%s: 0.0 addr(%lx) (%lx)...\n", __func__, addr, flags);
+    {
+        if ((flags == 0x254) && addr == 0xfffffff7fe0100) {
+            //unsigned long *p = 0xfffffff7f03000;
+            unsigned long *p = 0xfffffff7f03bc2;
+            printk("%s: 0.1 ...\n", __func__);
+            printk("%s: test (%lx)\n", __func__, *p);
+            printk("%s: 0.2 ok!\n", __func__);
+        }
+    }
+#endif
     return;
 }

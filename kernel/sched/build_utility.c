@@ -73,6 +73,6 @@
 #include "stop_task.c"
 #include "topology.c"
 
-//#include "membarrier.c"
+#include "membarrier.c"
 
 #include "isolation.c"

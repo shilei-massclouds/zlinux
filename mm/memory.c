@@ -88,10 +88,49 @@ struct zap_details {
 };
 
 #if defined(SPLIT_RSS_COUNTING)
-#error "NOT SPLIT_RSS_COUNTING!"
+
+void sync_mm_rss(struct mm_struct *mm)
+{
+    int i;
+
+    for (i = 0; i < NR_MM_COUNTERS; i++) {
+        if (current->rss_stat.count[i]) {
+            add_mm_counter(mm, i, current->rss_stat.count[i]);
+            current->rss_stat.count[i] = 0;
+        }
+    }
+    current->rss_stat.events = 0;
+}
+
+static void add_mm_counter_fast(struct mm_struct *mm, int member,
+                                int val)
+{
+    struct task_struct *task = current;
+
+    if (likely(task->mm == mm))
+        task->rss_stat.count[member] += val;
+    else
+        add_mm_counter(mm, member, val);
+}
+
+#define inc_mm_counter_fast(mm, member) \
+    add_mm_counter_fast(mm, member, 1)
+
+#define dec_mm_counter_fast(mm, member) \
+    add_mm_counter_fast(mm, member, -1)
+
+/* sync counter once per 64 page faults */
+#define TASK_RSS_EVENTS_THRESH  (64)
+static void check_sync_rss_stat(struct task_struct *task)
+{
+    if (unlikely(task != current))
+        return;
+    if (unlikely(task->rss_stat.events++ > TASK_RSS_EVENTS_THRESH))
+        sync_mm_rss(task->mm);
+}
+
 #else
-#define inc_mm_counter_fast(mm, member) inc_mm_counter(mm, member)
-#define dec_mm_counter_fast(mm, member) dec_mm_counter(mm, member)
+#error "NOT SPLIT_RSS_COUNTING!"
 #endif
 
 /*
@@ -280,6 +319,7 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
     if (!(vmf->flags & FAULT_FLAG_WRITE)) {
         entry = pte_mkspecial(pfn_pte(my_zero_pfn(vmf->address),
                                       vma->vm_page_prot));
+        printk("%s: addr(%lx) entry(%lx)\n", __func__, vmf->address, entry);
         vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd,
                                        vmf->address, &vmf->ptl);
         if (!pte_none(*vmf->pte)) {
@@ -332,13 +372,14 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
     lru_cache_add_inactive_or_unevictable(page, vma);
 
  setpte:
+    printk("%s: ret(%d) pte(%lx) entry(%lx)\n",
+           __func__, ret, vmf->pte, entry);
     set_pte_at(vma->vm_mm, vmf->address, vmf->pte, entry);
 
     /* No need to invalidate - it was non-present before */
     update_mmu_cache(vma, vmf->address, vmf->pte);
  unlock:
     pte_unmap_unlock(vmf->pte, vmf->ptl);
-    printk("%s: FAULT_FLAG_WRITE ret(%d)\n", __func__, ret);
     return ret;
  release:
     put_page(page);
@@ -410,7 +451,8 @@ static inline bool arch_wants_old_prefaulted_pte(void)
 }
 #endif
 
-void do_set_pte(struct vm_fault *vmf, struct page *page, unsigned long addr)
+void do_set_pte(struct vm_fault *vmf, struct page *page,
+                unsigned long addr)
 {
     struct vm_area_struct *vma = vmf->vma;
     bool write = vmf->flags & FAULT_FLAG_WRITE;
@@ -596,10 +638,16 @@ static vm_fault_t do_fault_around(struct vm_fault *vmf)
      *  end_pgoff is either the end of the page table, the end of
      *  the vma or nr_pages from start_pgoff, depending what is nearest.
      */
-    end_pgoff = start_pgoff - ((address >> PAGE_SHIFT) & (PTRS_PER_PTE - 1)) +
+    end_pgoff = start_pgoff -
+        ((address >> PAGE_SHIFT) & (PTRS_PER_PTE - 1)) +
         PTRS_PER_PTE - 1;
-    end_pgoff = min3(end_pgoff, vma_pages(vmf->vma) + vmf->vma->vm_pgoff - 1,
+
+    end_pgoff = min3(end_pgoff, vma_pages(vmf->vma) +
+                     vmf->vma->vm_pgoff - 1,
                      start_pgoff + nr_pages - 1);
+
+    printk("+++ +++ 1 %s: pmd(%lx) (%lx)!\n",
+           __func__, vmf->pmd, *vmf->pmd);
 
     if (pmd_none(*vmf->pmd)) {
         vmf->prealloc_pte = pte_alloc_one(vmf->vma->vm_mm);
@@ -620,22 +668,41 @@ static vm_fault_t do_read_fault(struct vm_fault *vmf)
      * if page by the offset is not ready to be mapped (cold cache or
      * something).
      */
-    if (vma->vm_ops->map_pages && fault_around_bytes >> PAGE_SHIFT > 1) {
+    if (vma->vm_ops->map_pages &&
+        fault_around_bytes >> PAGE_SHIFT > 1) {
+        printk("%s: 0.1 address(%lx)\n", __func__, vmf->address);
         ret = do_fault_around(vmf);
+        printk("%s: 0.2 ret(%x)\n", __func__, ret);
+#if 0
+        {
+            if (vmf->address == 0xfffffff7f03000) {
+                //unsigned long *p = 0xfffffff7f03000;
+                unsigned long *p = 0xfffffff7f03000;
+                printk("%s: 0.2.5 ...\n", __func__, ret);
+                barrier();
+                printk("%s: test (%lx)\n", __func__, *p);
+                printk("%s: 0.2.5 ok!\n", __func__, ret);
+            }
+        }
+#endif
+        printk("%s: 0.3\n", __func__);
         if (ret)
             return ret;
     }
 
+    printk("%s: 1\n", __func__);
     ret = __do_fault(vmf);
     if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE |
                         VM_FAULT_RETRY)))
         return ret;
+    printk("%s: 2 ret(%u)\n", __func__, ret);
 
     ret |= finish_fault(vmf);
     unlock_page(vmf->page);
     if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE |
                         VM_FAULT_RETRY)))
         put_page(vmf->page);
+    printk("%s: 3 ret(%u)\n", __func__, ret);
     return ret;
 }
 
@@ -1013,6 +1080,8 @@ static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
             return do_fault(vmf);
     }
 
+    printk("+++++++++++++++++ %s: HAS vmf->pte!\n", __func__);
+
     if (!pte_present(vmf->orig_pte))
         return do_swap_page(vmf);
 
@@ -1085,7 +1154,7 @@ __handle_mm_fault(struct vm_area_struct *vma,
     vmf.pud = pud_alloc(mm, p4d, address);
     if (!vmf.pud)
         return VM_FAULT_OOM;
- retry_pud:
+
     barrier();
 
     vmf.pmd = pmd_alloc(mm, vmf.pud, address);
@@ -1096,7 +1165,9 @@ __handle_mm_fault(struct vm_area_struct *vma,
 
     barrier();
 
-    printk("+++ %s: END!\n", __func__);
+    if (unlikely(is_swap_pmd(vmf.orig_pmd)))
+        return 0;
+
     return handle_pte_fault(&vmf);
 }
 
@@ -1180,10 +1251,10 @@ handle_mm_fault(struct vm_area_struct *vma, unsigned long address,
 #if 0
     count_vm_event(PGFAULT);
     count_memcg_event_mm(vma->vm_mm, PGFAULT);
+#endif
 
     /* do counter updates before entering really critical section. */
     check_sync_rss_stat(current);
-#endif
 
     if (unlikely(is_vm_hugetlb_page(vma)))
         ret = hugetlb_fault(vma->vm_mm, vma, address, flags);
@@ -1192,7 +1263,6 @@ handle_mm_fault(struct vm_area_struct *vma, unsigned long address,
 
     mm_account_fault(regs, address, flags, ret);
 
-    printk("+++ %s: END!\n", __func__);
     return ret;
 }
 
@@ -1733,3 +1803,13 @@ void free_pgtables(struct mmu_gather *tlb, struct vm_area_struct *vma,
         vma = next;
     }
 }
+
+/*
+ * CONFIG_MMU architectures set up ZERO_PAGE in their paging_init()
+ */
+static int __init init_zero_pfn(void)
+{
+    zero_pfn = page_to_pfn(ZERO_PAGE(0));
+    return 0;
+}
+early_initcall(init_zero_pfn);

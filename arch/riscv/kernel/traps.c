@@ -50,8 +50,8 @@ static void do_trap_error(struct pt_regs *regs, int signo, int code,
 {
     current->thread.bad_cause = regs->cause;
 
-    printk("--- --- %s: signo(%d:%s) addr(%lx)\n",
-           __func__, signo, str, addr);
+    printk("--- --- %s: signo(%d:%s) addr(%lx) epc(%lx) status(%lx)\n",
+           __func__, signo, str, addr, regs->epc, regs->status);
     if (user_mode(regs)) {
         do_trap(regs, signo, code, addr);
     } else {

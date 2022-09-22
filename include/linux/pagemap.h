@@ -238,7 +238,8 @@ static inline void folio_wait_locked(struct folio *folio)
  *
  * Return: The page containing the file data for this index.
  */
-static inline struct page *folio_file_page(struct folio *folio, pgoff_t index)
+static inline
+struct page *folio_file_page(struct folio *folio, pgoff_t index)
 {
     /* HugeTLBfs indexes the page cache in units of hpage_size */
     if (folio_test_hugetlb(folio))

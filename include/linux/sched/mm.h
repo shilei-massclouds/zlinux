@@ -199,4 +199,6 @@ static inline void __fs_reclaim_release(unsigned long ip) { }
 static inline void fs_reclaim_acquire(gfp_t gfp_mask) { }
 static inline void fs_reclaim_release(gfp_t gfp_mask) { }
 
+extern void membarrier_exec_mmap(struct mm_struct *mm);
+
 #endif /* _LINUX_SCHED_MM_H */

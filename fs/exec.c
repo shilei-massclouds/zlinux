@@ -789,10 +789,8 @@ static int exec_mmap(struct mm_struct *mm)
     tsk = current;
     old_mm = current->mm;
     exec_mm_release(tsk, old_mm);
-#if 0
     if (old_mm)
         sync_mm_rss(old_mm);
-#endif
 
     ret = down_write_killable(&tsk->signal->exec_update_lock);
     if (ret)
@@ -815,7 +813,7 @@ static int exec_mmap(struct mm_struct *mm)
     }
 
     task_lock(tsk);
-    //membarrier_exec_mmap(mm);
+    membarrier_exec_mmap(mm);
 
     local_irq_disable();
     active_mm = tsk->active_mm;
