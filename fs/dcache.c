@@ -1577,7 +1577,5 @@ void __init vfs_caches_init(void)
     files_maxfiles_init();
     mnt_init();
     bdev_cache_init();
-#if 0
     chrdev_init();
-#endif
 }

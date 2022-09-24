@@ -17,15 +17,17 @@
 //#include <linux/seq_file.h>
 
 #include <linux/kobject.h>
-#if 0
 #include <linux/kobj_map.h>
 #include <linux/cdev.h>
-#endif
 #include <linux/mutex.h>
 #include <linux/backing-dev.h>
 //#include <linux/tty.h>
 
 #include "internal.h"
+
+static struct kobj_map *cdev_map;
+
+static DEFINE_MUTEX(chrdevs_lock);
 
 static DEFINE_SPINLOCK(cdev_lock);
 
@@ -45,6 +47,15 @@ static struct kobject *cdev_get(struct cdev *p)
     panic("%s: END!\n", __func__);
 }
 
+void cdev_put(struct cdev *p)
+{
+    if (p) {
+        struct module *owner = p->owner;
+        kobject_put(&p->kobj);
+        module_put(owner);
+    }
+}
+
 /*
  * Called every time a character special file is opened
  */
@@ -58,13 +69,13 @@ static int chrdev_open(struct inode *inode, struct file *filp)
     spin_lock(&cdev_lock);
     p = inode->i_cdev;
     if (!p) {
-#if 0
         struct kobject *kobj;
         int idx;
         spin_unlock(&cdev_lock);
         kobj = kobj_lookup(cdev_map, inode->i_rdev, &idx);
         if (!kobj)
             return -ENXIO;
+#if 0
         new = container_of(kobj, struct cdev, kobj);
         spin_lock(&cdev_lock);
         /* Check i_cdev again in case somebody beat us to it while
@@ -81,6 +92,11 @@ static int chrdev_open(struct inode *inode, struct file *filp)
     } else if (!cdev_get(p))
         ret = -ENXIO;
 
+    spin_unlock(&cdev_lock);
+    cdev_put(new);
+    if (ret)
+        return ret;
+
     panic("%s: END!\n", __func__);
 }
 
@@ -93,3 +109,18 @@ const struct file_operations def_chr_fops = {
     .open = chrdev_open,
     .llseek = noop_llseek,
 };
+
+static struct kobject *base_probe(dev_t dev, int *part, void *data)
+{
+#if 0
+    if (request_module("char-major-%d-%d", MAJOR(dev), MINOR(dev)) > 0)
+        /* Make old-style 2.4 aliases work */
+        request_module("char-major-%d", MAJOR(dev));
+#endif
+    return NULL;
+}
+
+void __init chrdev_init(void)
+{
+    cdev_map = kobj_map_init(base_probe, &chrdevs_lock);
+}

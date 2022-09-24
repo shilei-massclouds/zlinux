@@ -73,6 +73,15 @@ extern int __platform_driver_register(struct platform_driver *,
                                       struct module *);
 extern void platform_driver_unregister(struct platform_driver *);
 
+/* module_platform_driver() - Helper macro for drivers that don't do
+ * anything special in module init/exit.  This eliminates a lot of
+ * boilerplate.  Each module may only use this macro once, and
+ * calling it replaces module_init() and module_exit()
+ */
+#define module_platform_driver(__platform_driver) \
+    module_driver(__platform_driver, platform_driver_register, \
+                  platform_driver_unregister)
+
 static inline void *platform_get_drvdata(const struct platform_device *pdev)
 {
     return dev_get_drvdata(&pdev->dev);

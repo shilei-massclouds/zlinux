@@ -84,3 +84,5 @@ extern void __mnt_drop_write_file(struct file *);
 extern int vfs_open(const struct path *, struct file *);
 
 extern struct vfsmount *lookup_mnt(const struct path *);
+
+extern void __init chrdev_init(void);
