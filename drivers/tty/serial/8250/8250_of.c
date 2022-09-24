@@ -13,21 +13,181 @@
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
+#include <linux/of_device.h>
 #include <uapi/linux/serial.h>
 #if 0
 #include <linux/pm_runtime.h>
 #include <linux/clk.h>
 #include <linux/reset.h>
+#endif
 
 #include "8250.h"
+
+struct of_serial_info {
+#if 0
+    struct clk *clk;
+    struct reset_control *rst;
 #endif
+    int type;
+    int line;
+};
+
+/*
+ * Fill a struct uart_port for a given device node
+ */
+static int of_platform_serial_setup(struct platform_device *ofdev,
+                                    int type, struct uart_8250_port *up,
+                                    struct of_serial_info *info)
+{
+    struct resource resource;
+    struct device_node *np = ofdev->dev.of_node;
+    struct uart_port *port = &up->port;
+    u32 clk, spd, prop;
+    int ret, irq;
+
+    memset(port, 0, sizeof *port);
+
+#if 0
+    pm_runtime_enable(&ofdev->dev);
+    pm_runtime_get_sync(&ofdev->dev);
+#endif
+
+    if (of_property_read_u32(np, "clock-frequency", &clk)) {
+        panic("%s: clock-frequency!\n", __func__);
+    }
+    /* If current-speed was set, then try not to change it. */
+    if (of_property_read_u32(np, "current-speed", &spd) == 0)
+        port->custom_divisor = clk / (16 * spd);
+
+    ret = of_address_to_resource(np, 0, &resource);
+    if (ret) {
+        dev_warn(&ofdev->dev, "invalid address\n");
+        goto err_unprepare;
+    }
+
+    port->flags = UPF_SHARE_IRQ | UPF_BOOT_AUTOCONF | UPF_FIXED_PORT |
+                  UPF_FIXED_TYPE;
+    spin_lock_init(&port->lock);
+
+    if (resource_type(&resource) == IORESOURCE_IO) {
+        port->iotype = UPIO_PORT;
+        port->iobase = resource.start;
+    } else {
+        port->mapbase = resource.start;
+        port->mapsize = resource_size(&resource);
+
+        /* Check for shifted address mapping */
+        if (of_property_read_u32(np, "reg-offset", &prop) == 0) {
+            panic("%s: reg-offset!\n", __func__);
+        }
+
+        port->iotype = UPIO_MEM;
+        if (of_property_read_u32(np, "reg-io-width", &prop) == 0) {
+            switch (prop) {
+            case 1:
+                port->iotype = UPIO_MEM;
+                break;
+            case 2:
+                port->iotype = UPIO_MEM16;
+                break;
+            case 4:
+                port->iotype = of_device_is_big_endian(np) ?
+                           UPIO_MEM32BE : UPIO_MEM32;
+                break;
+            default:
+                dev_warn(&ofdev->dev, "unsupported reg-io-width (%d)\n",
+                         prop);
+                ret = -EINVAL;
+                goto err_unprepare;
+            }
+        }
+        port->flags |= UPF_IOREMAP;
+    }
+
+    /* Compatibility with the deprecated pxa driver and 8250_pxa drivers. */
+    if (of_device_is_compatible(np, "mrvl,mmp-uart"))
+        port->regshift = 2;
+
+    /* Check for registers offset within the devices address range */
+    if (of_property_read_u32(np, "reg-shift", &prop) == 0)
+        port->regshift = prop;
+
+    /* Check for fifo size */
+    if (of_property_read_u32(np, "fifo-size", &prop) == 0)
+        port->fifosize = prop;
+
+    /* Check for a fixed line number */
+    ret = of_alias_get_id(np, "serial");
+    if (ret >= 0)
+        port->line = ret;
+
+    irq = of_irq_get(np, 0);
+    if (irq < 0) {
+        if (irq == -EPROBE_DEFER) {
+            ret = -EPROBE_DEFER;
+            goto err_unprepare;
+        }
+        /* IRQ support not mandatory */
+        irq = 0;
+    }
+
+    port->irq = irq;
+
+    panic("%s: END!\n", __func__);
+    return 0;
+ err_unprepare:
+    //clk_disable_unprepare(info->clk);
+ err_pmruntime:
+#if 0
+    pm_runtime_put_sync(&ofdev->dev);
+    pm_runtime_disable(&ofdev->dev);
+#endif
+    return ret;
+}
 
 /*
  * Try to register a serial port
  */
 static int of_platform_serial_probe(struct platform_device *ofdev)
 {
-    panic("%s: END!\n", __func__);
+    struct of_serial_info *info;
+    struct uart_8250_port port8250;
+    unsigned int port_type;
+    u32 tx_threshold;
+    int ret;
+
+    port_type = (unsigned long) of_device_get_match_data(&ofdev->dev);
+    if (port_type == PORT_UNKNOWN)
+        return -EINVAL;
+
+    if (of_property_read_bool(ofdev->dev.of_node, "used-by-rtas"))
+        return -EBUSY;
+
+    info = kzalloc(sizeof(*info), GFP_KERNEL);
+    if (info == NULL)
+        return -ENOMEM;
+
+    memset(&port8250, 0, sizeof(port8250));
+    ret = of_platform_serial_setup(ofdev, port_type, &port8250, info);
+    if (ret)
+        goto err_free;
+
+    if (port8250.port.fifosize)
+        port8250.capabilities = UART_CAP_FIFO;
+
+    panic("%s: port_type(%x) END!\n", __func__, port_type);
+    return 0;
+
+ err_dispose:
+#if 0
+    irq_dispose_mapping(port8250.port.irq);
+    pm_runtime_put_sync(&ofdev->dev);
+    pm_runtime_disable(&ofdev->dev);
+    clk_disable_unprepare(info->clk);
+#endif
+ err_free:
+    kfree(info);
+    return ret;
 }
 
 /*

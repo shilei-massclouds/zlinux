@@ -499,4 +499,8 @@ of_get_compatible_child(const struct device_node *parent,
 extern struct device_node *
 of_get_child_by_name(const struct device_node *node, const char *name);
 
+extern bool of_device_is_big_endian(const struct device_node *device);
+
+extern int of_alias_get_id(struct device_node *np, const char *stem);
+
 #endif /* _LINUX_OF_H */

@@ -32,6 +32,8 @@
 
 #include "of_private.h"
 
+LIST_HEAD(aliases_lookup);
+
 struct device_node *of_root;
 EXPORT_SYMBOL(of_root);
 
@@ -39,6 +41,14 @@ struct device_node *of_chosen;
 struct device_node *of_aliases;
 struct device_node *of_stdout;
 static const char *of_stdout_options;
+
+/*
+ * Used to protect the of_aliases, to hold off addition of nodes to sysfs.
+ * This mutex must be held whenever modifications are being made to the
+ * device tree. The of_{attach,detach}_node() and
+ * of_{add,remove,update}_property() helpers make sure this happens.
+ */
+DEFINE_MUTEX(of_mutex);
 
 /* use when traversing tree through the child, sibling,
  * or parent members of struct device_node.
@@ -973,3 +983,54 @@ struct device_node *of_get_compatible_child(const struct device_node *parent,
     return child;
 }
 EXPORT_SYMBOL(of_get_compatible_child);
+
+/**
+ *  of_device_is_big_endian - check if a device has BE registers
+ *
+ *  @device: Node to check for endianness
+ *
+ *  Return: True if the device has a "big-endian" property, or if the kernel
+ *  was compiled for BE *and* the device has a "native-endian" property.
+ *  Returns false otherwise.
+ *
+ *  Callers would nominally use ioread32be/iowrite32be if
+ *  of_device_is_big_endian() == true, or readl/writel otherwise.
+ */
+bool of_device_is_big_endian(const struct device_node *device)
+{
+    if (of_property_read_bool(device, "big-endian"))
+        return true;
+    return false;
+}
+EXPORT_SYMBOL(of_device_is_big_endian);
+
+/**
+ * of_alias_get_id - Get alias id for the given device_node
+ * @np:     Pointer to the given device_node
+ * @stem:   Alias stem of the given device_node
+ *
+ * The function travels the lookup table to get the alias id for the given
+ * device_node and alias stem.
+ *
+ * Return: The alias id if found.
+ */
+int of_alias_get_id(struct device_node *np, const char *stem)
+{
+    struct alias_prop *app;
+    int id = -ENODEV;
+
+    mutex_lock(&of_mutex);
+    list_for_each_entry(app, &aliases_lookup, link) {
+        if (strcmp(app->stem, stem) != 0)
+            continue;
+
+        if (np == app->np) {
+            id = app->id;
+            break;
+        }
+    }
+    mutex_unlock(&of_mutex);
+
+    return id;
+}
+EXPORT_SYMBOL_GPL(of_alias_get_id);

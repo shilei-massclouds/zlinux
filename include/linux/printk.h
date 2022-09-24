@@ -236,4 +236,26 @@ extern int oops_in_progress;
 
 __printf(1, 2) void dump_stack_set_arch_desc(const char *fmt, ...);
 
+#define __printk_index_emit(...) do {} while (0)
+
+/*
+ * Some subsystems have their own custom printk that applies a va_format to a
+ * generic format, for example, to include a device number or other metadata
+ * alongside the format supplied by the caller.
+ *
+ * In order to store these in the way they would be emitted by the printk
+ * infrastructure, the subsystem provides us with the start, fixed string, and
+ * any subsequent text in the format string.
+ *
+ * We take a variable argument list as pr_fmt/dev_fmt/etc are sometimes passed
+ * as multiple arguments (eg: `"%s: ", "blah"`), and we must only take the
+ * first one.
+ *
+ * subsys_fmt_prefix must be known at compile time, or compilation will fail
+ * (since this is a mistake). If fmt or level is not known at compile time, no
+ * index entry will be made (since this can legitimately happen).
+ */
+#define printk_index_subsys_emit(subsys_fmt_prefix, level, fmt, ...) \
+    __printk_index_emit(fmt, level, subsys_fmt_prefix)
+
 #endif /* __KERNEL_PRINTK__ */

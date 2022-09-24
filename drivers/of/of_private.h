@@ -11,6 +11,25 @@
 #define OF_ROOT_NODE_ADDR_CELLS_DEFAULT 1
 #define OF_ROOT_NODE_SIZE_CELLS_DEFAULT 1
 
+/**
+ * struct alias_prop - Alias property in 'aliases' node
+ * @link:   List node to link the structure in aliases_lookup list
+ * @alias:  Alias property name
+ * @np:     Pointer to device_node that the alias stands for
+ * @id:     Index value from end of alias name
+ * @stem:   Alias string without the index
+ *
+ * The structure represents one alias property of 'aliases' node as
+ * an entry in aliases_lookup list.
+ */
+struct alias_prop {
+    struct list_head link;
+    const char *alias;
+    struct device_node *np;
+    int id;
+    char stem[];
+};
+
 void fdt_init_reserved_mem(void);
 void fdt_reserved_mem_save_node(unsigned long node, const char *uname,
                                 phys_addr_t base, phys_addr_t size);

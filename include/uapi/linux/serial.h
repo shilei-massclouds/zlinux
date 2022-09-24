@@ -41,4 +41,60 @@
 #define PORT_RSA    13  /* RSA-DV II/S card */
 #define PORT_MAX    13
 
+#define SERIAL_IO_PORT  0
+#define SERIAL_IO_HUB6  1
+#define SERIAL_IO_MEM   2
+#define SERIAL_IO_MEM32   3
+#define SERIAL_IO_AU      4
+#define SERIAL_IO_TSI     5
+#define SERIAL_IO_MEM32BE 6
+#define SERIAL_IO_MEM16 7
+
+#define UART_CLEAR_FIFO     0x01
+#define UART_USE_FIFO       0x02
+#define UART_STARTECH       0x04
+#define UART_NATSEMI        0x08
+
+/*
+ * Serial interface for controlling RS485 settings on chips with suitable
+ * support. Set with TIOCSRS485 and get with TIOCGRS485 if supported by your
+ * platform. The set function returns the new state, with any unsupported bits
+ * reverted appropriately.
+ */
+
+struct serial_rs485 {
+    __u32   flags;          /* RS485 feature flags */
+#define SER_RS485_ENABLED       (1 << 0)    /* If enabled */
+#define SER_RS485_RTS_ON_SEND       (1 << 1)    /* Logical level for
+                               RTS pin when
+                               sending */
+#define SER_RS485_RTS_AFTER_SEND    (1 << 2)    /* Logical level for
+                               RTS pin after sent*/
+#define SER_RS485_RX_DURING_TX      (1 << 4)
+#define SER_RS485_TERMINATE_BUS     (1 << 5)    /* Enable bus
+                               termination
+                               (if supported) */
+    __u32   delay_rts_before_send;  /* Delay before send (milliseconds) */
+    __u32   delay_rts_after_send;   /* Delay after send (milliseconds) */
+    __u32   padding[5];     /* Memory is cheap, new structs
+                       are a royal PITA .. */
+};
+
+/*
+ * Serial interface for controlling ISO7816 settings on chips with suitable
+ * support. Set with TIOCSISO7816 and get with TIOCGISO7816 if supported by
+ * your platform.
+ */
+struct serial_iso7816 {
+    __u32   flags;          /* ISO7816 feature flags */
+#define SER_ISO7816_ENABLED     (1 << 0)
+#define SER_ISO7816_T_PARAM     (0x0f << 4)
+#define SER_ISO7816_T(t)        (((t) & 0x0f) << 4)
+    __u32   tg;
+    __u32   sc_fi;
+    __u32   sc_di;
+    __u32   clk;
+    __u32   reserved[5];
+};
+
 #endif /* _UAPI_LINUX_SERIAL_H */

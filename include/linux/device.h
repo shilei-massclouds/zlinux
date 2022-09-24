@@ -16,8 +16,8 @@
 #include <linux/kobject.h>
 #include <linux/ioport.h>
 #include <linux/compiler.h>
-#if 0
 #include <linux/dev_printk.h>
+#if 0
 #include <linux/energy_model.h>
 #endif
 #include <linux/klist.h>

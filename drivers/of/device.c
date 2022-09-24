@@ -143,3 +143,15 @@ int of_dma_configure_id(struct device *dev, struct device_node *np,
     return 0;
 }
 EXPORT_SYMBOL_GPL(of_dma_configure_id);
+
+const void *of_device_get_match_data(const struct device *dev)
+{
+    const struct of_device_id *match;
+
+    match = of_match_device(dev->driver->of_match_table, dev);
+    if (!match)
+        return NULL;
+
+    return match->data;
+}
+EXPORT_SYMBOL(of_device_get_match_data);
