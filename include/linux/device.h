@@ -383,4 +383,9 @@ static inline void dev_set_uevent_suppress(struct device *dev, int val)
     dev->kobj.uevent_suppress = val;
 }
 
+static inline void *dev_get_platdata(const struct device *dev)
+{
+    return dev->platform_data;
+}
+
 #endif /* _DEVICE_H_ */

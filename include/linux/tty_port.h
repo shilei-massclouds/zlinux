@@ -138,4 +138,10 @@ tty_port_register_device_attr_serdev(struct tty_port *port,
                                      void *drvdata,
                                      const struct attribute_group **attr_grp);
 
+void tty_port_unregister_device(struct tty_port *port,
+                                struct tty_driver *driver, unsigned index);
+
+struct tty_struct *tty_port_tty_get(struct tty_port *port);
+void tty_port_tty_set(struct tty_port *port, struct tty_struct *tty);
+
 #endif /* _LINUX_TTY_PORT_H */

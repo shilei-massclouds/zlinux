@@ -231,4 +231,6 @@ tty_register_device_attr(struct tty_driver *driver,
 #define PTY_TYPE_MASTER         0x0001
 #define PTY_TYPE_SLAVE          0x0002
 
+void tty_unregister_device(struct tty_driver *driver, unsigned index);
+
 #endif /* #ifdef _LINUX_TTY_DRIVER_H */

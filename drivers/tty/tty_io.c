@@ -605,6 +605,52 @@ static char *tty_devnode(struct device *dev, umode_t *mode)
     return NULL;
 }
 
+/**
+ * tty_vhangup      -   process vhangup
+ * @tty: tty to hangup
+ *
+ * The user has asked via system call for the terminal to be hung up. We do
+ * this synchronously so that when the syscall returns the process is complete.
+ * That guarantee is necessary for security reasons.
+ */
+void tty_vhangup(struct tty_struct *tty)
+{
+#if 0
+    tty_debug_hangup(tty, "vhangup\n");
+    __tty_hangup(tty, 0);
+#endif
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL(tty_vhangup);
+
+static void queue_release_one_tty(struct kref *kref)
+{
+#if 0
+    struct tty_struct *tty = container_of(kref, struct tty_struct, kref);
+
+    /* The hangup queue is now free so we can reuse it rather than
+     *  waste a chunk of memory for each port.
+     */
+    INIT_WORK(&tty->hangup_work, release_one_tty);
+    schedule_work(&tty->hangup_work);
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * tty_kref_put     -   release a tty kref
+ * @tty: tty device
+ *
+ * Release a reference to the @tty device and if need be let the kref layer
+ * destruct the object for us.
+ */
+void tty_kref_put(struct tty_struct *tty)
+{
+    if (tty)
+        kref_put(&tty->kref, queue_release_one_tty);
+}
+EXPORT_SYMBOL(tty_kref_put);
+
 static int __init tty_class_init(void)
 {
     tty_class = class_create(THIS_MODULE, "tty");

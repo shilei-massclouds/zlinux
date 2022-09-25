@@ -17,7 +17,7 @@
 #include <linux/bitops.h>
 #include <linux/delay.h>
 #include <linux/module.h>
-//#include <linux/serdev.h>
+#include <linux/serdev.h>
 #include "tty.h"
 
 static int tty_port_default_receive_buf(struct tty_port *port,
@@ -113,6 +113,49 @@ tty_port_register_device_attr_serdev(struct tty_port *port,
                                     attr_grp);
 }
 EXPORT_SYMBOL_GPL(tty_port_register_device_attr_serdev);
+
+/**
+ * tty_port_unregister_device - deregister a tty or serdev device
+ * @port: tty_port of the device
+ * @driver: tty_driver for this device
+ * @index: index of the tty
+ *
+ * If a tty or serdev device is registered with a call to
+ * tty_port_register_device_serdev() then this function must be called when
+ * the device is gone.
+ */
+void tty_port_unregister_device(struct tty_port *port,
+                                struct tty_driver *driver, unsigned index)
+{
+    int ret;
+
+    ret = serdev_tty_port_unregister(port);
+    if (ret == 0)
+        return;
+
+    tty_unregister_device(driver, index);
+}
+EXPORT_SYMBOL_GPL(tty_port_unregister_device);
+
+/**
+ * tty_port_tty_get -   get a tty reference
+ * @port: tty port
+ *
+ * Return a refcount protected tty instance or %NULL if the port is not
+ * associated with a tty (eg due to close or hangup).
+ */
+struct tty_struct *tty_port_tty_get(struct tty_port *port)
+{
+    unsigned long flags;
+    struct tty_struct *tty;
+
+    spin_lock_irqsave(&port->lock, flags);
+    tty = tty_kref_get(port->tty);
+    spin_unlock_irqrestore(&port->lock, flags);
+    return tty;
+}
+EXPORT_SYMBOL(tty_port_tty_get);
+
 
 /**
  * tty_port_init -- initialize tty_port

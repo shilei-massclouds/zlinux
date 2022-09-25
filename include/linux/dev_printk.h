@@ -30,6 +30,10 @@ struct dev_printk_info {
 };
 
 static inline __printf(2, 3)
+void _dev_alert(const struct device *dev, const char *fmt, ...)
+{}
+
+static inline __printf(2, 3)
 void _dev_err(const struct device *dev, const char *fmt, ...)
 {}
 
@@ -49,6 +53,10 @@ void _dev_warn(const struct device *dev, const char *fmt, ...)
         dev_printk_index_emit(level, fmt);          \
         _p_func(dev, fmt, ##__VA_ARGS__);           \
     })
+
+#define dev_alert(dev, fmt, ...) \
+    dev_printk_index_wrap(_dev_alert, KERN_ALERT, dev, dev_fmt(fmt), \
+                          ##__VA_ARGS__)
 
 #define dev_err(dev, fmt, ...) \
     dev_printk_index_wrap(_dev_err, KERN_ERR, dev, dev_fmt(fmt), \

@@ -12,6 +12,37 @@
 #include <linux/platform_device.h>
 
 /*
+ * This is the platform device platform_data structure
+ */
+struct plat_serial8250_port {
+    unsigned long   iobase;     /* io base address */
+    void __iomem    *membase;   /* ioremap cookie or NULL */
+    resource_size_t mapbase;    /* resource base */
+    unsigned int    irq;        /* interrupt number */
+    unsigned long   irqflags;   /* request_irq flags */
+    unsigned int    uartclk;    /* UART clock rate */
+    void            *private_data;
+    unsigned char   regshift;   /* register shift */
+    unsigned char   iotype;     /* UPIO_* */
+    unsigned char   hub6;
+    unsigned char   has_sysrq;  /* supports magic SysRq */
+    upf_t       flags;      /* UPF_* flags */
+    unsigned int    type;       /* If UPF_FIXED_TYPE */
+    unsigned int    (*serial_in)(struct uart_port *, int);
+    void        (*serial_out)(struct uart_port *, int, int);
+    void        (*set_termios)(struct uart_port *,
+                           struct ktermios *new,
+                           struct ktermios *old);
+    void        (*set_ldisc)(struct uart_port *,
+                     struct ktermios *);
+    unsigned int    (*get_mctrl)(struct uart_port *);
+    int     (*handle_irq)(struct uart_port *);
+    void        (*pm)(struct uart_port *, unsigned int state,
+                  unsigned old);
+    void        (*handle_break)(struct uart_port *);
+};
+
+/*
  * This should be used by drivers which want to register
  * their own 8250 ports without registering their own
  * platform device.  Using these will make your driver

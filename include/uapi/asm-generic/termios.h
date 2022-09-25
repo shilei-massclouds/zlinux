@@ -12,4 +12,11 @@
 #include <asm/termbits.h>
 #include <asm/ioctls.h>
 
+struct winsize {
+    unsigned short ws_row;
+    unsigned short ws_col;
+    unsigned short ws_xpixel;
+    unsigned short ws_ypixel;
+};
+
 #endif /* _UAPI_ASM_GENERIC_TERMIOS_H */

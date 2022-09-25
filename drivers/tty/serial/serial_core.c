@@ -579,3 +579,66 @@ int uart_add_one_port(struct uart_driver *drv, struct uart_port *uport)
     return ret;
 }
 EXPORT_SYMBOL(uart_add_one_port);
+
+static inline struct uart_port *uart_port_check(struct uart_state *state)
+{
+    return state->uart_port;
+}
+
+/**
+ *  uart_remove_one_port - detach a driver defined port structure
+ *  @drv: pointer to the uart low level driver structure for this port
+ *  @uport: uart port structure for this port
+ *
+ *  Context: task context, might sleep
+ *
+ *  This unhooks (and hangs up) the specified port structure from the
+ *  core driver.  No further calls will be made to the low-level code
+ *  for this port.
+ */
+int uart_remove_one_port(struct uart_driver *drv, struct uart_port *uport)
+{
+    struct uart_state *state = drv->state + uport->line;
+    struct tty_port *port = &state->port;
+    struct uart_port *uart_port;
+    struct tty_struct *tty;
+    int ret = 0;
+
+    mutex_lock(&port_mutex);
+
+    /*
+     * Mark the port "dead" - this prevents any opens from
+     * succeeding while we shut down the port.
+     */
+    mutex_lock(&port->mutex);
+    uart_port = uart_port_check(state);
+    if (uart_port != uport)
+        dev_alert(uport->dev, "Removing wrong port: %p != %p\n",
+                  uart_port, uport);
+
+    if (!uart_port) {
+        mutex_unlock(&port->mutex);
+        ret = -EINVAL;
+        goto out;
+    }
+    uport->flags |= UPF_DEAD;
+    mutex_unlock(&port->mutex);
+
+    /*
+     * Remove the devices from the tty layer
+     */
+    tty_port_unregister_device(port, drv->tty_driver, uport->line);
+
+    tty = tty_port_tty_get(port);
+    if (tty) {
+        tty_vhangup(port->tty);
+        tty_kref_put(tty);
+    }
+
+    panic("%s: END!\n", __func__);
+
+ out:
+    mutex_unlock(&port_mutex);
+
+    return ret;
+}
