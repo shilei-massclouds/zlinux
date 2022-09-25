@@ -1,4 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0
+VERSION = 5
+PATCHLEVEL = 18
+SUBLEVEL = 1
+EXTRAVERSION =
+NAME = Superb Owl
 
 HOSTCC = gcc
 KGZIP = gzip
@@ -88,6 +93,8 @@ export srctree objtree
 ifdef need-config
 include include/config/auto.conf
 endif
+
+version_h := include/generated/uapi/linux/version.h
 
 KBUILD_BUILTIN := 1
 export KBUILD_BUILTIN
@@ -232,8 +239,28 @@ prepare: prepare0
 prepare0: archprepare
 	$(Q)$(MAKE) $(build)=.
 
+define filechk_version.h
+    if [ $(SUBLEVEL) -gt 255 ]; then                                 \
+        echo \#define LINUX_VERSION_CODE $(shell                 \
+        expr $(VERSION) \* 65536 + $(PATCHLEVEL) \* 256 + 255); \
+    else                                                             \
+        echo \#define LINUX_VERSION_CODE $(shell                 \
+        expr $(VERSION) \* 65536 + $(PATCHLEVEL) \* 256 + $(SUBLEVEL)); \
+    fi;                                                              \
+    echo '#define KERNEL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) +  \
+    ((c) > 255 ? 255 : (c)))';                                       \
+    echo \#define LINUX_VERSION_MAJOR $(VERSION);                    \
+    echo \#define LINUX_VERSION_PATCHLEVEL $(PATCHLEVEL);            \
+    echo \#define LINUX_VERSION_SUBLEVEL $(SUBLEVEL)
+endef
+
+$(version_h): PATCHLEVEL := $(or $(PATCHLEVEL), 0)
+$(version_h): SUBLEVEL := $(or $(SUBLEVEL), 0)
+$(version_h): FORCE
+	$(call filechk,version.h)
+
 # (9) archprepare -> scripts
-archprepare: scripts
+archprepare: scripts $(version_h)
 
 # Additional helpers built in scripts/
 PHONY += scripts
