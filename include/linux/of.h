@@ -503,4 +503,6 @@ extern bool of_device_is_big_endian(const struct device_node *device);
 
 extern int of_alias_get_id(struct device_node *np, const char *stem);
 
+bool of_console_check(struct device_node *dn, char *name, int index);
+
 #endif /* _LINUX_OF_H */

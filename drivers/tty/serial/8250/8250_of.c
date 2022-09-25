@@ -15,6 +15,7 @@
 #include <linux/platform_device.h>
 #include <linux/of_device.h>
 #include <uapi/linux/serial.h>
+#include <uapi/linux/serial_core.h>
 #if 0
 #include <linux/pm_runtime.h>
 #include <linux/clk.h>
@@ -133,7 +134,35 @@ static int of_platform_serial_setup(struct platform_device *ofdev,
 
     port->irq = irq;
 
-    panic("%s: END!\n", __func__);
+#if 0
+    info->rst = devm_reset_control_get_optional_shared(&ofdev->dev, NULL);
+    if (IS_ERR(info->rst)) {
+        ret = PTR_ERR(info->rst);
+        goto err_unprepare;
+    }
+
+    ret = reset_control_deassert(info->rst);
+    if (ret)
+        goto err_unprepare;
+#endif
+
+    port->type = type;
+    port->uartclk = clk;
+
+    if (of_property_read_bool(np, "no-loopback-test"))
+        port->flags |= UPF_SKIP_TEST;
+
+    port->dev = &ofdev->dev;
+    port->rs485_config = serial8250_em485_config;
+    up->rs485_start_tx = serial8250_em485_start_tx;
+    up->rs485_stop_tx = serial8250_em485_stop_tx;
+
+    switch (type) {
+    case PORT_RT2880:
+        port->iotype = UPIO_AU;
+        break;
+    }
+
     return 0;
  err_unprepare:
     //clk_disable_unprepare(info->clk);
@@ -175,7 +204,27 @@ static int of_platform_serial_probe(struct platform_device *ofdev)
     if (port8250.port.fifosize)
         port8250.capabilities = UART_CAP_FIFO;
 
-    panic("%s: port_type(%x) END!\n", __func__, port_type);
+    /* Check for TX FIFO threshold & set tx_loadsz */
+    if ((of_property_read_u32(ofdev->dev.of_node, "tx-threshold",
+                              &tx_threshold) == 0) &&
+        (tx_threshold < port8250.port.fifosize))
+        port8250.tx_loadsz = port8250.port.fifosize - tx_threshold;
+
+    if (of_property_read_bool(ofdev->dev.of_node, "auto-flow-control"))
+        port8250.capabilities |= UART_CAP_AFE;
+
+    if (of_property_read_u32(ofdev->dev.of_node,
+                             "overrun-throttle-ms",
+                             &port8250.overrun_backoff_time_ms) != 0)
+        port8250.overrun_backoff_time_ms = 0;
+
+    ret = serial8250_register_8250_port(&port8250);
+    if (ret < 0)
+        goto err_dispose;
+
+    info->type = port_type;
+    info->line = ret;
+    platform_set_drvdata(ofdev, info);
     return 0;
 
  err_dispose:

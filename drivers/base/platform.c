@@ -47,6 +47,9 @@ struct device platform_bus = {
 };
 EXPORT_SYMBOL_GPL(platform_bus);
 
+/* For automatically allocated device IDs */
+static DEFINE_IDA(platform_devid_ida);
+
 static const struct platform_device_id *
 platform_match_id(const struct platform_device_id *id,
                   struct platform_device *pdev)
@@ -405,3 +408,125 @@ int platform_get_irq(struct platform_device *dev, unsigned int num)
     return ret;
 }
 EXPORT_SYMBOL_GPL(platform_get_irq);
+
+/**
+ * platform_device_del - remove a platform-level device
+ * @pdev: platform device we're removing
+ *
+ * Note that this function will also release all memory- and port-based
+ * resources owned by the device (@dev->resource).  This function must
+ * _only_ be externally called in error cases.  All other usage is a bug.
+ */
+void platform_device_del(struct platform_device *pdev)
+{
+#if 0
+    u32 i;
+
+    if (!IS_ERR_OR_NULL(pdev)) {
+        device_del(&pdev->dev);
+
+        if (pdev->id_auto) {
+            ida_free(&platform_devid_ida, pdev->id);
+            pdev->id = PLATFORM_DEVID_AUTO;
+        }
+
+        for (i = 0; i < pdev->num_resources; i++) {
+            struct resource *r = &pdev->resource[i];
+            if (r->parent)
+                release_resource(r);
+        }
+    }
+#endif
+    panic("%s: NO implementation!\n", __func__);
+}
+EXPORT_SYMBOL_GPL(platform_device_del);
+
+/**
+ * platform_device_add - add a platform device to device hierarchy
+ * @pdev: platform device we're adding
+ *
+ * This is part 2 of platform_device_register(), though may be called
+ * separately _iff_ pdev was allocated by platform_device_alloc().
+ */
+int platform_device_add(struct platform_device *pdev)
+{
+    u32 i;
+    int ret;
+
+    if (!pdev)
+        return -EINVAL;
+
+    if (!pdev->dev.parent)
+        pdev->dev.parent = &platform_bus;
+
+    pdev->dev.bus = &platform_bus_type;
+
+    switch (pdev->id) {
+    default:
+        dev_set_name(&pdev->dev, "%s.%d", pdev->name,  pdev->id);
+        break;
+    case PLATFORM_DEVID_NONE:
+        dev_set_name(&pdev->dev, "%s", pdev->name);
+        break;
+    case PLATFORM_DEVID_AUTO:
+        /*
+         * Automatically allocated device ID. We mark it as such so
+         * that we remember it must be freed, and we append a suffix
+         * to avoid namespace collision with explicit IDs.
+         */
+        ret = ida_alloc(&platform_devid_ida, GFP_KERNEL);
+        if (ret < 0)
+            goto err_out;
+        pdev->id = ret;
+        pdev->id_auto = true;
+        dev_set_name(&pdev->dev, "%s.%d.auto", pdev->name, pdev->id);
+        break;
+    }
+
+    for (i = 0; i < pdev->num_resources; i++) {
+        struct resource *p, *r = &pdev->resource[i];
+
+        if (r->name == NULL)
+            r->name = dev_name(&pdev->dev);
+
+        p = r->parent;
+        if (!p) {
+            if (resource_type(r) == IORESOURCE_MEM)
+                p = &iomem_resource;
+            else if (resource_type(r) == IORESOURCE_IO)
+                p = &ioport_resource;
+        }
+
+        if (p) {
+            ret = insert_resource(p, r);
+            if (ret) {
+                dev_err(&pdev->dev,
+                        "failed to claim resource %d: %pR\n", i, r);
+                goto failed;
+            }
+        }
+    }
+
+    pr_debug("Registering platform device '%s'. Parent at %s\n",
+             dev_name(&pdev->dev), dev_name(pdev->dev.parent));
+
+    ret = device_add(&pdev->dev);
+    if (ret == 0)
+        return ret;
+
+ failed:
+    if (pdev->id_auto) {
+        ida_free(&platform_devid_ida, pdev->id);
+        pdev->id = PLATFORM_DEVID_AUTO;
+    }
+
+    while (i--) {
+        struct resource *r = &pdev->resource[i];
+        if (r->parent)
+            release_resource(r);
+    }
+
+ err_out:
+    return ret;
+}
+EXPORT_SYMBOL_GPL(platform_device_add);

@@ -69,6 +69,7 @@ struct resource {
 /* I/O resource extended types */
 #define IORESOURCE_SYSTEM_RAM       (IORESOURCE_MEM|IORESOURCE_SYSRAM)
 
+extern struct resource ioport_resource;
 extern struct resource iomem_resource;
 
 static inline resource_size_t resource_size(const struct resource *res)
@@ -113,6 +114,8 @@ extern struct resource *
 insert_resource_conflict(struct resource *parent, struct resource *new);
 extern int insert_resource(struct resource *parent,
                            struct resource *new);
+
+extern int release_resource(struct resource *new);
 
 #endif /* __ASSEMBLY__ */
 #endif  /* _LINUX_IOPORT_H */

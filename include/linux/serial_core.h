@@ -10,14 +10,14 @@
 #include <linux/bitops.h>
 #include <linux/compiler.h>
 #include <linux/console.h>
-//#include <linux/interrupt.h>
-//#include <linux/circ_buf.h>
+#include <linux/interrupt.h>
+#include <linux/circ_buf.h>
 #include <linux/spinlock.h>
 #include <linux/sched.h>
-//#include <linux/tty.h>
+#include <linux/tty.h>
 #include <linux/mutex.h>
 //#include <linux/sysrq.h>
-//#include <uapi/linux/serial_core.h>
+#include <uapi/linux/serial_core.h>
 #include <uapi/linux/serial.h>
 #include <uapi/linux/tty_flags.h>
 
@@ -223,6 +223,23 @@ struct earlycon_id {
     int (*setup)(struct earlycon_device *, const char *options);
 };
 
+struct uart_driver {
+    struct module   *owner;
+    const char      *driver_name;
+    const char      *dev_name;
+    int             major;
+    int             minor;
+    int             nr;
+    struct console  *cons;
+
+    /*
+     * these are private; the low level driver should not
+     * touch these; they should be initialised to NULL
+     */
+    struct uart_state   *state;
+    struct tty_driver   *tty_driver;
+};
+
 extern const struct earlycon_id __earlycon_table[];
 extern const struct earlycon_id __earlycon_table_end[];
 
@@ -235,5 +252,101 @@ void uart_console_write(struct uart_port *port,
 extern int
 of_setup_earlycon(const struct earlycon_id *match,
                   unsigned long node, const char *options);
+
+/*
+ * Port/driver registration/removal
+ */
+int art_register_driver(struct uart_driver *uart);
+void uart_unregister_driver(struct uart_driver *uart);
+int uart_add_one_port(struct uart_driver *reg, struct uart_port *port);
+int uart_remove_one_port(struct uart_driver *reg,
+                         struct uart_port *port);
+bool uart_match_port(const struct uart_port *port1,
+                     const struct uart_port *port2);
+
+int uart_register_driver(struct uart_driver *uart);
+
+/*
+ * This structure describes all the operations that can be done on the
+ * physical hardware.  See Documentation/driver-api/serial/driver.rst for details.
+ */
+struct uart_ops {
+    unsigned int    (*tx_empty)(struct uart_port *);
+    void        (*set_mctrl)(struct uart_port *, unsigned int mctrl);
+    unsigned int    (*get_mctrl)(struct uart_port *);
+    void        (*stop_tx)(struct uart_port *);
+    void        (*start_tx)(struct uart_port *);
+    void        (*throttle)(struct uart_port *);
+    void        (*unthrottle)(struct uart_port *);
+    void        (*send_xchar)(struct uart_port *, char ch);
+    void        (*stop_rx)(struct uart_port *);
+    void        (*enable_ms)(struct uart_port *);
+    void        (*break_ctl)(struct uart_port *, int ctl);
+    int     (*startup)(struct uart_port *);
+    void        (*shutdown)(struct uart_port *);
+    void        (*flush_buffer)(struct uart_port *);
+    void        (*set_termios)(struct uart_port *, struct ktermios *new,
+                       struct ktermios *old);
+    void        (*set_ldisc)(struct uart_port *, struct ktermios *);
+    void        (*pm)(struct uart_port *, unsigned int state,
+                  unsigned int oldstate);
+
+    /*
+     * Return a string describing the type of the port
+     */
+    const char  *(*type)(struct uart_port *);
+
+    /*
+     * Release IO and memory resources used by the port.
+     * This includes iounmap if necessary.
+     */
+    void        (*release_port)(struct uart_port *);
+
+    /*
+     * Request IO and memory resources used by the port.
+     * This includes iomapping the port if necessary.
+     */
+    int     (*request_port)(struct uart_port *);
+    void    (*config_port)(struct uart_port *, int);
+    int     (*verify_port)(struct uart_port *, struct serial_struct *);
+    int     (*ioctl)(struct uart_port *, unsigned int, unsigned long);
+};
+
+/* Base timer interval for polling */
+static inline int uart_poll_timeout(struct uart_port *port)
+{
+    int timeout = port->timeout;
+
+    return timeout > 6 ? (timeout / 2 - 2) : 1;
+}
+
+/**
+ * enum uart_pm_state - power states for UARTs
+ * @UART_PM_STATE_ON: UART is powered, up and operational
+ * @UART_PM_STATE_OFF: UART is powered off
+ * @UART_PM_STATE_UNDEFINED: sentinel
+ */
+enum uart_pm_state {
+    UART_PM_STATE_ON = 0,
+    UART_PM_STATE_OFF = 3, /* number taken from ACPI */
+    UART_PM_STATE_UNDEFINED,
+};
+
+/*
+ * This is the state information which is persistent across opens.
+ */
+struct uart_state {
+    struct tty_port     port;
+
+    enum uart_pm_state  pm_state;
+    struct circ_buf     xmit;
+
+    atomic_t        refcount;
+    wait_queue_head_t   remove_wait;
+    struct uart_port    *uart_port;
+};
+
+#define uart_console(port) \
+    ((port)->cons && (port)->cons->index == (port)->line)
 
 #endif /* LINUX_SERIAL_CORE_H */

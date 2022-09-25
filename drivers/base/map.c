@@ -29,6 +29,42 @@ struct kobj_map {
     struct mutex *lock;
 };
 
+int kobj_map(struct kobj_map *domain, dev_t dev, unsigned long range,
+             struct module *module, kobj_probe_t *probe,
+             int (*lock)(dev_t, void *), void *data)
+{
+    unsigned int n = MAJOR(dev + range - 1) - MAJOR(dev) + 1;
+    unsigned int index = MAJOR(dev);
+    unsigned int i;
+    struct probe *p;
+
+    if (n > 255)
+        n = 255;
+
+    p = kmalloc_array(n, sizeof(struct probe), GFP_KERNEL);
+    if (p == NULL)
+        return -ENOMEM;
+
+    for (i = 0; i < n; i++, p++) {
+        p->owner = module;
+        p->get = probe;
+        p->lock = lock;
+        p->dev = dev;
+        p->range = range;
+        p->data = data;
+    }
+    mutex_lock(domain->lock);
+    for (i = 0, p -= n; i < n; i++, p++, index++) {
+        struct probe **s = &domain->probes[index % 255];
+        while (*s && (*s)->range < range)
+            s = &(*s)->next;
+        p->next = *s;
+        *s = p;
+    }
+    mutex_unlock(domain->lock);
+    return 0;
+}
+
 struct kobject *
 kobj_lookup(struct kobj_map *domain, dev_t dev, int *index)
 {

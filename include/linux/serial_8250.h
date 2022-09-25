@@ -8,7 +8,7 @@
 #define _LINUX_SERIAL_8250_H
 
 #include <linux/serial_core.h>
-//#include <linux/serial_reg.h>
+#include <linux/serial_reg.h>
 #include <linux/platform_device.h>
 
 /*
@@ -63,6 +63,48 @@ struct uart_8250_port {
     /* Serial port overrun backoff */
     struct delayed_work overrun_backoff;
     u32 overrun_backoff_time_ms;
+};
+
+int serial8250_register_8250_port(const struct uart_8250_port *);
+
+void serial8250_init_port(struct uart_8250_port *up);
+
+void serial8250_set_defaults(struct uart_8250_port *up);
+
+/**
+ * 8250 core driver operations
+ *
+ * @setup_irq()     Setup irq handling. The universal 8250 driver links this
+ *          port to the irq chain. Other drivers may @request_irq().
+ * @release_irq()   Undo irq handling. The universal 8250 driver unlinks
+ *          the port from the irq chain.
+ */
+struct uart_8250_ops {
+    int     (*setup_irq)(struct uart_8250_port *);
+    void    (*release_irq)(struct uart_8250_port *);
+};
+
+static inline struct uart_8250_port *up_to_u8250p(struct uart_port *up)
+{
+    return container_of(up, struct uart_8250_port, port);
+}
+
+/*
+ * Allocate 8250 platform device IDs.  Nothing is implied by
+ * the numbering here, except for the legacy entry being -1.
+ */
+enum {
+    PLAT8250_DEV_LEGACY = -1,
+    PLAT8250_DEV_PLATFORM,
+    PLAT8250_DEV_PLATFORM1,
+    PLAT8250_DEV_PLATFORM2,
+    PLAT8250_DEV_FOURPORT,
+    PLAT8250_DEV_ACCENT,
+    PLAT8250_DEV_BOCA,
+    PLAT8250_DEV_EXAR_ST16C554,
+    PLAT8250_DEV_HUB6,
+    PLAT8250_DEV_AU1X00,
+    PLAT8250_DEV_SM501,
 };
 
 #endif /* _LINUX_SERIAL_8250_H */

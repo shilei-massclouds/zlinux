@@ -41,6 +41,14 @@ struct region_devres {
     resource_size_t n;
 };
 
+struct resource ioport_resource = {
+    .name   = "PCI IO",
+    .start  = 0,
+    .end    = IO_SPACE_LIMIT,
+    .flags  = IORESOURCE_IO,
+};
+EXPORT_SYMBOL(ioport_resource);
+
 struct resource iomem_resource = {
     .name   = "PCI mem",
     .start  = 0,
@@ -335,3 +343,21 @@ int insert_resource(struct resource *parent, struct resource *new)
     return conflict ? -EBUSY : 0;
 }
 EXPORT_SYMBOL_GPL(insert_resource);
+
+/**
+ * release_resource - release a previously reserved resource
+ * @old: resource pointer
+ */
+int release_resource(struct resource *old)
+{
+#if 0
+    int retval;
+
+    write_lock(&resource_lock);
+    retval = __release_resource(old, true);
+    write_unlock(&resource_lock);
+    return retval;
+#endif
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL(release_resource);

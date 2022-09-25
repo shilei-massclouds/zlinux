@@ -378,4 +378,9 @@ __printf(5, 6) struct device *
 device_create(struct class *cls, struct device *parent, dev_t devt,
               void *drvdata, const char *fmt, ...);
 
+static inline void dev_set_uevent_suppress(struct device *dev, int val)
+{
+    dev->kobj.uevent_suppress = val;
+}
+
 #endif /* _DEVICE_H_ */

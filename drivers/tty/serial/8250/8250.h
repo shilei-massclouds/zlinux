@@ -33,3 +33,35 @@
 #define UART_BUG_THRE   BIT(3)  /* UART has buggy THRE reassertion */
 #define UART_BUG_PARITY BIT(4)  /* UART mishandles parity if FIFO enabled */
 #define UART_BUG_TXRACE BIT(5)  /* UART Tx fails to set remote DR */
+
+#define SERIAL8250_SHARE_IRQS 0
+
+int serial8250_em485_config(struct uart_port *port, struct serial_rs485 *rs485);
+void serial8250_em485_start_tx(struct uart_8250_port *p);
+void serial8250_em485_stop_tx(struct uart_8250_port *p);
+void serial8250_em485_destroy(struct uart_8250_port *p);
+
+static inline int serial_in(struct uart_8250_port *up, int offset)
+{
+    return up->port.serial_in(&up->port, offset);
+}
+
+static inline
+void serial_out(struct uart_8250_port *up, int offset, int value)
+{
+    up->port.serial_out(&up->port, offset, value);
+}
+
+struct old_serial_port {
+    unsigned int uart;
+    unsigned int baud_base;
+    unsigned int port;
+    unsigned int irq;
+    upf_t        flags;
+    unsigned char io_type;
+    unsigned char __iomem *iomem_base;
+    unsigned short iomem_reg_shift;
+};
+
+static inline int serial8250_pnp_init(void) { return 0; }
+static inline void serial8250_pnp_exit(void) { }

@@ -58,8 +58,6 @@ struct platform_driver {
 
 extern struct device platform_bus;
 
-extern struct platform_device *platform_device_alloc(const char *name, int id);
-
 extern void platform_device_put(struct platform_device *pdev);
 
 extern struct bus_type platform_bus_type;
@@ -105,5 +103,15 @@ devm_platform_ioremap_resource(struct platform_device *pdev,
 extern int platform_get_irq(struct platform_device *, unsigned int);
 extern int platform_get_irq_optional(struct platform_device *,
                                      unsigned int);
+
+extern struct platform_device *
+platform_device_alloc(const char *name, int id);
+extern int platform_device_add_resources(struct platform_device *pdev,
+                                         const struct resource *res,
+                                         unsigned int num);
+extern int platform_device_add_data(struct platform_device *pdev,
+                                    const void *data, size_t size);
+extern int platform_device_add(struct platform_device *pdev);
+extern void platform_device_del(struct platform_device *pdev);
 
 #endif /* _PLATFORM_DEVICE_H_ */

@@ -100,6 +100,105 @@ static inline void __iomem *ioremap(phys_addr_t addr, size_t size)
     return ioremap_prot(addr, size, _PAGE_IOREMAP);
 }
 
+/*
+ * {in,out}{b,w,l}() access little endian I/O. {in,out}{b,w,l}_p() can be
+ * implemented on hardware that needs an additional delay for I/O accesses to
+ * take effect.
+ */
+
+#if !defined(inb) && !defined(_inb)
+#define _inb _inb
+static inline u8 _inb(unsigned long addr)
+{
+    u8 val;
+
+    __io_pbr();
+    val = __raw_readb(PCI_IOBASE + addr);
+    __io_par(val);
+    return val;
+}
+#endif
+
+#if !defined(inw) && !defined(_inw)
+#define _inw _inw
+static inline u16 _inw(unsigned long addr)
+{
+    u16 val;
+
+    __io_pbr();
+    val = __le16_to_cpu((__le16 __force)__raw_readw(PCI_IOBASE + addr));
+    __io_par(val);
+    return val;
+}
+#endif
+
+#if !defined(inl) && !defined(_inl)
+#define _inl _inl
+static inline u32 _inl(unsigned long addr)
+{
+    u32 val;
+
+    __io_pbr();
+    val = __le32_to_cpu((__le32 __force)__raw_readl(PCI_IOBASE + addr));
+    __io_par(val);
+    return val;
+}
+#endif
+
+#if !defined(outb) && !defined(_outb)
+#define _outb _outb
+static inline void _outb(u8 value, unsigned long addr)
+{
+    __io_pbw();
+    __raw_writeb(value, PCI_IOBASE + addr);
+    __io_paw();
+}
+#endif
+
+#if !defined(outw) && !defined(_outw)
+#define _outw _outw
+static inline void _outw(u16 value, unsigned long addr)
+{
+    __io_pbw();
+    __raw_writew((u16 __force)cpu_to_le16(value), PCI_IOBASE + addr);
+    __io_paw();
+}
+#endif
+
+#if !defined(outl) && !defined(_outl)
+#define _outl _outl
+static inline void _outl(u32 value, unsigned long addr)
+{
+    __io_pbw();
+    __raw_writel((u32 __force)cpu_to_le32(value), PCI_IOBASE + addr);
+    __io_paw();
+}
+#endif
+
+#ifndef inb
+#define inb _inb
+#endif
+
+#ifndef inw
+#define inw _inw
+#endif
+
+#ifndef inl
+#define inl _inl
+#endif
+
+#ifndef outb
+#define outb _outb
+#endif
+
+#ifndef outw
+#define outw _outw
+#endif
+
+#ifndef outl
+#define outl _outl
+#endif
+
 #endif /* __KERNEL__ */
 
 #endif /* __ASM_GENERIC_IO_H */

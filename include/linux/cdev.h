@@ -20,4 +20,10 @@ struct cdev {
     unsigned int count;
 } __randomize_layout;
 
+struct cdev *cdev_alloc(void);
+
+int cdev_add(struct cdev *, dev_t, unsigned);
+
+void cdev_put(struct cdev *p);
+
 #endif /* _LINUX_CDEV_H */

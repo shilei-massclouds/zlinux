@@ -10,9 +10,9 @@
 #include <linux/mod_devicetable.h>
 #if 0
 #include <linux/pm.h>
+#endif
 #include <linux/of_device.h>
 #include <linux/platform_device.h>
-#endif
 
 /**
  * struct of_dev_auxdata - lookup table entry for device names & platform_data

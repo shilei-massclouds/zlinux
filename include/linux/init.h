@@ -149,6 +149,9 @@ void setup_arch(char **);
  */
 #define early_param(str, fn) __setup_param(str, fn, fn, 1)
 
+#define console_initcall(fn) \
+    ___define_initcall(fn, con, .con_initcall)
+
 /* Relies on boot_command_line being set */
 void __init parse_early_param(void);
 void __init parse_early_options(char *cmdline);

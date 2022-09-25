@@ -282,3 +282,9 @@ SYSCALL_DEFINE3(write, unsigned int, fd, const char __user *, buf,
     printk("--------- %s: fd(%u) ...\n", __func__, fd);
     return ksys_write(fd, buf, count);
 }
+
+loff_t no_llseek(struct file *file, loff_t offset, int whence)
+{
+    return -ESPIPE;
+}
+EXPORT_SYMBOL(no_llseek);

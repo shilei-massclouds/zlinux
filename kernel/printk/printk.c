@@ -16,6 +16,7 @@
 
 #include "printk_ringbuffer.h"
 #include "console_cmdline.h"
+#include "braille.h"
 #include "internal.h"
 
 #define PREFIX_MAX      32
@@ -38,6 +39,10 @@ static DEFINE_PER_CPU(int, printk_pending);
 static char __log_buf[__LOG_BUF_LEN] __aligned(LOG_ALIGN);
 static char *log_buf = __log_buf;
 static u32 log_buf_len = __LOG_BUF_LEN;
+
+static int preferred_console = -1;
+int console_set_on_cmdline;
+EXPORT_SYMBOL(console_set_on_cmdline);
 
 /*
  * Low level drivers may need that to know if they can schedule in
@@ -117,8 +122,6 @@ EXPORT_SYMBOL_GPL(console_drivers);
  */
 #define MAX_CMDLINECONSOLES 8
 static struct console_cmdline console_cmdline[MAX_CMDLINECONSOLES];
-
-static int preferred_console = -1;
 
 /* Flag: console code may call schedule() */
 static int console_may_schedule;
@@ -1642,4 +1645,71 @@ void defer_console_output(void)
     this_cpu_or(printk_pending, PRINTK_PENDING_OUTPUT);
     //irq_work_queue(this_cpu_ptr(&wake_up_klogd_work));
     preempt_enable();
+}
+
+static void set_user_specified(struct console_cmdline *c,
+                               bool user_specified)
+{
+    if (!user_specified)
+        return;
+
+    /*
+     * @c console was defined by the user on the command line.
+     * Do not clear when added twice also by SPCR or the device tree.
+     */
+    c->user_specified = true;
+    /* At least one console defined by the user on the command line. */
+    console_set_on_cmdline = 1;
+}
+
+static int __add_preferred_console(char *name, int idx, char *options,
+                                   char *brl_options,
+                                   bool user_specified)
+{
+    struct console_cmdline *c;
+    int i;
+
+    /*
+     *  See if this tty is not yet registered, and
+     *  if we have a slot free.
+     */
+    for (i = 0, c = console_cmdline;
+         i < MAX_CMDLINECONSOLES && c->name[0];
+         i++, c++) {
+        if (strcmp(c->name, name) == 0 && c->index == idx) {
+            if (!brl_options)
+                preferred_console = i;
+            set_user_specified(c, user_specified);
+            return 0;
+        }
+    }
+    if (i == MAX_CMDLINECONSOLES)
+        return -E2BIG;
+    if (!brl_options)
+        preferred_console = i;
+    strlcpy(c->name, name, sizeof(c->name));
+    c->options = options;
+    set_user_specified(c, user_specified);
+    braille_set_options(c, brl_options);
+
+    c->index = idx;
+    return 0;
+}
+
+/**
+ * add_preferred_console - add a device to the list of preferred consoles.
+ * @name: device name
+ * @idx: device index
+ * @options: options for this console
+ *
+ * The last preferred console added will be used for kernel messages
+ * and stdin/out/err for init.  Normally this is used by console_setup
+ * above to handle user-supplied console arguments; however it can also
+ * be used by arch-specific code either to override the user or more
+ * commonly to provide a default console (ie from PROM variables) when
+ * the user has not supplied one.
+ */
+int add_preferred_console(char *name, int idx, char *options)
+{
+    return __add_preferred_console(name, idx, options, NULL, false);
 }

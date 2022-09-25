@@ -63,4 +63,8 @@ extern struct console *console_drivers;
 extern void register_console(struct console *);
 extern int unregister_console(struct console *);
 
+extern int console_set_on_cmdline;
+
+extern int add_preferred_console(char *name, int idx, char *options);
+
 #endif /* _LINUX_CONSOLE_H_ */

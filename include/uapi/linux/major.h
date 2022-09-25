@@ -20,7 +20,7 @@
 #define IDE0_MAJOR      3
 #define HD_MAJOR        IDE0_MAJOR
 #define PTY_SLAVE_MAJOR     3
-#define TTY_MAJOR       4
+#define TTY_MAJOR           4
 #define TTYAUX_MAJOR        5
 #define LP_MAJOR        6
 #define VCS_MAJOR       7
