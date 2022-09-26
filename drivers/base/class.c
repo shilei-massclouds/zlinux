@@ -227,6 +227,54 @@ error:
 }
 EXPORT_SYMBOL_GPL(__class_create);
 
+/**
+ * class_find_device - device iterator for locating a particular device
+ * @class: the class we're iterating
+ * @start: Device to begin with
+ * @data: data for the match function
+ * @match: function to check device
+ *
+ * This is similar to the class_for_each_dev() function above, but it
+ * returns a reference to a device that is 'found' for later use, as
+ * determined by the @match callback.
+ *
+ * The callback should return 0 if the device doesn't match and non-zero
+ * if it does.  If the callback returns non-zero, this function will
+ * return to the caller and not iterate over any more devices.
+ *
+ * Note, you will need to drop the reference with put_device() after use.
+ *
+ * @match is allowed to do anything including calling back into class
+ * code.  There's no locking restriction.
+ */
+struct device *
+class_find_device(struct class *class, struct device *start,
+                  const void *data,
+                  int (*match)(struct device *, const void *))
+{
+    struct class_dev_iter iter;
+    struct device *dev;
+
+    if (!class)
+        return NULL;
+    if (!class->p) {
+        WARN(1, "%s called for class '%s' before it was initialized",
+             __func__, class->name);
+        return NULL;
+    }
+
+    class_dev_iter_init(&iter, class, start, NULL);
+    while ((dev = class_dev_iter_next(&iter))) {
+        if (match(dev, data)) {
+            get_device(dev);
+            break;
+        }
+    }
+    class_dev_iter_exit(&iter);
+
+    return dev;
+}
+
 int __init classes_init(void)
 {
     class_kset = kset_create_and_add("class", NULL, NULL);

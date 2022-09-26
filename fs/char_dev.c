@@ -307,17 +307,26 @@ void __init chrdev_init(void)
     cdev_map = kobj_map_init(base_probe, &chrdevs_lock);
 }
 
+static void cdev_purge(struct cdev *cdev)
+{
+    spin_lock(&cdev_lock);
+    while (!list_empty(&cdev->list)) {
+        struct inode *inode;
+        inode = container_of(cdev->list.next, struct inode, i_devices);
+        list_del_init(&inode->i_devices);
+        inode->i_cdev = NULL;
+    }
+    spin_unlock(&cdev_lock);
+}
+
 static void cdev_dynamic_release(struct kobject *kobj)
 {
-#if 0
     struct cdev *p = container_of(kobj, struct cdev, kobj);
     struct kobject *parent = kobj->parent;
 
     cdev_purge(p);
     kfree(p);
     kobject_put(parent);
-#endif
-    panic("%s: END!\n", __func__);
 }
 
 static struct kobj_type ktype_cdev_dynamic = {
@@ -379,4 +388,26 @@ int cdev_add(struct cdev *p, dev_t dev, unsigned count)
     kobject_get(p->kobj.parent);
 
     return 0;
+}
+
+static void cdev_unmap(dev_t dev, unsigned count)
+{
+    kobj_unmap(cdev_map, dev, count);
+}
+
+/**
+ * cdev_del() - remove a cdev from the system
+ * @p: the cdev structure to be removed
+ *
+ * cdev_del() removes @p from the system, possibly freeing the structure
+ * itself.
+ *
+ * NOTE: This guarantees that cdev device will no longer be able to be
+ * opened, however any cdevs already open will remain and their fops will
+ * still be callable even after cdev_del returns.
+ */
+void cdev_del(struct cdev *p)
+{
+    cdev_unmap(p->dev, p->count);
+    kobject_put(&p->kobj);
 }

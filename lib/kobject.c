@@ -123,9 +123,47 @@ error:
 }
 EXPORT_SYMBOL(kobject_init);
 
+/* remove the kobject from its kset's list */
+static void kobj_kset_leave(struct kobject *kobj)
+{
+    if (!kobj->kset)
+        return;
+
+    spin_lock(&kobj->kset->list_lock);
+    list_del_init(&kobj->entry);
+    spin_unlock(&kobj->kset->list_lock);
+    kset_put(kobj->kset);
+}
+
 static void __kobject_del(struct kobject *kobj)
 {
-    panic("%s: NO implementation!\n", __func__);
+    //struct kernfs_node *sd;
+    const struct kobj_type *ktype;
+
+    //sd = kobj->sd;
+    ktype = get_ktype(kobj);
+
+#if 0
+    if (ktype)
+        sysfs_remove_groups(kobj, ktype->default_groups);
+#endif
+
+    /* send "remove" if the caller did not do it but sent "add" */
+    if (kobj->state_add_uevent_sent &&
+        !kobj->state_remove_uevent_sent) {
+        pr_debug("kobject: '%s' (%p): auto cleanup 'remove' event\n",
+                 kobject_name(kobj), kobj);
+        //kobject_uevent(kobj, KOBJ_REMOVE);
+    }
+
+#if 0
+    sysfs_remove_dir(kobj);
+    sysfs_put(sd);
+#endif
+
+    kobj->state_in_sysfs = 0;
+    kobj_kset_leave(kobj);
+    kobj->parent = NULL;
 }
 
 /**

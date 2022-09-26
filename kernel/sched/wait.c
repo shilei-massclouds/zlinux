@@ -134,3 +134,48 @@ void __wake_up_locked_key_bookmark(struct wait_queue_head *wq_head,
     __wake_up_common(wq_head, mode, 1, 0, key, bookmark);
 }
 EXPORT_SYMBOL_GPL(__wake_up_locked_key_bookmark);
+
+void init_wait_entry(struct wait_queue_entry *wq_entry, int flags)
+{
+    wq_entry->flags = flags;
+    wq_entry->private = current;
+    wq_entry->func = autoremove_wake_function;
+    INIT_LIST_HEAD(&wq_entry->entry);
+}
+EXPORT_SYMBOL(init_wait_entry);
+
+long prepare_to_wait_event(struct wait_queue_head *wq_head, struct wait_queue_entry *wq_entry, int state)
+{
+    unsigned long flags;
+    long ret = 0;
+
+    spin_lock_irqsave(&wq_head->lock, flags);
+    if (signal_pending_state(state, current)) {
+        /*
+         * Exclusive waiter must not fail if it was selected by wakeup,
+         * it should "consume" the condition we were waiting for.
+         *
+         * The caller will recheck the condition and return success if
+         * we were already woken up, we can not miss the event because
+         * wakeup locks/unlocks the same wq_head->lock.
+         *
+         * But we need to ensure that set-condition + wakeup after that
+         * can't see us, it should wake up another exclusive waiter if
+         * we fail.
+         */
+        list_del_init(&wq_entry->entry);
+        ret = -ERESTARTSYS;
+    } else {
+        if (list_empty(&wq_entry->entry)) {
+            if (wq_entry->flags & WQ_FLAG_EXCLUSIVE)
+                __add_wait_queue_entry_tail(wq_head, wq_entry);
+            else
+                __add_wait_queue(wq_head, wq_entry);
+        }
+        set_current_state(state);
+    }
+    spin_unlock_irqrestore(&wq_head->lock, flags);
+
+    return ret;
+}
+EXPORT_SYMBOL(prepare_to_wait_event);

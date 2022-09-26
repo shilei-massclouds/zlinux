@@ -191,4 +191,70 @@ void __wake_up_locked(struct wait_queue_head *wq_head, unsigned int mode,
 void __wake_up_sync(struct wait_queue_head *wq_head, unsigned int mode);
 void __wake_up_pollfree(struct wait_queue_head *wq_head);
 
+#define ___wait_is_interruptible(state) \
+    (!__builtin_constant_p(state) || \
+     state == TASK_INTERRUPTIBLE || state == TASK_KILLABLE)
+
+extern void init_wait_entry(struct wait_queue_entry *wq_entry,
+                            int flags);
+
+/*
+ * The below macro ___wait_event() has an explicit shadow of the __ret
+ * variable when used from the wait_event_*() macros.
+ *
+ * This is so that both can use the ___wait_cond_timeout() construct
+ * to wrap the condition.
+ *
+ * The type inconsistency of the wait_event_*() __ret variable is also
+ * on purpose; we use long where we can return timeout values and int
+ * otherwise.
+ */
+#define ___wait_event(wq_head, condition, state, exclusive, ret, cmd) \
+({                                              \
+    __label__ __out;                            \
+    struct wait_queue_entry __wq_entry;         \
+    long __ret = ret;   /* explicit shadow */   \
+                                                \
+    init_wait_entry(&__wq_entry, exclusive ? WQ_FLAG_EXCLUSIVE : 0); \
+    for (;;) {                                  \
+        long __int = prepare_to_wait_event(&wq_head, &__wq_entry, state);\
+                                                \
+        if (condition)                          \
+            break;                              \
+                                        \
+        if (___wait_is_interruptible(state) && __int) {         \
+            __ret = __int;                      \
+            goto __out;                     \
+        }                               \
+                                        \
+        cmd;                                \
+    }                                   \
+    finish_wait(&wq_head, &__wq_entry);                 \
+__out:  __ret;                                  \
+})
+
+#define __wait_event(wq_head, condition) \
+    (void)___wait_event(wq_head, condition, TASK_UNINTERRUPTIBLE, \
+                        0, 0, schedule())
+
+/**
+ * wait_event - sleep until a condition gets true
+ * @wq_head: the waitqueue to wait on
+ * @condition: a C expression for the event to wait for
+ *
+ * The process is put to sleep (TASK_UNINTERRUPTIBLE) until the
+ * @condition evaluates to true. The @condition is checked each time
+ * the waitqueue @wq_head is woken up.
+ *
+ * wake_up() has to be called after changing any variable that could
+ * change the result of the wait condition.
+ */
+#define wait_event(wq_head, condition)                      \
+do {                                        \
+    might_sleep();                              \
+    if (condition)                              \
+        break;                              \
+    __wait_event(wq_head, condition);                   \
+} while (0)
+
 #endif /* _LINUX_WAIT_H */

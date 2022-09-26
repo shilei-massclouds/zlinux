@@ -76,6 +76,8 @@ static int of_platform_serial_setup(struct platform_device *ofdev,
     } else {
         port->mapbase = resource.start;
         port->mapsize = resource_size(&resource);
+        printk("%s: MEM (%lx, %lx)\n",
+               __func__, port->mapbase, port->mapsize);
 
         /* Check for shifted address mapping */
         if (of_property_read_u32(np, "reg-offset", &prop) == 0) {
@@ -195,6 +197,8 @@ static int of_platform_serial_probe(struct platform_device *ofdev)
     info = kzalloc(sizeof(*info), GFP_KERNEL);
     if (info == NULL)
         return -ENOMEM;
+
+    printk("###### %s: 1 port_type(%d) ...\n", __func__, port_type);
 
     memset(&port8250, 0, sizeof(port8250));
     ret = of_platform_serial_setup(ofdev, port_type, &port8250, info);

@@ -81,6 +81,38 @@ struct device_dma_parameters {
 };
 
 /**
+ * enum device_link_state - Device link states.
+ * @DL_STATE_NONE: The presence of the drivers is not being tracked.
+ * @DL_STATE_DORMANT: None of the supplier/consumer drivers is present.
+ * @DL_STATE_AVAILABLE: The supplier driver is present, but the consumer is not.
+ * @DL_STATE_CONSUMER_PROBE: The consumer is probing (supplier driver present).
+ * @DL_STATE_ACTIVE: Both the supplier and consumer drivers are present.
+ * @DL_STATE_SUPPLIER_UNBIND: The supplier driver is unbinding.
+ */
+enum device_link_state {
+    DL_STATE_NONE = -1,
+    DL_STATE_DORMANT = 0,
+    DL_STATE_AVAILABLE,
+    DL_STATE_CONSUMER_PROBE,
+    DL_STATE_ACTIVE,
+    DL_STATE_SUPPLIER_UNBIND,
+};
+
+/**
+ * struct dev_links_info - Device data related to device links.
+ * @suppliers: List of links to supplier devices.
+ * @consumers: List of links to consumer devices.
+ * @defer_sync: Hook to global list of devices that have deferred sync_state.
+ * @status: Driver status information.
+ */
+struct dev_links_info {
+    struct list_head suppliers;
+    struct list_head consumers;
+    struct list_head defer_sync;
+    enum dl_dev_state status;
+};
+
+/**
  * struct device - The basic device structure
  * @parent: The device's "parent" device, the device to which it is attached.
  *      In most cases, a parent device is some sort of bus or host
@@ -200,9 +232,7 @@ struct device {
     struct mutex mutex;                 /* mutex to synchronize calls to
                                            its driver. */
 
-#if 0
     struct dev_links_info   links;
-#endif
 
     const struct dma_map_ops *dma_ops;
 
@@ -387,5 +417,35 @@ static inline void *dev_get_platdata(const struct device *dev)
 {
     return dev->platform_data;
 }
+
+void device_destroy(struct class *cls, dev_t devt);
+
+/**
+ * struct device_link - Device link representation.
+ * @supplier: The device on the supplier end of the link.
+ * @s_node: Hook to the supplier device's list of links to consumers.
+ * @consumer: The device on the consumer end of the link.
+ * @c_node: Hook to the consumer device's list of links to suppliers.
+ * @link_dev: device used to expose link details in sysfs
+ * @status: The state of the link (with respect to the presence of drivers).
+ * @flags: Link flags.
+ * @rpm_active: Whether or not the consumer device is runtime-PM-active.
+ * @kref: Count repeated addition of the same link.
+ * @rm_work: Work structure used for removing the link.
+ * @supplier_preactivated: Supplier has been made active before consumer probe.
+ */
+struct device_link {
+    struct device *supplier;
+    struct list_head s_node;
+    struct device *consumer;
+    struct list_head c_node;
+    struct device link_dev;
+    enum device_link_state status;
+    u32 flags;
+    refcount_t rpm_active;
+    struct kref kref;
+    struct work_struct rm_work;
+    bool supplier_preactivated; /* Owned by consumer probe. */
+};
 
 #endif /* _DEVICE_H_ */

@@ -49,4 +49,7 @@ extern struct klist_node *klist_next(struct klist_iter *i);
 
 extern int klist_node_attached(struct klist_node *n);
 
+extern void klist_del(struct klist_node *n);
+extern void klist_remove(struct klist_node *n);
+
 #endif /* _LINUX_KLIST_H */

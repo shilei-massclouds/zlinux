@@ -26,4 +26,6 @@ int cdev_add(struct cdev *, dev_t, unsigned);
 
 void cdev_put(struct cdev *p);
 
+void cdev_del(struct cdev *);
+
 #endif /* _LINUX_CDEV_H */

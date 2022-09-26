@@ -205,7 +205,12 @@ EXPORT_SYMBOL(tty_driver_kref_put);
  */
 void tty_unregister_device(struct tty_driver *driver, unsigned index)
 {
-    panic("%s: END!\n", __func__);
+    device_destroy(tty_class,
+                   MKDEV(driver->major, driver->minor_start) + index);
+    if (!(driver->flags & TTY_DRIVER_DYNAMIC_ALLOC)) {
+        cdev_del(driver->cdevs[index]);
+        driver->cdevs[index] = NULL;
+    }
 }
 
 /**

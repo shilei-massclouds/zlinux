@@ -132,4 +132,6 @@ static inline int driver_match_device(struct device_driver *drv,
 
 extern void bus_probe_device(struct device *dev);
 
+extern void bus_remove_device(struct device *dev);
+
 extern int classes_init(void);

@@ -348,4 +348,10 @@ atomic64_add(s64 i, atomic64_t *v)
     arch_atomic64_add(i, v);
 }
 
+static __always_inline int
+atomic_dec_return(atomic_t *v)
+{
+    return arch_atomic_dec_return(v);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */

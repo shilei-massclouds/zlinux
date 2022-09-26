@@ -123,6 +123,9 @@ int bus_for_each_dev(struct bus_type *bus, struct device *start, void *data,
 extern void bus_unregister(struct bus_type *bus);
 
 int bus_for_each_drv(struct bus_type *bus, struct device_driver *start,
-                     void *data, int (*fn)(struct device_driver *, void *));
+                     void *data,
+                     int (*fn)(struct device_driver *, void *));
+
+int device_match_devt(struct device *dev, const void *pdevt);
 
 #endif /* _DEVICE_BUS_H_ */

@@ -127,8 +127,9 @@ static struct of_bus *of_match_bus(struct device_node *np)
     return NULL;
 }
 
-const __be32 *__of_get_address(struct device_node *dev, int index, int bar_no,
-                               u64 *size, unsigned int *flags)
+const __be32 *
+__of_get_address(struct device_node *dev, int index, int bar_no,
+                 u64 *size, unsigned int *flags)
 {
     const __be32 *prop;
     unsigned int psize;

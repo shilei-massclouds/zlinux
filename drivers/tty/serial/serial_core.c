@@ -580,7 +580,8 @@ int uart_add_one_port(struct uart_driver *drv, struct uart_port *uport)
 }
 EXPORT_SYMBOL(uart_add_one_port);
 
-static inline struct uart_port *uart_port_check(struct uart_state *state)
+static inline
+struct uart_port *uart_port_check(struct uart_state *state)
 {
     return state->uart_port;
 }
@@ -596,7 +597,8 @@ static inline struct uart_port *uart_port_check(struct uart_state *state)
  *  core driver.  No further calls will be made to the low-level code
  *  for this port.
  */
-int uart_remove_one_port(struct uart_driver *drv, struct uart_port *uport)
+int uart_remove_one_port(struct uart_driver *drv,
+                         struct uart_port *uport)
 {
     struct uart_state *state = drv->state + uport->line;
     struct tty_port *port = &state->port;
@@ -635,8 +637,30 @@ int uart_remove_one_port(struct uart_driver *drv, struct uart_port *uport)
         tty_kref_put(tty);
     }
 
-    panic("%s: END!\n", __func__);
+    /*
+     * If the port is used as a console, unregister it
+     */
+    if (uart_console(uport))
+        unregister_console(uport->cons);
 
+    /*
+     * Free the port IO and memory resources, if any.
+     */
+    if (uport->type != PORT_UNKNOWN && uport->ops->release_port)
+        uport->ops->release_port(uport);
+    kfree(uport->tty_groups);
+    kfree(uport->name);
+
+    /*
+     * Indicate that there isn't a port here anymore.
+     */
+    uport->type = PORT_UNKNOWN;
+
+    mutex_lock(&port->mutex);
+    WARN_ON(atomic_dec_return(&state->refcount) < 0);
+    wait_event(state->remove_wait, !atomic_read(&state->refcount));
+    state->uart_port = NULL;
+    mutex_unlock(&port->mutex);
  out:
     mutex_unlock(&port_mutex);
 

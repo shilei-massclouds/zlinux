@@ -44,15 +44,23 @@
 #define KNODE_DEAD          1LU
 #define KNODE_KLIST_MASK    ~KNODE_DEAD
 
+static bool knode_dead(struct klist_node *knode)
+{
+    return (unsigned long)knode->n_klist & KNODE_DEAD;
+}
+
+static void knode_set_klist(struct klist_node *knode,
+                            struct klist *klist)
+{
+    knode->n_klist = klist;
+    /* no knode deserves to start its life dead */
+    WARN_ON(knode_dead(knode));
+}
+
 static struct klist *knode_klist(struct klist_node *knode)
 {
     return (struct klist *)
         ((unsigned long)knode->n_klist & KNODE_KLIST_MASK);
-}
-
-static bool knode_dead(struct klist_node *knode)
-{
-    return (unsigned long)knode->n_klist & KNODE_DEAD;
 }
 
 static void knode_kill(struct klist_node *knode)
@@ -67,14 +75,18 @@ static struct klist_node *to_klist_node(struct list_head *n)
     return container_of(n, struct klist_node, n_node);
 }
 
+struct klist_waiter {
+    struct list_head list;
+    struct klist_node *node;
+    struct task_struct *process;
+    int woken;
+};
+
 static DEFINE_SPINLOCK(klist_remove_lock);
 static LIST_HEAD(klist_remove_waiters);
 
 static void klist_release(struct kref *kref)
 {
-    panic("%s: END!\n", __func__);
-
-#if 0
     struct klist_waiter *waiter, *tmp;
     struct klist_node *n = container_of(kref, struct klist_node, n_ref);
 
@@ -92,19 +104,11 @@ static void klist_release(struct kref *kref)
     }
     spin_unlock(&klist_remove_lock);
     knode_set_klist(n, NULL);
-#endif
 }
 
 static int klist_dec_and_del(struct klist_node *n)
 {
     return kref_put(&n->n_ref, klist_release);
-}
-
-static void knode_set_klist(struct klist_node *knode, struct klist *klist)
-{
-    knode->n_klist = klist;
-    /* no knode deserves to start its life dead */
-    WARN_ON(knode_dead(knode));
 }
 
 static void klist_node_init(struct klist *k, struct klist_node *n)
@@ -300,3 +304,13 @@ int klist_node_attached(struct klist_node *n)
     return (n->n_klist != NULL);
 }
 EXPORT_SYMBOL_GPL(klist_node_attached);
+
+/**
+ * klist_del - Decrement the reference count of node and try to remove.
+ * @n: node we're deleting.
+ */
+void klist_del(struct klist_node *n)
+{
+    klist_put(n, true);
+}
+EXPORT_SYMBOL_GPL(klist_del);

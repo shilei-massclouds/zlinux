@@ -64,9 +64,11 @@ int driver_register(struct device_driver *drv)
         return -EINVAL;
     }
 
-    if ((drv->bus->probe && drv->probe) || (drv->bus->remove && drv->remove) ||
+    if ((drv->bus->probe && drv->probe) ||
+        (drv->bus->remove && drv->remove) ||
         (drv->bus->shutdown && drv->shutdown))
-        pr_warn("Driver '%s' needs updating - please use bus_type methods\n",
+        pr_warn("Driver '%s' needs updating - "
+                "please use bus_type methods\n",
                 drv->name);
 
     other = driver_find(drv->name, drv->bus);

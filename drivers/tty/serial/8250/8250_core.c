@@ -388,6 +388,8 @@ static int serial8250_probe(struct platform_device *dev)
     struct uart_8250_port uart;
     int ret, i, irqflag = 0;
 
+    printk("###### %s: 1 ...\n", __func__);
+
     memset(&uart, 0, sizeof(uart));
 
     if (share_irqs)

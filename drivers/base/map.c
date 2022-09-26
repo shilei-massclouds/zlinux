@@ -127,3 +127,30 @@ kobj_map_init(kobj_probe_t *base_probe, struct mutex *lock)
     p->lock = lock;
     return p;
 }
+
+void kobj_unmap(struct kobj_map *domain, dev_t dev, unsigned long range)
+{
+    unsigned int n = MAJOR(dev + range - 1) - MAJOR(dev) + 1;
+    unsigned int index = MAJOR(dev);
+    unsigned int i;
+    struct probe *found = NULL;
+
+    if (n > 255)
+        n = 255;
+
+    mutex_lock(domain->lock);
+    for (i = 0; i < n; i++, index++) {
+        struct probe **s;
+        for (s = &domain->probes[index % 255]; *s; s = &(*s)->next) {
+            struct probe *p = *s;
+            if (p->dev == dev && p->range == range) {
+                *s = p->next;
+                if (!found)
+                    found = p;
+                break;
+            }
+        }
+    }
+    mutex_unlock(domain->lock);
+    kfree(found);
+}

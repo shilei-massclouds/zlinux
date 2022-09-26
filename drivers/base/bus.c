@@ -446,6 +446,27 @@ int bus_for_each_drv(struct bus_type *bus, struct device_driver *start,
 }
 EXPORT_SYMBOL_GPL(bus_for_each_drv);
 
+/**
+ * bus_remove_device - remove device from bus
+ * @dev: device to be removed
+ *
+ * - Remove device from all interfaces.
+ * - Remove symlink from bus' directory.
+ * - Delete device from bus's list.
+ * - Detach from its driver.
+ * - Drop reference taken in bus_add_device().
+ */
+void bus_remove_device(struct device *dev)
+{
+    struct bus_type *bus = dev->bus;
+    struct subsys_interface *sif;
+
+    if (!bus)
+        return;
+
+    panic("%s: END!\n", __func__);
+}
+
 int __init buses_init(void)
 {
     bus_kset = kset_create_and_add("bus", &bus_uevent_ops, NULL);

@@ -85,4 +85,9 @@ static inline int __must_check kref_get_unless_zero(struct kref *kref)
     return refcount_inc_not_zero(&kref->refcount);
 }
 
+static inline unsigned int kref_read(const struct kref *kref)
+{
+    return refcount_read(&kref->refcount);
+}
+
 #endif /* _KREF_H_ */

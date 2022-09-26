@@ -19,11 +19,11 @@
 #include <linux/sched/signal.h>
 #include <linux/sched/mm.h>
 #include <linux/of_device.h>
+#include <linux/kdev_t.h>
 #if 0
 #include <linux/acpi.h>
 #include <linux/cpufreq.h>
 #include <linux/string.h>
-#include <linux/kdev_t.h>
 #include <linux/notifier.h>
 #include <linux/blkdev.h>
 #include <linux/pm_runtime.h>
@@ -55,6 +55,31 @@ static struct kobj_type device_ktype = {
 
 struct kobject *sysfs_dev_char_kobj;
 struct kobject *sysfs_dev_block_kobj;
+
+static DEFINE_MUTEX(device_links_lock);
+DEFINE_STATIC_SRCU(device_links_srcu);
+
+static inline void device_links_write_lock(void)
+{
+    mutex_lock(&device_links_lock);
+}
+
+static inline void device_links_write_unlock(void)
+{
+    mutex_unlock(&device_links_lock);
+}
+
+static void devlink_dev_release(struct device *dev)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
+static struct class devlink_class = {
+    .name = "devlink",
+    .owner = THIS_MODULE,
+    //.dev_groups = devlink_groups,
+    .dev_release = devlink_dev_release,
+};
 
 /**
  * dev_set_name - set a device name
@@ -205,10 +230,12 @@ void device_initialize(struct device *dev)
     INIT_LIST_HEAD(&dev->devres_head);
 #if 0
     device_pm_init(dev);
+#endif
     INIT_LIST_HEAD(&dev->links.consumers);
     INIT_LIST_HEAD(&dev->links.suppliers);
     INIT_LIST_HEAD(&dev->links.defer_sync);
     dev->links.status = DL_DEV_NO_DRIVER;
+#if 0
     dev->dma_io_tlb_mem = &io_tlb_default_mem;
 #endif
 }
@@ -240,6 +267,171 @@ void put_device(struct device *dev)
 }
 EXPORT_SYMBOL_GPL(put_device);
 
+bool kill_device(struct device *dev)
+{
+    /*
+     * Require the device lock and set the "dead" flag to guarantee that
+     * the update behavior is consistent with the other bitfields near
+     * it and that we cannot have an asynchronous probe routine trying
+     * to run while we are tearing out the bus/class/sysfs from
+     * underneath the device.
+     */
+
+    if (dev->p->dead)
+        return false;
+    dev->p->dead = true;
+    return true;
+}
+EXPORT_SYMBOL_GPL(kill_device);
+
+static void __device_link_del(struct kref *kref)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
+
+/**
+ * device_links_purge - Delete existing links to other devices.
+ * @dev: Target device.
+ */
+static void device_links_purge(struct device *dev)
+{
+    struct device_link *link, *ln;
+
+    if (dev->class == &devlink_class)
+        return;
+
+    /*
+     * Delete all of the remaining links from this device to any other
+     * devices (either consumers or suppliers).
+     */
+    device_links_write_lock();
+
+    list_for_each_entry_safe_reverse(link, ln, &dev->links.suppliers,
+                                     c_node) {
+        WARN_ON(link->status == DL_STATE_ACTIVE);
+        __device_link_del(&link->kref);
+    }
+
+    list_for_each_entry_safe_reverse(link, ln, &dev->links.consumers,
+                                     s_node) {
+        WARN_ON(link->status != DL_STATE_DORMANT &&
+                link->status != DL_STATE_NONE);
+        __device_link_del(&link->kref);
+    }
+
+    device_links_write_unlock();
+}
+
+static inline struct kobject *get_glue_dir(struct device *dev)
+{
+    return dev->kobj.parent;
+}
+
+static inline
+bool live_in_glue_dir(struct kobject *kobj, struct device *dev)
+{
+    if (!kobj || !dev->class ||
+        kobj->kset != &dev->class->p->glue_dirs)
+        return false;
+    return true;
+}
+
+/**
+ * kobject_has_children - Returns whether a kobject has children.
+ * @kobj: the object to test
+ *
+ * This will return whether a kobject has other kobjects as children.
+ *
+ * It does NOT account for the presence of attribute files, only sub
+ * directories. It also assumes there is no concurrent addition or
+ * removal of such children, and thus relies on external locking.
+ */
+static inline bool kobject_has_children(struct kobject *kobj)
+{
+    WARN_ON_ONCE(kref_read(&kobj->kref) == 0);
+
+    panic("%s: NO implementation!\n", __func__);
+    //return kobj->sd && kobj->sd->dir.subdirs;
+}
+
+/*
+ * make sure cleaning up dir as the last step, we need to make
+ * sure .release handler of kobject is run with holding the
+ * global lock
+ */
+static void cleanup_glue_dir(struct device *dev,
+                             struct kobject *glue_dir)
+{
+    unsigned int ref;
+
+    /* see if we live in a "glue" directory */
+    if (!live_in_glue_dir(glue_dir, dev))
+        return;
+
+    mutex_lock(&gdp_mutex);
+    /**
+     * There is a race condition between removing glue directory
+     * and adding a new device under the glue directory.
+     *
+     * CPU1:                                         CPU2:
+     *
+     * device_add()
+     *   get_device_parent()
+     *     class_dir_create_and_add()
+     *       kobject_add_internal()
+     *         create_dir()    // create glue_dir
+     *
+     *                                               device_add()
+     *                                                 get_device_parent()
+     *                                                   kobject_get() // get glue_dir
+     *
+     * device_del()
+     *   cleanup_glue_dir()
+     *     kobject_del(glue_dir)
+     *
+     *                                               kobject_add()
+     *                                                 kobject_add_internal()
+     *                                                   create_dir() // in glue_dir
+     *                                                     sysfs_create_dir_ns()
+     *                                                       kernfs_create_dir_ns(sd)
+     *
+     *       sysfs_remove_dir() // glue_dir->sd=NULL
+     *       sysfs_put()        // free glue_dir->sd
+     *
+     *                                                         // sd is freed
+     *                                                         kernfs_new_node(sd)
+     *                                                           kernfs_get(glue_dir)
+     *                                                           kernfs_add_one()
+     *                                                           kernfs_put()
+     *
+     * Before CPU1 remove last child device under glue dir, if CPU2 add
+     * a new device under glue dir, the glue_dir kobject reference count
+     * will be increase to 2 in kobject_get(k). And CPU2 has been called
+     * kernfs_create_dir_ns(). Meanwhile, CPU1 call sysfs_remove_dir()
+     * and sysfs_put(). This result in glue_dir->sd is freed.
+     *
+     * Then the CPU2 will see a stale "empty" but still potentially used
+     * glue dir around in kernfs_new_node().
+     *
+     * In order to avoid this happening, we also should make sure that
+     * kernfs_node for glue_dir is released in CPU1 only when refcount
+     * for glue_dir kobj is 1.
+     */
+    ref = kref_read(&glue_dir->kref);
+#if 0
+    if (!kobject_has_children(glue_dir) && !--ref)
+        kobject_del(glue_dir);
+#endif
+    kobject_put(glue_dir);
+    mutex_unlock(&gdp_mutex);
+}
+
+static void device_remove_attrs(struct device *dev)
+{
+    panic("%s: NO implementation!\n", __func__);
+}
+
 /**
  * device_del - delete device from system.
  * @dev: device.
@@ -255,7 +447,76 @@ EXPORT_SYMBOL_GPL(put_device);
  */
 void device_del(struct device *dev)
 {
-    panic("%s: NO implementation!\n", __func__);
+    struct device *parent = dev->parent;
+    struct kobject *glue_dir = NULL;
+    struct class_interface *class_intf;
+    unsigned int noio_flag;
+
+    device_lock(dev);
+    kill_device(dev);
+    device_unlock(dev);
+
+    if (dev->fwnode && dev->fwnode->dev == dev)
+        dev->fwnode->dev = NULL;
+
+#if 0
+    /* Notify clients of device removal.  This call must come
+     * before dpm_sysfs_remove().
+     */
+    noio_flag = memalloc_noio_save();
+    if (dev->bus)
+        blocking_notifier_call_chain(&dev->bus->p->bus_notifier,
+                                     BUS_NOTIFY_DEL_DEVICE, dev);
+
+    dpm_sysfs_remove(dev);
+#endif
+    if (parent)
+        klist_del(&dev->p->knode_parent);
+    if (MAJOR(dev->devt)) {
+#if 0
+        devtmpfs_delete_node(dev);
+        device_remove_sys_dev_entry(dev);
+        device_remove_file(dev, &dev_attr_dev);
+#endif
+    }
+    if (dev->class) {
+#if 0
+        device_remove_class_symlinks(dev);
+#endif
+
+        mutex_lock(&dev->class->p->mutex);
+        /* notify any interfaces that the device is now gone */
+        list_for_each_entry(class_intf,
+                            &dev->class->p->interfaces, node)
+            if (class_intf->remove_dev)
+                class_intf->remove_dev(dev, class_intf);
+        /* remove the device from the class list */
+        klist_del(&dev->p->knode_class);
+        mutex_unlock(&dev->class->p->mutex);
+    }
+#if 0
+    device_remove_file(dev, &dev_attr_uevent);
+    device_remove_attrs(dev);
+#endif
+    bus_remove_device(dev);
+#if 0
+    device_pm_remove(dev);
+    driver_deferred_probe_del(dev);
+    device_platform_notify_remove(dev);
+#endif
+    device_links_purge(dev);
+
+#if 0
+    if (dev->bus)
+        blocking_notifier_call_chain(&dev->bus->p->bus_notifier,
+                                     BUS_NOTIFY_REMOVED_DEVICE, dev);
+#endif
+    //kobject_uevent(&dev->kobj, KOBJ_REMOVE);
+    glue_dir = get_glue_dir(dev);
+    kobject_del(&dev->kobj);
+    cleanup_glue_dir(dev, glue_dir);
+    memalloc_noio_restore(noio_flag);
+    put_device(parent);
 }
 
 /**
@@ -302,26 +563,6 @@ static int device_private_init(struct device *dev)
     klist_init(&dev->p->klist_children, klist_children_get, klist_children_put);
     INIT_LIST_HEAD(&dev->p->deferred_probe);
     return 0;
-}
-
-static inline struct kobject *get_glue_dir(struct device *dev)
-{
-    return dev->kobj.parent;
-}
-
-/*
- * make sure cleaning up dir as the last step, we need to make
- * sure .release handler of kobject is run with holding the
- * global lock
- */
-static void cleanup_glue_dir(struct device *dev, struct kobject *glue_dir)
-{
-    panic("%s: NO implementation!\n", __func__);
-}
-
-static void device_remove_attrs(struct device *dev)
-{
-    panic("%s: NO implementation!\n", __func__);
 }
 
 /**
@@ -717,3 +958,29 @@ struct device *device_create(struct class *class, struct device *parent,
     return dev;
 }
 EXPORT_SYMBOL_GPL(device_create);
+
+/**
+ * device_destroy - removes a device that was created with device_create()
+ * @class: pointer to the struct class that this device was registered with
+ * @devt: the dev_t of the device that was previously registered
+ *
+ * This call unregisters and cleans up a device that was created with a
+ * call to device_create().
+ */
+void device_destroy(struct class *class, dev_t devt)
+{
+    struct device *dev;
+
+    dev = class_find_device_by_devt(class, devt);
+    if (dev) {
+        put_device(dev);
+        device_unregister(dev);
+    }
+}
+EXPORT_SYMBOL_GPL(device_destroy);
+
+int device_match_devt(struct device *dev, const void *pdevt)
+{
+    return dev->devt == *(dev_t *)pdevt;
+}
+EXPORT_SYMBOL_GPL(device_match_devt);

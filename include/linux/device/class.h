@@ -82,6 +82,14 @@ struct class_dev_iter {
     const struct device_type    *type;
 };
 
+struct class_interface {
+    struct list_head    node;
+    struct class        *class;
+
+    int (*add_dev)      (struct device *, struct class_interface *);
+    void (*remove_dev)  (struct device *, struct class_interface *);
+};
+
 extern int __must_check __class_register(struct class *class,
                                          struct lock_class_key *key);
 extern void class_unregister(struct class *class);
@@ -128,5 +136,23 @@ extern void class_destroy(struct class *cls);
     static struct lock_class_key __key; \
     __class_create(owner, name, &__key);    \
 })
+
+extern struct device *
+class_find_device(struct class *class,
+                  struct device *start, const void *data,
+                  int (*match)(struct device *, const void *));
+
+/**
+ * class_find_device_by_devt : device iterator for locating a particular device
+ * matching the device type.
+ * @class: class type
+ * @devt: device type of the device to match.
+ */
+static inline
+struct device *class_find_device_by_devt(struct class *class,
+                                         dev_t devt)
+{
+    return class_find_device(class, NULL, &devt, device_match_devt);
+}
 
 #endif  /* _DEVICE_CLASS_H_ */
