@@ -130,11 +130,37 @@ extern const void *
 of_get_property(const struct device_node *node,
                 const char *name, int *lenp);
 
-extern struct property *
-of_find_property(const struct device_node *np,
-                 const char *name, int *lenp);
-
 extern void of_alias_scan(void * (*dt_alloc)(u64 size, u64 align));
+
+extern struct property *of_find_property(const struct device_node *np,
+                     const char *name,
+                     int *lenp);
+extern int of_property_count_elems_of_size(const struct device_node *np,
+                const char *propname, int elem_size);
+extern int of_property_read_u32_index(const struct device_node *np,
+                       const char *propname,
+                       u32 index, u32 *out_value);
+extern int of_property_read_u64_index(const struct device_node *np,
+                       const char *propname,
+                       u32 index, u64 *out_value);
+extern int of_property_read_variable_u8_array(const struct device_node *np,
+                    const char *propname, u8 *out_values,
+                    size_t sz_min, size_t sz_max);
+extern int of_property_read_variable_u16_array(const struct device_node *np,
+                    const char *propname, u16 *out_values,
+                    size_t sz_min, size_t sz_max);
+extern int of_property_read_variable_u32_array(const struct device_node *np,
+                    const char *propname,
+                    u32 *out_values,
+                    size_t sz_min,
+                    size_t sz_max);
+extern int of_property_read_u64(const struct device_node *np,
+                const char *propname, u64 *out_value);
+extern int of_property_read_variable_u64_array(const struct device_node *np,
+                    const char *propname,
+                    u64 *out_values,
+                    size_t sz_min,
+                    size_t sz_max);
 
 /* initialize a node */
 extern struct kobj_type of_node_ktype;
@@ -202,12 +228,6 @@ const char *of_prop_next_string(struct property *prop, const char *cur);
 
 extern int of_n_addr_cells(struct device_node *np);
 extern int of_n_size_cells(struct device_node *np);
-
-extern int of_property_read_variable_u32_array(const struct device_node *np,
-                                               const char *propname,
-                                               u32 *out_values,
-                                               size_t sz_min,
-                                               size_t sz_max);
 
 /**
  * of_property_read_u32_array - Find and read an array of 32 bit integers
@@ -437,10 +457,6 @@ static inline const char *of_node_full_name(const struct device_node *np)
 
 extern struct device_node *of_find_node_by_phandle(phandle handle);
 
-extern int of_property_read_u32_index(const struct device_node *np,
-                                      const char *propname,
-                                      u32 index, u32 *out_value);
-
 /**
  * of_property_read_bool - Find a property
  * @np:     device node from which the property value is to be read.
@@ -504,5 +520,175 @@ extern bool of_device_is_big_endian(const struct device_node *device);
 extern int of_alias_get_id(struct device_node *np, const char *stem);
 
 bool of_console_check(struct device_node *dn, char *name, int index);
+
+/**
+ * of_property_read_u8_array - Find and read an array of u8 from a property.
+ *
+ * @np:     device node from which the property value is to be read.
+ * @propname:   name of the property to be searched.
+ * @out_values: pointer to return value, modified only if return value is 0.
+ * @sz:     number of array elements to read
+ *
+ * Search for a property in a device node and read 8-bit value(s) from
+ * it.
+ *
+ * dts entry of array should be like:
+ *  ``property = /bits/ 8 <0x50 0x60 0x70>;``
+ *
+ * Return: 0 on success, -EINVAL if the property does not exist,
+ * -ENODATA if property does not have a value, and -EOVERFLOW if the
+ * property data isn't large enough.
+ *
+ * The out_values is modified only if a valid u8 value can be decoded.
+ */
+static inline
+int of_property_read_u8_array(const struct device_node *np,
+                              const char *propname,
+                              u8 *out_values, size_t sz)
+{
+    int ret = of_property_read_variable_u8_array(np, propname,
+                                                 out_values,
+                                                 sz, 0);
+    if (ret >= 0)
+        return 0;
+    else
+        return ret;
+}
+
+/**
+ * of_property_read_u16_array - Find and read an array of u16 from a property.
+ *
+ * @np:     device node from which the property value is to be read.
+ * @propname:   name of the property to be searched.
+ * @out_values: pointer to return value, modified only if return value is 0.
+ * @sz:     number of array elements to read
+ *
+ * Search for a property in a device node and read 16-bit value(s) from
+ * it.
+ *
+ * dts entry of array should be like:
+ *  ``property = /bits/ 16 <0x5000 0x6000 0x7000>;``
+ *
+ * Return: 0 on success, -EINVAL if the property does not exist,
+ * -ENODATA if property does not have a value, and -EOVERFLOW if the
+ * property data isn't large enough.
+ *
+ * The out_values is modified only if a valid u16 value can be decoded.
+ */
+static inline int of_property_read_u16_array(const struct device_node *np,
+                         const char *propname,
+                         u16 *out_values, size_t sz)
+{
+    int ret = of_property_read_variable_u16_array(np, propname, out_values,
+                              sz, 0);
+    if (ret >= 0)
+        return 0;
+    else
+        return ret;
+}
+
+/**
+ * of_property_read_u64_array - Find and read an array of 64 bit integers
+ * from a property.
+ *
+ * @np:     device node from which the property value is to be read.
+ * @propname:   name of the property to be searched.
+ * @out_values: pointer to return value, modified only if return value is 0.
+ * @sz:     number of array elements to read
+ *
+ * Search for a property in a device node and read 64-bit value(s) from
+ * it.
+ *
+ * Return: 0 on success, -EINVAL if the property does not exist,
+ * -ENODATA if property does not have a value, and -EOVERFLOW if the
+ * property data isn't large enough.
+ *
+ * The out_values is modified only if a valid u64 value can be decoded.
+ */
+static inline int of_property_read_u64_array(const struct device_node *np,
+                         const char *propname,
+                         u64 *out_values, size_t sz)
+{
+    int ret = of_property_read_variable_u64_array(np, propname, out_values,
+                              sz, 0);
+    if (ret >= 0)
+        return 0;
+    else
+        return ret;
+}
+
+/**
+ * of_property_read_string_array() - Read an array of strings from a multiple
+ * strings property.
+ * @np:     device node from which the property value is to be read.
+ * @propname:   name of the property to be searched.
+ * @out_strs:   output array of string pointers.
+ * @sz:     number of array elements to read.
+ *
+ * Search for a property in a device tree node and retrieve a list of
+ * terminated string values (pointer to data, not a copy) in that property.
+ *
+ * Return: If @out_strs is NULL, the number of strings in the property is returned.
+ */
+static inline int of_property_read_string_array(const struct device_node *np,
+                        const char *propname, const char **out_strs,
+                        size_t sz)
+{
+    return of_property_read_string_helper(np, propname, out_strs, sz, 0);
+}
+
+/**
+ * of_property_count_strings() - Find and return the number of strings from a
+ * multiple strings property.
+ * @np:     device node from which the property value is to be read.
+ * @propname:   name of the property to be searched.
+ *
+ * Search for a property in a device tree node and retrieve the number of null
+ * terminated string contain in it.
+ *
+ * Return: The number of strings on success, -EINVAL if the property does not
+ * exist, -ENODATA if property does not have a value, and -EILSEQ if the string
+ * is not null-terminated within the length of the property data.
+ */
+static inline int of_property_count_strings(const struct device_node *np,
+                        const char *propname)
+{
+    return of_property_read_string_helper(np, propname, NULL, 0, 0);
+}
+
+/**
+ * of_parse_phandle - Resolve a phandle property to a device_node pointer
+ * @np: Pointer to device node holding phandle property
+ * @phandle_name: Name of property holding a phandle value
+ * @index: For properties holding a table of phandles, this is the index into
+ *         the table
+ *
+ * Return: The device_node pointer with refcount incremented.  Use
+ * of_node_put() on it when done.
+ */
+static inline
+struct device_node *of_parse_phandle(const struct device_node *np,
+                                     const char *phandle_name,
+                                     int index)
+{
+    struct of_phandle_args args;
+
+    if (__of_parse_phandle_with_args(np, phandle_name, NULL, 0,
+                     index, &args))
+        return NULL;
+
+    return args.np;
+}
+
+extern struct device_node *of_get_next_parent(struct device_node *node);
+
+#define for_each_property_of_node(dn, pp) \
+    for (pp = dn->properties; pp != NULL; pp = pp->next)
+
+extern int
+of_parse_phandle_with_args_map(const struct device_node *np,
+                               const char *list_name,
+                               const char *stem_name, int index,
+                               struct of_phandle_args *out_args);
 
 #endif /* _LINUX_OF_H */

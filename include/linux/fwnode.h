@@ -83,9 +83,42 @@ struct fwnode_handle {
 struct fwnode_operations {
     struct fwnode_handle *(*get)(struct fwnode_handle *fwnode);
     void (*put)(struct fwnode_handle *fwnode);
+    bool (*device_is_available)(const struct fwnode_handle *fwnode);
+    const void *(*device_get_match_data)(const struct fwnode_handle *fwnode,
+                         const struct device *dev);
+    bool (*property_present)(const struct fwnode_handle *fwnode,
+                 const char *propname);
+    int (*property_read_int_array)(const struct fwnode_handle *fwnode,
+                       const char *propname,
+                       unsigned int elem_size, void *val,
+                       size_t nval);
+    int
+    (*property_read_string_array)(const struct fwnode_handle *fwnode_handle,
+                      const char *propname, const char **val,
+                      size_t nval);
     const char *(*get_name)(const struct fwnode_handle *fwnode);
     const char *(*get_name_prefix)(const struct fwnode_handle *fwnode);
     struct fwnode_handle *(*get_parent)(const struct fwnode_handle *fwnode);
+    struct fwnode_handle *
+    (*get_next_child_node)(const struct fwnode_handle *fwnode,
+                   struct fwnode_handle *child);
+    struct fwnode_handle *
+    (*get_named_child_node)(const struct fwnode_handle *fwnode,
+                const char *name);
+    int (*get_reference_args)(const struct fwnode_handle *fwnode,
+                  const char *prop, const char *nargs_prop,
+                  unsigned int nargs, unsigned int index,
+                  struct fwnode_reference_args *args);
+    struct fwnode_handle *
+    (*graph_get_next_endpoint)(const struct fwnode_handle *fwnode,
+                   struct fwnode_handle *prev);
+    struct fwnode_handle *
+    (*graph_get_remote_endpoint)(const struct fwnode_handle *fwnode);
+    struct fwnode_handle *
+    (*graph_get_port_parent)(struct fwnode_handle *fwnode);
+    int (*graph_parse_endpoint)(const struct fwnode_handle *fwnode,
+                    struct fwnode_endpoint *endpoint);
+    int (*add_links)(struct fwnode_handle *fwnode);
 };
 
 static inline void
@@ -107,5 +140,26 @@ static inline void fwnode_dev_initialized(struct fwnode_handle *fwnode,
     else
         fwnode->flags &= ~FWNODE_FLAG_INITIALIZED;
 }
+
+#define fwnode_call_int_op(fwnode, op, ...) \
+    (fwnode ? (fwnode_has_op(fwnode, op) ?  \
+               (fwnode)->ops->op(fwnode, ## __VA_ARGS__) : -ENXIO) : \
+               -EINVAL)
+
+#define fwnode_call_bool_op(fwnode, op, ...)        \
+    (fwnode_has_op(fwnode, op) ?            \
+     (fwnode)->ops->op(fwnode, ## __VA_ARGS__) : false)
+
+/**
+ * struct fwnode_endpoint - Fwnode graph endpoint
+ * @port: Port number
+ * @id: Endpoint id
+ * @local_fwnode: reference to the related fwnode
+ */
+struct fwnode_endpoint {
+    unsigned int port;
+    unsigned int id;
+    const struct fwnode_handle *local_fwnode;
+};
 
 #endif /* _LINUX_FWNODE_H_ */

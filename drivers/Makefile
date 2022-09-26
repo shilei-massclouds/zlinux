@@ -14,3 +14,4 @@ obj-$(CONFIG_OF)	+= of/
 obj-y               += clk/
 obj-y               += clocksource/
 obj-y				+= cpuidle/
+obj-y				+= gpio/

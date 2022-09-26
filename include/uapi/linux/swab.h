@@ -86,4 +86,13 @@ static __always_inline unsigned long __swab(const unsigned long y)
     return __swab64(y);
 }
 
+/**
+ * __swab16p - return a byteswapped 16-bit value from a pointer
+ * @p: pointer to a naturally-aligned 16-bit value
+ */
+static __always_inline __u16 __swab16p(const __u16 *p)
+{
+    return __swab16(*p);
+}
+
 #endif /* _UAPI_LINUX_SWAB_H */

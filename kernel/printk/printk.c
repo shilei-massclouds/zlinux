@@ -941,10 +941,11 @@ void console_unlock(void)
  * enabled such as netconsole
  */
 static int
-try_enable_preferred_console(struct console *newcon, bool user_specified)
+try_enable_preferred_console(struct console *newcon,
+                             bool user_specified)
 {
-    int i;
     struct console_cmdline *c;
+    int i, err;
 
     for (i = 0, c = console_cmdline;
          i < MAX_CMDLINECONSOLES && c->name[0];
@@ -952,8 +953,6 @@ try_enable_preferred_console(struct console *newcon, bool user_specified)
         if (c->user_specified != user_specified)
             continue;
 
-        panic("%s: NO implementation!\n", __func__);
-#if 0
         if (!newcon->match ||
             newcon->match(newcon, c->name, c->index, c->options) != 0) {
             /* default matching */
@@ -977,7 +976,6 @@ try_enable_preferred_console(struct console *newcon, bool user_specified)
         if (i == preferred_console)
             newcon->flags |= CON_CONSDEV;
         return 0;
-#endif
     }
 
     /*

@@ -35,21 +35,20 @@
 
 struct console {
     char    name[16];
-
     void    (*write)(struct console *, const char *, unsigned);
-    int     (*read)(struct console *, char *, unsigned);
+    int (*read)(struct console *, char *, unsigned);
     struct tty_driver *(*device)(struct console *, int *);
     void    (*unblank)(void);
-    int     (*setup)(struct console *, char *);
-    int     (*exit)(struct console *);
-    int     (*match)(struct console *, char *name, int idx, char *options);
-
+    int (*setup)(struct console *, char *);
+    int (*exit)(struct console *);
+    int (*match)(struct console *, char *name, int idx, char *options);
     short   flags;
     short   index;
-    int     cflag;
+    int cflag;
+    uint    ispeed;
+    uint    ospeed;
     void    *data;
-
-    struct console *next;
+    struct   console *next;
 };
 
 /*

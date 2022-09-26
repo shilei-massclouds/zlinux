@@ -51,6 +51,10 @@ struct uart_icount {
 typedef unsigned int __bitwise upf_t;
 typedef unsigned int __bitwise upstat_t;
 
+#define NO_POLL_CHAR        0x00ff0000
+#define UART_CONFIG_TYPE    (1 << 0)
+#define UART_CONFIG_IRQ     (1 << 1)
+
 struct uart_port {
     spinlock_t      lock;           /* port lock */
     unsigned long       iobase;         /* in/out[bwl] */
@@ -348,5 +352,32 @@ struct uart_state {
 
 #define uart_console(port) \
     ((port)->cons && (port)->cons->index == (port)->line)
+
+int uart_get_rs485_mode(struct uart_port *port);
+
+int uart_parse_earlycon(char *p, unsigned char *iotype,
+                        resource_size_t *addr, char **options);
+
+struct uart_port *uart_get_console(struct uart_port *ports, int nr,
+                   struct console *c);
+
+void uart_parse_options(const char *options, int *baud, int *parity,
+                        int *bits, int *flow);
+
+int uart_set_options(struct uart_port *port, struct console *co,
+                     int baud, int parity, int bits, int flow);
+
+struct tty_driver *uart_console_device(struct console *co, int *index);
+
+static inline int serial_port_in(struct uart_port *up, int offset)
+{
+    return up->serial_in(up, offset);
+}
+
+static inline void serial_port_out(struct uart_port *up, int offset,
+                                   int value)
+{
+    up->serial_out(up, offset, value);
+}
 
 #endif /* LINUX_SERIAL_CORE_H */

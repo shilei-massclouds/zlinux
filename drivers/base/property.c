@@ -18,6 +18,13 @@
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
 #include <linux/property.h>
+#include <linux/device.h>
+
+struct fwnode_handle *dev_fwnode(struct device *dev)
+{
+    return dev->of_node ? of_fwnode_handle(dev->of_node) : dev->fwnode;
+}
+EXPORT_SYMBOL_GPL(dev_fwnode);
 
 /**
  * fwnode_get_parent - Return parent firwmare node
@@ -151,3 +158,108 @@ const char *fwnode_get_name_prefix(const struct fwnode_handle *fwnode)
 {
     return fwnode_call_ptr_op(fwnode, get_name_prefix);
 }
+
+static int
+fwnode_property_read_int_array(const struct fwnode_handle *fwnode,
+                               const char *propname,
+                               unsigned int elem_size, void *val,
+                               size_t nval)
+{
+    int ret;
+
+    ret = fwnode_call_int_op(fwnode, property_read_int_array, propname,
+                             elem_size, val, nval);
+    if (ret == -EINVAL && !IS_ERR_OR_NULL(fwnode) &&
+        !IS_ERR_OR_NULL(fwnode->secondary))
+        ret = fwnode_call_int_op(fwnode->secondary,
+                                 property_read_int_array, propname,
+                                 elem_size, val, nval);
+
+    return ret;
+}
+
+/**
+ * fwnode_property_read_u32_array - return a u32 array property of firmware node
+ * @fwnode: Firmware node to get the property of
+ * @propname: Name of the property
+ * @val: The values are stored here or %NULL to return the number of values
+ * @nval: Size of the @val array
+ *
+ * Read an array of u32 properties with @propname from @fwnode store them to
+ * @val if found.
+ *
+ * Return: number of values if @val was %NULL,
+ *         %0 if the property was found (success),
+ *     %-EINVAL if given arguments are not valid,
+ *     %-ENODATA if the property does not have a value,
+ *     %-EPROTO if the property is not an array of numbers,
+ *     %-EOVERFLOW if the size of the property is not as expected,
+ *     %-ENXIO if no suitable firmware interface is present.
+ */
+int fwnode_property_read_u32_array(const struct fwnode_handle *fwnode,
+                                   const char *propname, u32 *val,
+                                   size_t nval)
+{
+    return fwnode_property_read_int_array(fwnode, propname, sizeof(u32),
+                                          val, nval);
+}
+EXPORT_SYMBOL_GPL(fwnode_property_read_u32_array);
+
+/**
+ * device_property_read_u32_array - return a u32 array property of a device
+ * @dev: Device to get the property of
+ * @propname: Name of the property
+ * @val: The values are stored here or %NULL to return the number of values
+ * @nval: Size of the @val array
+ *
+ * Function reads an array of u32 properties with @propname from the device
+ * firmware description and stores them to @val if found.
+ *
+ * Return: number of values if @val was %NULL,
+ *         %0 if the property was found (success),
+ *     %-EINVAL if given arguments are not valid,
+ *     %-ENODATA if the property does not have a value,
+ *     %-EPROTO if the property is not an array of numbers,
+ *     %-EOVERFLOW if the size of the property is not as expected.
+ *     %-ENXIO if no suitable firmware interface is present.
+ */
+int device_property_read_u32_array(struct device *dev,
+                                   const char *propname,
+                                   u32 *val, size_t nval)
+{
+    return fwnode_property_read_u32_array(dev_fwnode(dev), propname,
+                                          val, nval);
+}
+EXPORT_SYMBOL_GPL(device_property_read_u32_array);
+
+/**
+ * fwnode_property_present - check if a property of a firmware node is present
+ * @fwnode: Firmware node whose property to check
+ * @propname: Name of the property
+ */
+bool fwnode_property_present(const struct fwnode_handle *fwnode,
+                             const char *propname)
+{
+    bool ret;
+
+    ret = fwnode_call_bool_op(fwnode, property_present, propname);
+    if (ret == false && !IS_ERR_OR_NULL(fwnode) &&
+        !IS_ERR_OR_NULL(fwnode->secondary))
+        ret = fwnode_call_bool_op(fwnode->secondary, property_present,
+                                  propname);
+    return ret;
+}
+EXPORT_SYMBOL_GPL(fwnode_property_present);
+
+/**
+ * device_property_present - check if a property of a device is present
+ * @dev: Device whose property is being checked
+ * @propname: Name of the property
+ *
+ * Check if property @propname is present in the device firmware description.
+ */
+bool device_property_present(struct device *dev, const char *propname)
+{
+    return fwnode_property_present(dev_fwnode(dev), propname);
+}
+EXPORT_SYMBOL_GPL(device_property_present);

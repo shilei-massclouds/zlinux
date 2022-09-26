@@ -41,6 +41,10 @@ static inline __printf(2, 3)
 void _dev_warn(const struct device *dev, const char *fmt, ...)
 {}
 
+static inline __printf(2, 3)
+void _dev_info(const struct device *dev, const char *fmt, ...)
+{}
+
 /*
  * Need to take variadic arguments even though we don't use them, as dev_fmt()
  * may only just have been expanded and may result in multiple arguments.
@@ -64,6 +68,10 @@ void _dev_warn(const struct device *dev, const char *fmt, ...)
 
 #define dev_warn(dev, fmt, ...) \
     dev_printk_index_wrap(_dev_warn, KERN_WARNING, dev, dev_fmt(fmt), \
+                          ##__VA_ARGS__)
+
+#define dev_info(dev, fmt, ...) \
+    dev_printk_index_wrap(_dev_info, KERN_INFO, dev, dev_fmt(fmt), \
                           ##__VA_ARGS__)
 
 #define dev_dbg(dev, fmt, ...)

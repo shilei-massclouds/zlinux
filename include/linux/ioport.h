@@ -117,5 +117,31 @@ extern int insert_resource(struct resource *parent,
 
 extern int release_resource(struct resource *new);
 
+/* Convenience shorthand with allocation */
+#define request_region(start,n,name)        __request_region(&ioport_resource, (start), (n), (name), 0)
+#define request_muxed_region(start,n,name)  __request_region(&ioport_resource, (start), (n), (name), IORESOURCE_MUXED)
+#define __request_mem_region(start,n,name, excl) __request_region(&iomem_resource, (start), (n), (name), excl)
+#define request_mem_region(start,n,name) \
+    __request_region(&iomem_resource, (start), (n), (name), 0)
+#define request_mem_region_muxed(start, n, name) \
+    __request_region(&iomem_resource, (start), (n), (name), IORESOURCE_MUXED)
+#define request_mem_region_exclusive(start,n,name) \
+    __request_region(&iomem_resource, (start), (n), (name), IORESOURCE_EXCLUSIVE)
+#define rename_region(region, newname) do { (region)->name = (newname); } while (0)
+
+extern struct resource * __request_region(struct resource *,
+                    resource_size_t start,
+                    resource_size_t n,
+                    const char *name, int flags);
+
+/* Compatibility cruft */
+#define release_region(start,n) \
+    __release_region(&ioport_resource, (start), (n))
+#define release_mem_region(start,n) \
+    __release_region(&iomem_resource, (start), (n))
+
+extern void __release_region(struct resource *, resource_size_t,
+                             resource_size_t);
+
 #endif /* __ASSEMBLY__ */
 #endif  /* _LINUX_IOPORT_H */

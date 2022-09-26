@@ -8,7 +8,7 @@
 #include <linux/err.h>
 #include <linux/device.h>
 #include <linux/irq.h>
-#include <linux/gpio/consumer.h>
+//#include <linux/gpio/consumer.h>
 #include <linux/termios.h>
 #include <linux/serial_core.h>
 #include <linux/module.h>
@@ -23,3 +23,10 @@ struct mctrl_gpios {
     unsigned int mctrl_prev;
     bool mctrl_on;
 };
+
+struct mctrl_gpios *
+mctrl_gpio_init(struct uart_port *port, unsigned int idx)
+{
+    panic("%s: END!\n", __func__);
+}
+

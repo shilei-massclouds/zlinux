@@ -17,8 +17,8 @@
 #include <linux/init.h>
 #include <linux/console.h>
 #include <linux/of.h>
-#if 0
 #include <linux/gpio/consumer.h>
+#if 0
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #endif
@@ -430,6 +430,61 @@ static void uart_port_spin_lock_init(struct uart_port *port)
     spin_lock_init(&port->lock);
 }
 
+static const char *uart_type(struct uart_port *port)
+{
+    const char *str = NULL;
+
+    if (port->ops->type)
+        str = port->ops->type(port);
+
+    if (!str)
+        str = "unknown";
+
+    return str;
+}
+
+static inline void
+uart_report_port(struct uart_driver *drv, struct uart_port *port)
+{
+    char address[64];
+
+    switch (port->iotype) {
+    case UPIO_PORT:
+        snprintf(address, sizeof(address), "I/O 0x%lx", port->iobase);
+        break;
+    case UPIO_HUB6:
+        snprintf(address, sizeof(address),
+             "I/O 0x%lx offset 0x%x", port->iobase, port->hub6);
+        break;
+    case UPIO_MEM:
+    case UPIO_MEM16:
+    case UPIO_MEM32:
+    case UPIO_MEM32BE:
+    case UPIO_AU:
+    case UPIO_TSI:
+        snprintf(address, sizeof(address),
+             "MMIO 0x%llx", (unsigned long long)port->mapbase);
+        break;
+    default:
+        strlcpy(address, "*unknown*", sizeof(address));
+        break;
+    }
+
+    pr_info("%s%s%s at %s (irq = %d, base_baud = %d) is a %s\n",
+           port->dev ? dev_name(port->dev) : "",
+           port->dev ? ": " : "",
+           port->name,
+           address, port->irq, port->uartclk / 16, uart_type(port));
+
+    /* The magic multiplier feature is a bit obscure, so report it too.  */
+    if (port->flags & UPF_MAGIC_MULTIPLIER)
+        pr_info("%s%s%s extra baud rates supported: %d, %d",
+            port->dev ? dev_name(port->dev) : "",
+            port->dev ? ": " : "",
+            port->name,
+            port->uartclk / 8, port->uartclk / 4);
+}
+
 static void
 uart_configure_port(struct uart_driver *drv, struct uart_state *state,
             struct uart_port *port)
@@ -442,7 +497,61 @@ uart_configure_port(struct uart_driver *drv, struct uart_state *state,
     if (!port->iobase && !port->mapbase && !port->membase)
         return;
 
-    panic("%s: END!\n", __func__);
+    /*
+     * Now do the auto configuration stuff.  Note that config_port
+     * is expected to claim the resources and map the port for us.
+     */
+    flags = 0;
+    if (port->flags & UPF_AUTO_IRQ)
+        flags |= UART_CONFIG_IRQ;
+    if (port->flags & UPF_BOOT_AUTOCONF) {
+        if (!(port->flags & UPF_FIXED_TYPE)) {
+            port->type = PORT_UNKNOWN;
+            flags |= UART_CONFIG_TYPE;
+        }
+        port->ops->config_port(port, flags);
+    }
+
+    if (port->type != PORT_UNKNOWN) {
+        unsigned long flags;
+
+        uart_report_port(drv, port);
+
+#if 0
+        /* Power up port for set_mctrl() */
+        uart_change_pm(state, UART_PM_STATE_ON);
+#endif
+
+        /*
+         * Ensure that the modem control lines are de-activated.
+         * keep the DTR setting that is set in uart_set_options()
+         * We probably don't need a spinlock around this, but
+         */
+        spin_lock_irqsave(&port->lock, flags);
+        port->mctrl &= TIOCM_DTR;
+        if (port->rs485.flags & SER_RS485_ENABLED &&
+            !(port->rs485.flags & SER_RS485_RTS_AFTER_SEND))
+            port->mctrl |= TIOCM_RTS;
+        port->ops->set_mctrl(port, port->mctrl);
+        spin_unlock_irqrestore(&port->lock, flags);
+
+        /*
+         * If this driver supports console, and it hasn't been
+         * successfully registered yet, try to re-register it.
+         * It may be that the port was not available.
+         */
+        if (port->cons && !(port->cons->flags & CON_ENABLED))
+            register_console(port->cons);
+
+#if 0
+        /*
+         * Power down all ports by default, except the
+         * console if we have one.
+         */
+        if (!uart_console(port))
+            uart_change_pm(state, UART_PM_STATE_OFF);
+#endif
+    }
 }
 
 #if 0
@@ -665,4 +774,216 @@ int uart_remove_one_port(struct uart_driver *drv,
     mutex_unlock(&port_mutex);
 
     return ret;
+}
+
+/**
+ * uart_get_rs485_mode() - retrieve rs485 properties for given uart
+ * @port: uart device's target port
+ *
+ * This function implements the device tree binding described in
+ * Documentation/devicetree/bindings/serial/rs485.txt.
+ */
+int uart_get_rs485_mode(struct uart_port *port)
+{
+    struct serial_rs485 *rs485conf = &port->rs485;
+    struct device *dev = port->dev;
+    u32 rs485_delay[2];
+    int ret;
+
+    ret = device_property_read_u32_array(dev, "rs485-rts-delay",
+                                         rs485_delay, 2);
+    if (!ret) {
+        rs485conf->delay_rts_before_send = rs485_delay[0];
+        rs485conf->delay_rts_after_send = rs485_delay[1];
+    } else {
+        rs485conf->delay_rts_before_send = 0;
+        rs485conf->delay_rts_after_send = 0;
+    }
+
+    /*
+     * Clear full-duplex and enabled flags, set RTS polarity to active high
+     * to get to a defined state with the following properties:
+     */
+    rs485conf->flags &= ~(SER_RS485_RX_DURING_TX | SER_RS485_ENABLED |
+                          SER_RS485_TERMINATE_BUS |
+                          SER_RS485_RTS_AFTER_SEND);
+    rs485conf->flags |= SER_RS485_RTS_ON_SEND;
+
+    if (device_property_read_bool(dev, "rs485-rx-during-tx"))
+        rs485conf->flags |= SER_RS485_RX_DURING_TX;
+
+    if (device_property_read_bool(dev,
+                                  "linux,rs485-enabled-at-boot-time"))
+        rs485conf->flags |= SER_RS485_ENABLED;
+
+    if (device_property_read_bool(dev, "rs485-rts-active-low")) {
+        rs485conf->flags &= ~SER_RS485_RTS_ON_SEND;
+        rs485conf->flags |= SER_RS485_RTS_AFTER_SEND;
+    }
+
+#if 0
+    /*
+     * Disabling termination by default is the safe choice:  Else if many
+     * bus participants enable it, no communication is possible at all.
+     * Works fine for short cables and users may enable for longer cables.
+     */
+    port->rs485_term_gpio = devm_gpiod_get_optional(dev, "rs485-term",
+                                                    GPIOD_OUT_LOW);
+    if (IS_ERR(port->rs485_term_gpio)) {
+        ret = PTR_ERR(port->rs485_term_gpio);
+        port->rs485_term_gpio = NULL;
+        return dev_err_probe(dev, ret, "Cannot get rs485-term-gpios\n");
+    }
+#endif
+
+    return 0;
+}
+EXPORT_SYMBOL_GPL(uart_get_rs485_mode);
+
+/**
+ *  uart_parse_earlycon - Parse earlycon options
+ *  @p:   ptr to 2nd field (ie., just beyond '<name>,')
+ *  @iotype:  ptr for decoded iotype (out)
+ *  @addr:    ptr for decoded mapbase/iobase (out)
+ *  @options: ptr for <options> field; NULL if not present (out)
+ *
+ *  Decodes earlycon kernel command line parameters of the form
+ *     earlycon=<name>,io|mmio|mmio16|mmio32|mmio32be|mmio32native,<addr>,<options>
+ *     console=<name>,io|mmio|mmio16|mmio32|mmio32be|mmio32native,<addr>,<options>
+ *
+ *  The optional form
+ *
+ *     earlycon=<name>,0x<addr>,<options>
+ *     console=<name>,0x<addr>,<options>
+ *
+ *  is also accepted; the returned @iotype will be UPIO_MEM.
+ *
+ *  Returns 0 on success or -EINVAL on failure
+ */
+int uart_parse_earlycon(char *p, unsigned char *iotype,
+                        resource_size_t *addr, char **options)
+{
+    if (strncmp(p, "mmio,", 5) == 0) {
+        *iotype = UPIO_MEM;
+        p += 5;
+    } else if (strncmp(p, "mmio16,", 7) == 0) {
+        *iotype = UPIO_MEM16;
+        p += 7;
+    } else if (strncmp(p, "mmio32,", 7) == 0) {
+        *iotype = UPIO_MEM32;
+        p += 7;
+    } else if (strncmp(p, "mmio32be,", 9) == 0) {
+        *iotype = UPIO_MEM32BE;
+        p += 9;
+    } else if (strncmp(p, "mmio32native,", 13) == 0) {
+        *iotype = IS_ENABLED(CONFIG_CPU_BIG_ENDIAN) ?
+            UPIO_MEM32BE : UPIO_MEM32;
+        p += 13;
+    } else if (strncmp(p, "io,", 3) == 0) {
+        *iotype = UPIO_PORT;
+        p += 3;
+    } else if (strncmp(p, "0x", 2) == 0) {
+        *iotype = UPIO_MEM;
+    } else {
+        return -EINVAL;
+    }
+
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ *  uart_parse_options - Parse serial port baud/parity/bits/flow control.
+ *  @options: pointer to option string
+ *  @baud: pointer to an 'int' variable for the baud rate.
+ *  @parity: pointer to an 'int' variable for the parity.
+ *  @bits: pointer to an 'int' variable for the number of data bits.
+ *  @flow: pointer to an 'int' variable for the flow control character.
+ *
+ *  uart_parse_options decodes a string containing the serial console
+ *  options.  The format of the string is <baud><parity><bits><flow>,
+ *  eg: 115200n8r
+ */
+void
+uart_parse_options(const char *options, int *baud, int *parity,
+                   int *bits, int *flow)
+{
+    const char *s = options;
+
+    *baud = simple_strtoul(s, NULL, 10);
+    while (*s >= '0' && *s <= '9')
+        s++;
+    if (*s)
+        *parity = *s++;
+    if (*s)
+        *bits = *s++ - '0';
+    if (*s)
+        *flow = *s;
+}
+
+/**
+ *  uart_set_options - setup the serial console parameters
+ *  @port: pointer to the serial ports uart_port structure
+ *  @co: console pointer
+ *  @baud: baud rate
+ *  @parity: parity character - 'n' (none), 'o' (odd), 'e' (even)
+ *  @bits: number of data bits
+ *  @flow: flow control character - 'r' (rts)
+ */
+int
+uart_set_options(struct uart_port *port, struct console *co,
+                 int baud, int parity, int bits, int flow)
+{
+    struct ktermios termios;
+    static struct ktermios dummy;
+
+    /*
+     * Ensure that the serial-console lock is initialised early.
+     *
+     * Note that the console-enabled check is needed because of kgdboc,
+     * which can end up calling uart_set_options() for an already enabled
+     * console via tty_find_polling_driver() and uart_poll_init().
+     */
+    if (!uart_console_enabled(port) && !port->console_reinit)
+        uart_port_spin_lock_init(port);
+
+    memset(&termios, 0, sizeof(struct ktermios));
+
+    termios.c_cflag |= CREAD | HUPCL | CLOCAL;
+    tty_termios_encode_baud_rate(&termios, baud, baud);
+
+    if (bits == 7)
+        termios.c_cflag |= CS7;
+    else
+        termios.c_cflag |= CS8;
+
+    switch (parity) {
+    case 'o': case 'O':
+        termios.c_cflag |= PARODD;
+        fallthrough;
+    case 'e': case 'E':
+        termios.c_cflag |= PARENB;
+        break;
+    }
+
+    if (flow == 'r')
+        termios.c_cflag |= CRTSCTS;
+
+    /*
+     * some uarts on other side don't support no flow control.
+     * So we set * DTR in host uart to make them happy
+     */
+    port->mctrl |= TIOCM_DTR;
+
+    port->ops->set_termios(port, &termios, &dummy);
+    /*
+     * Allow the setting of the UART parameters with a NULL console
+     * too:
+     */
+    if (co) {
+        co->cflag = termios.c_cflag;
+        co->ispeed = termios.c_ispeed;
+        co->ospeed = termios.c_ospeed;
+    }
+
+    return 0;
 }

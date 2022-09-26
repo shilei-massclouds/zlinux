@@ -12,7 +12,7 @@
 //#include <linux/serial_reg.h>
 //#include <linux/dmaengine.h>
 
-//#include "../serial_mctrl_gpio.h"
+#include "../serial_mctrl_gpio.h"
 
 #define UART_CAP_FIFO   BIT(8)  /* UART has FIFO */
 #define UART_CAP_EFR    BIT(9)  /* UART has EFR */
@@ -63,5 +63,44 @@ struct old_serial_port {
     unsigned short iomem_reg_shift;
 };
 
+struct serial8250_config {
+    const char  *name;
+    unsigned short  fifo_size;
+    unsigned short  tx_loadsz;
+    unsigned char   fcr;
+    unsigned char   rxtrig_bytes[UART_FCR_R_TRIG_MAX_STATE];
+    unsigned int    flags;
+};
+
 static inline int serial8250_pnp_init(void) { return 0; }
 static inline void serial8250_pnp_exit(void) { }
+
+/* MCR <-> TIOCM conversion */
+static inline int serial8250_TIOCM_to_MCR(int tiocm)
+{
+    int mcr = 0;
+
+    if (tiocm & TIOCM_RTS)
+        mcr |= UART_MCR_RTS;
+    if (tiocm & TIOCM_DTR)
+        mcr |= UART_MCR_DTR;
+    if (tiocm & TIOCM_OUT1)
+        mcr |= UART_MCR_OUT1;
+    if (tiocm & TIOCM_OUT2)
+        mcr |= UART_MCR_OUT2;
+    if (tiocm & TIOCM_LOOP)
+        mcr |= UART_MCR_LOOP;
+
+    return mcr;
+}
+
+static inline
+void serial8250_out_MCR(struct uart_8250_port *up, int value)
+{
+    serial_out(up, UART_MCR, value);
+
+#if 0
+    if (up->gpios)
+        mctrl_gpio_set(up->gpios, serial8250_MCR_to_TIOCM(value));
+#endif
+}

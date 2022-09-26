@@ -138,4 +138,7 @@ enum {
     PLAT8250_DEV_SM501,
 };
 
+int serial8250_console_setup(struct uart_port *port, char *options,
+                             bool probe);
+
 #endif /* _LINUX_SERIAL_8250_H */

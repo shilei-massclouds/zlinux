@@ -1059,3 +1059,30 @@ bool of_console_check(struct device_node *dn, char *name, int index)
                                   (char *)of_stdout_options);
 }
 EXPORT_SYMBOL_GPL(of_console_check);
+
+/**
+ * of_get_next_parent - Iterate to a node's parent
+ * @node:   Node to get parent of
+ *
+ * This is like of_get_parent() except that it drops the
+ * refcount on the passed node, making it suitable for iterating
+ * through a node's parents.
+ *
+ * Return: A node pointer with refcount incremented, use
+ * of_node_put() on it when done.
+ */
+struct device_node *of_get_next_parent(struct device_node *node)
+{
+    struct device_node *parent;
+    unsigned long flags;
+
+    if (!node)
+        return NULL;
+
+    raw_spin_lock_irqsave(&devtree_lock, flags);
+    parent = of_node_get(node->parent);
+    of_node_put(node);
+    raw_spin_unlock_irqrestore(&devtree_lock, flags);
+    return parent;
+}
+EXPORT_SYMBOL(of_get_next_parent);
