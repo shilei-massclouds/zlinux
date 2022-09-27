@@ -100,3 +100,8 @@ void smp_send_reschedule(int cpu)
     send_ipi_single(cpu, IPI_RESCHEDULE);
 }
 EXPORT_SYMBOL_GPL(smp_send_reschedule);
+
+void arch_irq_work_raise(void)
+{
+    send_ipi_single(smp_processor_id(), IPI_IRQ_WORK);
+}

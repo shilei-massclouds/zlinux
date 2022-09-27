@@ -487,7 +487,7 @@ uart_report_port(struct uart_driver *drv, struct uart_port *port)
 
 static void
 uart_configure_port(struct uart_driver *drv, struct uart_state *state,
-            struct uart_port *port)
+                    struct uart_port *port)
 {
     unsigned int flags;
 
@@ -535,6 +535,7 @@ uart_configure_port(struct uart_driver *drv, struct uart_state *state,
         port->ops->set_mctrl(port, port->mctrl);
         spin_unlock_irqrestore(&port->lock, flags);
 
+        printk("%s: 1\n", __func__);
         /*
          * If this driver supports console, and it hasn't been
          * successfully registered yet, try to re-register it.
@@ -542,6 +543,7 @@ uart_configure_port(struct uart_driver *drv, struct uart_state *state,
          */
         if (port->cons && !(port->cons->flags & CON_ENABLED))
             register_console(port->cons);
+        printk("%s: 2\n", __func__);
 
 #if 0
         /*

@@ -12,7 +12,7 @@
 #include <linux/tty_port.h>
 #include <linux/mutex.h>
 #include <linux/tty_flags.h>
-//#include <uapi/linux/tty.h>
+#include <uapi/linux/tty.h>
 #include <linux/rwsem.h>
 #include <linux/llist.h>
 
@@ -107,5 +107,7 @@ void tty_encode_baud_rate(struct tty_struct *tty, speed_t ibaud,
 unsigned char tty_get_char_size(unsigned int cflag);
 
 speed_t tty_termios_baud_rate(struct ktermios *termios);
+
+void __init n_tty_init(void);
 
 #endif /* _LINUX_TTY_H */

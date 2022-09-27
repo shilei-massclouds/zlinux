@@ -354,4 +354,10 @@ atomic_dec_return(atomic_t *v)
     return arch_atomic_dec_return(v);
 }
 
+static __always_inline int
+atomic_fetch_or(int i, atomic_t *v)
+{
+    return arch_atomic_fetch_or(i, v);
+}
+
 #endif /* _LINUX_ATOMIC_INSTRUMENTED_H */

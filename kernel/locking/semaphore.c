@@ -29,6 +29,7 @@
 #include <linux/export.h>
 #include <linux/sched.h>
 #include <linux/sched/debug.h>
+#include <linux/sched/signal.h>
 #include <linux/semaphore.h>
 #include <linux/spinlock.h>
 //#include <linux/ftrace.h>
@@ -104,10 +105,8 @@ __sched __down_common(struct semaphore *sem, long state, long timeout)
     waiter.up = false;
 
     for (;;) {
-#if 0
         if (signal_pending_state(state, current))
             goto interrupted;
-#endif
         if (unlikely(timeout <= 0))
             goto timed_out;
         __set_current_state(state);
@@ -122,11 +121,9 @@ __sched __down_common(struct semaphore *sem, long state, long timeout)
     list_del(&waiter.list);
     return -ETIME;
 
-/*
  interrupted:
     list_del(&waiter.list);
     return -EINTR;
-*/
 }
 
 static noinline void __sched __down(struct semaphore *sem)

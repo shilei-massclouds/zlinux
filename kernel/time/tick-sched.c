@@ -253,3 +253,10 @@ void tick_nohz_idle_stop_tick(void)
     __tick_nohz_idle_stop_tick(this_cpu_ptr(&tick_cpu_sched));
     printk("%s: END!\n", __func__);
 }
+
+bool tick_nohz_tick_stopped(void)
+{
+    struct tick_sched *ts = this_cpu_ptr(&tick_cpu_sched);
+
+    return ts->tick_stopped;
+}

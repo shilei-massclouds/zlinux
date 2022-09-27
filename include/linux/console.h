@@ -66,4 +66,9 @@ extern int console_set_on_cmdline;
 
 extern int add_preferred_console(char *name, int idx, char *options);
 
+extern int console_trylock(void);
+extern void console_unlock(void);
+
+extern void console_init(void);
+
 #endif /* _LINUX_CONSOLE_H_ */

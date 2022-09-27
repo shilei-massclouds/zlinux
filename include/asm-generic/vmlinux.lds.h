@@ -109,11 +109,17 @@
         INIT_CALLS_LEVEL(7)                 \
         __initcall_end = .;
 
+#define CON_INITCALL                            \
+        __con_initcall_start = .;               \
+        KEEP(*(.con_initcall.init))             \
+        __con_initcall_end = .;
+
 #define INIT_DATA_SECTION(initsetup_align) \
     .init.data : AT(ADDR(.init.data) - LOAD_OFFSET) { \
         INIT_DATA \
         INIT_SETUP(initsetup_align) \
         INIT_CALLS \
+        CON_INITCALL \
     }
 
 /*

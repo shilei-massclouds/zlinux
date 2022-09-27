@@ -20,4 +20,25 @@ struct irq_work {
     struct rcuwait irqwait;
 };
 
+#define __IRQ_WORK_INIT(_func, _flags) (struct irq_work){   \
+    .node = { .u_flags = (_flags), },           \
+    .func = (_func),                    \
+    .irqwait = __RCUWAIT_INITIALIZER(irqwait),      \
+}
+
+#define IRQ_WORK_INIT(_func) __IRQ_WORK_INIT(_func, 0)
+#define IRQ_WORK_INIT_LAZY(_func) __IRQ_WORK_INIT(_func, IRQ_WORK_LAZY)
+#define IRQ_WORK_INIT_HARD(_func) \
+    __IRQ_WORK_INIT(_func, IRQ_WORK_HARD_IRQ)
+
+#include <asm/irq_work.h>
+
+void irq_work_run(void);
+bool irq_work_needs_cpu(void);
+void irq_work_single(void *arg);
+
+bool irq_work_queue(struct irq_work *work);
+
+bool irq_work_queue_on(struct irq_work *work, int cpu);
+
 #endif /* _LINUX_IRQ_WORK_H */

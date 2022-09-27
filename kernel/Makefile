@@ -11,6 +11,7 @@ obj-y += signal.o sys_ni.o sys.o
 obj-y += user_namespace.o ucount.o
 obj-y += utsname.o task_work.o
 obj-y += kmod.o workqueue.o jump_label.o
+obj-y += irq_work.o
 
 obj-y += sched/
 obj-y += locking/

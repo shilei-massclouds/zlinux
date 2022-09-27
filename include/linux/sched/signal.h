@@ -227,6 +227,11 @@ static inline int signal_pending(struct task_struct *p)
     return task_sigpending(p);
 }
 
+static inline int __fatal_signal_pending(struct task_struct *p)
+{
+    return unlikely(sigismember(&p->pending.signal, SIGKILL));
+}
+
 static inline int
 signal_pending_state(unsigned int state, struct task_struct *p)
 {
@@ -235,11 +240,7 @@ signal_pending_state(unsigned int state, struct task_struct *p)
     if (!signal_pending(p))
         return 0;
 
-#if 0
     return (state & TASK_INTERRUPTIBLE) || __fatal_signal_pending(p);
-#endif
-    panic("%s: END!\n", __func__);
-    return 0;
 }
 
 static inline bool thread_group_leader(struct task_struct *p)

@@ -13,6 +13,8 @@
 #include <linux/smp.h>
 #include <linux/semaphore.h>
 #include <linux/mutex.h>
+#include <linux/irq_work.h>
+#include <linux/tty.h>
 
 #include "printk_ringbuffer.h"
 #include "console_cmdline.h"
@@ -308,6 +310,25 @@ struct printk_log {
     u8 flags:5;     /* internal record flags */
     u8 level:3;     /* syslog level */
 };
+
+DECLARE_WAIT_QUEUE_HEAD(log_wait);
+
+static void wake_up_klogd_work_func(struct irq_work *irq_work)
+{
+    int pending = this_cpu_xchg(printk_pending, 0);
+
+    if (pending & PRINTK_PENDING_OUTPUT) {
+        /* If trylock fails, someone else is doing the printing */
+        if (console_trylock())
+            console_unlock();
+    }
+
+    if (pending & PRINTK_PENDING_WAKEUP)
+        wake_up_interruptible(&log_wait);
+}
+
+static DEFINE_PER_CPU(struct irq_work, wake_up_klogd_work) =
+    IRQ_WORK_INIT_LAZY(wake_up_klogd_work_func);
 
 /* human readable text of the record */
 static char *log_text(const struct printk_log *msg)
@@ -1582,6 +1603,19 @@ out:
     return ret;
 }
 
+void wake_up_klogd(void)
+{
+    if (!printk_percpu_data_ready())
+        return;
+
+    preempt_disable();
+    if (waitqueue_active(&log_wait)) {
+        this_cpu_or(printk_pending, PRINTK_PENDING_WAKEUP);
+        irq_work_queue(this_cpu_ptr(&wake_up_klogd_work));
+    }
+    preempt_enable();
+}
+
 asmlinkage int
 vprintk_emit(int facility, int level,
              const struct dev_printk_info *dev_info,
@@ -1625,7 +1659,7 @@ vprintk_emit(int facility, int level,
         preempt_enable();
     }
 
-    //wake_up_klogd();
+    wake_up_klogd();
     return printed_len;
 }
 
@@ -1642,7 +1676,7 @@ void defer_console_output(void)
 
     preempt_disable();
     this_cpu_or(printk_pending, PRINTK_PENDING_OUTPUT);
-    //irq_work_queue(this_cpu_ptr(&wake_up_klogd_work));
+    irq_work_queue(this_cpu_ptr(&wake_up_klogd_work));
     preempt_enable();
 }
 
@@ -1711,4 +1745,31 @@ static int __add_preferred_console(char *name, int idx, char *options,
 int add_preferred_console(char *name, int idx, char *options)
 {
     return __add_preferred_console(name, idx, options, NULL, false);
+}
+
+/*
+ * Initialize the console device. This is called *early*, so
+ * we can't necessarily depend on lots of kernel help here.
+ * Just do some early initializations, and do the complex setup
+ * later.
+ */
+void __init console_init(void)
+{
+    int ret;
+    initcall_t call;
+    initcall_entry_t *ce;
+
+    /* Setup the default TTY line discipline. */
+    n_tty_init();
+
+    /*
+     * set up the console device so that later boot sequences can
+     * inform about problems etc..
+     */
+    ce = __con_initcall_start;
+    while (ce < __con_initcall_end) {
+        call = initcall_from_entry(ce);
+        ret = call();
+        ce++;
+    }
 }

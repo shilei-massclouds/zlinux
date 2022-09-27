@@ -14,6 +14,7 @@
 #include <linux/cpu.h>
 #include <linux/binfmts.h>
 #include <linux/percpu.h>
+#include <linux/console.h>
 #include <linux/pid_namespace.h>
 #include <linux/sched.h>
 #include <linux/sched/init.h>
@@ -833,6 +834,18 @@ void __init __no_sanitize_address start_kernel(void)
     local_irq_enable();
 
     kmem_cache_init_late();
+
+    /*
+     * HACK ALERT! This is early. We're enabling the console before
+     * we've done PCI setups etc, and console_init() must be aware of
+     * this. But we do want output early, in case something goes wrong.
+     */
+    console_init();
+#if 0
+    if (panic_later)
+        panic("Too many boot %s vars at `%s'",
+              panic_later, panic_param);
+#endif
 
     sched_clock_init();
 
