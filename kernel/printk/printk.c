@@ -15,6 +15,7 @@
 #include <linux/mutex.h>
 #include <linux/irq_work.h>
 #include <linux/tty.h>
+#include <linux/ctype.h>
 
 #include "printk_ringbuffer.h"
 #include "console_cmdline.h"
@@ -1773,3 +1774,51 @@ void __init console_init(void)
         ce++;
     }
 }
+
+/*
+ * Set up a console.  Called via do_early_param() in init/main.c
+ * for each "console=" parameter in the boot command line.
+ */
+static int __init console_setup(char *str)
+{
+    char buf[sizeof(console_cmdline[0].name) + 4]; /* 4 for "ttyS" */
+    char *s, *options, *brl_options = NULL;
+    int idx;
+
+    /*
+     * console="" or console=null have been suggested as a way to
+     * disable console output. Use ttynull that has been created
+     * for exactly this purpose.
+     */
+    if (str[0] == 0 || strcmp(str, "null") == 0) {
+        __add_preferred_console("ttynull", 0, NULL, NULL, true);
+        return 1;
+    }
+
+    if (_braille_console_setup(&str, &brl_options))
+        return 1;
+
+    /*
+     * Decode str into name, index, options.
+     */
+    if (str[0] >= '0' && str[0] <= '9') {
+        strcpy(buf, "ttyS");
+        strncpy(buf + 4, str, sizeof(buf) - 5);
+    } else {
+        strncpy(buf, str, sizeof(buf) - 1);
+    }
+    buf[sizeof(buf) - 1] = 0;
+    options = strchr(str, ',');
+    if (options)
+        *(options++) = 0;
+
+    for (s = buf; *s; s++)
+        if (isdigit(*s) || *s == ',')
+            break;
+    idx = simple_strtoul(s, NULL, 10);
+    *s = 0;
+
+    __add_preferred_console(buf, idx, options, brl_options, true);
+    return 1;
+}
+__setup("console=", console_setup);
