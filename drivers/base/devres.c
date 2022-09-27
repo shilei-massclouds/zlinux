@@ -338,3 +338,64 @@ int devres_destroy(struct device *dev, dr_release_t release,
     return 0;
 }
 EXPORT_SYMBOL_GPL(devres_destroy);
+
+static int remove_nodes(struct device *dev,
+            struct list_head *first, struct list_head *end,
+            struct list_head *todo)
+{
+    struct devres_node *node, *n;
+    int cnt = 0, nr_groups = 0;
+
+    /* First pass - move normal devres entries to @todo and clear
+     * devres_group colors.
+     */
+    node = list_entry(first, struct devres_node, entry);
+    list_for_each_entry_safe_from(node, n, end, entry) {
+
+        panic("%s: 1!\n", __func__);
+    }
+    panic("%s: END!\n", __func__);
+}
+
+static void release_nodes(struct device *dev, struct list_head *todo)
+{
+    struct devres *dr, *tmp;
+
+    /* Release.  Note that both devres and devres_group are
+     * handled as devres in the following loop.  This is safe.
+     */
+    list_for_each_entry_safe_reverse(dr, tmp, todo, node.entry) {
+        devres_log(dev, &dr->node, "REL");
+        dr->node.release(dev, dr->data);
+        kfree(dr);
+    }
+}
+
+/**
+ * devres_release_all - Release all managed resources
+ * @dev: Device to release resources for
+ *
+ * Release all resources associated with @dev.  This function is
+ * called on driver detach.
+ */
+int devres_release_all(struct device *dev)
+{
+    unsigned long flags;
+    LIST_HEAD(todo);
+    int cnt;
+
+    /* Looks like an uninitialized device structure */
+    if (WARN_ON(dev->devres_head.next == NULL))
+        return -ENODEV;
+
+    /* Nothing to release if list is empty */
+    if (list_empty(&dev->devres_head))
+        return 0;
+
+    spin_lock_irqsave(&dev->devres_lock, flags);
+    cnt = remove_nodes(dev, dev->devres_head.next, &dev->devres_head, &todo);
+    spin_unlock_irqrestore(&dev->devres_lock, flags);
+
+    release_nodes(dev, &todo);
+    return cnt;
+}

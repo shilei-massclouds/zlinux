@@ -1043,7 +1043,8 @@ void register_console(struct console *newcon)
             realcon_enabled = true;
     }
 
-    /* Do not register boot consoles when there already is a real one. */
+    /* Do not register boot consoles
+       when there already is a real one. */
     if (newcon->flags & CON_BOOT && realcon_enabled) {
         pr_info("Too late to register bootconsole %s%d\n",
                 newcon->name, newcon->index);

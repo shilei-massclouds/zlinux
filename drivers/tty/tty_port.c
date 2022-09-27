@@ -125,7 +125,8 @@ EXPORT_SYMBOL_GPL(tty_port_register_device_attr_serdev);
  * the device is gone.
  */
 void tty_port_unregister_device(struct tty_port *port,
-                                struct tty_driver *driver, unsigned index)
+                                struct tty_driver *driver,
+                                unsigned index)
 {
     int ret;
 

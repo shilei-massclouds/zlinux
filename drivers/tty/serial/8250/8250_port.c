@@ -478,11 +478,230 @@ static void serial8250_shutdown(struct uart_port *port)
     panic("%s: END!\n", __func__);
 }
 
+static unsigned char
+serial8250_compute_lcr(struct uart_8250_port *up, tcflag_t c_cflag)
+{
+    unsigned char cval;
+
+    cval = UART_LCR_WLEN(tty_get_char_size(c_cflag));
+
+    if (c_cflag & CSTOPB)
+        cval |= UART_LCR_STOP;
+    if (c_cflag & PARENB) {
+        cval |= UART_LCR_PARITY;
+        if (up->bugs & UART_BUG_PARITY)
+            up->fifo_bug = true;
+    }
+    if (!(c_cflag & PARODD))
+        cval |= UART_LCR_EPAR;
+#ifdef CMSPAR
+    if (c_cflag & CMSPAR)
+        cval |= UART_LCR_SPAR;
+#endif
+
+    return cval;
+}
+
+static unsigned int
+serial8250_get_baud_rate(struct uart_port *port,
+                         struct ktermios *termios,
+                         struct ktermios *old)
+{
+    unsigned int tolerance = port->uartclk / 100;
+    unsigned int min;
+    unsigned int max;
+
+    /*
+     * Handle magic divisors for baud rates above baud_base on SMSC
+     * Super I/O chips.  Enable custom rates of clk/4 and clk/8, but
+     * disable divisor values beyond 32767, which are unavailable.
+     */
+    if (port->flags & UPF_MAGIC_MULTIPLIER) {
+        min = port->uartclk / 16 / UART_DIV_MAX >> 1;
+        max = (port->uartclk + tolerance) / 4;
+    } else {
+        min = port->uartclk / 16 / UART_DIV_MAX;
+        max = (port->uartclk + tolerance) / 16;
+    }
+
+    /*
+     * Ask the core to calculate the divisor for us.
+     * Allow 1% tolerance at the upper limit so uart clks marginally
+     * slower than nominal still match standard baud rates without
+     * causing transmission errors.
+     */
+    return uart_get_baud_rate(port, termios, old, min, max);
+}
+
+static unsigned int
+serial8250_do_get_divisor(struct uart_port *port, unsigned int baud,
+                          unsigned int *frac)
+{
+    upf_t magic_multiplier = port->flags & UPF_MAGIC_MULTIPLIER;
+    struct uart_8250_port *up = up_to_u8250p(port);
+    unsigned int quot;
+
+    /*
+     * Handle magic divisors for baud rates above baud_base on SMSC
+     * Super I/O chips.  We clamp custom rates from clk/6 and clk/12
+     * up to clk/4 (0x8001) and clk/8 (0x8002) respectively.  These
+     * magic divisors actually reprogram the baud rate generator's
+     * reference clock derived from chips's 14.318MHz clock input.
+     *
+     * Documentation claims that with these magic divisors the base
+     * frequencies of 7.3728MHz and 3.6864MHz are used respectively
+     * for the extra baud rates of 460800bps and 230400bps rather
+     * than the usual base frequency of 1.8462MHz.  However empirical
+     * evidence contradicts that.
+     *
+     * Instead bit 7 of the DLM register (bit 15 of the divisor) is
+     * effectively used as a clock prescaler selection bit for the
+     * base frequency of 7.3728MHz, always used.  If set to 0, then
+     * the base frequency is divided by 4 for use by the Baud Rate
+     * Generator, for the usual arrangement where the value of 1 of
+     * the divisor produces the baud rate of 115200bps.  Conversely,
+     * if set to 1 and high-speed operation has been enabled with the
+     * Serial Port Mode Register in the Device Configuration Space,
+     * then the base frequency is supplied directly to the Baud Rate
+     * Generator, so for the divisor values of 0x8001, 0x8002, 0x8003,
+     * 0x8004, etc. the respective baud rates produced are 460800bps,
+     * 230400bps, 153600bps, 115200bps, etc.
+     *
+     * In all cases only low 15 bits of the divisor are used to divide
+     * the baud base and therefore 32767 is the maximum divisor value
+     * possible, even though documentation says that the programmable
+     * Baud Rate Generator is capable of dividing the internal PLL
+     * clock by any divisor from 1 to 65535.
+     */
+    if (magic_multiplier && baud >= port->uartclk / 6)
+        quot = 0x8001;
+    else if (magic_multiplier && baud >= port->uartclk / 12)
+        quot = 0x8002;
+    else
+        quot = uart_get_divisor(port, baud);
+
+    /*
+     * Oxford Semi 952 rev B workaround
+     */
+    if (up->bugs & UART_BUG_QUOT && (quot & 0xff) == 0)
+        quot++;
+
+    return quot;
+}
+
+static unsigned int serial8250_get_divisor(struct uart_port *port,
+                                           unsigned int baud,
+                                           unsigned int *frac)
+{
+    if (port->get_divisor)
+        return port->get_divisor(port, baud, frac);
+
+    return serial8250_do_get_divisor(port, baud, frac);
+}
+
+void serial8250_rpm_get(struct uart_8250_port *p)
+{
+    if (!(p->capabilities & UART_CAP_RPM))
+        return;
+    //pm_runtime_get_sync(p->port.dev);
+}
+EXPORT_SYMBOL_GPL(serial8250_rpm_get);
+
+void
+serial8250_do_set_termios(struct uart_port *port,
+                          struct ktermios *termios,
+                          struct ktermios *old)
+{
+    struct uart_8250_port *up = up_to_u8250p(port);
+    unsigned char cval;
+    unsigned long flags;
+    unsigned int baud, quot, frac = 0;
+
+    if (up->capabilities & UART_CAP_MINI) {
+        termios->c_cflag &= ~(CSTOPB | PARENB | PARODD | CMSPAR);
+        if ((termios->c_cflag & CSIZE) == CS5 ||
+            (termios->c_cflag & CSIZE) == CS6)
+            termios->c_cflag = (termios->c_cflag & ~CSIZE) | CS7;
+    }
+    cval = serial8250_compute_lcr(up, termios->c_cflag);
+
+    baud = serial8250_get_baud_rate(port, termios, old);
+    quot = serial8250_get_divisor(port, baud, &frac);
+
+    /*
+     * Ok, we're now changing the port state.  Do it with
+     * interrupts disabled.
+     */
+    serial8250_rpm_get(up);
+    spin_lock_irqsave(&port->lock, flags);
+
+    up->lcr = cval;                 /* Save computed LCR */
+
+    if (up->capabilities & UART_CAP_FIFO && port->fifosize > 1) {
+        /* NOTE: If fifo_bug is not set, a user can set RX_trigger. */
+        if ((baud < 2400 && !up->dma) || up->fifo_bug) {
+            up->fcr &= ~UART_FCR_TRIGGER_MASK;
+            up->fcr |= UART_FCR_TRIGGER_1;
+        }
+    }
+
+    /*
+     * MCR-based auto flow control.  When AFE is enabled, RTS will be
+     * deasserted when the receive FIFO contains more characters than
+     * the trigger, or the MCR RTS bit is cleared.
+     */
+    if (up->capabilities & UART_CAP_AFE) {
+        up->mcr &= ~UART_MCR_AFE;
+        if (termios->c_cflag & CRTSCTS)
+            up->mcr |= UART_MCR_AFE;
+    }
+
+#if 0
+    /*
+     * Update the per-port timeout.
+     */
+    uart_update_timeout(port, termios->c_cflag, baud);
+
+    port->read_status_mask = UART_LSR_OE | UART_LSR_THRE | UART_LSR_DR;
+    if (termios->c_iflag & INPCK)
+        port->read_status_mask |= UART_LSR_FE | UART_LSR_PE;
+    if (termios->c_iflag & (IGNBRK | BRKINT | PARMRK))
+        port->read_status_mask |= UART_LSR_BI;
+
+    /*
+     * Characteres to ignore
+     */
+    port->ignore_status_mask = 0;
+    if (termios->c_iflag & IGNPAR)
+        port->ignore_status_mask |= UART_LSR_PE | UART_LSR_FE;
+    if (termios->c_iflag & IGNBRK) {
+        port->ignore_status_mask |= UART_LSR_BI;
+        /*
+         * If we're ignoring parity and break indicators,
+         * ignore overruns too (for real raw support).
+         */
+        if (termios->c_iflag & IGNPAR)
+            port->ignore_status_mask |= UART_LSR_OE;
+    }
+
+    /*
+     * ignore all characters if CREAD is not set
+     */
+    if ((termios->c_cflag & CREAD) == 0)
+        port->ignore_status_mask |= UART_LSR_DR;
+#endif
+
+    panic("%s: END!\n", __func__);
+}
+
 static void
 serial8250_set_termios(struct uart_port *port, struct ktermios *termios,
-               struct ktermios *old)
+                       struct ktermios *old)
 {
-    panic("%s: END!\n", __func__);
+    if (port->set_termios)
+        port->set_termios(port, termios, old);
+    else
+        serial8250_do_set_termios(port, termios, old);
 }
 
 static void

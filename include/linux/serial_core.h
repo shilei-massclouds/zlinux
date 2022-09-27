@@ -380,4 +380,13 @@ static inline void serial_port_out(struct uart_port *up, int offset,
     up->serial_out(up, offset, value);
 }
 
+unsigned int uart_get_baud_rate(struct uart_port *port,
+                                struct ktermios *termios,
+                                struct ktermios *old,
+                                unsigned int min,
+                                unsigned int max);
+
+unsigned int uart_get_divisor(struct uart_port *port,
+                              unsigned int baud);
+
 #endif /* LINUX_SERIAL_CORE_H */

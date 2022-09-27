@@ -135,3 +135,5 @@ extern void bus_probe_device(struct device *dev);
 extern void bus_remove_device(struct device *dev);
 
 extern int classes_init(void);
+
+extern int devres_release_all(struct device *dev);

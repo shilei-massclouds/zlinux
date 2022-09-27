@@ -104,4 +104,8 @@ void tty_termios_encode_baud_rate(struct ktermios *termios,
 void tty_encode_baud_rate(struct tty_struct *tty, speed_t ibaud,
                           speed_t obaud);
 
+unsigned char tty_get_char_size(unsigned int cflag);
+
+speed_t tty_termios_baud_rate(struct ktermios *termios);
+
 #endif /* _LINUX_TTY_H */

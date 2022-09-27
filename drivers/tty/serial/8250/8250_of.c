@@ -76,8 +76,6 @@ static int of_platform_serial_setup(struct platform_device *ofdev,
     } else {
         port->mapbase = resource.start;
         port->mapsize = resource_size(&resource);
-        printk("%s: MEM (%lx, %lx)\n",
-               __func__, port->mapbase, port->mapsize);
 
         /* Check for shifted address mapping */
         if (of_property_read_u32(np, "reg-offset", &prop) == 0) {
@@ -198,8 +196,6 @@ static int of_platform_serial_probe(struct platform_device *ofdev)
     if (info == NULL)
         return -ENOMEM;
 
-    printk("###### %s: 1 port_type(%d) ...\n", __func__, port_type);
-
     memset(&port8250, 0, sizeof(port8250));
     ret = of_platform_serial_setup(ofdev, port_type, &port8250, info);
     if (ret)
@@ -222,13 +218,16 @@ static int of_platform_serial_probe(struct platform_device *ofdev)
                              &port8250.overrun_backoff_time_ms) != 0)
         port8250.overrun_backoff_time_ms = 0;
 
+    printk("###### %s: 1 port_type(%d) ...\n", __func__, port_type);
     ret = serial8250_register_8250_port(&port8250);
+    printk("###### %s: 2 port_type(%d) ...\n", __func__, port_type);
     if (ret < 0)
         goto err_dispose;
 
     info->type = port_type;
     info->line = ret;
     platform_set_drvdata(ofdev, info);
+    printk("###### %s: 3 port_type(%d) ...\n", __func__, port_type);
     return 0;
 
  err_dispose:

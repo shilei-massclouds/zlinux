@@ -60,13 +60,11 @@ enum dl_dev_state {
  */
 struct device_type {
     const char *name;
-#if 0
     const struct attribute_group **groups;
     int (*uevent)(struct device *dev, struct kobj_uevent_env *env);
     char *(*devnode)(struct device *dev, umode_t *mode,
                      kuid_t *uid, kgid_t *gid);
     void (*release)(struct device *dev);
-#endif
     const struct dev_pm_ops *pm;
 };
 

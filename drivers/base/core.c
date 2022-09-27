@@ -44,9 +44,49 @@ struct kset *devices_kset;
 
 static struct kobject *dev_kobj;
 
+/**
+ * device_release - free device structure.
+ * @kobj: device's kobject.
+ *
+ * This is called once the reference count for the object
+ * reaches 0. We forward the call to the device's release
+ * method, which should handle actually freeing the structure.
+ */
+static void device_release(struct kobject *kobj)
+{
+    struct device *dev = kobj_to_dev(kobj);
+    struct device_private *p = dev->p;
+
+    /*
+     * Some platform devices are driven without driver attached
+     * and managed resources may have been acquired.  Make sure
+     * all resources are released.
+     *
+     * Drivers still can add resources into device after device
+     * is deleted but alive, so release devres here to avoid
+     * possible memory leak.
+     */
+    devres_release_all(dev);
+
+    kfree(dev->dma_range_map);
+
+    if (dev->release)
+        dev->release(dev);
+    else if (dev->type && dev->type->release)
+        dev->type->release(dev);
+    else if (dev->class && dev->class->dev_release)
+        dev->class->dev_release(dev);
+    else
+        WARN(1, KERN_ERR "Device '%s' does not have a release() "
+             "function, it is broken and must be fixed. "
+             "See Documentation/core-api/kobject.rst.\n",
+             dev_name(dev));
+    kfree(p);
+}
+
 static struct kobj_type device_ktype = {
-#if 0
     .release    = device_release,
+#if 0
     .sysfs_ops  = &dev_sysfs_ops,
     .namespace  = device_namespace,
     .get_ownership  = device_get_ownership,
@@ -532,7 +572,7 @@ void device_del(struct device *dev)
  */
 void device_unregister(struct device *dev)
 {
-    pr_debug("device: '%s': %s\n", dev_name(dev), __func__);
+    pr_info("device: '%s': %s\n", dev_name(dev), __func__);
     device_del(dev);
     put_device(dev);
 }

@@ -639,14 +639,18 @@ int uart_add_one_port(struct uart_driver *drv, struct uart_port *uport)
                          uport->line);
 
     tty_port_link_device(port, drv->tty_driver, uport->line);
+    printk("###### %s: 1 ...\n", __func__);
     uart_configure_port(drv, state, uport);
 
+    printk("###### %s: 1.2 ...\n", __func__);
     port->console = uart_console(uport);
 
+    printk("###### %s: 2 ...\n", __func__);
     num_groups = 2;
     if (uport->attr_group)
         num_groups++;
 
+    printk("###### %s: 3 ...\n", __func__);
     uport->tty_groups = kcalloc(num_groups, sizeof(*uport->tty_groups),
                                 GFP_KERNEL);
     if (!uport->tty_groups) {
@@ -682,6 +686,7 @@ int uart_add_one_port(struct uart_driver *drv, struct uart_port *uport)
     uport->flags &= ~UPF_DEAD;
 
  out:
+    printk("###### %s: ! ...\n", __func__);
     mutex_unlock(&port->mutex);
     mutex_unlock(&port_mutex);
 
@@ -974,7 +979,9 @@ uart_set_options(struct uart_port *port, struct console *co,
      */
     port->mctrl |= TIOCM_DTR;
 
+#if 0
     port->ops->set_termios(port, &termios, &dummy);
+#endif
     /*
      * Allow the setting of the UART parameters with a NULL console
      * too:
@@ -987,3 +994,125 @@ uart_set_options(struct uart_port *port, struct console *co,
 
     return 0;
 }
+
+/**
+ *  uart_get_baud_rate - return baud rate for a particular port
+ *  @port: uart_port structure describing the port in question.
+ *  @termios: desired termios settings.
+ *  @old: old termios (or NULL)
+ *  @min: minimum acceptable baud rate
+ *  @max: maximum acceptable baud rate
+ *
+ *  Decode the termios structure into a numeric baud rate,
+ *  taking account of the magic 38400 baud rate (with spd_*
+ *  flags), and mapping the %B0 rate to 9600 baud.
+ *
+ *  If the new baud rate is invalid, try the old termios setting.
+ *  If it's still invalid, we try 9600 baud.
+ *
+ *  Update the @termios structure to reflect the baud rate
+ *  we're actually going to be using. Don't do this for the case
+ *  where B0 is requested ("hang up").
+ */
+unsigned int
+uart_get_baud_rate(struct uart_port *port, struct ktermios *termios,
+                   struct ktermios *old,
+                   unsigned int min, unsigned int max)
+{
+    unsigned int try;
+    unsigned int baud;
+    unsigned int altbaud;
+    int hung_up = 0;
+    upf_t flags = port->flags & UPF_SPD_MASK;
+
+    switch (flags) {
+    case UPF_SPD_HI:
+        altbaud = 57600;
+        break;
+    case UPF_SPD_VHI:
+        altbaud = 115200;
+        break;
+    case UPF_SPD_SHI:
+        altbaud = 230400;
+        break;
+    case UPF_SPD_WARP:
+        altbaud = 460800;
+        break;
+    default:
+        altbaud = 38400;
+        break;
+    }
+
+    for (try = 0; try < 2; try++) {
+        baud = tty_termios_baud_rate(termios);
+
+        /*
+         * The spd_hi, spd_vhi, spd_shi, spd_warp kludge...
+         * Die! Die! Die!
+         */
+        if (try == 0 && baud == 38400)
+            baud = altbaud;
+
+        /*
+         * Special case: B0 rate.
+         */
+        if (baud == 0) {
+            hung_up = 1;
+            baud = 9600;
+        }
+
+        if (baud >= min && baud <= max)
+            return baud;
+
+        /*
+         * Oops, the quotient was zero.  Try again with
+         * the old baud rate if possible.
+         */
+        termios->c_cflag &= ~CBAUD;
+        if (old) {
+            baud = tty_termios_baud_rate(old);
+            if (!hung_up)
+                tty_termios_encode_baud_rate(termios, baud, baud);
+            old = NULL;
+            continue;
+        }
+
+        /*
+         * As a last resort, if the range cannot be met then clip to
+         * the nearest chip supported rate.
+         */
+        if (!hung_up) {
+            if (baud <= min)
+                tty_termios_encode_baud_rate(termios, min + 1, min + 1);
+            else
+                tty_termios_encode_baud_rate(termios, max - 1, max - 1);
+        }
+    }
+    /* Should never happen */
+    WARN_ON(1);
+    return 0;
+}
+
+/**
+ *  uart_get_divisor - return uart clock divisor
+ *  @port: uart_port structure describing the port.
+ *  @baud: desired baud rate
+ *
+ *  Calculate the uart clock divisor for the port.
+ */
+unsigned int
+uart_get_divisor(struct uart_port *port, unsigned int baud)
+{
+    unsigned int quot;
+
+    /*
+     * Old custom speed handling.
+     */
+    if (baud == 38400 && (port->flags & UPF_SPD_MASK) == UPF_SPD_CUST)
+        quot = port->custom_divisor;
+    else
+        quot = DIV_ROUND_CLOSEST(port->uartclk, 16 * baud);
+
+    return quot;
+}
+EXPORT_SYMBOL(uart_get_divisor);
