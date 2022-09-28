@@ -210,6 +210,22 @@ static int tty_ldisc_open(struct tty_struct *tty, struct tty_ldisc *ld)
 }
 
 /**
+ * tty_ldisc_close      -   close a line discipline
+ * @tty: tty we are opening the ldisc on
+ * @ld: discipline to close
+ *
+ * A helper close method. Also a convenient debugging and check point.
+ */
+static void tty_ldisc_close(struct tty_struct *tty, struct tty_ldisc *ld)
+{
+    WARN_ON(!test_bit(TTY_LDISC_OPEN, &tty->flags));
+    clear_bit(TTY_LDISC_OPEN, &tty->flags);
+    if (ld->ops->close)
+        ld->ops->close(tty);
+    tty_ldisc_debug(tty, "%p: closed\n", ld);
+}
+
+/**
  * tty_ldisc_setup  -   open line discipline
  * @tty: tty being shut down
  * @o_tty: pair tty for pty/tty pairs
@@ -225,7 +241,18 @@ int tty_ldisc_setup(struct tty_struct *tty, struct tty_struct *o_tty)
     if (retval)
         return retval;
 
-    panic("%s: END!\n", __func__);
+    if (o_tty) {
+        /*
+         * Called without o_tty->ldisc_sem held, as o_tty has been
+         * just allocated and no one has a reference to it.
+         */
+        retval = tty_ldisc_open(o_tty, o_tty->ldisc);
+        if (retval) {
+            tty_ldisc_close(tty, tty->ldisc);
+            return retval;
+        }
+    }
+    return 0;
 }
 
 /**
@@ -279,3 +306,37 @@ void tty_ldisc_unlock(struct tty_struct *tty)
     clear_bit(TTY_LDISC_CHANGING, &tty->flags);
     __tty_ldisc_unlock(tty);
 }
+
+/**
+ * tty_ldisc_ref    -   get the tty ldisc
+ * @tty: tty device
+ *
+ * Dereference the line discipline for the terminal and take a reference to it.
+ * If the line discipline is in flux then return %NULL. Can be called from IRQ
+ * and timer functions.
+ */
+struct tty_ldisc *tty_ldisc_ref(struct tty_struct *tty)
+{
+    struct tty_ldisc *ld = NULL;
+
+    if (ldsem_down_read_trylock(&tty->ldisc_sem)) {
+        ld = tty->ldisc;
+        if (!ld)
+            ldsem_up_read(&tty->ldisc_sem);
+    }
+    return ld;
+}
+EXPORT_SYMBOL_GPL(tty_ldisc_ref);
+
+/**
+ * tty_ldisc_deref  -   free a tty ldisc reference
+ * @ld: reference to free up
+ *
+ * Undoes the effect of tty_ldisc_ref() or tty_ldisc_ref_wait(). May be called
+ * in IRQ context.
+ */
+void tty_ldisc_deref(struct tty_ldisc *ld)
+{
+    ldsem_up_read(&ld->tty->ldisc_sem);
+}
+EXPORT_SYMBOL_GPL(tty_ldisc_deref);

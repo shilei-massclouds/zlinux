@@ -400,4 +400,7 @@ void uart_update_timeout(struct uart_port *port, unsigned int cflag,
      (cflag) & CRTSCTS || \
      !((cflag) & CLOCAL))
 
+#define uart_circ_empty(circ)       ((circ)->head == (circ)->tail)
+#define uart_circ_clear(circ)       ((circ)->head = (circ)->tail = 0)
+
 #endif /* LINUX_SERIAL_CORE_H */

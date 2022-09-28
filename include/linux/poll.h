@@ -10,8 +10,8 @@
 #include <linux/uaccess.h>
 #if 0
 #include <uapi/linux/poll.h>
-#include <uapi/linux/eventpoll.h>
 #endif
+#include <uapi/linux/eventpoll.h>
 
 /*
  * structures and helpers for f_op->poll implementations

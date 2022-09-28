@@ -140,3 +140,29 @@ void ldsem_up_write(struct ld_semaphore *sem)
     if (count < 0)
         ldsem_wake(sem);
 }
+
+/*
+ * trylock for reading -- returns 1 if successful, 0 if contention
+ */
+int ldsem_down_read_trylock(struct ld_semaphore *sem)
+{
+    long count = atomic_long_read(&sem->count);
+
+    while (count >= 0) {
+        if (atomic_long_try_cmpxchg(&sem->count, &count, count + LDSEM_READ_BIAS))
+            return 1;
+    }
+    return 0;
+}
+
+/*
+ * release a read lock
+ */
+void ldsem_up_read(struct ld_semaphore *sem)
+{
+    long count;
+
+    count = atomic_long_add_return(-LDSEM_READ_BIAS, &sem->count);
+    if (count < 0 && (count & LDSEM_ACTIVE_MASK) == 0)
+        ldsem_wake(sem);
+}

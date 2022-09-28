@@ -88,6 +88,19 @@ struct tty_port {
     void            *client_data;
 };
 
+/* tty_port::iflags bits -- use atomic bit ops */
+#define TTY_PORT_INITIALIZED    0   /* device is initialized */
+#define TTY_PORT_SUSPENDED      1   /* device is suspended */
+#define TTY_PORT_ACTIVE         2   /* device is open */
+
+/*
+ * uart drivers: use the uart_port::status field and the UPSTAT_* defines
+ * for s/w-based flow control steering and carrier detection status
+ */
+#define TTY_PORT_CTS_FLOW   3   /* h/w flow control enabled */
+#define TTY_PORT_CHECK_CD   4   /* carrier detect enabled */
+#define TTY_PORT_KOPENED    5   /* device exclusively opened by kernel */
+
 struct tty_port_client_operations {
     int (*receive_buf)(struct tty_port *port, const unsigned char *,
                        const unsigned char *, size_t);
@@ -143,5 +156,28 @@ void tty_port_unregister_device(struct tty_port *port,
 
 struct tty_struct *tty_port_tty_get(struct tty_port *port);
 void tty_port_tty_set(struct tty_port *port, struct tty_struct *tty);
+
+int tty_port_open(struct tty_port *port, struct tty_struct *tty,
+                  struct file *filp);
+
+static inline bool tty_port_initialized(const struct tty_port *port)
+{
+    return test_bit(TTY_PORT_INITIALIZED, &port->iflags);
+}
+
+static inline void tty_port_set_initialized(struct tty_port *port, bool val)
+{
+    assign_bit(TTY_PORT_INITIALIZED, &port->iflags, val);
+}
+
+static inline bool tty_port_active(const struct tty_port *port)
+{
+    return test_bit(TTY_PORT_ACTIVE, &port->iflags);
+}
+
+static inline void tty_port_set_active(struct tty_port *port, bool val)
+{
+    assign_bit(TTY_PORT_ACTIVE, &port->iflags, val);
+}
 
 #endif /* _LINUX_TTY_PORT_H */

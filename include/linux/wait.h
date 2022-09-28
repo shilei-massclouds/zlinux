@@ -264,4 +264,13 @@ do {                                        \
 #define wake_up_interruptible_sync(x) \
     __wake_up_sync((x), TASK_INTERRUPTIBLE)
 
+/*
+ * Wakeup macros to be used to report events to the targets.
+ */
+#define poll_to_key(m) ((void *)(__force uintptr_t)(__poll_t)(m))
+#define key_to_poll(m) ((__force __poll_t)(uintptr_t)(void *)(m))
+
+#define wake_up_interruptible_poll(x, m) \
+    __wake_up(x, TASK_INTERRUPTIBLE, 1, poll_to_key(m))
+
 #endif /* _LINUX_WAIT_H */

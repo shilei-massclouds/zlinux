@@ -68,5 +68,20 @@ static inline int get_count_order(unsigned int count)
     return fls(--count);
 }
 
+/**
+ * assign_bit - Assign value to a bit in memory
+ * @nr: the bit to set
+ * @addr: the address to start counting from
+ * @value: the value to assign
+ */
+static __always_inline
+void assign_bit(long nr, volatile unsigned long *addr, bool value)
+{
+    if (value)
+        set_bit(nr, addr);
+    else
+        clear_bit(nr, addr);
+}
+
 #endif /* __KERNEL__ */
 #endif

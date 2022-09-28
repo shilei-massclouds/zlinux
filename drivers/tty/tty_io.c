@@ -76,6 +76,8 @@
 #include <linux/nsproxy.h>
 #include "tty.h"
 
+static const struct file_operations tty_fops;
+
 struct class *tty_class;
 
 /* Mutex to protect creating and releasing a tty */
@@ -836,6 +838,82 @@ tty_open_by_driver(dev_t device, struct file *filp)
 }
 
 /**
+ * tty_free_file - free file->private_data
+ * @file: to free private_data of
+ *
+ * This shall be used only for fail path handling when tty_add_file was not
+ * called yet.
+ */
+void tty_free_file(struct file *file)
+{
+    struct tty_file_private *priv = file->private_data;
+
+    file->private_data = NULL;
+    kfree(priv);
+}
+
+/* Associate a new file with the tty structure */
+void tty_add_file(struct tty_struct *tty, struct file *file)
+{
+    struct tty_file_private *priv = file->private_data;
+
+    priv->tty = tty;
+    priv->file = file;
+
+    spin_lock(&tty->files_lock);
+    list_add(&priv->list, &tty->tty_files);
+    spin_unlock(&tty->files_lock);
+}
+
+/**
+ * tty_release      -   vfs callback for close
+ * @inode: inode of tty
+ * @filp: file pointer for handle to tty
+ *
+ * Called the last time each file handle is closed that references this tty.
+ * There may however be several such references.
+ *
+ * Locking:
+ *  Takes BKL. See tty_release_dev().
+ *
+ * Even releasing the tty structures is a tricky business. We have to be very
+ * careful that the structures are all released at the same time, as interrupts
+ * might otherwise get the wrong pointers.
+ *
+ * WSH 09/09/97: rewritten to avoid some nasty race conditions that could
+ * lead to double frees or releasing memory still in use.
+ */
+int tty_release(struct inode *inode, struct file *filp)
+{
+    panic("%s: END!\n", __func__);
+}
+
+#if 0
+static const struct file_operations hung_up_tty_fops = {
+    .llseek     = no_llseek,
+    .read_iter  = hung_up_tty_read,
+    .write_iter = hung_up_tty_write,
+    .poll       = hung_up_tty_poll,
+    .unlocked_ioctl = hung_up_tty_ioctl,
+    .compat_ioctl   = hung_up_tty_compat_ioctl,
+    .release    = tty_release,
+    .fasync     = hung_up_tty_fasync,
+};
+
+/**
+ * tty_hung_up_p    -   was tty hung up
+ * @filp: file pointer of tty
+ *
+ * Return: true if the tty has been subject to a vhangup or a carrier loss
+ */
+int tty_hung_up_p(struct file *filp)
+{
+    return (filp && filp->f_op == &hung_up_tty_fops);
+}
+EXPORT_SYMBOL(tty_hung_up_p);
+#endif
+
+/**
  * tty_open -   open a tty device
  * @inode: inode of device file
  * @filp: file pointer to tty
@@ -876,30 +954,56 @@ static int tty_open(struct inode *inode, struct file *filp)
     if (!tty)
         tty = tty_open_by_driver(device, filp);
 
-    panic("%s: END!\n", __func__);
-}
+    if (IS_ERR(tty)) {
+        tty_free_file(filp);
+        retval = PTR_ERR(tty);
+        if (retval != -EAGAIN || signal_pending(current))
+            return retval;
+        schedule();
+        goto retry_open;
+    }
 
-/**
- * tty_release      -   vfs callback for close
- * @inode: inode of tty
- * @filp: file pointer for handle to tty
- *
- * Called the last time each file handle is closed that references this tty.
- * There may however be several such references.
- *
- * Locking:
- *  Takes BKL. See tty_release_dev().
- *
- * Even releasing the tty structures is a tricky business. We have to be very
- * careful that the structures are all released at the same time, as interrupts
- * might otherwise get the wrong pointers.
- *
- * WSH 09/09/97: rewritten to avoid some nasty race conditions that could
- * lead to double frees or releasing memory still in use.
- */
-int tty_release(struct inode *inode, struct file *filp)
-{
-    panic("%s: END!\n", __func__);
+    tty_add_file(tty, filp);
+
+    //check_tty_count(tty, __func__);
+
+    if (tty->ops->open)
+        retval = tty->ops->open(tty, filp);
+    else
+        retval = -ENODEV;
+    filp->f_flags = saved_flags;
+
+    if (retval) {
+        tty_unlock(tty); /* need to call tty_release without BTM */
+        tty_release(inode, filp);
+        if (retval != -ERESTARTSYS)
+            return retval;
+
+        if (signal_pending(current))
+            return retval;
+
+        schedule();
+#if 0
+        /*
+         * Need to reset f_op in case a hangup happened.
+         */
+        if (tty_hung_up_p(filp))
+            filp->f_op = &tty_fops;
+#endif
+        goto retry_open;
+    }
+    clear_bit(TTY_HUPPED, &tty->flags);
+
+    noctty = (filp->f_flags & O_NOCTTY) || (device == MKDEV(TTY_MAJOR, 0)) ||
+        device == MKDEV(TTYAUX_MAJOR, 1) ||
+        (tty->driver->type == TTY_DRIVER_TYPE_PTY &&
+         tty->driver->subtype == PTY_TYPE_MASTER);
+#if 0
+    if (!noctty)
+        tty_open_proc_set_tty(filp, tty);
+#endif
+    tty_unlock(tty);
+    return 0;
 }
 
 static int tty_fasync(int fd, struct file *filp, int on)
@@ -1209,6 +1313,61 @@ static int __init tty_class_init(void)
     return 0;
 }
 postcore_initcall(tty_class_init);
+
+/**
+ * tty_wakeup   -   request more data
+ * @tty: terminal
+ *
+ * Internal and external helper for wakeups of tty. This function informs the
+ * line discipline if present that the driver is ready to receive more output
+ * data.
+ */
+void tty_wakeup(struct tty_struct *tty)
+{
+    struct tty_ldisc *ld;
+
+    if (test_bit(TTY_DO_WRITE_WAKEUP, &tty->flags)) {
+        ld = tty_ldisc_ref(tty);
+        if (ld) {
+            if (ld->ops->write_wakeup)
+                ld->ops->write_wakeup(tty);
+            tty_ldisc_deref(ld);
+        }
+    }
+    wake_up_interruptible_poll(&tty->write_wait, EPOLLOUT);
+}
+EXPORT_SYMBOL_GPL(tty_wakeup);
+
+void __start_tty(struct tty_struct *tty)
+{
+    if (!tty->flow.stopped || tty->flow.tco_stopped)
+        return;
+    tty->flow.stopped = false;
+    if (tty->ops->start)
+        tty->ops->start(tty);
+    tty_wakeup(tty);
+}
+
+/**
+ * start_tty    -   propagate flow control
+ * @tty: tty to start
+ *
+ * Start a tty that has been stopped if at all possible. If @tty was previously
+ * stopped and is now being started, the &tty_driver->start() method is invoked
+ * and the line discipline woken.
+ *
+ * Locking:
+ *  flow.lock
+ */
+void start_tty(struct tty_struct *tty)
+{
+    unsigned long flags;
+
+    spin_lock_irqsave(&tty->flow.lock, flags);
+    __start_tty(tty);
+    spin_unlock_irqrestore(&tty->flow.lock, flags);
+}
+EXPORT_SYMBOL(start_tty);
 
 static struct device *consdev;
 

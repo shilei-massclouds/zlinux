@@ -157,6 +157,76 @@ struct tty_struct *tty_port_tty_get(struct tty_port *port)
 }
 EXPORT_SYMBOL(tty_port_tty_get);
 
+/**
+ * tty_port_tty_set -   set the tty of a port
+ * @port: tty port
+ * @tty: the tty
+ *
+ * Associate the port and tty pair. Manages any internal refcounts. Pass %NULL
+ * to deassociate a port.
+ */
+void tty_port_tty_set(struct tty_port *port, struct tty_struct *tty)
+{
+    unsigned long flags;
+
+    spin_lock_irqsave(&port->lock, flags);
+    tty_kref_put(port->tty);
+    port->tty = tty_kref_get(tty);
+    spin_unlock_irqrestore(&port->lock, flags);
+}
+EXPORT_SYMBOL(tty_port_tty_set);
+
+/**
+ * tty_port_open - generic tty->ops->open handler
+ * @port: tty_port of the device
+ * @tty: tty to be opened
+ * @filp: passed file pointer
+ *
+ * It is a generic helper to be used in driver's @tty->ops->open. It activates
+ * the devices using @port->ops->activate if not active already. And waits for
+ * the device to be ready using tty_port_block_til_ready() (e.g.  raises
+ * DTR/CTS and waits for carrier).
+ *
+ * Note that @port->ops->shutdown is not called when @port->ops->activate
+ * returns an error (on the contrary, @tty->ops->close is).
+ *
+ * Locking: Caller holds tty lock.
+ *
+ * Note: may drop and reacquire tty lock (in tty_port_block_til_ready()) so
+ * @tty and @port may have changed state (eg., may be hung up now).
+ */
+int tty_port_open(struct tty_port *port, struct tty_struct *tty,
+                            struct file *filp)
+{
+    spin_lock_irq(&port->lock);
+    ++port->count;
+    spin_unlock_irq(&port->lock);
+    tty_port_tty_set(port, tty);
+
+    /*
+     * Do the device-specific open only if the hardware isn't
+     * already initialized. Serialize open and shutdown using the
+     * port mutex.
+     */
+
+    mutex_lock(&port->mutex);
+
+    if (!tty_port_initialized(port)) {
+        clear_bit(TTY_IO_ERROR, &tty->flags);
+        if (port->ops->activate) {
+            int retval = port->ops->activate(port, tty);
+
+            if (retval) {
+                mutex_unlock(&port->mutex);
+                return retval;
+            }
+        }
+        tty_port_set_initialized(port, 1);
+    }
+    mutex_unlock(&port->mutex);
+
+    panic("%s: END!\n", __func__);
+}
 
 /**
  * tty_port_init -- initialize tty_port

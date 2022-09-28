@@ -470,9 +470,150 @@ static void serial8250_break_ctl(struct uart_port *port,
     panic("%s: END!\n", __func__);
 }
 
+/*
+ * For the 16C950
+ */
+static void serial_icr_write(struct uart_8250_port *up, int offset, int value)
+{
+    serial_out(up, UART_SCR, offset);
+    serial_out(up, UART_ICR, value);
+}
+
+void serial8250_rpm_get(struct uart_8250_port *p)
+{
+    if (!(p->capabilities & UART_CAP_RPM))
+        return;
+    //pm_runtime_get_sync(p->port.dev);
+}
+EXPORT_SYMBOL_GPL(serial8250_rpm_get);
+
+void serial8250_rpm_put(struct uart_8250_port *p)
+{
+    if (!(p->capabilities & UART_CAP_RPM))
+        return;
+#if 0
+    pm_runtime_mark_last_busy(p->port.dev);
+    pm_runtime_put_autosuspend(p->port.dev);
+#endif
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL_GPL(serial8250_rpm_put);
+
+/*
+ * FIFO support.
+ */
+static void serial8250_clear_fifos(struct uart_8250_port *p)
+{
+    if (p->capabilities & UART_CAP_FIFO) {
+        serial_out(p, UART_FCR, UART_FCR_ENABLE_FIFO);
+        serial_out(p, UART_FCR, UART_FCR_ENABLE_FIFO |
+                   UART_FCR_CLEAR_RCVR | UART_FCR_CLEAR_XMIT);
+        serial_out(p, UART_FCR, 0);
+    }
+}
+
+int serial8250_do_startup(struct uart_port *port)
+{
+    struct uart_8250_port *up = up_to_u8250p(port);
+    unsigned long flags;
+    unsigned char lsr, iir;
+    int retval;
+
+    if (!port->fifosize)
+        port->fifosize = uart_config[port->type].fifo_size;
+    if (!up->tx_loadsz)
+        up->tx_loadsz = uart_config[port->type].tx_loadsz;
+    if (!up->capabilities)
+        up->capabilities = uart_config[port->type].flags;
+    up->mcr = 0;
+
+    if (port->iotype != up->cur_iotype)
+        set_io_from_upio(port);
+
+    serial8250_rpm_get(up);
+    if (port->type == PORT_16C950) {
+        /* Wake up and initialize UART */
+        up->acr = 0;
+        serial_port_out(port, UART_LCR, UART_LCR_CONF_MODE_B);
+        serial_port_out(port, UART_EFR, UART_EFR_ECB);
+        serial_port_out(port, UART_IER, 0);
+        serial_port_out(port, UART_LCR, 0);
+        serial_icr_write(up, UART_CSR, 0); /* Reset the UART */
+        serial_port_out(port, UART_LCR, UART_LCR_CONF_MODE_B);
+        serial_port_out(port, UART_EFR, UART_EFR_ECB);
+        serial_port_out(port, UART_LCR, 0);
+    }
+
+    if (port->type == PORT_DA830) {
+        panic("%s: PORT_DA830!\n", __func__);
+    }
+
+    if (port->type == PORT_NPCM) {
+        panic("%s: PORT_NPCM!\n", __func__);
+    }
+
+    /*
+     * Clear the FIFO buffers and disable them.
+     * (they will be reenabled in set_termios())
+     */
+    serial8250_clear_fifos(up);
+
+    /*
+     * Clear the interrupt registers.
+     */
+    serial_port_in(port, UART_LSR);
+    serial_port_in(port, UART_RX);
+    serial_port_in(port, UART_IIR);
+    serial_port_in(port, UART_MSR);
+
+    /*
+     * At this point, there's no way the LSR could still be 0xff;
+     * if it is, then bail out, because there's likely no UART
+     * here.
+     */
+    if (!(port->flags & UPF_BUGGY_UART) &&
+        (serial_port_in(port, UART_LSR) == 0xff)) {
+        //dev_info_ratelimited(port->dev, "LSR safety check engaged!\n");
+        retval = -ENODEV;
+        goto out;
+    }
+
+    /*
+     * For a XR16C850, we need to set the trigger levels
+     */
+    if (port->type == PORT_16850) {
+        panic("%s: PORT_16850!\n", __func__);
+    }
+
+    /*
+     * For the Altera 16550 variants, set TX threshold trigger level.
+     */
+    if (((port->type == PORT_ALTR_16550_F32) ||
+         (port->type == PORT_ALTR_16550_F64) ||
+         (port->type == PORT_ALTR_16550_F128)) && (port->fifosize > 1)) {
+        panic("%s: PORT_ALTR_16550_F32!\n", __func__);
+    }
+
+    /* Check if we need to have shared IRQs */
+    if (port->irq && (up->port.flags & UPF_SHARE_IRQ))
+        up->port.irqflags |= IRQF_SHARED;
+
+    if (port->irq && !(up->port.flags & UPF_NO_THRE_TEST)) {
+        panic("%s: UPF_NO_THRE_TEST!\n", __func__);
+    }
+
+    panic("%s: END!\n", __func__);
+
+ out:
+    serial8250_rpm_put(up);
+    return retval;
+}
+
 static int serial8250_startup(struct uart_port *port)
 {
-    panic("%s: END!\n", __func__);
+    if (port->startup)
+        return port->startup(port);
+    return serial8250_do_startup(port);
 }
 
 static void serial8250_shutdown(struct uart_port *port)
@@ -601,14 +742,6 @@ static unsigned int serial8250_get_divisor(struct uart_port *port,
     return serial8250_do_get_divisor(port, baud, frac);
 }
 
-void serial8250_rpm_get(struct uart_8250_port *p)
-{
-    if (!(p->capabilities & UART_CAP_RPM))
-        return;
-    //pm_runtime_get_sync(p->port.dev);
-}
-EXPORT_SYMBOL_GPL(serial8250_rpm_get);
-
 void serial8250_do_set_divisor(struct uart_port *port,
                                unsigned int baud,
                                unsigned int quot,
@@ -638,18 +771,6 @@ static void serial8250_set_divisor(struct uart_port *port,
     else
         serial8250_do_set_divisor(port, baud, quot, quot_frac);
 }
-
-void serial8250_rpm_put(struct uart_8250_port *p)
-{
-    if (!(p->capabilities & UART_CAP_RPM))
-        return;
-#if 0
-    pm_runtime_mark_last_busy(p->port.dev);
-    pm_runtime_put_autosuspend(p->port.dev);
-#endif
-    panic("%s: END!\n", __func__);
-}
-EXPORT_SYMBOL_GPL(serial8250_rpm_put);
 
 void
 serial8250_do_set_termios(struct uart_port *port,

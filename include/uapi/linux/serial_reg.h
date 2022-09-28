@@ -180,4 +180,29 @@
 #define UART_MSR_DCTS       0x01 /* Delta CTS */
 #define UART_MSR_ANY_DELTA  0x0F /* Any of the delta bits! */
 
+/*
+ * These register definitions are for the 16C950
+ */
+#define UART_ASR    0x01    /* Additional Status Register */
+#define UART_RFL    0x03    /* Receiver FIFO level */
+#define UART_TFL    0x04    /* Transmitter FIFO level */
+#define UART_ICR    0x05    /* Index Control Register */
+
+/* The 16950 ICR registers */
+#define UART_ACR    0x00    /* Additional Control Register */
+#define UART_CPR    0x01    /* Clock Prescalar Register */
+#define UART_TCR    0x02    /* Times Clock Register */
+#define UART_CKS    0x03    /* Clock Select Register */
+#define UART_TTL    0x04    /* Transmitter Interrupt Trigger Level */
+#define UART_RTL    0x05    /* Receiver Interrupt Trigger Level */
+#define UART_FCL    0x06    /* Flow Control Level Lower */
+#define UART_FCH    0x07    /* Flow Control Level Higher */
+#define UART_ID1    0x08    /* ID #1 */
+#define UART_ID2    0x09    /* ID #2 */
+#define UART_ID3    0x0A    /* ID #3 */
+#define UART_REV    0x0B    /* Revision */
+#define UART_CSR    0x0C    /* Channel Software Reset */
+#define UART_NMR    0x0D    /* Nine-bit Mode Register */
+#define UART_CTR    0xFF
+
 #endif /* _LINUX_SERIAL_REG_H */

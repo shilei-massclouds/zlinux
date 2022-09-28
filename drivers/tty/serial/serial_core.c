@@ -40,6 +40,37 @@
  */
 static DEFINE_MUTEX(port_mutex);
 
+static inline struct uart_port *uart_port_ref(struct uart_state *state)
+{
+    if (atomic_add_unless(&state->refcount, 1, 0))
+        return state->uart_port;
+    return NULL;
+}
+
+static inline void uart_port_deref(struct uart_port *uport)
+{
+    if (atomic_dec_and_test(&uport->state->refcount))
+        wake_up(&uport->state->remove_wait);
+}
+
+#define uart_port_lock(state, flags)                    \
+    ({                              \
+        struct uart_port *__uport = uart_port_ref(state);   \
+        if (__uport)                        \
+            spin_lock_irqsave(&__uport->lock, flags);   \
+        __uport;                        \
+    })
+
+#define uart_port_unlock(uport, flags)                  \
+    ({                              \
+        struct uart_port *__uport = uport;          \
+        if (__uport) {                      \
+            spin_unlock_irqrestore(&__uport->lock, flags);  \
+            uart_port_deref(__uport);           \
+        }                           \
+    })
+
+
 /**
  *  uart_console_write - write a console message to a serial port
  *  @port: the port to write the message
@@ -112,7 +143,14 @@ static int uart_install(struct tty_driver *driver,
  */
 static int uart_open(struct tty_struct *tty, struct file *filp)
 {
-    panic("%s: END!\n", __func__);
+    struct uart_state *state = tty->driver_data;
+    int retval;
+
+    retval = tty_port_open(&state->port, tty, filp);
+    if (retval > 0)
+        retval = 0;
+
+    return retval;
 }
 
 /*
@@ -305,10 +343,164 @@ static void uart_dtr_rts(struct tty_port *port, int raise)
     panic("%s: END!\n", __func__);
 }
 
+static inline
+struct uart_port *uart_port_check(struct uart_state *state)
+{
+    return state->uart_port;
+}
+
+#define uart_set_mctrl(port, set)   uart_update_mctrl(port, set, 0)
+#define uart_clear_mctrl(port, clear)   uart_update_mctrl(port, 0, clear)
+
+static void
+uart_update_mctrl(struct uart_port *port, unsigned int set, unsigned int clear)
+{
+    unsigned long flags;
+    unsigned int old;
+
+    if (port->rs485.flags & SER_RS485_ENABLED) {
+        set &= ~TIOCM_RTS;
+        clear &= ~TIOCM_RTS;
+    }
+
+    spin_lock_irqsave(&port->lock, flags);
+    old = port->mctrl;
+    port->mctrl = (old & ~clear) | set;
+    if (old != port->mctrl)
+        port->ops->set_mctrl(port, port->mctrl);
+    spin_unlock_irqrestore(&port->lock, flags);
+}
+
+static void uart_port_dtr_rts(struct uart_port *uport, int raise)
+{
+    if (raise)
+        uart_set_mctrl(uport, TIOCM_DTR | TIOCM_RTS);
+    else
+        uart_clear_mctrl(uport, TIOCM_DTR | TIOCM_RTS);
+}
+
+/* Caller holds port mutex */
+static void uart_change_speed(struct tty_struct *tty, struct uart_state *state,
+                              struct ktermios *old_termios)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * Startup the port.  This will be called once per open.  All calls
+ * will be serialised by the per-port mutex.
+ */
+static int uart_port_startup(struct tty_struct *tty, struct uart_state *state,
+        int init_hw)
+{
+    struct uart_port *uport = uart_port_check(state);
+    unsigned long flags;
+    unsigned long page;
+    int retval = 0;
+
+    if (uport->type == PORT_UNKNOWN)
+        return 1;
+
+#if 0
+    /*
+     * Make sure the device is in D0 state.
+     */
+    uart_change_pm(state, UART_PM_STATE_ON);
+#endif
+
+    /*
+     * Initialise and allocate the transmit and temporary
+     * buffer.
+     */
+    page = get_zeroed_page(GFP_KERNEL);
+    if (!page)
+        return -ENOMEM;
+
+    uart_port_lock(state, flags);
+    if (!state->xmit.buf) {
+        state->xmit.buf = (unsigned char *) page;
+        uart_circ_clear(&state->xmit);
+        uart_port_unlock(uport, flags);
+    } else {
+        uart_port_unlock(uport, flags);
+        /*
+         * Do not free() the page under the port lock, see
+         * uart_shutdown().
+         */
+        free_page(page);
+    }
+
+    retval = uport->ops->startup(uport);
+    if (retval == 0) {
+        if (uart_console(uport) && uport->cons->cflag) {
+            tty->termios.c_cflag = uport->cons->cflag;
+            tty->termios.c_ispeed = uport->cons->ispeed;
+            tty->termios.c_ospeed = uport->cons->ospeed;
+            uport->cons->cflag = 0;
+            uport->cons->ispeed = 0;
+            uport->cons->ospeed = 0;
+        }
+        /*
+         * Initialise the hardware port settings.
+         */
+        uart_change_speed(tty, state, NULL);
+
+        /*
+         * Setup the RTS and DTR signals once the
+         * port is open and ready to respond.
+         */
+        if (init_hw && C_BAUD(tty))
+            uart_port_dtr_rts(uport, 1);
+    }
+
+#if 0
+    /*
+     * This is to allow setserial on this port. People may want to set
+     * port/irq/type and then reconfigure the port properly if it failed
+     * now.
+     */
+    if (retval && capable(CAP_SYS_ADMIN))
+        return 1;
+#endif
+
+    return retval;
+}
+
+static int uart_startup(struct tty_struct *tty, struct uart_state *state,
+                        int init_hw)
+{
+    struct tty_port *port = &state->port;
+    int retval;
+
+    if (tty_port_initialized(port))
+        return 0;
+
+    retval = uart_port_startup(tty, state, init_hw);
+    if (retval)
+        set_bit(TTY_IO_ERROR, &tty->flags);
+
+    return retval;
+}
+
 static int uart_port_activate(struct tty_port *port,
                               struct tty_struct *tty)
 {
-    panic("%s: END!\n", __func__);
+    struct uart_state *state = container_of(port, struct uart_state, port);
+    struct uart_port *uport;
+    int ret;
+
+    uport = uart_port_check(state);
+    if (!uport || uport->flags & UPF_DEAD)
+        return -ENXIO;
+
+    /*
+     * Start up the serial port.
+     */
+    ret = uart_startup(tty, state, 0);
+    if (ret > 0)
+        tty_port_set_active(port, 1);
+
+    return ret;
 }
 
 static void uart_tty_port_shutdown(struct tty_port *port)
@@ -700,12 +892,6 @@ int uart_add_one_port(struct uart_driver *drv, struct uart_port *uport)
     return ret;
 }
 EXPORT_SYMBOL(uart_add_one_port);
-
-static inline
-struct uart_port *uart_port_check(struct uart_state *state)
-{
-    return state->uart_port;
-}
 
 /**
  *  uart_remove_one_port - detach a driver defined port structure

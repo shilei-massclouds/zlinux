@@ -44,4 +44,10 @@
 #define PORT_RT2880 29  /* Ralink RT2880 internal UART */
 #define PORT_16550A_FSL64 30    /* Freescale 16550 UART with 64 FIFOs */
 
+/* Nuvoton UART */
+#define PORT_NPCM   40
+
+/* TI DA8xx/66AK2x */
+#define PORT_DA830  95
+
 #endif /* _UAPILINUX_SERIAL_CORE_H */
