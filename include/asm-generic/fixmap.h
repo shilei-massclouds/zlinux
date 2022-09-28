@@ -67,6 +67,12 @@ static __always_inline unsigned long fix_to_virt(const unsigned int idx)
 #define set_fixmap_offset(idx, phys) \
     __set_fixmap_offset(idx, phys, FIXMAP_PAGE_NORMAL)
 
+/*
+ * Some fixmaps are for IO
+ */
+#define set_fixmap_io(idx, phys) \
+    __set_fixmap(idx, phys, FIXMAP_PAGE_IO)
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* __ASM_GENERIC_FIXMAP_H */

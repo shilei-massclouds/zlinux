@@ -389,4 +389,15 @@ unsigned int uart_get_baud_rate(struct uart_port *port,
 unsigned int uart_get_divisor(struct uart_port *port,
                               unsigned int baud);
 
+void uart_update_timeout(struct uart_port *port, unsigned int cflag,
+                         unsigned int baud);
+
+/*
+ *  UART_ENABLE_MS - determine if port should enable modem status irqs
+ */
+#define UART_ENABLE_MS(port,cflag) \
+    ((port)->flags & UPF_HARDPPS_CD || \
+     (cflag) & CRTSCTS || \
+     !((cflag) & CLOCAL))
+
 #endif /* LINUX_SERIAL_CORE_H */

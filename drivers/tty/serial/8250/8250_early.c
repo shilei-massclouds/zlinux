@@ -32,7 +32,7 @@
 #include <linux/serial.h>
 #include <linux/serial_8250.h>
 #include <asm/io.h>
-//#include <asm/serial.h>
+#include <asm/serial.h>
 
 int __init early_serial8250_setup(struct earlycon_device *device,
                                   const char *options)

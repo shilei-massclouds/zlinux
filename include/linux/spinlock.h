@@ -188,6 +188,18 @@ extern int _atomic_dec_and_lock_irqsave(atomic_t *atomic,
 #define atomic_dec_and_lock_irqsave(atomic, lock, flags) \
     __cond_lock(lock, _atomic_dec_and_lock_irqsave(atomic, lock, &(flags)))
 
+#define raw_spin_trylock_irqsave(lock, flags) \
+({ \
+    local_irq_save(flags); \
+    raw_spin_trylock(lock) ? \
+    1 : ({ local_irq_restore(flags); 0; }); \
+})
+
+#define spin_trylock_irqsave(lock, flags)           \
+({                              \
+    raw_spin_trylock_irqsave(spinlock_check(lock), flags); \
+})
+
 #include <linux/spinlock_api_smp.h>
 
 #endif /* __LINUX_SPINLOCK_H */

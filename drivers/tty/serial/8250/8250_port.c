@@ -41,6 +41,8 @@
 
 #include "8250.h"
 
+#define BOTH_EMPTY  (UART_LSR_TEMT | UART_LSR_THRE)
+
 /*
  * Here we define the default xmit fifo size used for each type of UART.
  */
@@ -607,6 +609,48 @@ void serial8250_rpm_get(struct uart_8250_port *p)
 }
 EXPORT_SYMBOL_GPL(serial8250_rpm_get);
 
+void serial8250_do_set_divisor(struct uart_port *port,
+                               unsigned int baud,
+                               unsigned int quot,
+                               unsigned int quot_frac)
+{
+    struct uart_8250_port *up = up_to_u8250p(port);
+
+    /*
+     * For NatSemi, switch to bank 2 not bank 1, to avoid resetting EXCR2,
+     * otherwise just set DLAB
+     */
+    if (up->capabilities & UART_NATSEMI)
+        serial_port_out(port, UART_LCR, 0xe0);
+    else
+        serial_port_out(port, UART_LCR, up->lcr | UART_LCR_DLAB);
+
+    serial_dl_write(up, quot);
+}
+
+static void serial8250_set_divisor(struct uart_port *port,
+                                   unsigned int baud,
+                                   unsigned int quot,
+                                   unsigned int quot_frac)
+{
+    if (port->set_divisor)
+        port->set_divisor(port, baud, quot, quot_frac);
+    else
+        serial8250_do_set_divisor(port, baud, quot, quot_frac);
+}
+
+void serial8250_rpm_put(struct uart_8250_port *p)
+{
+    if (!(p->capabilities & UART_CAP_RPM))
+        return;
+#if 0
+    pm_runtime_mark_last_busy(p->port.dev);
+    pm_runtime_put_autosuspend(p->port.dev);
+#endif
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL_GPL(serial8250_rpm_put);
+
 void
 serial8250_do_set_termios(struct uart_port *port,
                           struct ktermios *termios,
@@ -656,7 +700,6 @@ serial8250_do_set_termios(struct uart_port *port,
             up->mcr |= UART_MCR_AFE;
     }
 
-#if 0
     /*
      * Update the per-port timeout.
      */
@@ -689,10 +732,63 @@ serial8250_do_set_termios(struct uart_port *port,
      */
     if ((termios->c_cflag & CREAD) == 0)
         port->ignore_status_mask |= UART_LSR_DR;
-#endif
 
-    panic("%s: END!\n", __func__);
+    /*
+     * CTS flow control flag and modem status interrupts
+     */
+    up->ier &= ~UART_IER_MSI;
+    if (!(up->bugs & UART_BUG_NOMSR) &&
+            UART_ENABLE_MS(&up->port, termios->c_cflag))
+        up->ier |= UART_IER_MSI;
+    if (up->capabilities & UART_CAP_UUE)
+        up->ier |= UART_IER_UUE;
+    if (up->capabilities & UART_CAP_RTOIE)
+        up->ier |= UART_IER_RTOIE;
+
+    serial_port_out(port, UART_IER, up->ier);
+
+    if (up->capabilities & UART_CAP_EFR) {
+        unsigned char efr = 0;
+        /*
+         * TI16C752/Startech hardware flow control.  FIXME:
+         * - TI16C752 requires control thresholds to be set.
+         * - UART_MCR_RTS is ineffective if auto-RTS mode is enabled.
+         */
+        if (termios->c_cflag & CRTSCTS)
+            efr |= UART_EFR_CTS;
+
+        serial_port_out(port, UART_LCR, UART_LCR_CONF_MODE_B);
+        if (port->flags & UPF_EXAR_EFR)
+            serial_port_out(port, UART_XR_EFR, efr);
+        else
+            serial_port_out(port, UART_EFR, efr);
+    }
+
+    serial8250_set_divisor(port, baud, quot, frac);
+
+    /*
+     * LCR DLAB must be set to enable 64-byte FIFO mode. If the FCR
+     * is written without DLAB set, this mode will be disabled.
+     */
+    if (port->type == PORT_16750)
+        serial_port_out(port, UART_FCR, up->fcr);
+
+    serial_port_out(port, UART_LCR, up->lcr);   /* reset DLAB */
+    if (port->type != PORT_16750) {
+        /* emulated UARTs (Lucent Venus 167x) need two steps */
+        if (up->fcr & UART_FCR_ENABLE_FIFO)
+            serial_port_out(port, UART_FCR, UART_FCR_ENABLE_FIFO);
+        serial_port_out(port, UART_FCR, up->fcr);   /* set fcr */
+    }
+    serial8250_set_mctrl(port, port->mctrl);
+    spin_unlock_irqrestore(&port->lock, flags);
+    serial8250_rpm_put(up);
+
+    /* Don't rewrite B0 */
+    if (tty_termios_baud_rate(termios))
+        tty_termios_encode_baud_rate(termios, baud, baud);
 }
+EXPORT_SYMBOL(serial8250_do_set_termios);
 
 static void
 serial8250_set_termios(struct uart_port *port, struct ktermios *termios,
@@ -1053,3 +1149,178 @@ void serial8250_init_port(struct uart_8250_port *up)
     up->cur_iotype = 0xFF;
 }
 EXPORT_SYMBOL_GPL(serial8250_init_port);
+
+/*
+ *  Restore serial console when h/w power-off detected
+ */
+static void serial8250_console_restore(struct uart_8250_port *up)
+{
+    struct uart_port *port = &up->port;
+    struct ktermios termios;
+    unsigned int baud, quot, frac = 0;
+
+    termios.c_cflag = port->cons->cflag;
+    if (port->state->port.tty && termios.c_cflag == 0)
+        termios.c_cflag = port->state->port.tty->termios.c_cflag;
+
+    baud = serial8250_get_baud_rate(port, &termios, NULL);
+    quot = serial8250_get_divisor(port, baud, &frac);
+
+    serial8250_set_divisor(port, baud, quot, frac);
+    serial_port_out(port, UART_LCR, up->lcr);
+    serial8250_out_MCR(up, up->mcr | UART_MCR_DTR | UART_MCR_RTS);
+}
+
+/*
+ *  Wait for transmitter & holding register to empty
+ */
+static void wait_for_xmitr(struct uart_8250_port *up, int bits)
+{
+    unsigned int status, tmout = 10000;
+
+    /* Wait up to 10ms for the character(s) to be sent. */
+    for (;;) {
+        status = serial_in(up, UART_LSR);
+
+        up->lsr_saved_flags |= status & LSR_SAVE_FLAGS;
+
+        if ((status & bits) == bits)
+            break;
+        if (--tmout == 0)
+            break;
+        udelay(1);
+        touch_nmi_watchdog();
+    }
+
+    /* Wait up to 1s for flow control if necessary */
+    if (up->port.flags & UPF_CONS_FLOW) {
+        for (tmout = 1000000; tmout; tmout--) {
+            unsigned int msr = serial_in(up, UART_MSR);
+            up->msr_saved_flags |= msr & MSR_SAVE_FLAGS;
+            if (msr & UART_MSR_CTS)
+                break;
+            udelay(1);
+            touch_nmi_watchdog();
+        }
+    }
+}
+
+static void serial8250_console_putchar(struct uart_port *port,
+                                       unsigned char ch)
+{
+    struct uart_8250_port *up = up_to_u8250p(port);
+
+    wait_for_xmitr(up, UART_LSR_THRE);
+    serial_port_out(port, UART_TX, ch);
+}
+
+#if 0
+/* Caller holds uart port lock */
+unsigned int serial8250_modem_status(struct uart_8250_port *up)
+{
+    struct uart_port *port = &up->port;
+    unsigned int status = serial_in(up, UART_MSR);
+
+    status |= up->msr_saved_flags;
+    up->msr_saved_flags = 0;
+    if (status & UART_MSR_ANY_DELTA && up->ier & UART_IER_MSI &&
+        port->state != NULL) {
+        if (status & UART_MSR_TERI)
+            port->icount.rng++;
+        if (status & UART_MSR_DDSR)
+            port->icount.dsr++;
+        if (status & UART_MSR_DDCD)
+            uart_handle_dcd_change(port, status & UART_MSR_DCD);
+        if (status & UART_MSR_DCTS)
+            uart_handle_cts_change(port, status & UART_MSR_CTS);
+
+        wake_up_interruptible(&port->state->port.delta_msr_wait);
+    }
+
+    return status;
+}
+EXPORT_SYMBOL_GPL(serial8250_modem_status);
+#endif
+
+/*
+ *  Print a string to the serial port trying not to disturb
+ *  any possible real use of the port...
+ *
+ *  The console_lock must be held when we get here.
+ *
+ *  Doing runtime PM is really a bad idea for the kernel console.
+ *  Thus, we assume the function is called when device is powered up.
+ */
+void serial8250_console_write(struct uart_8250_port *up, const char *s,
+                              unsigned int count)
+{
+    //struct uart_8250_em485 *em485 = up->em485;
+    struct uart_port *port = &up->port;
+    unsigned long flags;
+    unsigned int ier;
+    int locked = 1;
+
+    touch_nmi_watchdog();
+
+    if (oops_in_progress)
+        locked = spin_trylock_irqsave(&port->lock, flags);
+    else
+        spin_lock_irqsave(&port->lock, flags);
+
+    /*
+     *  First save the IER then disable the interrupts
+     */
+    ier = serial_port_in(port, UART_IER);
+
+    if (up->capabilities & UART_CAP_UUE)
+        serial_port_out(port, UART_IER, UART_IER_UUE);
+    else
+        serial_port_out(port, UART_IER, 0);
+
+    /* check scratch reg to see if port powered off during system sleep */
+    if (up->canary && (up->canary != serial_port_in(port, UART_SCR))) {
+        serial8250_console_restore(up);
+        up->canary = 0;
+    }
+
+#if 0
+    if (em485) {
+        if (em485->tx_stopped)
+            up->rs485_start_tx(up);
+        mdelay(port->rs485.delay_rts_before_send);
+    }
+#endif
+
+    uart_console_write(port, s, count, serial8250_console_putchar);
+
+    /*
+     *  Finally, wait for transmitter to become empty
+     *  and restore the IER
+     */
+    wait_for_xmitr(up, BOTH_EMPTY);
+
+#if 0
+    if (em485) {
+        mdelay(port->rs485.delay_rts_after_send);
+        if (em485->tx_stopped)
+            up->rs485_stop_tx(up);
+    }
+#endif
+
+    serial_port_out(port, UART_IER, ier);
+
+#if 0
+    /*
+     *  The receive handling will happen properly because the
+     *  receive ready bit will still be set; it is not cleared
+     *  on read.  However, modem control will not, we must
+     *  call it if we have saved something in the saved flags
+     *  while processing with interrupts off.
+     */
+    if (up->msr_saved_flags)
+        serial8250_modem_status(up);
+#endif
+
+    if (locked)
+        spin_unlock_irqrestore(&port->lock, flags);
+}

@@ -48,3 +48,25 @@ unsigned char tty_get_char_size(unsigned int cflag)
     }
 }
 EXPORT_SYMBOL_GPL(tty_get_char_size);
+
+/**
+ *  tty_get_frame_size  -   get size of a frame
+ *  @cflag: termios cflag value
+ *
+ *  Get the size (in bits) of a frame depending on @cflag's %CSIZE, %CSTOPB,
+ *  and %PARENB setting. The result is a sum of character size, start and
+ *  stop bits -- one bit each -- second stop bit (if set), and parity bit
+ *  (if set).
+ */
+unsigned char tty_get_frame_size(unsigned int cflag)
+{
+    unsigned char bits = 2 + tty_get_char_size(cflag);
+
+    if (cflag & CSTOPB)
+        bits++;
+    if (cflag & PARENB)
+        bits++;
+
+    return bits;
+}
+EXPORT_SYMBOL_GPL(tty_get_frame_size);

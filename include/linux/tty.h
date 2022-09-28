@@ -112,4 +112,6 @@ void __init n_tty_init(void);
 
 int __init tty_init(void);
 
+unsigned char tty_get_frame_size(unsigned int cflag);
+
 #endif /* _LINUX_TTY_H */

@@ -17,11 +17,7 @@
  */
 static inline void touch_nmi_watchdog(void)
 {
-#if 0
-    arch_touch_nmi_watchdog();
-    touch_softlockup_watchdog();
-#endif
-    panic("%s: END!\n", __func__);
+    //touch_softlockup_watchdog();
 }
 
 #endif /* LINUX_NMI_H */

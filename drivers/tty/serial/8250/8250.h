@@ -104,3 +104,8 @@ void serial8250_out_MCR(struct uart_8250_port *up, int value)
         mctrl_gpio_set(up->gpios, serial8250_MCR_to_TIOCM(value));
 #endif
 }
+
+static inline void serial_dl_write(struct uart_8250_port *up, int value)
+{
+    up->dl_write(up, value);
+}

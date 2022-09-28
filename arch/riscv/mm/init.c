@@ -118,7 +118,8 @@ struct pt_alloc_ops pt_ops __initdata;
 #define trampoline_pgd_next (uintptr_t)trampoline_p4d
 #define early_dtb_pgd_next (uintptr_t)early_dtb_p4d
 
-void __set_fixmap(enum fixed_addresses idx, phys_addr_t phys, pgprot_t prot)
+void __set_fixmap(enum fixed_addresses idx, phys_addr_t phys,
+                  pgprot_t prot)
 {
     unsigned long addr = __fix_to_virt(idx);
     pte_t *ptep;

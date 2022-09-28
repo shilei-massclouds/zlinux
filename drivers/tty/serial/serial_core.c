@@ -981,9 +981,7 @@ uart_set_options(struct uart_port *port, struct console *co,
      */
     port->mctrl |= TIOCM_DTR;
 
-#if 0
     port->ops->set_termios(port, &termios, &dummy);
-#endif
     /*
      * Allow the setting of the UART parameters with a NULL console
      * too:
@@ -1118,3 +1116,28 @@ uart_get_divisor(struct uart_port *port, unsigned int baud)
     return quot;
 }
 EXPORT_SYMBOL(uart_get_divisor);
+
+/**
+ *  uart_update_timeout - update per-port FIFO timeout.
+ *  @port:  uart_port structure describing the port
+ *  @cflag: termios cflag value
+ *  @baud:  speed of the port
+ *
+ *  Set the port FIFO timeout value.  The @cflag value should
+ *  reflect the actual hardware settings.
+ */
+void
+uart_update_timeout(struct uart_port *port, unsigned int cflag,
+                    unsigned int baud)
+{
+    unsigned int size;
+
+    size = tty_get_frame_size(cflag) * port->fifosize;
+
+    /*
+     * Figure the timeout to send the above number of bits.
+     * Add .02 seconds of slop
+     */
+    port->timeout = (HZ * size) / baud + HZ/50;
+}
+EXPORT_SYMBOL(uart_update_timeout);

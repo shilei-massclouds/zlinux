@@ -16,11 +16,27 @@
 #define _LINUX_SERIAL_REG_H
 
 /*
+ * DLAB=0
+ */
+#define UART_RX     0   /* In:  Receive buffer */
+#define UART_TX     0   /* Out: Transmit buffer */
+
+/*
  * DLAB=1
  */
 #define UART_DLL        0       /* Out: Divisor Latch Low */
 #define UART_DLM        1       /* Out: Divisor Latch High */
 #define UART_DIV_MAX    0xFFFF  /* Max divisor value */
+
+#define UART_IER    1   /* Out: Interrupt Enable Register */
+#define UART_IER_MSI        0x08 /* Enable Modem status interrupt */
+#define UART_IER_RLSI       0x04 /* Enable receiver line status interrupt */
+#define UART_IER_THRI       0x02 /* Enable Transmitter holding register int. */
+#define UART_IER_RDI        0x01 /* Enable receiver data interrupt */
+/*
+ * Sleep mode for ST16650 and TI16750.  For the ST16650, EFR[4]=1
+ */
+#define UART_IERX_SLEEP     0x10 /* Enable sleep mode */
 
 #define UART_IIR    2   /* In:  Interrupt ID Register */
 #define UART_IIR_NO_INT     0x01 /* No interrupts pending */
@@ -114,5 +130,54 @@
 #define UART_LCR_WLEN6      0x01 /* Wordlength: 6 bits */
 #define UART_LCR_WLEN7      0x02 /* Wordlength: 7 bits */
 #define UART_LCR_WLEN8      0x03 /* Wordlength: 8 bits */
+
+#define UART_LSR    5   /* In:  Line Status Register */
+#define UART_LSR_FIFOE      0x80 /* Fifo error */
+#define UART_LSR_TEMT       0x40 /* Transmitter empty */
+#define UART_LSR_THRE       0x20 /* Transmit-hold-register empty */
+#define UART_LSR_BI     0x10 /* Break interrupt indicator */
+#define UART_LSR_FE     0x08 /* Frame error indicator */
+#define UART_LSR_PE     0x04 /* Parity error indicator */
+#define UART_LSR_OE     0x02 /* Overrun error indicator */
+#define UART_LSR_DR     0x01 /* Receiver data ready */
+#define UART_LSR_BRK_ERROR_BITS 0x1E /* BI, FE, PE, OE bits */
+
+/*
+ * The Intel XScale on-chip UARTs define these bits
+ */
+#define UART_IER_DMAE   0x80    /* DMA Requests Enable */
+#define UART_IER_UUE    0x40    /* UART Unit Enable */
+#define UART_IER_NRZE   0x20    /* NRZ coding Enable */
+#define UART_IER_RTOIE  0x10    /* Receiver Time Out Interrupt Enable */
+
+/*
+ * LCR=0xBF (or DLAB=1 for 16C660)
+ */
+#define UART_EFR    2   /* I/O: Extended Features Register */
+#define UART_XR_EFR 9   /* I/O: Extended Features Register (XR17D15x) */
+#define UART_EFR_CTS        0x80 /* CTS flow control */
+#define UART_EFR_RTS        0x40 /* RTS flow control */
+#define UART_EFR_SCD        0x20 /* Special character detect */
+#define UART_EFR_ECB        0x10 /* Enhanced control bit */
+
+/*
+ * Access to some registers depends on register access / configuration
+ * mode.
+ */
+#define UART_LCR_CONF_MODE_A    UART_LCR_DLAB   /* Configutation mode A */
+#define UART_LCR_CONF_MODE_B    0xBF        /* Configutation mode B */
+
+#define UART_SCR    7   /* I/O: Scratch Register */
+
+#define UART_MSR    6   /* In:  Modem Status Register */
+#define UART_MSR_DCD        0x80 /* Data Carrier Detect */
+#define UART_MSR_RI     0x40 /* Ring Indicator */
+#define UART_MSR_DSR        0x20 /* Data Set Ready */
+#define UART_MSR_CTS        0x10 /* Clear to Send */
+#define UART_MSR_DDCD       0x08 /* Delta DCD */
+#define UART_MSR_TERI       0x04 /* Trailing edge ring indicator */
+#define UART_MSR_DDSR       0x02 /* Delta DSR */
+#define UART_MSR_DCTS       0x01 /* Delta CTS */
+#define UART_MSR_ANY_DELTA  0x0F /* Any of the delta bits! */
 
 #endif /* _LINUX_SERIAL_REG_H */

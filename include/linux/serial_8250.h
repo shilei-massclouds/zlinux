@@ -141,4 +141,9 @@ enum {
 int serial8250_console_setup(struct uart_port *port, char *options,
                              bool probe);
 
+void serial8250_console_write(struct uart_8250_port *up, const char *s,
+                              unsigned int count);
+
+int serial8250_console_exit(struct uart_port *port);
+
 #endif /* _LINUX_SERIAL_8250_H */

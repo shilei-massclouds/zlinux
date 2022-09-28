@@ -110,12 +110,9 @@ static void
 univ8250_console_write(struct console *co, const char *s,
                        unsigned int count)
 {
-#if 0
     struct uart_8250_port *up = &serial8250_ports[co->index];
 
     serial8250_console_write(up, s, count);
-#endif
-    panic("%s: END!\n", __func__);
 }
 
 static int univ8250_console_setup(struct console *co, char *options)
@@ -242,6 +239,21 @@ serial8250_find_match_or_unused(const struct uart_port *port)
 static inline void serial8250_apply_quirks(struct uart_8250_port *up)
 {
     up->port.quirks |= skip_txen_test ? UPQ_NO_TXEN_TEST : 0;
+}
+
+static void serial_8250_overrun_backoff_work(struct work_struct *work)
+{
+    struct uart_8250_port *up =
+        container_of(to_delayed_work(work), struct uart_8250_port,
+                     overrun_backoff);
+    struct uart_port *port = &up->port;
+    unsigned long flags;
+
+    spin_lock_irqsave(&port->lock, flags);
+    up->ier |= UART_IER_RLSI | UART_IER_RDI;
+    up->port.read_status_mask |= UART_LSR_DR;
+    serial_out(up, UART_IER, up->ier);
+    spin_unlock_irqrestore(&port->lock, flags);
 }
 
 /**
@@ -381,10 +393,19 @@ int serial8250_register_8250_port(const struct uart_8250_port *up)
             ret = 0;
         }
 
-        panic("%s: 1!\n", __func__);
+        /* Initialise interrupt backoff work if required */
+        if (up->overrun_backoff_time_ms > 0) {
+            uart->overrun_backoff_time_ms =
+                up->overrun_backoff_time_ms;
+            INIT_DELAYED_WORK(&uart->overrun_backoff,
+                              serial_8250_overrun_backoff_work);
+        } else {
+            uart->overrun_backoff_time_ms = 0;
+        }
     }
 
-    panic("%s: END!\n", __func__);
+    mutex_unlock(&serial_mutex);
+
     return ret;
 
  err:
