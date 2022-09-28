@@ -1826,4 +1826,18 @@ int register_chrdev(unsigned int major, const char *name,
     return __register_chrdev(major, 0, 256, name, fops);
 }
 
+/*
+ * This one is to be used *ONLY* from ->open() instances.
+ * fops must be non-NULL, pinned down *and* module dependencies
+ * should be sufficient to pin the caller down as well.
+ */
+#define replace_fops(f, fops) \
+    do {    \
+        struct file *__file = (f); \
+        fops_put(__file->f_op); \
+        BUG_ON(!(__file->f_op = (fops))); \
+    } while(0)
+
+extern int nonseekable_open(struct inode * inode, struct file * filp);
+
 #endif /* _LINUX_FS_H */

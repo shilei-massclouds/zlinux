@@ -598,3 +598,16 @@ SYSCALL_DEFINE1(close, unsigned int, fd)
 
     return retval;
 }
+
+/*
+ * This is used by subsystems that don't want seekable
+ * file descriptors. The function is not supposed to ever fail, the only
+ * reason it returns an 'int' and not 'void' is so that it can be plugged
+ * directly into file_operations structure.
+ */
+int nonseekable_open(struct inode *inode, struct file *filp)
+{
+    filp->f_mode &= ~(FMODE_LSEEK | FMODE_PREAD | FMODE_PWRITE);
+    return 0;
+}
+EXPORT_SYMBOL(nonseekable_open);

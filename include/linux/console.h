@@ -71,4 +71,6 @@ extern void console_unlock(void);
 
 extern void console_init(void);
 
+extern struct tty_driver *console_device(int *);
+
 #endif /* _LINUX_CONSOLE_H_ */

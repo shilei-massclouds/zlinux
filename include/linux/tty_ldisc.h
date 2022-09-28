@@ -64,6 +64,33 @@ struct tty_ldisc {
     struct tty_struct *tty;
 };
 
+void __init_ldsem(struct ld_semaphore *sem, const char *name,
+                  struct lock_class_key *key);
+
+#define init_ldsem(sem)                     \
+do {                                \
+    static struct lock_class_key __key;         \
+                                \
+    __init_ldsem((sem), #sem, &__key);          \
+} while (0)
+
+extern const struct seq_operations tty_ldiscs_seq_ops;
+
+struct tty_ldisc *tty_ldisc_ref(struct tty_struct *);
+void tty_ldisc_deref(struct tty_ldisc *);
+struct tty_ldisc *tty_ldisc_ref_wait(struct tty_struct *);
+
+void tty_ldisc_flush(struct tty_struct *tty);
+
 int tty_register_ldisc(struct tty_ldisc_ops *new_ldisc);
+void tty_unregister_ldisc(struct tty_ldisc_ops *ldisc);
+int tty_set_ldisc(struct tty_struct *tty, int disc);
+
+int ldsem_down_read(struct ld_semaphore *sem, long timeout);
+int ldsem_down_read_trylock(struct ld_semaphore *sem);
+int ldsem_down_write(struct ld_semaphore *sem, long timeout);
+int ldsem_down_write_trylock(struct ld_semaphore *sem);
+void ldsem_up_read(struct ld_semaphore *sem);
+void ldsem_up_write(struct ld_semaphore *sem);
 
 #endif /* _LINUX_TTY_LDISC_H */

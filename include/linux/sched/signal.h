@@ -144,9 +144,7 @@ struct signal_struct {
     /* boolean value for session group leader */
     int leader;
 
-#if 0
     struct tty_struct *tty; /* NULL if no tty */
-#endif
 
     /*
      * Cumulative resource counters for dead threads in the group,

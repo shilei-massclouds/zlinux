@@ -70,3 +70,27 @@ unsigned char tty_get_frame_size(unsigned int cflag)
     return bits;
 }
 EXPORT_SYMBOL_GPL(tty_get_frame_size);
+
+/**
+ *  tty_unthrottle      -   flow control
+ *  @tty: terminal
+ *
+ *  Indicate that a tty may continue transmitting data down the stack.
+ *  Takes the termios rwsem to protect against parallel throttle/unthrottle
+ *  and also to ensure the driver can consistently reference its own
+ *  termios data at this point when implementing software flow control.
+ *
+ *  Drivers should however remember that the stack can issue a throttle,
+ *  then change flow control method, then unthrottle.
+ */
+
+void tty_unthrottle(struct tty_struct *tty)
+{
+    down_write(&tty->termios_rwsem);
+    if (test_and_clear_bit(TTY_THROTTLED, &tty->flags) &&
+        tty->ops->unthrottle)
+        tty->ops->unthrottle(tty);
+    tty->flow_change = 0;
+    up_write(&tty->termios_rwsem);
+}
+EXPORT_SYMBOL(tty_unthrottle);

@@ -52,6 +52,86 @@
 #include <linux/tty_ldisc.h>
 #include "tty.h"
 
+struct n_tty_data {
+    /* producer-published */
+    size_t read_head;
+    size_t commit_head;
+    size_t canon_head;
+    size_t echo_head;
+    size_t echo_commit;
+    size_t echo_mark;
+    DECLARE_BITMAP(char_map, 256);
+
+    /* private to n_tty_receive_overrun (single-threaded) */
+    unsigned long overrun_time;
+    int num_overrun;
+
+    /* non-atomic */
+    bool no_room;
+
+    /* must hold exclusive termios_rwsem to reset these */
+    unsigned char lnext:1, erasing:1, raw:1, real_raw:1, icanon:1;
+    unsigned char push:1;
+
+    /* shared by producer and consumer */
+    char read_buf[N_TTY_BUF_SIZE];
+    DECLARE_BITMAP(read_flags, N_TTY_BUF_SIZE);
+    unsigned char echo_buf[N_TTY_BUF_SIZE];
+
+    /* consumer-published */
+    size_t read_tail;
+    size_t line_start;
+
+    /* protected by output lock */
+    unsigned int column;
+    unsigned int canon_column;
+    size_t echo_tail;
+
+    struct mutex atomic_read_lock;
+    struct mutex output_lock;
+};
+
+/**
+ * n_tty_set_termios    -   termios data changed
+ * @tty: terminal
+ * @old: previous data
+ *
+ * Called by the tty layer when the user changes termios flags so that the line
+ * discipline can plan ahead. This function cannot sleep and is protected from
+ * re-entry by the tty layer. The user is guaranteed that this function will
+ * not be re-entered or in progress when the ldisc is closed.
+ *
+ * Locking: Caller holds @tty->termios_rwsem
+ */
+static void n_tty_set_termios(struct tty_struct *tty,
+                              struct ktermios *old)
+{
+    struct n_tty_data *ldata = tty->disc_data;
+
+    if (!old ||
+        (old->c_lflag ^ tty->termios.c_lflag) & (ICANON | EXTPROC)) {
+#if 0
+        bitmap_zero(ldata->read_flags, N_TTY_BUF_SIZE);
+        ldata->line_start = ldata->read_tail;
+        if (!L_ICANON(tty) || !read_cnt(ldata)) {
+            ldata->canon_head = ldata->read_tail;
+            ldata->push = 0;
+        } else {
+            set_bit((ldata->read_head - 1) & (N_TTY_BUF_SIZE - 1),
+                ldata->read_flags);
+            ldata->canon_head = ldata->read_head;
+            ldata->push = 1;
+        }
+        ldata->commit_head = ldata->read_head;
+        ldata->erasing = 0;
+        ldata->lnext = 0;
+#endif
+        panic("%s: 1!\n", __func__);
+    }
+
+    panic("%s: END!\n", __func__);
+}
+
 /**
  * n_tty_open       -   open an ldisc
  * @tty: terminal to open
@@ -62,7 +142,24 @@
  */
 static int n_tty_open(struct tty_struct *tty)
 {
-    panic("%s: END!\n", __func__);
+    struct n_tty_data *ldata;
+
+    /* Currently a malloc failure here can panic */
+    ldata = vzalloc(sizeof(*ldata));
+    if (!ldata)
+        return -ENOMEM;
+
+    ldata->overrun_time = jiffies;
+    mutex_init(&ldata->atomic_read_lock);
+    mutex_init(&ldata->output_lock);
+
+    tty->disc_data = ldata;
+    tty->closing = 0;
+    /* indicate buffer work may resume */
+    clear_bit(TTY_LDISC_HALTED, &tty->flags);
+    n_tty_set_termios(tty, NULL);
+    tty_unthrottle(tty);
+    return 0;
 }
 
 /**
@@ -137,24 +234,6 @@ static ssize_t n_tty_write(struct tty_struct *tty, struct file *file,
 
 static int n_tty_ioctl(struct tty_struct *tty, unsigned int cmd,
                        unsigned long arg)
-{
-    panic("%s: END!\n", __func__);
-}
-
-/**
- * n_tty_set_termios    -   termios data changed
- * @tty: terminal
- * @old: previous data
- *
- * Called by the tty layer when the user changes termios flags so that the line
- * discipline can plan ahead. This function cannot sleep and is protected from
- * re-entry by the tty layer. The user is guaranteed that this function will
- * not be re-entered or in progress when the ldisc is closed.
- *
- * Locking: Caller holds @tty->termios_rwsem
- */
-static void n_tty_set_termios(struct tty_struct *tty,
-                              struct ktermios *old)
 {
     panic("%s: END!\n", __func__);
 }

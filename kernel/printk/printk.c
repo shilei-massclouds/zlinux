@@ -1776,6 +1776,26 @@ void __init console_init(void)
 }
 
 /*
+ * Return the console tty driver structure and its associated index
+ */
+struct tty_driver *console_device(int *index)
+{
+    struct console *c;
+    struct tty_driver *driver = NULL;
+
+    console_lock();
+    for_each_console(c) {
+        if (!c->device)
+            continue;
+        driver = c->device(c, index);
+        if (driver)
+            break;
+    }
+    console_unlock();
+    return driver;
+}
+
+/*
  * Set up a console.  Called via do_early_param() in init/main.c
  * for each "console=" parameter in the boot command line.
  */

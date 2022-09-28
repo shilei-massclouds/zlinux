@@ -73,7 +73,6 @@ static int find_dynamic_major(void)
 
 static struct kobject *cdev_get(struct cdev *p)
 {
-#if 0
     struct module *owner = p->owner;
     struct kobject *kobj;
 
@@ -83,8 +82,6 @@ static struct kobject *cdev_get(struct cdev *p)
     if (!kobj)
         module_put(owner);
     return kobj;
-#endif
-    panic("%s: END!\n", __func__);
 }
 
 void cdev_put(struct cdev *p)
@@ -115,7 +112,6 @@ static int chrdev_open(struct inode *inode, struct file *filp)
         kobj = kobj_lookup(cdev_map, inode->i_rdev, &idx);
         if (!kobj)
             return -ENXIO;
-#if 0
         new = container_of(kobj, struct cdev, kobj);
         spin_lock(&cdev_lock);
         /* Check i_cdev again in case somebody beat us to it while
@@ -127,8 +123,6 @@ static int chrdev_open(struct inode *inode, struct file *filp)
             new = NULL;
         } else if (!cdev_get(p))
             ret = -ENXIO;
-#endif
-        panic("%s: !p\n", __func__);
     } else if (!cdev_get(p))
         ret = -ENXIO;
 
@@ -137,7 +131,23 @@ static int chrdev_open(struct inode *inode, struct file *filp)
     if (ret)
         return ret;
 
-    panic("%s: END!\n", __func__);
+    ret = -ENXIO;
+    fops = fops_get(p->ops);
+    if (!fops)
+        goto out_cdev_put;
+
+    replace_fops(filp, fops);
+    if (filp->f_op->open) {
+        ret = filp->f_op->open(inode, filp);
+        if (ret)
+            goto out_cdev_put;
+    }
+
+    return 0;
+
+ out_cdev_put:
+    cdev_put(p);
+    return ret;
 }
 
 /*

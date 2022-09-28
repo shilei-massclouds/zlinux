@@ -69,7 +69,7 @@
 #include <linux/uaccess.h>
 
 //#include <linux/kbd_kern.h>
-//#include <linux/vt_kern.h>
+#include <linux/vt_kern.h>
 //#include <linux/selection.h>
 
 #include <linux/kmod.h>
@@ -95,6 +95,21 @@ static void tty_device_create_release(struct device *dev)
 {
     dev_dbg(dev, "releasing...\n");
     kfree(dev);
+}
+
+dev_t tty_devnum(struct tty_struct *tty)
+{
+    return MKDEV(tty->driver->major,
+                 tty->driver->minor_start) + tty->index;
+}
+EXPORT_SYMBOL(tty_devnum);
+
+/* Must put_device() after it's unused! */
+static struct device *tty_get_device(struct tty_struct *tty)
+{
+    dev_t devt = tty_devnum(tty);
+
+    return class_find_device_by_devt(tty_class, devt);
 }
 
 /**
@@ -329,6 +344,497 @@ static long tty_compat_ioctl(struct file *file, unsigned int cmd,
     panic("%s: END!\n", __func__);
 }
 
+int tty_alloc_file(struct file *file)
+{
+    struct tty_file_private *priv;
+
+    priv = kmalloc(sizeof(*priv), GFP_KERNEL);
+    if (!priv)
+        return -ENOMEM;
+
+    file->private_data = priv;
+
+    return 0;
+}
+
+/**
+ * tty_open_current_tty - get locked tty of current task
+ * @device: device number
+ * @filp: file pointer to tty
+ * @return: locked tty of the current task iff @device is /dev/tty
+ *
+ * Performs a re-open of the current task's controlling tty.
+ *
+ * We cannot return driver and index like for the other nodes because devpts
+ * will not work then. It expects inodes to be from devpts FS.
+ */
+static struct tty_struct *
+tty_open_current_tty(dev_t device, struct file *filp)
+{
+    struct tty_struct *tty;
+    int retval;
+
+    if (device != MKDEV(TTYAUX_MAJOR, 0))
+        return NULL;
+
+    tty = get_current_tty();
+    if (!tty)
+        return ERR_PTR(-ENXIO);
+
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * get_tty_driver       -   find device of a tty
+ * @device: device identifier
+ * @index: returns the index of the tty
+ *
+ * This routine returns a tty driver structure, given a device number and also
+ * passes back the index number.
+ *
+ * Locking: caller must hold tty_mutex
+ */
+static struct tty_driver *get_tty_driver(dev_t device, int *index)
+{
+    struct tty_driver *p;
+
+    list_for_each_entry(p, &tty_drivers, tty_drivers) {
+        dev_t base = MKDEV(p->major, p->minor_start);
+
+        if (device < base || device >= base + p->num)
+            continue;
+        *index = device - base;
+        return tty_driver_kref_get(p);
+    }
+    return NULL;
+}
+
+/**
+ * tty_lookup_driver - lookup a tty driver for a given device file
+ * @device: device number
+ * @filp: file pointer to tty
+ * @index: index for the device in the @return driver
+ *
+ * If returned value is not erroneous, the caller is responsible to decrement
+ * the refcount by tty_driver_kref_put().
+ *
+ * Locking: %tty_mutex protects get_tty_driver()
+ *
+ * Return: driver for this inode (with increased refcount)
+ */
+static struct tty_driver *
+tty_lookup_driver(dev_t device, struct file *filp, int *index)
+{
+    struct tty_driver *driver = NULL;
+
+    switch (device) {
+    case MKDEV(TTY_MAJOR, 0): {
+        extern struct tty_driver *console_driver;
+
+        driver = tty_driver_kref_get(console_driver);
+        *index = fg_console;
+        break;
+    }
+    case MKDEV(TTYAUX_MAJOR, 1): {
+        struct tty_driver *console_driver = console_device(index);
+
+        if (console_driver) {
+            driver = tty_driver_kref_get(console_driver);
+            if (driver && filp) {
+                /* Don't let /dev/console block */
+                filp->f_flags |= O_NONBLOCK;
+                break;
+            }
+        }
+        if (driver)
+            tty_driver_kref_put(driver);
+        return ERR_PTR(-ENODEV);
+    }
+    default:
+        driver = get_tty_driver(device, index);
+        if (!driver)
+            return ERR_PTR(-ENODEV);
+        break;
+    }
+    return driver;
+}
+
+/**
+ * tty_driver_lookup_tty() - find an existing tty, if any
+ * @driver: the driver for the tty
+ * @file: file object
+ * @idx: the minor number
+ *
+ * Return: the tty, if found. If not found, return %NULL or ERR_PTR() if the
+ * driver lookup() method returns an error.
+ *
+ * Locking: tty_mutex must be held. If the tty is found, bump the tty kref.
+ */
+static struct tty_struct *
+tty_driver_lookup_tty(struct tty_driver *driver, struct file *file,
+                      int idx)
+{
+    struct tty_struct *tty;
+
+    if (driver->ops->lookup)
+        if (!file)
+            tty = ERR_PTR(-EIO);
+        else
+            tty = driver->ops->lookup(driver, file, idx);
+    else
+        tty = driver->ttys[idx];
+
+    if (!IS_ERR(tty))
+        tty_kref_get(tty);
+    return tty;
+}
+
+/**
+ * release_tty      -   release tty structure memory
+ * @tty: tty device release
+ * @idx: index of the tty device release
+ *
+ * Release both @tty and a possible linked partner (think pty pair),
+ * and decrement the refcount of the backing module.
+ *
+ * Locking:
+ *  tty_mutex
+ *  takes the file list lock internally when working on the list of ttys
+ *  that the driver keeps.
+ */
+static void release_tty(struct tty_struct *tty, int idx)
+{
+#if 0
+    /* This should always be true but check for the moment */
+    WARN_ON(tty->index != idx);
+    WARN_ON(!mutex_is_locked(&tty_mutex));
+    if (tty->ops->shutdown)
+        tty->ops->shutdown(tty);
+    tty_save_termios(tty);
+    tty_driver_remove_tty(tty->driver, tty);
+    if (tty->port)
+        tty->port->itty = NULL;
+    if (tty->link)
+        tty->link->port->itty = NULL;
+    if (tty->port)
+        tty_buffer_cancel_work(tty->port);
+    if (tty->link)
+        tty_buffer_cancel_work(tty->link->port);
+
+    tty_kref_put(tty->link);
+    tty_kref_put(tty);
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * free_tty_struct  -   free a disused tty
+ * @tty: tty struct to free
+ *
+ * Free the write buffers, tty queue and tty memory itself.
+ *
+ * Locking: none. Must be called after tty is definitely unused
+ */
+static void free_tty_struct(struct tty_struct *tty)
+{
+    tty_ldisc_deinit(tty);
+    put_device(tty->dev);
+    kvfree(tty->write_buf);
+    tty->magic = 0xDEADDEAD;
+    kfree(tty);
+}
+
+const char *tty_driver_name(const struct tty_struct *tty)
+{
+    if (!tty || !tty->driver)
+        return "";
+    return tty->driver->name;
+}
+
+static void do_tty_hangup(struct work_struct *work)
+{
+    struct tty_struct *tty =
+        container_of(work, struct tty_struct, hangup_work);
+
+#if 0
+    __tty_hangup(tty, 0);
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+static void do_SAK_work(struct work_struct *work)
+{
+    struct tty_struct *tty =
+        container_of(work, struct tty_struct, SAK_work);
+#if 0
+    __do_SAK(tty);
+#endif
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * alloc_tty_struct - allocate a new tty
+ * @driver: driver which will handle the returned tty
+ * @idx: minor of the tty
+ *
+ * This subroutine allocates and initializes a tty structure.
+ *
+ * Locking: none - @tty in question is not exposed at this point
+ */
+struct tty_struct *alloc_tty_struct(struct tty_driver *driver, int idx)
+{
+    struct tty_struct *tty;
+
+    tty = kzalloc(sizeof(*tty), GFP_KERNEL_ACCOUNT);
+    if (!tty)
+        return NULL;
+
+    kref_init(&tty->kref);
+    tty->magic = TTY_MAGIC;
+    if (tty_ldisc_init(tty)) {
+        kfree(tty);
+        return NULL;
+    }
+    tty->ctrl.session = NULL;
+    tty->ctrl.pgrp = NULL;
+    mutex_init(&tty->legacy_mutex);
+    mutex_init(&tty->throttle_mutex);
+    init_rwsem(&tty->termios_rwsem);
+    mutex_init(&tty->winsize_mutex);
+    init_ldsem(&tty->ldisc_sem);
+    init_waitqueue_head(&tty->write_wait);
+    init_waitqueue_head(&tty->read_wait);
+    INIT_WORK(&tty->hangup_work, do_tty_hangup);
+    mutex_init(&tty->atomic_write_lock);
+    spin_lock_init(&tty->ctrl.lock);
+    spin_lock_init(&tty->flow.lock);
+    spin_lock_init(&tty->files_lock);
+    INIT_LIST_HEAD(&tty->tty_files);
+    INIT_WORK(&tty->SAK_work, do_SAK_work);
+
+    tty->driver = driver;
+    tty->ops = driver->ops;
+    tty->index = idx;
+    tty_line_name(driver, idx, tty->name);
+    tty->dev = tty_get_device(tty);
+
+    return tty;
+}
+
+/**
+ * tty_init_termios -  helper for termios setup
+ * @tty: the tty to set up
+ *
+ * Initialise the termios structure for this tty. This runs under the
+ * %tty_mutex currently so we can be relaxed about ordering.
+ */
+void tty_init_termios(struct tty_struct *tty)
+{
+    struct ktermios *tp;
+    int idx = tty->index;
+
+    if (tty->driver->flags & TTY_DRIVER_RESET_TERMIOS)
+        tty->termios = tty->driver->init_termios;
+    else {
+        /* Check for lazy saved data */
+        tp = tty->driver->termios[idx];
+        if (tp != NULL) {
+            tty->termios = *tp;
+            tty->termios.c_line  = tty->driver->init_termios.c_line;
+        } else
+            tty->termios = tty->driver->init_termios;
+    }
+    /* Compatibility until drivers always set this */
+    tty->termios.c_ispeed = tty_termios_input_baud_rate(&tty->termios);
+    tty->termios.c_ospeed = tty_termios_baud_rate(&tty->termios);
+}
+EXPORT_SYMBOL_GPL(tty_init_termios);
+
+/**
+ * tty_standard_install - usual tty->ops->install
+ * @driver: the driver for the tty
+ * @tty: the tty
+ *
+ * If the @driver overrides @tty->ops->install, it still can call this function
+ * to perform the standard install operations.
+ */
+int tty_standard_install(struct tty_driver *driver,
+                         struct tty_struct *tty)
+{
+    tty_init_termios(tty);
+    tty_driver_kref_get(driver);
+    tty->count++;
+    driver->ttys[tty->index] = tty;
+    return 0;
+}
+EXPORT_SYMBOL_GPL(tty_standard_install);
+
+/**
+ * tty_driver_install_tty() - install a tty entry in the driver
+ * @driver: the driver for the tty
+ * @tty: the tty
+ *
+ * Install a tty object into the driver tables. The @tty->index field will be
+ * set by the time this is called. This method is responsible for ensuring any
+ * need additional structures are allocated and configured.
+ *
+ * Locking: tty_mutex for now
+ */
+static int tty_driver_install_tty(struct tty_driver *driver,
+                        struct tty_struct *tty)
+{
+    return driver->ops->install ? driver->ops->install(driver, tty) :
+        tty_standard_install(driver, tty);
+}
+
+/**
+ * tty_init_dev     -   initialise a tty device
+ * @driver: tty driver we are opening a device on
+ * @idx: device index
+ *
+ * Prepare a tty device. This may not be a "new" clean device but could also be
+ * an active device. The pty drivers require special handling because of this.
+ *
+ * Locking:
+ *  The function is called under the tty_mutex, which protects us from the
+ *  tty struct or driver itself going away.
+ *
+ * On exit the tty device has the line discipline attached and a reference
+ * count of 1. If a pair was created for pty/tty use and the other was a pty
+ * master then it too has a reference count of 1.
+ *
+ * WSH 06/09/97: Rewritten to remove races and properly clean up after a failed
+ * open. The new code protects the open with a mutex, so it's really quite
+ * straightforward. The mutex locking can probably be relaxed for the (most
+ * common) case of reopening a tty.
+ *
+ * Return: new tty structure
+ */
+struct tty_struct *tty_init_dev(struct tty_driver *driver, int idx)
+{
+    struct tty_struct *tty;
+    int retval;
+
+    /*
+     * First time open is complex, especially for PTY devices.
+     * This code guarantees that either everything succeeds and the
+     * TTY is ready for operation, or else the table slots are vacated
+     * and the allocated memory released.  (Except that the termios
+     * may be retained.)
+     */
+
+    if (!try_module_get(driver->owner))
+        return ERR_PTR(-ENODEV);
+
+    tty = alloc_tty_struct(driver, idx);
+    if (!tty) {
+        retval = -ENOMEM;
+        goto err_module_put;
+    }
+
+    tty_lock(tty);
+    retval = tty_driver_install_tty(driver, tty);
+    if (retval < 0)
+        goto err_free_tty;
+
+    if (!tty->port)
+        tty->port = driver->ports[idx];
+
+    if (WARN_RATELIMIT(!tty->port,
+                       "%s: %s driver does not set tty->port. "
+                       "This would crash the kernel. Fix the driver!\n",
+                       __func__, tty->driver->name)) {
+        retval = -EINVAL;
+        goto err_release_lock;
+    }
+
+    retval = tty_ldisc_lock(tty, 5 * HZ);
+    if (retval)
+        goto err_release_lock;
+    tty->port->itty = tty;
+
+    /*
+     * Structures all installed ... call the ldisc open routines.
+     * If we fail here just call release_tty to clean up.  No need
+     * to decrement the use counts, as release_tty doesn't care.
+     */
+    retval = tty_ldisc_setup(tty, tty->link);
+    if (retval)
+        goto err_release_tty;
+    tty_ldisc_unlock(tty);
+    /* Return the tty locked
+       so that it cannot vanish under the caller */
+    return tty;
+
+err_free_tty:
+    tty_unlock(tty);
+    free_tty_struct(tty);
+err_module_put:
+    module_put(driver->owner);
+    return ERR_PTR(retval);
+
+    /* call the tty release_tty routine to clean out this slot */
+err_release_tty:
+    tty_ldisc_unlock(tty);
+    tty_info_ratelimited(tty,
+                         "ldisc open failed (%d), clearing slot %d\n",
+                         retval, idx);
+err_release_lock:
+    tty_unlock(tty);
+    release_tty(tty, idx);
+    return ERR_PTR(retval);
+}
+
+/**
+ * tty_open_by_driver   -   open a tty device
+ * @device: dev_t of device to open
+ * @filp: file pointer to tty
+ *
+ * Performs the driver lookup, checks for a reopen, or otherwise performs the
+ * first-time tty initialization.
+ *
+ *
+ * Claims the global tty_mutex to serialize:
+ *  * concurrent first-time tty initialization
+ *  * concurrent tty driver removal w/ lookup
+ *  * concurrent tty removal from driver table
+ *
+ * Return: the locked initialized or re-opened &tty_struct
+ */
+static struct tty_struct *
+tty_open_by_driver(dev_t device, struct file *filp)
+{
+    struct tty_struct *tty;
+    struct tty_driver *driver = NULL;
+    int index = -1;
+    int retval;
+
+    mutex_lock(&tty_mutex);
+    driver = tty_lookup_driver(device, filp, &index);
+    if (IS_ERR(driver)) {
+        mutex_unlock(&tty_mutex);
+        return ERR_CAST(driver);
+    }
+
+    /* check whether we're reopening an existing tty */
+    tty = tty_driver_lookup_tty(driver, filp, index);
+    if (IS_ERR(tty)) {
+        mutex_unlock(&tty_mutex);
+        goto out;
+    }
+
+    if (tty) {
+        panic("%s: tty!\n", __func__);
+    } else { /* Returns with the tty_lock held for now */
+        tty = tty_init_dev(driver, index);
+        mutex_unlock(&tty_mutex);
+    }
+
+ out:
+    tty_driver_kref_put(driver);
+    return tty;
+}
+
 /**
  * tty_open -   open a tty device
  * @inode: inode of device file
@@ -354,6 +860,22 @@ static long tty_compat_ioctl(struct file *file, unsigned int cmd,
  */
 static int tty_open(struct inode *inode, struct file *filp)
 {
+    struct tty_struct *tty;
+    int noctty, retval;
+    dev_t device = inode->i_rdev;
+    unsigned saved_flags = filp->f_flags;
+
+    nonseekable_open(inode, filp);
+
+ retry_open:
+    retval = tty_alloc_file(filp);
+    if (retval)
+        return -ENOMEM;
+
+    tty = tty_open_current_tty(device, filp);
+    if (!tty)
+        tty = tty_open_by_driver(device, filp);
+
     panic("%s: END!\n", __func__);
 }
 

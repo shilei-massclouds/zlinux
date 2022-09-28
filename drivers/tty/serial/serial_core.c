@@ -92,7 +92,12 @@ EXPORT_SYMBOL(uart_match_port);
 static int uart_install(struct tty_driver *driver,
                         struct tty_struct *tty)
 {
-    panic("%s: END!\n", __func__);
+    struct uart_driver *drv = driver->driver_state;
+    struct uart_state *state = drv->state + tty->index;
+
+    tty->driver_data = state;
+
+    return tty_standard_install(driver, tty);
 }
 
 /*

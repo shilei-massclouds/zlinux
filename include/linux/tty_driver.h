@@ -233,4 +233,11 @@ tty_register_device_attr(struct tty_driver *driver,
 
 void tty_unregister_device(struct tty_driver *driver, unsigned index);
 
+static inline
+struct tty_driver *tty_driver_kref_get(struct tty_driver *d)
+{
+    kref_get(&d->kref);
+    return d;
+}
+
 #endif /* #ifdef _LINUX_TTY_DRIVER_H */
