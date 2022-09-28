@@ -28,4 +28,6 @@ void cdev_put(struct cdev *p);
 
 void cdev_del(struct cdev *);
 
+void cdev_init(struct cdev *, const struct file_operations *);
+
 #endif /* _LINUX_CDEV_H */

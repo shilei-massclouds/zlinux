@@ -1796,9 +1796,6 @@ bool HAS_UNMAPPED_ID(struct user_namespace *mnt_userns,
            !gid_valid(i_gid_into_mnt(mnt_userns, inode));
 }
 
-extern int register_chrdev_region(dev_t, unsigned, const char *);
-extern void unregister_chrdev_region(dev_t, unsigned);
-
 /* fs/char_dev.c */
 #define CHRDEV_MAJOR_MAX 512
 /* Marks the bottom of the first segment of free char majors */
@@ -1806,5 +1803,27 @@ extern void unregister_chrdev_region(dev_t, unsigned);
 /* Marks the top and bottom of the second segment of free char majors */
 #define CHRDEV_MAJOR_DYN_EXT_START 511
 #define CHRDEV_MAJOR_DYN_EXT_END 384
+
+extern int alloc_chrdev_region(dev_t *, unsigned, unsigned,
+                               const char *);
+extern int register_chrdev_region(dev_t, unsigned, const char *);
+extern int __register_chrdev(unsigned int major,
+                             unsigned int baseminor,
+                             unsigned int count,
+                             const char *name,
+                             const struct file_operations *fops);
+extern void __unregister_chrdev(unsigned int major,
+                                unsigned int baseminor,
+                                unsigned int count,
+                                const char *name);
+extern void unregister_chrdev_region(dev_t, unsigned);
+extern void chrdev_show(struct seq_file *,off_t);
+
+static inline
+int register_chrdev(unsigned int major, const char *name,
+                    const struct file_operations *fops)
+{
+    return __register_chrdev(major, 0, 256, name, fops);
+}
 
 #endif /* _LINUX_FS_H */

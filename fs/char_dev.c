@@ -411,3 +411,33 @@ void cdev_del(struct cdev *p)
     cdev_unmap(p->dev, p->count);
     kobject_put(&p->kobj);
 }
+
+static void cdev_default_release(struct kobject *kobj)
+{
+    struct cdev *p = container_of(kobj, struct cdev, kobj);
+    struct kobject *parent = kobj->parent;
+
+    cdev_purge(p);
+    kobject_put(parent);
+}
+
+static struct kobj_type ktype_cdev_default = {
+    .release    = cdev_default_release,
+};
+
+/**
+ * cdev_init() - initialize a cdev structure
+ * @cdev: the structure to initialize
+ * @fops: the file_operations for this device
+ *
+ * Initializes @cdev, remembering @fops, making it ready to add to the
+ * system with cdev_add().
+ */
+void cdev_init(struct cdev *cdev, const struct file_operations *fops)
+{
+    memset(cdev, 0, sizeof *cdev);
+    INIT_LIST_HEAD(&cdev->list);
+    kobject_init(&cdev->kobj, &ktype_cdev_default);
+    cdev->ops = fops;
+}
+EXPORT_SYMBOL(cdev_init);

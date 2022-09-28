@@ -88,6 +88,9 @@ DEFINE_MUTEX(tty_mutex);
 
 LIST_HEAD(tty_drivers);         /* linked list of tty drivers */
 
+/* 3/2004 jmc: why do these devices exist? */
+static struct cdev tty_cdev, console_cdev;
+
 static void tty_device_create_release(struct device *dev)
 {
     dev_dbg(dev, "releasing...\n");
@@ -291,6 +294,11 @@ static ssize_t tty_write(struct kiocb *iocb, struct iov_iter *from)
     panic("%s: END!\n", __func__);
 }
 
+ssize_t redirected_tty_write(struct kiocb *iocb, struct iov_iter *iter)
+{
+    panic("%s: END!\n", __func__);
+}
+
 /**
  * tty_poll -   check tty status
  * @filp: file being polled
@@ -395,6 +403,20 @@ static const struct file_operations tty_fops = {
     .release    = tty_release,
     .fasync     = tty_fasync,
     .show_fdinfo    = tty_show_fdinfo,
+};
+
+static const struct file_operations console_fops = {
+    .llseek     = no_llseek,
+    .read_iter  = tty_read,
+    .write_iter = redirected_tty_write,
+    .splice_read    = generic_file_splice_read,
+    .splice_write   = iter_file_splice_write,
+    .poll       = tty_poll,
+    .unlocked_ioctl = tty_ioctl,
+    .compat_ioctl   = tty_compat_ioctl,
+    .open       = tty_open,
+    .release    = tty_release,
+    .fasync     = tty_fasync,
 };
 
 static int tty_cdev_add(struct tty_driver *driver, dev_t dev,
@@ -665,3 +687,42 @@ static int __init tty_class_init(void)
     return 0;
 }
 postcore_initcall(tty_class_init);
+
+static struct device *consdev;
+
+/*
+ * Ok, now we can initialize the rest of the tty devices and can count
+ * on memory allocations, interrupts etc..
+ */
+int __init tty_init(void)
+{
+#if 0
+    tty_sysctl_init();
+#endif
+    cdev_init(&tty_cdev, &tty_fops);
+    if (cdev_add(&tty_cdev, MKDEV(TTYAUX_MAJOR, 0), 1) ||
+        register_chrdev_region(MKDEV(TTYAUX_MAJOR, 0), 1, "/dev/tty") < 0)
+        panic("Couldn't register /dev/tty driver\n");
+    device_create(tty_class, NULL, MKDEV(TTYAUX_MAJOR, 0), NULL, "tty");
+
+    cdev_init(&console_cdev, &console_fops);
+    if (cdev_add(&console_cdev, MKDEV(TTYAUX_MAJOR, 1), 1) ||
+        register_chrdev_region(MKDEV(TTYAUX_MAJOR, 1), 1, "/dev/console") < 0)
+        panic("Couldn't register /dev/console driver\n");
+#if 0
+    consdev = device_create_with_groups(tty_class, NULL,
+                                        MKDEV(TTYAUX_MAJOR, 1), NULL,
+                                        cons_dev_groups, "console");
+#else
+    consdev = device_create_with_groups(tty_class, NULL,
+                                        MKDEV(TTYAUX_MAJOR, 1), NULL,
+                                        NULL, "console");
+#endif
+    if (IS_ERR(consdev))
+        consdev = NULL;
+
+#if 0
+    vty_init(&console_fops);
+#endif
+    return 0;
+}

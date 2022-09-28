@@ -863,6 +863,7 @@ int __init early_init_dt_scan_chosen_stdout(void)
     const struct earlycon_id *match;
     const void *fdt = initial_boot_params;
 
+    printk("%s: 1\n", __func__);
     offset = fdt_path_offset(fdt, "/chosen");
     if (offset < 0)
         offset = fdt_path_offset(fdt, "/chosen@0");

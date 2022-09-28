@@ -5,7 +5,10 @@
 
 obj-y               += irqchip/
 obj-y               += base/ block/
+# tty/ comes before char/ so that the VT console is the boot-time
+# default.
 obj-y               += tty/
+obj-y               += char/
 obj-y               += pci/
 obj-y               += virtio/
 # iommu/ comes before gpu as gpu are using iommu controllers

@@ -110,4 +110,6 @@ speed_t tty_termios_baud_rate(struct ktermios *termios);
 
 void __init n_tty_init(void);
 
+int __init tty_init(void);
+
 #endif /* _LINUX_TTY_H */

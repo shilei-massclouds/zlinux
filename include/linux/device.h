@@ -446,4 +446,10 @@ struct device_link {
     bool supplier_preactivated; /* Owned by consumer probe. */
 };
 
+__printf(6, 7) struct device *
+device_create_with_groups(struct class *cls, struct device *parent,
+                          dev_t devt, void *drvdata,
+                          const struct attribute_group **groups,
+                          const char *fmt, ...);
+
 #endif /* _DEVICE_H_ */

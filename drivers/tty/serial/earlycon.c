@@ -120,7 +120,8 @@ int __init setup_earlycon(char *buf)
         return -EALREADY;
 
 again:
-    for (match = __earlycon_table; match < __earlycon_table_end; match++) {
+    for (match = __earlycon_table; match < __earlycon_table_end;
+         match++) {
         size_t len = strlen(match->name);
 
         if (strncmp(buf, match->name, len))

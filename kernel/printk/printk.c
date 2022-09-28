@@ -1818,6 +1818,7 @@ static int __init console_setup(char *str)
     idx = simple_strtoul(s, NULL, 10);
     *s = 0;
 
+    printk("%s: str(%s)\n", __func__, str);
     __add_preferred_console(buf, idx, options, brl_options, true);
     return 1;
 }
