@@ -43,6 +43,10 @@ __SYSCALL(__NR3264_fstatat, sys_newfstatat)
 #define __NR3264_fstat 80
 __SYSCALL(__NR3264_fstat, sys_newfstat)
 
+/* kernel/exit.c */
+#define __NR_exit_group 94
+__SYSCALL(__NR_exit_group, sys_exit_group)
+
 #define __NR_clock_gettime 113
 __SYSCALL(__NR_clock_gettime, sys_clock_gettime)
 

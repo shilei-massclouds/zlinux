@@ -44,7 +44,6 @@
 #include <linux/taskstats_kern.h>
 #include <linux/delayacct.h>
 #include <linux/cgroup.h>
-#include <linux/syscalls.h>
 #include <linux/signal.h>
 #include <linux/posix-timers.h>
 #include <linux/cn_proc.h>
@@ -72,10 +71,12 @@
 #include <linux/rethook.h>
 
 #include <linux/uaccess.h>
+#endif
+#include <linux/syscalls.h>
+#include <linux/rcuwait.h>
+
 #include <asm/unistd.h>
 #include <asm/mmu_context.h>
-#endif
-#include <linux/rcuwait.h>
 
 static void delayed_put_task_struct(struct rcu_head *rhp)
 {
@@ -165,4 +166,16 @@ do_group_exit(int exit_code)
 
     do_exit(exit_code);
     /* NOTREACHED */
+}
+
+/*
+ * this kills every thread in the thread group. Note that any externally
+ * wait4()-ing process will get the correct exit code - even if this
+ * thread is not the thread group leader.
+ */
+SYSCALL_DEFINE1(exit_group, int, error_code)
+{
+    do_group_exit((error_code & 0xff) << 8);
+    /* NOTREACHED */
+    return 0;
 }

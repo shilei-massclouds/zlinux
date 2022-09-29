@@ -268,4 +268,6 @@ unsigned long ksys_mmap_pgoff(unsigned long addr, unsigned long len,
 asmlinkage long
 sys_mprotect(unsigned long start, size_t len, unsigned long prot);
 
+asmlinkage long sys_exit_group(int error_code);
+
 #endif /* _LINUX_SYSCALLS_H */
