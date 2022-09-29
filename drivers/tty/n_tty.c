@@ -98,13 +98,13 @@ static inline size_t read_cnt(struct n_tty_data *ldata)
 
 static void process_echoes(struct tty_struct *tty)
 {
-#if 0
     struct n_tty_data *ldata = tty->disc_data;
     size_t echoed;
 
     if (ldata->echo_mark == ldata->echo_tail)
         return;
 
+#if 0
     mutex_lock(&ldata->output_lock);
     ldata->echo_commit = ldata->echo_mark;
     echoed = __process_echoes(tty);
@@ -284,6 +284,96 @@ static void n_tty_kick_worker(struct tty_struct *tty)
 }
 
 /**
+ * do_output_char   -   output one character
+ * @c: character (or partial unicode symbol)
+ * @tty: terminal device
+ * @space: space available in tty driver write buffer
+ *
+ * This is a helper function that handles one output character (including
+ * special characters like TAB, CR, LF, etc.), doing OPOST processing and
+ * putting the results in the tty driver's write buffer.
+ *
+ * Note that Linux currently ignores TABDLY, CRDLY, VTDLY, FFDLY and NLDLY.
+ * They simply aren't relevant in the world today. If you ever need them, add
+ * them here.
+ *
+ * Returns: the number of bytes of buffer space used or -1 if no space left.
+ *
+ * Locking: should be called under the %output_lock to protect the column state
+ * and space left in the buffer.
+ */
+static int do_output_char(unsigned char c, struct tty_struct *tty, int space)
+{
+    struct n_tty_data *ldata = tty->disc_data;
+    int spaces;
+
+    if (!space)
+        return -1;
+
+    panic("%s: END!\n", __func__);
+}
+
+/**
+ * process_output   -   output post processor
+ * @c: character (or partial unicode symbol)
+ * @tty: terminal device
+ *
+ * Output one character with OPOST processing.
+ *
+ * Returns: -1 when the output device is full and the character must be
+ * retried.
+ *
+ * Locking: %output_lock to protect column state and space left (also, this is
+ *called from n_tty_write() under the tty layer write lock).
+ */
+static int process_output(unsigned char c, struct tty_struct *tty)
+{
+    struct n_tty_data *ldata = tty->disc_data;
+    int space, retval;
+
+    mutex_lock(&ldata->output_lock);
+
+    space = tty_write_room(tty);
+    retval = do_output_char(c, tty, space);
+
+    mutex_unlock(&ldata->output_lock);
+    if (retval < 0)
+        return -1;
+    else
+        return 0;
+}
+
+/**
+ * process_output_block -   block post processor
+ * @tty: terminal device
+ * @buf: character buffer
+ * @nr: number of bytes to output
+ *
+ * Output a block of characters with OPOST processing.
+ *
+ * This path is used to speed up block console writes, among other things when
+ * processing blocks of output data. It handles only the simple cases normally
+ * found and helps to generate blocks of symbols for the console driver and
+ * thus improve performance.
+ *
+ * Returns: the number of characters output.
+ *
+ * Locking: %output_lock to protect column state and space left (also, this is
+ * called from n_tty_write() under the tty layer write lock).
+ */
+static ssize_t process_output_block(struct tty_struct *tty,
+                                    const unsigned char *buf,
+                                    unsigned int nr)
+{
+    struct n_tty_data *ldata = tty->disc_data;
+    int space;
+    int i;
+    const unsigned char *cp;
+
+    panic("%s: END!\n", __func__);
+}
+
+/**
  * n_tty_write      -   write function for tty
  * @tty: tty device
  * @file: file object
@@ -305,7 +395,71 @@ static void n_tty_kick_worker(struct tty_struct *tty)
 static ssize_t n_tty_write(struct tty_struct *tty, struct file *file,
                            const unsigned char *buf, size_t nr)
 {
+    const unsigned char *b = buf;
+    DEFINE_WAIT_FUNC(wait, woken_wake_function);
+    int c;
+    ssize_t retval = 0;
+
+    /* Job control check -- must be done at start (POSIX.1 7.1.1.4). */
+    if (L_TOSTOP(tty) &&
+        file->f_op->write_iter != redirected_tty_write) {
+        retval = tty_check_change(tty);
+        if (retval)
+            return retval;
+    }
+
+    down_read(&tty->termios_rwsem);
+
+    /* Write out any echoed characters that are still pending */
+    process_echoes(tty);
+
+    add_wait_queue(&tty->write_wait, &wait);
+    while (1) {
+        if (signal_pending(current)) {
+            retval = -ERESTARTSYS;
+            break;
+        }
+        if (tty_hung_up_p(file) || (tty->link && !tty->link->count)) {
+            retval = -EIO;
+            break;
+        }
+        if (O_OPOST(tty)) {
+            while (nr > 0) {
+                ssize_t num = process_output_block(tty, b, nr);
+                if (num < 0) {
+                    if (num == -EAGAIN)
+                        break;
+                    retval = num;
+                    goto break_out;
+                }
+                b += num;
+                nr -= num;
+                if (nr == 0)
+                    break;
+                c = *b;
+                if (process_output(c, tty) < 0)
+                    break;
+                b++; nr--;
+            }
+            if (tty->ops->flush_chars)
+                tty->ops->flush_chars(tty);
+
+            panic("%s: O_OPOST!\n", __func__);
+        } else {
+            panic("%s: else O_OPOST!\n", __func__);
+        }
+
+        panic("%s: 1!\n", __func__);
+    }
+
     panic("%s: END!\n", __func__);
+
+ break_out:
+    remove_wait_queue(&tty->write_wait, &wait);
+    if (nr && tty->fasync)
+        set_bit(TTY_DO_WRITE_WAKEUP, &tty->flags);
+    up_read(&tty->termios_rwsem);
+    return (b - buf) ? b - buf : retval;
 }
 
 static int n_tty_ioctl(struct tty_struct *tty, unsigned int cmd,

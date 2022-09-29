@@ -177,6 +177,72 @@ void tty_port_tty_set(struct tty_port *port, struct tty_struct *tty)
 EXPORT_SYMBOL(tty_port_tty_set);
 
 /**
+ * tty_port_raise_dtr_rts   -   Raise DTR/RTS
+ * @port: tty port
+ *
+ * Wrapper for the DTR/RTS raise logic. For the moment this is used to hide
+ * some internal details. This will eventually become entirely internal to the
+ * tty port.
+ */
+void tty_port_raise_dtr_rts(struct tty_port *port)
+{
+    if (port->ops->dtr_rts)
+        port->ops->dtr_rts(port, 1);
+}
+EXPORT_SYMBOL(tty_port_raise_dtr_rts);
+
+/**
+ * tty_port_block_til_ready -   Waiting logic for tty open
+ * @port: the tty port being opened
+ * @tty: the tty device being bound
+ * @filp: the file pointer of the opener or %NULL
+ *
+ * Implement the core POSIX/SuS tty behaviour when opening a tty device.
+ * Handles:
+ *
+ *  - hangup (both before and during)
+ *  - non blocking open
+ *  - rts/dtr/dcd
+ *  - signals
+ *  - port flags and counts
+ *
+ * The passed @port must implement the @port->ops->carrier_raised method if it
+ * can do carrier detect and the @port->ops->dtr_rts method if it supports
+ * software management of these lines. Note that the dtr/rts raise is done each
+ * iteration as a hangup may have previously dropped them while we wait.
+ *
+ * Caller holds tty lock.
+ *
+ * Note: May drop and reacquire tty lock when blocking, so @tty and @port may
+ * have changed state (eg., may have been hung up).
+ */
+int tty_port_block_til_ready(struct tty_port *port,
+                             struct tty_struct *tty,
+                             struct file *filp)
+{
+    int do_clocal = 0, retval;
+    unsigned long flags;
+    DEFINE_WAIT(wait);
+
+    /* if non-blocking mode is set we can pass directly to open unless
+     * the port has just hung up or is in another error state.
+     */
+    if (tty_io_error(tty)) {
+        tty_port_set_active(port, 1);
+        return 0;
+    }
+    if (filp == NULL || (filp->f_flags & O_NONBLOCK)) {
+        /* Indicate we are open */
+        if (C_BAUD(tty))
+            tty_port_raise_dtr_rts(port);
+        tty_port_set_active(port, 1);
+        return 0;
+    }
+
+    panic("%s: END!\n", __func__);
+}
+
+/**
  * tty_port_open - generic tty->ops->open handler
  * @port: tty_port of the device
  * @tty: tty to be opened
@@ -224,8 +290,7 @@ int tty_port_open(struct tty_port *port, struct tty_struct *tty,
         tty_port_set_initialized(port, 1);
     }
     mutex_unlock(&port->mutex);
-
-    panic("%s: END!\n", __func__);
+    return tty_port_block_til_ready(port, tty, filp);
 }
 
 /**

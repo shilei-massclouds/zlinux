@@ -540,5 +540,26 @@ int __sched mutex_lock_interruptible(struct mutex *lock)
 
     return __mutex_lock_interruptible_slowpath(lock);
 }
-
 EXPORT_SYMBOL(mutex_lock_interruptible);
+
+/**
+ * mutex_trylock - try to acquire the mutex, without waiting
+ * @lock: the mutex to be acquired
+ *
+ * Try to acquire the mutex atomically. Returns 1 if the mutex
+ * has been acquired successfully, and 0 on contention.
+ *
+ * NOTE: this function follows the spin_trylock() convention, so
+ * it is negated from the down_trylock() return values! Be careful
+ * about this when converting semaphore users to mutexes.
+ *
+ * This function must not be used in interrupt context. The
+ * mutex must be released by the same task that acquired it.
+ */
+int __sched mutex_trylock(struct mutex *lock)
+{
+    MUTEX_WARN_ON(lock->magic != lock);
+
+    return __mutex_trylock(lock);
+}
+EXPORT_SYMBOL(mutex_trylock);

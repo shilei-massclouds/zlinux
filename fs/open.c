@@ -76,7 +76,6 @@ static int do_dentry_open(struct file *f,
     }
 
     if (f->f_mode & FMODE_WRITE && !special_file(inode->i_mode)) {
-#if 0
         error = get_write_access(inode);
         if (unlikely(error))
             goto cleanup_file;
@@ -86,8 +85,6 @@ static int do_dentry_open(struct file *f,
             goto cleanup_file;
         }
         f->f_mode |= FMODE_WRITER;
-#endif
-        panic("%s: FMODE_WRITE!\n", __func__);
     }
 
     /* POSIX.1-2008/SUSv4 Section XSI 2.9.7 */
@@ -140,7 +137,16 @@ static int do_dentry_open(struct file *f,
      * cache for this file before processing writes.
      */
     if (f->f_mode & FMODE_WRITE) {
-        panic("%s: FMODE_WRITE!\n", __func__);
+        /*
+         * Paired with smp_mb() in collapse_file() to ensure nr_thps
+         * is up to date and the update to i_writecount by
+         * get_write_access() is visible. Ensures subsequent insertion
+         * of THPs into the page cache will fail.
+         */
+        smp_mb();
+        if (filemap_nr_thps(inode->i_mapping)) {
+            panic("%s: 0!\n", __func__);
+        }
     }
 
     return 0;

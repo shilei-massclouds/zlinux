@@ -24,3 +24,25 @@ struct tty_struct *get_current_tty(void)
     return tty;
 }
 EXPORT_SYMBOL_GPL(get_current_tty);
+
+/**
+ *  __tty_check_change  -   check for POSIX terminal changes
+ *  @tty: tty to check
+ *  @sig: signal to send
+ *
+ *  If we try to write to, or set the state of, a terminal and we're
+ *  not in the foreground, send a SIGTTOU.  If the signal is blocked or
+ *  ignored, go ahead and perform the operation.  (POSIX 7.2)
+ *
+ *  Locking: ctrl.lock
+ */
+int __tty_check_change(struct tty_struct *tty, int sig)
+{
+    panic("%s: END!\n", __func__);
+}
+
+int tty_check_change(struct tty_struct *tty)
+{
+    return __tty_check_change(tty, SIGTTOU);
+}
+EXPORT_SYMBOL(tty_check_change);

@@ -340,3 +340,32 @@ void tty_ldisc_deref(struct tty_ldisc *ld)
     ldsem_up_read(&ld->tty->ldisc_sem);
 }
 EXPORT_SYMBOL_GPL(tty_ldisc_deref);
+
+/**
+ * tty_ldisc_ref_wait   -   wait for the tty ldisc
+ * @tty: tty device
+ *
+ * Dereference the line discipline for the terminal and take a reference to it.
+ * If the line discipline is in flux then wait patiently until it changes.
+ *
+ * Returns: %NULL if the tty has been hungup and not re-opened with a new file
+ * descriptor, otherwise valid ldisc reference
+ *
+ * Note 1: Must not be called from an IRQ/timer context. The caller must also
+ * be careful not to hold other locks that will deadlock against a discipline
+ * change, such as an existing ldisc reference (which we check for).
+ *
+ * Note 2: a file_operations routine (read/poll/write) should use this function
+ * to wait for any ldisc lifetime events to finish.
+ */
+struct tty_ldisc *tty_ldisc_ref_wait(struct tty_struct *tty)
+{
+    struct tty_ldisc *ld;
+
+    ldsem_down_read(&tty->ldisc_sem, MAX_SCHEDULE_TIMEOUT);
+    ld = tty->ldisc;
+    if (!ld)
+        ldsem_up_read(&tty->ldisc_sem);
+    return ld;
+}
+EXPORT_SYMBOL_GPL(tty_ldisc_ref_wait);

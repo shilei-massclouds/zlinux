@@ -37,4 +37,9 @@ const char *tty_driver_name(const struct tty_struct *tty);
 
 speed_t tty_termios_input_baud_rate(struct ktermios *termios);
 
+ssize_t redirected_tty_write(struct kiocb *, struct iov_iter *);
+
+int __tty_check_change(struct tty_struct *tty, int sig);
+int tty_check_change(struct tty_struct *tty);
+
 #endif /* _TTY_INTERNAL_H */

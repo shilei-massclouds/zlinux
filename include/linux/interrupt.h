@@ -277,4 +277,8 @@ extern int irq_can_set_affinity(unsigned int irq);
 #define hard_irq_disable()  do { } while(0)
 #endif
 
+extern void disable_irq_nosync(unsigned int irq);
+
+extern void enable_irq(unsigned int irq);
+
 #endif /* _LINUX_INTERRUPT_H */

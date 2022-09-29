@@ -88,4 +88,6 @@ extern void mutex_lock_io(struct mutex *lock);
 
 static inline void mutex_destroy(struct mutex *lock) {}
 
+extern int mutex_trylock(struct mutex *lock);
+
 #endif /* __LINUX_MUTEX_H */

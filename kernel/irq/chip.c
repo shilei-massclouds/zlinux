@@ -520,3 +520,44 @@ void irq_percpu_disable(struct irq_desc *desc, unsigned int cpu)
         desc->irq_data.chip->irq_mask(&desc->irq_data);
     cpumask_clear_cpu(cpu, desc->percpu_enabled);
 }
+
+static void __irq_disable(struct irq_desc *desc, bool mask)
+{
+    if (irqd_irq_disabled(&desc->irq_data)) {
+        if (mask)
+            mask_irq(desc);
+    } else {
+        irq_state_set_disabled(desc);
+        if (desc->irq_data.chip->irq_disable) {
+            desc->irq_data.chip->irq_disable(&desc->irq_data);
+            irq_state_set_masked(desc);
+        } else if (mask) {
+            mask_irq(desc);
+        }
+    }
+}
+
+/**
+ * irq_disable - Mark interrupt disabled
+ * @desc:   irq descriptor which should be disabled
+ *
+ * If the chip does not implement the irq_disable callback, we
+ * use a lazy disable approach. That means we mark the interrupt
+ * disabled, but leave the hardware unmasked. That's an
+ * optimization because we avoid the hardware access for the
+ * common case where no interrupt happens after we marked it
+ * disabled. If an interrupt happens, then the interrupt flow
+ * handler masks the line at the hardware level and marks it
+ * pending.
+ *
+ * If the interrupt chip does not implement the irq_disable callback,
+ * a driver can disable the lazy approach for a particular irq line by
+ * calling 'irq_set_status_flags(irq, IRQ_DISABLE_UNLAZY)'. This can
+ * be used for devices which cannot disable the interrupt at the
+ * device level under certain circumstances and have to use
+ * disable_irq[_nosync] instead.
+ */
+void irq_disable(struct irq_desc *desc)
+{
+    __irq_disable(desc, irq_settings_disable_unlazy(desc));
+}

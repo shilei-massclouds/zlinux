@@ -240,6 +240,30 @@ SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf,
     return ksys_read(fd, buf, count);
 }
 
+static ssize_t new_sync_write(struct file *filp,
+                              const char __user *buf,
+                              size_t len,
+                              loff_t *ppos)
+{
+    struct iovec iov = {
+        .iov_base = (void __user *)buf,
+        .iov_len = len
+    };
+    struct kiocb kiocb;
+    struct iov_iter iter;
+    ssize_t ret;
+
+    init_sync_kiocb(&kiocb, filp);
+    kiocb.ki_pos = (ppos ? *ppos : 0);
+    iov_iter_init(&iter, WRITE, &iov, 1, len);
+
+    ret = call_write_iter(filp, &kiocb, &iter);
+    BUG_ON(ret == -EIOCBQUEUED);
+    if (ret > 0 && ppos)
+        *ppos = kiocb.ki_pos;
+    return ret;
+}
+
 ssize_t vfs_write(struct file *file, const char __user *buf,
                   size_t count, loff_t *pos)
 {
@@ -251,6 +275,19 @@ ssize_t vfs_write(struct file *file, const char __user *buf,
         return -EINVAL;
     if (unlikely(!access_ok(buf, count)))
         return -EFAULT;
+
+    ret = rw_verify_area(WRITE, file, pos, count);
+    if (ret)
+        return ret;
+    if (count > MAX_RW_COUNT)
+        count =  MAX_RW_COUNT;
+    file_start_write(file);
+    if (file->f_op->write)
+        ret = file->f_op->write(file, buf, count, pos);
+    else if (file->f_op->write_iter)
+        ret = new_sync_write(file, buf, count, pos);
+    else
+        ret = -EINVAL;
 
     panic("%s: END!\n", __func__);
 }

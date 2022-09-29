@@ -94,3 +94,21 @@ void tty_unthrottle(struct tty_struct *tty)
     up_write(&tty->termios_rwsem);
 }
 EXPORT_SYMBOL(tty_unthrottle);
+
+/**
+ *  tty_write_room      -   write queue space
+ *  @tty: terminal
+ *
+ *  Return the number of bytes that can be queued to this device
+ *  at the present time. The result should be treated as a guarantee
+ *  and the driver cannot offer a value it later shrinks by more than
+ *  the number of bytes written. If no method is provided 2K is always
+ *  returned and data may be lost as there will be no flow control.
+ */
+unsigned int tty_write_room(struct tty_struct *tty)
+{
+    if (tty->ops->write_room)
+        return tty->ops->write_room(tty);
+    return 2048;
+}
+EXPORT_SYMBOL(tty_write_room);

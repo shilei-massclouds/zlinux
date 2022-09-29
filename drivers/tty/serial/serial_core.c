@@ -238,6 +238,15 @@ static void uart_stop(struct tty_struct *tty)
     panic("%s: END!\n", __func__);
 }
 
+static void __uart_start(struct tty_struct *tty)
+{
+    struct uart_state *state = tty->driver_data;
+    struct uart_port *port = state->uart_port;
+
+    if (port && !uart_tx_stopped(port))
+        port->ops->start_tx(port);
+}
+
 static void uart_start(struct tty_struct *tty)
 {
     panic("%s: END!\n", __func__);
@@ -338,22 +347,9 @@ static int uart_carrier_raised(struct tty_port *port)
     panic("%s: END!\n", __func__);
 }
 
-static void uart_dtr_rts(struct tty_port *port, int raise)
-{
-    panic("%s: END!\n", __func__);
-}
-
-static inline
-struct uart_port *uart_port_check(struct uart_state *state)
-{
-    return state->uart_port;
-}
-
-#define uart_set_mctrl(port, set)   uart_update_mctrl(port, set, 0)
-#define uart_clear_mctrl(port, clear)   uart_update_mctrl(port, 0, clear)
-
 static void
-uart_update_mctrl(struct uart_port *port, unsigned int set, unsigned int clear)
+uart_update_mctrl(struct uart_port *port, unsigned int set,
+                  unsigned int clear)
 {
     unsigned long flags;
     unsigned int old;
@@ -371,6 +367,11 @@ uart_update_mctrl(struct uart_port *port, unsigned int set, unsigned int clear)
     spin_unlock_irqrestore(&port->lock, flags);
 }
 
+#define uart_set_mctrl(port, set) \
+    uart_update_mctrl(port, set, 0)
+#define uart_clear_mctrl(port, clear) \
+    uart_update_mctrl(port, 0, clear)
+
 static void uart_port_dtr_rts(struct uart_port *uport, int raise)
 {
     if (raise)
@@ -379,11 +380,70 @@ static void uart_port_dtr_rts(struct uart_port *uport, int raise)
         uart_clear_mctrl(uport, TIOCM_DTR | TIOCM_RTS);
 }
 
+static void uart_dtr_rts(struct tty_port *port, int raise)
+{
+    struct uart_state *state =
+        container_of(port, struct uart_state, port);
+    struct uart_port *uport;
+
+    uport = uart_port_ref(state);
+    if (!uport)
+        return;
+    uart_port_dtr_rts(uport, raise);
+    uart_port_deref(uport);
+}
+
+static inline
+struct uart_port *uart_port_check(struct uart_state *state)
+{
+    return state->uart_port;
+}
+
 /* Caller holds port mutex */
-static void uart_change_speed(struct tty_struct *tty, struct uart_state *state,
+static void uart_change_speed(struct tty_struct *tty,
+                              struct uart_state *state,
                               struct ktermios *old_termios)
 {
-    panic("%s: END!\n", __func__);
+    struct uart_port *uport = uart_port_check(state);
+    struct ktermios *termios;
+    int hw_stopped;
+
+    /*
+     * If we have no tty, termios, or the port does not exist,
+     * then we can't set the parameters for this port.
+     */
+    if (!tty || uport->type == PORT_UNKNOWN)
+        return;
+
+    termios = &tty->termios;
+    uport->ops->set_termios(uport, termios, old_termios);
+
+    /*
+     * Set modem status enables based on termios cflag
+     */
+    spin_lock_irq(&uport->lock);
+    if (termios->c_cflag & CRTSCTS)
+        uport->status |= UPSTAT_CTS_ENABLE;
+    else
+        uport->status &= ~UPSTAT_CTS_ENABLE;
+
+    if (termios->c_cflag & CLOCAL)
+        uport->status &= ~UPSTAT_DCD_ENABLE;
+    else
+        uport->status |= UPSTAT_DCD_ENABLE;
+
+    /* reset sw-assisted CTS flow control based on (possibly) new mode */
+    hw_stopped = uport->hw_stopped;
+    uport->hw_stopped = uart_softcts_mode(uport) &&
+        !(uport->ops->get_mctrl(uport) & TIOCM_CTS);
+    if (uport->hw_stopped) {
+        if (!hw_stopped)
+            uport->ops->stop_tx(uport);
+    } else {
+        if (hw_stopped)
+            __uart_start(tty);
+    }
+    spin_unlock_irq(&uport->lock);
 }
 
 /*

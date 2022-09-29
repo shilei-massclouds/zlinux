@@ -147,4 +147,15 @@ static inline unsigned char iov_iter_rw(const struct iov_iter *i)
     return i->data_source ? WRITE : READ;
 }
 
+size_t _copy_from_iter(void *addr, size_t bytes, struct iov_iter *i);
+
+static __always_inline __must_check
+size_t copy_from_iter(void *addr, size_t bytes, struct iov_iter *i)
+{
+    if (unlikely(!check_copy_size(addr, bytes, false)))
+        return 0;
+    else
+        return _copy_from_iter(addr, bytes, i);
+}
+
 #endif /* __LINUX_UIO_H */

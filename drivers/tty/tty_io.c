@@ -74,7 +74,11 @@
 
 #include <linux/kmod.h>
 #include <linux/nsproxy.h>
+#include <linux/uio.h>
 #include "tty.h"
+
+static DEFINE_SPINLOCK(redirect_lock);
+static struct file *redirect;
 
 static const struct file_operations tty_fops;
 
@@ -97,6 +101,11 @@ static void tty_device_create_release(struct device *dev)
 {
     dev_dbg(dev, "releasing...\n");
     kfree(dev);
+}
+
+static inline struct tty_struct *file_tty(struct file *file)
+{
+    return ((struct tty_file_private *)file->private_data)->tty;
 }
 
 dev_t tty_devnum(struct tty_struct *tty)
@@ -292,6 +301,149 @@ static ssize_t tty_read(struct kiocb *iocb, struct iov_iter *to)
     panic("%s: END!\n", __func__);
 }
 
+static int tty_paranoia_check(struct tty_struct *tty,
+                              struct inode *inode,
+                              const char *routine)
+{
+    return 0;
+}
+
+static ssize_t hung_up_tty_read(struct kiocb *iocb,
+                                struct iov_iter *to)
+{
+    return 0;
+}
+
+static ssize_t hung_up_tty_write(struct kiocb *iocb,
+                                 struct iov_iter *from)
+{
+    return -EIO;
+}
+
+static int tty_write_lock(struct tty_struct *tty, int ndelay)
+{
+    if (!mutex_trylock(&tty->atomic_write_lock)) {
+        if (ndelay)
+            return -EAGAIN;
+        if (mutex_lock_interruptible(&tty->atomic_write_lock))
+            return -ERESTARTSYS;
+    }
+    return 0;
+}
+
+static void tty_write_unlock(struct tty_struct *tty)
+{
+    mutex_unlock(&tty->atomic_write_lock);
+    wake_up_interruptible_poll(&tty->write_wait, EPOLLOUT);
+}
+
+/*
+ * Split writes up in sane blocksizes to avoid
+ * denial-of-service type attacks
+ */
+static inline
+ssize_t do_tty_write(ssize_t (*write)(struct tty_struct *,
+                                      struct file *,
+                                      const unsigned char *, size_t),
+                     struct tty_struct *tty,
+                     struct file *file,
+                     struct iov_iter *from)
+{
+    size_t count = iov_iter_count(from);
+    ssize_t ret, written = 0;
+    unsigned int chunk;
+
+    ret = tty_write_lock(tty, file->f_flags & O_NDELAY);
+    if (ret < 0)
+        return ret;
+
+    /*
+     * We chunk up writes into a temporary buffer. This
+     * simplifies low-level drivers immensely, since they
+     * don't have locking issues and user mode accesses.
+     *
+     * But if TTY_NO_WRITE_SPLIT is set, we should use a
+     * big chunk-size..
+     *
+     * The default chunk-size is 2kB, because the NTTY
+     * layer has problems with bigger chunks. It will
+     * claim to be able to handle more characters than
+     * it actually does.
+     */
+    chunk = 2048;
+    if (test_bit(TTY_NO_WRITE_SPLIT, &tty->flags))
+        chunk = 65536;
+    if (count < chunk)
+        chunk = count;
+
+    /* write_buf/write_cnt is protected by the atomic_write_lock mutex */
+    if (tty->write_cnt < chunk) {
+        unsigned char *buf_chunk;
+
+        if (chunk < 1024)
+            chunk = 1024;
+
+        buf_chunk = kvmalloc(chunk, GFP_KERNEL | __GFP_RETRY_MAYFAIL);
+        if (!buf_chunk) {
+            ret = -ENOMEM;
+            goto out;
+        }
+        kvfree(tty->write_buf);
+        tty->write_cnt = chunk;
+        tty->write_buf = buf_chunk;
+    }
+
+    /* Do the write .. */
+    for (;;) {
+        size_t size = count;
+
+        if (size > chunk)
+            size = chunk;
+
+        ret = -EFAULT;
+        if (copy_from_iter(tty->write_buf, size, from) != size)
+            break;
+
+        ret = write(tty, file, tty->write_buf, size);
+        if (ret <= 0)
+            break;
+
+        panic("%s: 0!\n", __func__);
+    }
+
+    panic("%s: END!\n", __func__);
+
+ out:
+    tty_write_unlock(tty);
+    return ret;
+}
+
+static ssize_t file_tty_write(struct file *file,
+                              struct kiocb *iocb,
+                              struct iov_iter *from)
+{
+    struct tty_struct *tty = file_tty(file);
+    struct tty_ldisc *ld;
+    ssize_t ret;
+
+    if (tty_paranoia_check(tty, file_inode(file), "tty_write"))
+        return -EIO;
+    if (!tty || !tty->ops->write || tty_io_error(tty))
+        return -EIO;
+    /* Short term debug to catch buggy drivers */
+    if (tty->ops->write_room == NULL)
+        tty_err(tty, "missing write_room method\n");
+    ld = tty_ldisc_ref_wait(tty);
+    if (!ld)
+        return hung_up_tty_write(iocb, from);
+    if (!ld->ops->write)
+        ret = -EIO;
+    else
+        ret = do_tty_write(ld->ops->write, tty, file, from);
+    tty_ldisc_deref(ld);
+    return ret;
+}
+
 /**
  * tty_write        -   write method for tty device file
  * @iocb: kernel I/O control block
@@ -308,12 +460,30 @@ static ssize_t tty_read(struct kiocb *iocb, struct iov_iter *to)
  */
 static ssize_t tty_write(struct kiocb *iocb, struct iov_iter *from)
 {
-    panic("%s: END!\n", __func__);
+    return file_tty_write(iocb->ki_filp, iocb, from);
 }
 
 ssize_t redirected_tty_write(struct kiocb *iocb, struct iov_iter *iter)
 {
-    panic("%s: END!\n", __func__);
+    struct file *p = NULL;
+
+    spin_lock(&redirect_lock);
+    if (redirect)
+        p = get_file(redirect);
+    spin_unlock(&redirect_lock);
+
+    /*
+     * We know the redirected tty is just another tty, we can
+     * call file_tty_write() directly with that file pointer.
+     */
+    if (p) {
+        ssize_t res;
+
+        res = file_tty_write(p, iocb, iter);
+        fput(p);
+        return res;
+    }
+    return tty_write(iocb, iter);
 }
 
 /**
@@ -888,7 +1058,31 @@ int tty_release(struct inode *inode, struct file *filp)
     panic("%s: END!\n", __func__);
 }
 
-#if 0
+/* No kernel lock held - none needed ;) */
+static __poll_t hung_up_tty_poll(struct file *filp, poll_table *wait)
+{
+    return EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLHUP | EPOLLRDNORM |
+        EPOLLWRNORM;
+}
+
+static long hung_up_tty_ioctl(struct file *file, unsigned int cmd,
+                              unsigned long arg)
+{
+    return cmd == TIOCSPGRP ? -ENOTTY : -EIO;
+}
+
+static long
+hung_up_tty_compat_ioctl(struct file *file, unsigned int cmd,
+                         unsigned long arg)
+{
+    return cmd == TIOCSPGRP ? -ENOTTY : -EIO;
+}
+
+static int hung_up_tty_fasync(int fd, struct file *file, int on)
+{
+    return -ENOTTY;
+}
+
 static const struct file_operations hung_up_tty_fops = {
     .llseek     = no_llseek,
     .read_iter  = hung_up_tty_read,
@@ -911,7 +1105,6 @@ int tty_hung_up_p(struct file *filp)
     return (filp && filp->f_op == &hung_up_tty_fops);
 }
 EXPORT_SYMBOL(tty_hung_up_p);
-#endif
 
 /**
  * tty_open -   open a tty device

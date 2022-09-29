@@ -46,9 +46,141 @@ static struct uart_driver serial8250_reg;
 static const struct uart_ops *base_ops;
 static struct uart_ops univ8250_port_ops;
 
-static int univ8250_setup_irq(struct uart_8250_port *up)
+struct irq_info {
+    struct          hlist_node node;
+    int             irq;
+    spinlock_t      lock;   /* Protects list not the hash */
+    struct list_head    *head;
+};
+
+#define NR_IRQ_HASH     32  /* Can be adjusted later */
+static struct hlist_head irq_lists[NR_IRQ_HASH];
+static DEFINE_MUTEX(hash_mutex);    /* Used to walk the hash */
+
+/*
+ * To support ISA shared interrupts, we need to have one interrupt
+ * handler that ensures that the IRQ line has been deasserted
+ * before returning.  Failing to do this will result in the IRQ
+ * line being stuck active, and, since ISA irqs are edge triggered,
+ * no more IRQs will be seen.
+ */
+static void serial_do_unlink(struct irq_info *i,
+                             struct uart_8250_port *up)
+{
+    spin_lock_irq(&i->lock);
+
+    if (!list_empty(i->head)) {
+        if (i->head == &up->list)
+            i->head = i->head->next;
+        list_del(&up->list);
+    } else {
+        BUG_ON(i->head != &up->list);
+        i->head = NULL;
+    }
+    spin_unlock_irq(&i->lock);
+    /* List empty so throw away the hash node */
+    if (i->head == NULL) {
+        hlist_del(&i->node);
+        kfree(i);
+    }
+}
+
+/*
+ * This is the serial driver's interrupt routine.
+ *
+ * Arjan thinks the old way was overly complex, so it got simplified.
+ * Alan disagrees, saying that need the complexity to handle the weird
+ * nature of ISA shared interrupts.  (This is a special exception.)
+ *
+ * In order to handle ISA shared interrupts properly, we need to check
+ * that all ports have been serviced, and therefore the ISA interrupt
+ * line has been de-asserted.
+ *
+ * This means we need to loop through all ports. checking that they
+ * don't have an interrupt pending.
+ */
+static irqreturn_t serial8250_interrupt(int irq, void *dev_id)
 {
     panic("%s: END!\n", __func__);
+}
+
+static int serial_link_irq_chain(struct uart_8250_port *up)
+{
+    struct hlist_head *h;
+    struct irq_info *i;
+    int ret;
+
+    mutex_lock(&hash_mutex);
+
+    h = &irq_lists[up->port.irq % NR_IRQ_HASH];
+
+    hlist_for_each_entry(i, h, node)
+        if (i->irq == up->port.irq)
+            break;
+
+    if (i == NULL) {
+        i = kzalloc(sizeof(struct irq_info), GFP_KERNEL);
+        if (i == NULL) {
+            mutex_unlock(&hash_mutex);
+            return -ENOMEM;
+        }
+        spin_lock_init(&i->lock);
+        i->irq = up->port.irq;
+        hlist_add_head(&i->node, h);
+    }
+    mutex_unlock(&hash_mutex);
+
+    spin_lock_irq(&i->lock);
+
+    if (i->head) {
+        list_add(&up->list, i->head);
+        spin_unlock_irq(&i->lock);
+
+        ret = 0;
+    } else {
+        INIT_LIST_HEAD(&up->list);
+        i->head = &up->list;
+        spin_unlock_irq(&i->lock);
+        ret = request_irq(up->port.irq, serial8250_interrupt,
+                          up->port.irqflags, up->port.name, i);
+        if (ret < 0)
+            serial_do_unlink(i, up);
+    }
+
+    return ret;
+}
+
+static int univ8250_setup_irq(struct uart_8250_port *up)
+{
+    struct uart_port *port = &up->port;
+    int retval = 0;
+
+    /*
+     * The above check will only give an accurate result the first time
+     * the port is opened so this value needs to be preserved.
+     */
+    if (up->bugs & UART_BUG_THRE) {
+#if 0
+        pr_debug("%s - using backup timer\n", port->name);
+
+        up->timer.function = serial8250_backup_timeout;
+        mod_timer(&up->timer,
+                  jiffies + uart_poll_timeout(port) + HZ / 5);
+#endif
+        panic("%s: UART_BUG_THRE!\n", __func__);
+    }
+
+    /*
+     * If the "interrupt" for this port doesn't correspond with any
+     * hardware interrupt, we use a timer-based system.  The original
+     * driver used to do this with IRQ0.
+     */
+    if (!port->irq)
+        mod_timer(&up->timer, jiffies + uart_poll_timeout(port));
+    else
+        retval = serial_link_irq_chain(up);
+
+    return retval;
 }
 
 static void univ8250_release_irq(struct uart_8250_port *up)

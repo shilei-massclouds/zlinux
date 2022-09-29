@@ -512,6 +512,57 @@ static void serial8250_clear_fifos(struct uart_8250_port *p)
     }
 }
 
+/*
+ *  Wait for transmitter & holding register to empty
+ */
+static void wait_for_xmitr(struct uart_8250_port *up, int bits)
+{
+    unsigned int status, tmout = 10000;
+
+    /* Wait up to 10ms for the character(s) to be sent. */
+    for (;;) {
+        status = serial_in(up, UART_LSR);
+
+        up->lsr_saved_flags |= status & LSR_SAVE_FLAGS;
+
+        if ((status & bits) == bits)
+            break;
+        if (--tmout == 0)
+            break;
+        udelay(1);
+        touch_nmi_watchdog();
+    }
+
+    /* Wait up to 1s for flow control if necessary */
+    if (up->port.flags & UPF_CONS_FLOW) {
+        for (tmout = 1000000; tmout; tmout--) {
+            unsigned int msr = serial_in(up, UART_MSR);
+            up->msr_saved_flags |= msr & MSR_SAVE_FLAGS;
+            if (msr & UART_MSR_CTS)
+                break;
+            udelay(1);
+            touch_nmi_watchdog();
+        }
+    }
+}
+
+static void
+serial_port_out_sync(struct uart_port *p, int offset, int value)
+{
+    switch (p->iotype) {
+    case UPIO_MEM:
+    case UPIO_MEM16:
+    case UPIO_MEM32:
+    case UPIO_MEM32BE:
+    case UPIO_AU:
+        p->serial_out(p, offset, value);
+        p->serial_in(p, UART_LCR);  /* safe, no side-effects */
+        break;
+    default:
+        p->serial_out(p, offset, value);
+    }
+}
+
 int serial8250_do_startup(struct uart_port *port)
 {
     struct uart_8250_port *up = up_to_u8250p(port);
@@ -599,11 +650,152 @@ int serial8250_do_startup(struct uart_port *port)
         up->port.irqflags |= IRQF_SHARED;
 
     if (port->irq && !(up->port.flags & UPF_NO_THRE_TEST)) {
-        panic("%s: UPF_NO_THRE_TEST!\n", __func__);
+        unsigned char iir1;
+
+        if (port->irqflags & IRQF_SHARED)
+            disable_irq_nosync(port->irq);
+
+        /*
+         * Test for UARTs that do not reassert THRE when the
+         * transmitter is idle and the interrupt has already
+         * been cleared.  Real 16550s should always reassert
+         * this interrupt whenever the transmitter is idle and
+         * the interrupt is enabled.  Delays are necessary to
+         * allow register changes to become visible.
+         */
+        spin_lock_irqsave(&port->lock, flags);
+
+        wait_for_xmitr(up, UART_LSR_THRE);
+        serial_port_out_sync(port, UART_IER, UART_IER_THRI);
+        udelay(1); /* allow THRE to set */
+        iir1 = serial_port_in(port, UART_IIR);
+        serial_port_out(port, UART_IER, 0);
+        serial_port_out_sync(port, UART_IER, UART_IER_THRI);
+        udelay(1); /* allow a working UART time to re-assert THRE */
+        iir = serial_port_in(port, UART_IIR);
+        serial_port_out(port, UART_IER, 0);
+
+        spin_unlock_irqrestore(&port->lock, flags);
+
+        if (port->irqflags & IRQF_SHARED)
+            enable_irq(port->irq);
+
+        /*
+         * If the interrupt is not reasserted, or we otherwise
+         * don't trust the iir, setup a timer to kick the UART
+         * on a regular basis.
+         */
+        if ((!(iir1 & UART_IIR_NO_INT) && (iir & UART_IIR_NO_INT)) ||
+            up->port.flags & UPF_BUG_THRE) {
+            up->bugs |= UART_BUG_THRE;
+        }
     }
 
-    panic("%s: END!\n", __func__);
+    retval = up->ops->setup_irq(up);
+    if (retval)
+        goto out;
 
+    /*
+     * Now, initialize the UART
+     */
+    serial_port_out(port, UART_LCR, UART_LCR_WLEN8);
+
+    spin_lock_irqsave(&port->lock, flags);
+    if (up->port.flags & UPF_FOURPORT) {
+        if (!up->port.irq)
+            up->port.mctrl |= TIOCM_OUT1;
+    } else
+        /*
+         * Most PC uarts need OUT2 raised to enable interrupts.
+         */
+        if (port->irq)
+            up->port.mctrl |= TIOCM_OUT2;
+
+    serial8250_set_mctrl(port, port->mctrl);
+
+    /*
+     * Serial over Lan (SoL) hack:
+     * Intel 8257x Gigabit ethernet chips have a 16550 emulation, to be
+     * used for Serial Over Lan.  Those chips take a longer time than a
+     * normal serial device to signalize that a transmission data was
+     * queued. Due to that, the above test generally fails. One solution
+     * would be to delay the reading of iir. However, this is not
+     * reliable, since the timeout is variable. So, let's just don't
+     * test if we receive TX irq.  This way, we'll never enable
+     * UART_BUG_TXEN.
+     */
+    if (up->port.quirks & UPQ_NO_TXEN_TEST)
+        goto dont_test_tx_en;
+
+    /*
+     * Do a quick test to see if we receive an interrupt when we enable
+     * the TX irq.
+     */
+    serial_port_out(port, UART_IER, UART_IER_THRI);
+    lsr = serial_port_in(port, UART_LSR);
+    iir = serial_port_in(port, UART_IIR);
+    serial_port_out(port, UART_IER, 0);
+
+    if (lsr & UART_LSR_TEMT && iir & UART_IIR_NO_INT) {
+        if (!(up->bugs & UART_BUG_TXEN)) {
+            up->bugs |= UART_BUG_TXEN;
+            dev_dbg(port->dev, "enabling bad tx status workarounds\n");
+        }
+    } else {
+        up->bugs &= ~UART_BUG_TXEN;
+    }
+
+ dont_test_tx_en:
+    spin_unlock_irqrestore(&port->lock, flags);
+
+    /*
+     * Clear the interrupt registers again for luck, and clear the
+     * saved flags to avoid getting false values from polling
+     * routines or the previous session.
+     */
+    serial_port_in(port, UART_LSR);
+    serial_port_in(port, UART_RX);
+    serial_port_in(port, UART_IIR);
+    serial_port_in(port, UART_MSR);
+    up->lsr_saved_flags = 0;
+    up->msr_saved_flags = 0;
+
+    /*
+     * Request DMA channels for both RX and TX.
+     */
+    if (up->dma) {
+#if 0
+        const char *msg = NULL;
+
+        if (uart_console(port))
+            msg = "forbid DMA for kernel console";
+        else if (serial8250_request_dma(up))
+            msg = "failed to request DMA";
+        if (msg) {
+            dev_warn_ratelimited(port->dev, "%s\n", msg);
+            up->dma = NULL;
+        }
+#endif
+        panic("%s: up->dma!\n", __func__);
+    }
+
+    /*
+     * Set the IER shadow for rx interrupts but defer actual interrupt
+     * enable until after the FIFOs are enabled; otherwise, an already-
+     * active sender can swamp the interrupt handler with "too much work".
+     */
+    up->ier = UART_IER_RLSI | UART_IER_RDI;
+
+    if (port->flags & UPF_FOURPORT) {
+        unsigned int icp;
+        /*
+         * Enable interrupts on the AST Fourport board
+         */
+        icp = (port->iobase & 0xfe0) | 0x01f;
+        outb_p(0x80, icp);
+        inb_p(icp);
+    }
+    retval = 0;
  out:
     serial8250_rpm_put(up);
     return retval;
@@ -1290,40 +1482,6 @@ static void serial8250_console_restore(struct uart_8250_port *up)
     serial8250_set_divisor(port, baud, quot, frac);
     serial_port_out(port, UART_LCR, up->lcr);
     serial8250_out_MCR(up, up->mcr | UART_MCR_DTR | UART_MCR_RTS);
-}
-
-/*
- *  Wait for transmitter & holding register to empty
- */
-static void wait_for_xmitr(struct uart_8250_port *up, int bits)
-{
-    unsigned int status, tmout = 10000;
-
-    /* Wait up to 10ms for the character(s) to be sent. */
-    for (;;) {
-        status = serial_in(up, UART_LSR);
-
-        up->lsr_saved_flags |= status & LSR_SAVE_FLAGS;
-
-        if ((status & bits) == bits)
-            break;
-        if (--tmout == 0)
-            break;
-        udelay(1);
-        touch_nmi_watchdog();
-    }
-
-    /* Wait up to 1s for flow control if necessary */
-    if (up->port.flags & UPF_CONS_FLOW) {
-        for (tmout = 1000000; tmout; tmout--) {
-            unsigned int msr = serial_in(up, UART_MSR);
-            up->msr_saved_flags |= msr & MSR_SAVE_FLAGS;
-            if (msr & UART_MSR_CTS)
-                break;
-            udelay(1);
-            touch_nmi_watchdog();
-        }
-    }
 }
 
 static void serial8250_console_putchar(struct uart_port *port,

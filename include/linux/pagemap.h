@@ -747,4 +747,9 @@ static inline pgoff_t page_to_pgoff(struct page *page)
 
 int try_to_release_page(struct page *page, gfp_t gfp);
 
+static inline int filemap_nr_thps(struct address_space *mapping)
+{
+    return 0;
+}
+
 #endif /* _LINUX_PAGEMAP_H */

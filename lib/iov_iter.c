@@ -2,7 +2,7 @@
 //#include <crypto/hash.h>
 #include <linux/export.h>
 #include <linux/bvec.h>
-//#include <linux/fault-inject-usercopy.h>
+#include <linux/fault-inject-usercopy.h>
 #include <linux/uio.h>
 #include <linux/pagemap.h>
 #include <linux/highmem.h>
@@ -330,3 +330,28 @@ void iov_iter_init(struct iov_iter *i, unsigned int direction,
     };
 }
 EXPORT_SYMBOL(iov_iter_init);
+
+static int copyin(void *to, const void __user *from, size_t n)
+{
+    if (should_fail_usercopy())
+        return n;
+    if (access_ok(from, n))
+        n = raw_copy_from_user(to, from, n);
+    return n;
+}
+
+size_t _copy_from_iter(void *addr, size_t bytes, struct iov_iter *i)
+{
+    if (unlikely(iov_iter_is_pipe(i))) {
+        WARN_ON(1);
+        return 0;
+    }
+    if (iter_is_iovec(i))
+        might_fault();
+    iterate_and_advance(i, bytes, base, len, off,
+                        copyin(addr + off, base, len),
+                        memcpy(addr + off, base, len))
+
+    return bytes;
+}
+EXPORT_SYMBOL(_copy_from_iter);

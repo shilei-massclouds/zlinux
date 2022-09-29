@@ -97,4 +97,6 @@ extern struct vfsmount *mnt_clone_internal(const struct path *path);
 extern bool __mnt_is_readonly(struct vfsmount *mnt);
 extern bool mnt_may_suid(struct vfsmount *mnt);
 
+extern int __mnt_want_write(struct vfsmount *);
+
 #endif /* _LINUX_MOUNT_H */

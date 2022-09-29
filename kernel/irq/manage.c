@@ -941,3 +941,68 @@ int irq_can_set_affinity(unsigned int irq)
 {
     return __irq_can_set_affinity(irq_to_desc(irq));
 }
+
+void __disable_irq(struct irq_desc *desc)
+{
+    if (!desc->depth++)
+        irq_disable(desc);
+}
+
+static int __disable_irq_nosync(unsigned int irq)
+{
+    unsigned long flags;
+    struct irq_desc *desc =
+        irq_get_desc_buslock(irq, &flags, IRQ_GET_DESC_CHECK_GLOBAL);
+
+    if (!desc)
+        return -EINVAL;
+    __disable_irq(desc);
+    irq_put_desc_busunlock(desc, flags);
+    return 0;
+}
+
+/**
+ *  disable_irq_nosync - disable an irq without waiting
+ *  @irq: Interrupt to disable
+ *
+ *  Disable the selected interrupt line.  Disables and Enables are
+ *  nested.
+ *  Unlike disable_irq(), this function does not ensure existing
+ *  instances of the IRQ handler have completed before returning.
+ *
+ *  This function may be called from IRQ context.
+ */
+void disable_irq_nosync(unsigned int irq)
+{
+    __disable_irq_nosync(irq);
+}
+EXPORT_SYMBOL(disable_irq_nosync);
+
+/**
+ *  enable_irq - enable handling of an irq
+ *  @irq: Interrupt to enable
+ *
+ *  Undoes the effect of one call to disable_irq().  If this
+ *  matches the last disable, processing of interrupts on this
+ *  IRQ line is re-enabled.
+ *
+ *  This function may be called from IRQ context only when
+ *  desc->irq_data.chip->bus_lock and desc->chip->bus_sync_unlock are NULL !
+ */
+void enable_irq(unsigned int irq)
+{
+    unsigned long flags;
+    struct irq_desc *desc =
+        irq_get_desc_buslock(irq, &flags, IRQ_GET_DESC_CHECK_GLOBAL);
+
+    if (!desc)
+        return;
+    if (WARN(!desc->irq_data.chip,
+         KERN_ERR "enable_irq before setup/request_irq: irq %u\n", irq))
+        goto out;
+
+    __enable_irq(desc);
+out:
+    irq_put_desc_busunlock(desc, flags);
+}
+EXPORT_SYMBOL(enable_irq);

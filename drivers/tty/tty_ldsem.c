@@ -166,3 +166,34 @@ void ldsem_up_read(struct ld_semaphore *sem)
     if (count < 0 && (count & LDSEM_ACTIVE_MASK) == 0)
         ldsem_wake(sem);
 }
+
+/*
+ * wait for the read lock to be granted
+ */
+static struct ld_semaphore __sched *
+down_read_failed(struct ld_semaphore *sem, long count, long timeout)
+{
+    panic("%s: END!\n", __func__);
+}
+
+static int __ldsem_down_read_nested(struct ld_semaphore *sem,
+                       int subclass, long timeout)
+{
+    long count;
+
+    count = atomic_long_add_return(LDSEM_READ_BIAS, &sem->count);
+    if (count <= 0) {
+        if (!down_read_failed(sem, count, timeout))
+            return 0;
+    }
+    return 1;
+}
+
+/*
+ * lock for reading -- returns 1 if successful, 0 if timed out
+ */
+int __sched ldsem_down_read(struct ld_semaphore *sem, long timeout)
+{
+    might_sleep();
+    return __ldsem_down_read_nested(sem, 0, timeout);
+}

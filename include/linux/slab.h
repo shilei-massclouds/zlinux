@@ -544,4 +544,9 @@ void *kvzalloc_node(size_t size, gfp_t flags, int node)
 
 void kmem_cache_destroy(struct kmem_cache *s);
 
+static inline __alloc_size(1) void *kvmalloc(size_t size, gfp_t flags)
+{
+    return kvmalloc_node(size, flags, NUMA_NO_NODE);
+}
+
 #endif  /* _LINUX_SLAB_H */

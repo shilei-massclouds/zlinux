@@ -273,4 +273,20 @@ do {                                        \
 #define wake_up_interruptible_poll(x, m) \
     __wake_up(x, TASK_INTERRUPTIBLE, 1, poll_to_key(m))
 
+int woken_wake_function(struct wait_queue_entry *wq_entry,
+                        unsigned mode, int sync, void *key);
+
+extern void add_wait_queue(struct wait_queue_head *wq_head,
+                           struct wait_queue_entry *wq_entry);
+
+static inline void
+__remove_wait_queue(struct wait_queue_head *wq_head,
+                    struct wait_queue_entry *wq_entry)
+{
+    list_del(&wq_entry->entry);
+}
+
+extern void remove_wait_queue(struct wait_queue_head *wq_head,
+                              struct wait_queue_entry *wq_entry);
+
 #endif /* _LINUX_WAIT_H */

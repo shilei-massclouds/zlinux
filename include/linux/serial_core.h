@@ -403,4 +403,19 @@ void uart_update_timeout(struct uart_port *port, unsigned int cflag,
 #define uart_circ_empty(circ)       ((circ)->head == (circ)->tail)
 #define uart_circ_clear(circ)       ((circ)->head = (circ)->tail = 0)
 
+static inline bool uart_softcts_mode(struct uart_port *uport)
+{
+    upstat_t mask = UPSTAT_CTS_ENABLE | UPSTAT_AUTOCTS;
+
+    return ((uport->status & mask) == UPSTAT_CTS_ENABLE);
+}
+
+static inline int uart_tx_stopped(struct uart_port *port)
+{
+    struct tty_struct *tty = port->state->port.tty;
+    if ((tty && tty->flow.stopped) || port->hw_stopped)
+        return 1;
+    return 0;
+}
+
 #endif /* LINUX_SERIAL_CORE_H */

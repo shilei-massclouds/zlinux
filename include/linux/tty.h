@@ -310,4 +310,13 @@ void tty_unthrottle(struct tty_struct *tty);
 
 void start_tty(struct tty_struct *tty);
 
+static inline bool tty_io_error(struct tty_struct *tty)
+{
+    return test_bit(TTY_IO_ERROR, &tty->flags);
+}
+
+int tty_hung_up_p(struct file *filp);
+
+unsigned int tty_write_room(struct tty_struct *tty);
+
 #endif /* _LINUX_TTY_H */

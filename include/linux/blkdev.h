@@ -16,9 +16,7 @@
 #include <linux/workqueue.h>
 #endif
 #include <linux/wait.h>
-#if 0
 #include <linux/bio.h>
-#endif
 #include <linux/gfp.h>
 #include <linux/kdev_t.h>
 #include <linux/rcupdate.h>

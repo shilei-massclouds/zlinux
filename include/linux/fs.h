@@ -1840,4 +1840,47 @@ int register_chrdev(unsigned int major, const char *name,
 
 extern int nonseekable_open(struct inode * inode, struct file * filp);
 
+static inline void __sb_start_write(struct super_block *sb, int level)
+{
+    percpu_down_read(sb->s_writers.rw_sem + level - 1);
+}
+
+/**
+ * sb_start_write - get write access to a superblock
+ * @sb: the super we write to
+ *
+ * When a process wants to write data or metadata to a file system (i.e. dirty
+ * a page or an inode), it should embed the operation in a sb_start_write() -
+ * sb_end_write() pair to get exclusion against file system freezing. This
+ * function increments number of writers preventing freezing. If the file
+ * system is already frozen, the function waits until the file system is
+ * thawed.
+ *
+ * Since freeze protection behaves as a lock, users have to preserve
+ * ordering of freeze protection and other filesystem locks. Generally,
+ * freeze protection should be the outermost lock. In particular, we have:
+ *
+ * sb_start_write
+ *   -> i_mutex         (write path, truncate, directory ops, ...)
+ *   -> s_umount        (freeze_super, thaw_super)
+ */
+static inline void sb_start_write(struct super_block *sb)
+{
+    __sb_start_write(sb, SB_FREEZE_WRITE);
+}
+
+static inline void file_start_write(struct file *file)
+{
+    if (!S_ISREG(file_inode(file)->i_mode))
+        return;
+    sb_start_write(file_inode(file)->i_sb);
+}
+
+static inline
+ssize_t call_write_iter(struct file *file, struct kiocb *kio,
+                        struct iov_iter *iter)
+{
+    return file->f_op->write_iter(kio, iter);
+}
+
 #endif /* _LINUX_FS_H */
