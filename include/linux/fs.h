@@ -1883,4 +1883,11 @@ ssize_t call_write_iter(struct file *file, struct kiocb *kio,
     return file->f_op->write_iter(kio, iter);
 }
 
+static inline void file_end_write(struct file *file)
+{
+    if (!S_ISREG(file_inode(file)->i_mode))
+        return;
+    __sb_end_write(file_inode(file)->i_sb, SB_FREEZE_WRITE);
+}
+
 #endif /* _LINUX_FS_H */

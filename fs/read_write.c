@@ -288,8 +288,13 @@ ssize_t vfs_write(struct file *file, const char __user *buf,
         ret = new_sync_write(file, buf, count, pos);
     else
         ret = -EINVAL;
-
-    panic("%s: END!\n", __func__);
+    if (ret > 0) {
+        //fsnotify_modify(file);
+        add_wchar(current, ret);
+    }
+    inc_syscw(current);
+    file_end_write(file);
+    return ret;
 }
 
 ssize_t ksys_write(unsigned int fd, const char __user *buf,
