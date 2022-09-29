@@ -211,25 +211,7 @@ static int uart_write(struct tty_struct *tty,
     }
 
     __uart_start(tty);
-    {
-    register uintptr_t a0 asm ("a0") = (uintptr_t)('E');
-    register uintptr_t a6 asm ("a6") = (uintptr_t)(0);
-    register uintptr_t a7 asm ("a7") = (uintptr_t)(0x1);
-    asm volatile ("ecall"
-                  : "+r" (a0)
-                  : "r" (a6), "r" (a7)
-                  : "memory");
-    }
     uart_port_unlock(port, flags);
-    {
-    register uintptr_t a0 asm ("a0") = (uintptr_t)('2');
-    register uintptr_t a6 asm ("a6") = (uintptr_t)(0);
-    register uintptr_t a7 asm ("a7") = (uintptr_t)(0x1);
-    asm volatile ("ecall"
-                  : "+r" (a0)
-                  : "r" (a6), "r" (a7)
-                  : "memory");
-    }
     return ret;
 }
 
