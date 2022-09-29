@@ -34,6 +34,11 @@ __aligned(__alignof__(struct earlycon_id)) = { \
 
 #define EARLYCON_DECLARE(_name, fn) OF_EARLYCON_DECLARE(_name, "", fn)
 
+#define UART_XMIT_SIZE  PAGE_SIZE
+
+/* number of characters left in xmit buffer before we ask for more */
+#define WAKEUP_CHARS        256
+
 struct uart_icount {
     __u32   cts;
     __u32   dsr;
@@ -403,6 +408,12 @@ void uart_update_timeout(struct uart_port *port, unsigned int cflag,
 #define uart_circ_empty(circ)       ((circ)->head == (circ)->tail)
 #define uart_circ_clear(circ)       ((circ)->head = (circ)->tail = 0)
 
+#define uart_circ_chars_pending(circ)   \
+    (CIRC_CNT((circ)->head, (circ)->tail, UART_XMIT_SIZE))
+
+#define uart_circ_chars_free(circ)  \
+    (CIRC_SPACE((circ)->head, (circ)->tail, UART_XMIT_SIZE))
+
 static inline bool uart_softcts_mode(struct uart_port *uport)
 {
     upstat_t mask = UPSTAT_CTS_ENABLE | UPSTAT_AUTOCTS;
@@ -417,5 +428,43 @@ static inline int uart_tx_stopped(struct uart_port *port)
         return 1;
     return 0;
 }
+
+void uart_xchar_out(struct uart_port *uport, int offset);
+
+void uart_write_wakeup(struct uart_port *port);
+
+static inline
+int uart_handle_sysrq_char(struct uart_port *port, unsigned int ch)
+{
+    return 0;
+}
+
+static inline
+int uart_prepare_sysrq_char(struct uart_port *port, unsigned int ch)
+{
+    return 0;
+}
+
+static inline void uart_unlock_and_check_sysrq(struct uart_port *port)
+{
+    spin_unlock(&port->lock);
+}
+
+static inline
+void uart_unlock_and_check_sysrq_irqrestore(struct uart_port *port,
+                                            unsigned long flags)
+{
+    spin_unlock_irqrestore(&port->lock, flags);
+}
+
+/*
+ * The following are helper functions for the low level drivers.
+ */
+
+extern void uart_handle_dcd_change(struct uart_port *uport,
+                                   unsigned int status);
+
+extern void uart_handle_cts_change(struct uart_port *uport,
+                                   unsigned int status);
 
 #endif /* LINUX_SERIAL_CORE_H */

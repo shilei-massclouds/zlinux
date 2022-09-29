@@ -344,6 +344,33 @@ static int process_output(unsigned char c, struct tty_struct *tty)
 }
 
 /**
+ * is_utf8_continuation -   utf8 multibyte check
+ * @c: byte to check
+ *
+ * Returns: true if the utf8 character @c is a multibyte continuation
+ * character. We use this to correctly compute the on-screen size of the
+ * character when printing.
+ */
+static inline int is_utf8_continuation(unsigned char c)
+{
+    return (c & 0xc0) == 0x80;
+}
+
+/**
+ * is_continuation  -   multibyte check
+ * @c: byte to check
+ * @tty: terminal device
+ *
+ * Returns: true if the utf8 character @c is a multibyte continuation character
+ * and the terminal is in unicode mode.
+ */
+static inline
+int is_continuation(unsigned char c, struct tty_struct *tty)
+{
+    return I_IUTF8(tty) && is_utf8_continuation(c);
+}
+
+/**
  * process_output_block -   block post processor
  * @tty: terminal device
  * @buf: character buffer
@@ -370,7 +397,56 @@ static ssize_t process_output_block(struct tty_struct *tty,
     int i;
     const unsigned char *cp;
 
-    panic("%s: END!\n", __func__);
+    mutex_lock(&ldata->output_lock);
+
+    space = tty_write_room(tty);
+    if (space <= 0) {
+        mutex_unlock(&ldata->output_lock);
+        return space;
+    }
+    if (nr > space)
+        nr = space;
+
+    for (i = 0, cp = buf; i < nr; i++, cp++) {
+        unsigned char c = *cp;
+
+        switch (c) {
+        case '\n':
+            if (O_ONLRET(tty))
+                ldata->column = 0;
+            if (O_ONLCR(tty))
+                goto break_out;
+            ldata->canon_column = ldata->column;
+            break;
+        case '\r':
+            if (O_ONOCR(tty) && ldata->column == 0)
+                goto break_out;
+            if (O_OCRNL(tty))
+                goto break_out;
+            ldata->canon_column = ldata->column = 0;
+            break;
+        case '\t':
+            goto break_out;
+        case '\b':
+            if (ldata->column > 0)
+                ldata->column--;
+            break;
+        default:
+            if (!iscntrl(c)) {
+                if (O_OLCUC(tty))
+                    goto break_out;
+                if (!is_continuation(c, tty))
+                    ldata->column++;
+            }
+            break;
+        }
+    }
+
+ break_out:
+    i = tty->ops->write(tty, buf, i);
+
+    mutex_unlock(&ldata->output_lock);
+    return i;
 }
 
 /**
@@ -443,17 +519,21 @@ static ssize_t n_tty_write(struct tty_struct *tty, struct file *file,
             }
             if (tty->ops->flush_chars)
                 tty->ops->flush_chars(tty);
-
-            panic("%s: O_OPOST!\n", __func__);
         } else {
             panic("%s: else O_OPOST!\n", __func__);
         }
+        if (!nr)
+            break;
+        if (tty_io_nonblock(tty, file)) {
+            retval = -EAGAIN;
+            break;
+        }
+        up_read(&tty->termios_rwsem);
 
-        panic("%s: 1!\n", __func__);
+        wait_woken(&wait, TASK_INTERRUPTIBLE, MAX_SCHEDULE_TIMEOUT);
+
+        down_read(&tty->termios_rwsem);
     }
-
-    panic("%s: END!\n", __func__);
-
  break_out:
     remove_wait_queue(&tty->write_wait, &wait);
     if (nr && tty->fasync)
@@ -598,7 +678,8 @@ static __poll_t n_tty_poll(struct tty_struct *tty, struct file *file,
  */
 static void n_tty_write_wakeup(struct tty_struct *tty)
 {
-    panic("%s: END!\n", __func__);
+    clear_bit(TTY_DO_WRITE_WAKEUP, &tty->flags);
+    //kill_fasync(&tty->fasync, SIGIO, POLL_OUT);
 }
 
 static struct tty_ldisc_ops n_tty_ops = {

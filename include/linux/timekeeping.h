@@ -62,4 +62,6 @@ static inline u64 ktime_get_boottime_ns(void)
 
 extern void ktime_get_coarse_real_ts64(struct timespec64 *ts);
 
+extern time64_t ktime_get_real_seconds(void);
+
 #endif /* _LINUX_TIMEKEEPING_H */

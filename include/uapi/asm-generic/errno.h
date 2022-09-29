@@ -18,6 +18,8 @@
 #define ENOSYS      38  /* Invalid system call number */
 #define ENOTEMPTY   39  /* Directory not empty */
 #define ELOOP       40  /* Too many symbolic links encountered */
+#define EL3HLT      46  /* Level 3 halted */
+#define EL3RST      47  /* Level 3 reset */
 #define EBADE       52  /* Invalid exchange */
 
 #define ENODATA     61  /* No data available */

@@ -163,10 +163,74 @@ static void uart_close(struct tty_struct *tty, struct file *filp)
     panic("%s: END!\n", __func__);
 }
 
+static void __uart_start(struct tty_struct *tty)
+{
+    struct uart_state *state = tty->driver_data;
+    struct uart_port *port = state->uart_port;
+
+    if (port && !uart_tx_stopped(port))
+        port->ops->start_tx(port);
+}
+
 static int uart_write(struct tty_struct *tty,
                       const unsigned char *buf, int count)
 {
-    panic("%s: END!\n", __func__);
+    struct uart_state *state = tty->driver_data;
+    struct uart_port *port;
+    struct circ_buf *circ;
+    unsigned long flags;
+    int c, ret = 0;
+
+    /*
+     * This means you called this function _after_ the port was
+     * closed.  No cookie for you.
+     */
+    if (!state) {
+        WARN_ON(1);
+        return -EL3HLT;
+    }
+
+    port = uart_port_lock(state, flags);
+    circ = &state->xmit;
+    if (!circ->buf) {
+        uart_port_unlock(port, flags);
+        return 0;
+    }
+
+    while (port) {
+        c = CIRC_SPACE_TO_END(circ->head, circ->tail, UART_XMIT_SIZE);
+        if (count < c)
+            c = count;
+        if (c <= 0)
+            break;
+        memcpy(circ->buf + circ->head, buf, c);
+        circ->head = (circ->head + c) & (UART_XMIT_SIZE - 1);
+        buf += c;
+        count -= c;
+        ret += c;
+    }
+
+    __uart_start(tty);
+    {
+    register uintptr_t a0 asm ("a0") = (uintptr_t)('E');
+    register uintptr_t a6 asm ("a6") = (uintptr_t)(0);
+    register uintptr_t a7 asm ("a7") = (uintptr_t)(0x1);
+    asm volatile ("ecall"
+                  : "+r" (a0)
+                  : "r" (a6), "r" (a7)
+                  : "memory");
+    }
+    uart_port_unlock(port, flags);
+    {
+    register uintptr_t a0 asm ("a0") = (uintptr_t)('2');
+    register uintptr_t a6 asm ("a6") = (uintptr_t)(0);
+    register uintptr_t a7 asm ("a7") = (uintptr_t)(0x1);
+    asm volatile ("ecall"
+                  : "+r" (a0)
+                  : "r" (a6), "r" (a7)
+                  : "memory");
+    }
+    return ret;
 }
 
 static int uart_put_char(struct tty_struct *tty, unsigned char c)
@@ -174,14 +238,17 @@ static int uart_put_char(struct tty_struct *tty, unsigned char c)
     panic("%s: END!\n", __func__);
 }
 
-static void uart_flush_chars(struct tty_struct *tty)
-{
-    panic("%s: END!\n", __func__);
-}
-
 static unsigned int uart_write_room(struct tty_struct *tty)
 {
-    panic("%s: END!\n", __func__);
+    struct uart_state *state = tty->driver_data;
+    struct uart_port *port;
+    unsigned long flags;
+    unsigned int ret;
+
+    port = uart_port_lock(state, flags);
+    ret = uart_circ_chars_free(&state->xmit);
+    uart_port_unlock(port, flags);
+    return ret;
 }
 
 static unsigned int uart_chars_in_buffer(struct tty_struct *tty)
@@ -238,18 +305,20 @@ static void uart_stop(struct tty_struct *tty)
     panic("%s: END!\n", __func__);
 }
 
-static void __uart_start(struct tty_struct *tty)
-{
-    struct uart_state *state = tty->driver_data;
-    struct uart_port *port = state->uart_port;
-
-    if (port && !uart_tx_stopped(port))
-        port->ops->start_tx(port);
-}
-
 static void uart_start(struct tty_struct *tty)
 {
-    panic("%s: END!\n", __func__);
+    struct uart_state *state = tty->driver_data;
+    struct uart_port *port;
+    unsigned long flags;
+
+    port = uart_port_lock(state, flags);
+    __uart_start(tty);
+    uart_port_unlock(port, flags);
+}
+
+static void uart_flush_chars(struct tty_struct *tty)
+{
+    uart_start(tty);
 }
 
 /*
@@ -684,6 +753,7 @@ static inline bool uart_console_enabled(struct uart_port *port)
 
 static void uart_port_spin_lock_init(struct uart_port *port)
 {
+    printk("%s: 1 (%lx)\n", __func__, &(port->lock));
     spin_lock_init(&port->lock);
 }
 
@@ -1392,3 +1462,102 @@ uart_update_timeout(struct uart_port *port, unsigned int cflag,
     port->timeout = (HZ * size) / baud + HZ/50;
 }
 EXPORT_SYMBOL(uart_update_timeout);
+
+/*
+ * This function performs low-level write of high-priority XON/XOFF
+ * character and accounting for it.
+ *
+ * Requires uart_port to implement .serial_out().
+ */
+void uart_xchar_out(struct uart_port *uport, int offset)
+{
+    serial_port_out(uport, offset, uport->x_char);
+    uport->icount.tx++;
+    uport->x_char = 0;
+}
+EXPORT_SYMBOL_GPL(uart_xchar_out);
+
+/*
+ * This routine is used by the interrupt handler to schedule processing in
+ * the software interrupt portion of the driver.
+ */
+void uart_write_wakeup(struct uart_port *port)
+{
+    struct uart_state *state = port->state;
+    /*
+     * This means you called this function _after_ the port was
+     * closed.  No cookie for you.
+     */
+    BUG_ON(!state);
+    tty_port_tty_wakeup(&state->port);
+}
+EXPORT_SYMBOL(uart_write_wakeup);
+
+static int uart_dcd_enabled(struct uart_port *uport)
+{
+    return !!(uport->status & UPSTAT_DCD_ENABLE);
+}
+
+/**
+ *  uart_handle_dcd_change - handle a change of carrier detect state
+ *  @uport: uart_port structure for the open port
+ *  @status: new carrier detect status, nonzero if active
+ *
+ *  Caller must hold uport->lock
+ */
+void uart_handle_dcd_change(struct uart_port *uport,
+                            unsigned int status)
+{
+    struct tty_port *port = &uport->state->port;
+    struct tty_struct *tty = port->tty;
+    struct tty_ldisc *ld;
+
+    if (tty) {
+        ld = tty_ldisc_ref(tty);
+        if (ld) {
+            if (ld->ops->dcd_change)
+                ld->ops->dcd_change(tty, status);
+            tty_ldisc_deref(ld);
+        }
+    }
+
+    uport->icount.dcd++;
+
+    if (uart_dcd_enabled(uport)) {
+        if (status)
+            wake_up_interruptible(&port->open_wait);
+        else if (tty)
+            tty_hangup(tty);
+    }
+}
+EXPORT_SYMBOL_GPL(uart_handle_dcd_change);
+
+/**
+ *  uart_handle_cts_change - handle a change of clear-to-send state
+ *  @uport: uart_port structure for the open port
+ *  @status: new clear to send status, nonzero if active
+ *
+ *  Caller must hold uport->lock
+ */
+void uart_handle_cts_change(struct uart_port *uport,
+                            unsigned int status)
+{
+    uport->icount.cts++;
+
+    if (uart_softcts_mode(uport)) {
+        if (uport->hw_stopped) {
+            if (status) {
+                uport->hw_stopped = 0;
+                uport->ops->start_tx(uport);
+                uart_write_wakeup(uport);
+            }
+        } else {
+            if (!status) {
+                uport->hw_stopped = 1;
+                uport->ops->stop_tx(uport);
+            }
+        }
+
+    }
+}
+EXPORT_SYMBOL_GPL(uart_handle_cts_change);

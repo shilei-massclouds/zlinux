@@ -984,3 +984,21 @@ void ktime_get_coarse_real_ts64(struct timespec64 *ts)
     } while (read_seqcount_retry(&tk_core.seq, seq));
 }
 EXPORT_SYMBOL(ktime_get_coarse_real_ts64);
+
+/**
+ * ktime_get_real_seconds - Get the seconds portion of CLOCK_REALTIME
+ *
+ * Returns the wall clock seconds since 1970.
+ *
+ * For 64bit systems the fast access to tk->xtime_sec is preserved. On
+ * 32bit systems the access must be protected with the sequence
+ * counter to provide "atomic" access to the 64bit tk->xtime_sec
+ * value.
+ */
+time64_t ktime_get_real_seconds(void)
+{
+    struct timekeeper *tk = &tk_core.timekeeper;
+
+    return tk->xtime_sec;
+}
+EXPORT_SYMBOL_GPL(ktime_get_real_seconds);

@@ -319,4 +319,15 @@ int tty_hung_up_p(struct file *filp);
 
 unsigned int tty_write_room(struct tty_struct *tty);
 
+void tty_hangup(struct tty_struct *tty);
+
+void tty_wakeup(struct tty_struct *tty);
+
+static inline
+bool tty_io_nonblock(struct tty_struct *tty, struct file *file)
+{
+    return file->f_flags & O_NONBLOCK ||
+        test_bit(TTY_LDISC_CHANGING, &tty->flags);
+}
+
 #endif /* _LINUX_TTY_H */

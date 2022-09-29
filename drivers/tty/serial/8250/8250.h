@@ -9,8 +9,8 @@
 
 #include <linux/bits.h>
 #include <linux/serial_8250.h>
-//#include <linux/serial_reg.h>
-//#include <linux/dmaengine.h>
+#include <linux/serial_reg.h>
+#include <linux/dmaengine.h>
 
 #include "../serial_mctrl_gpio.h"
 
@@ -51,6 +51,43 @@ void serial_out(struct uart_8250_port *up, int offset, int value)
 {
     up->port.serial_out(&up->port, offset, value);
 }
+
+struct uart_8250_dma {
+    int (*tx_dma)(struct uart_8250_port *p);
+    int (*rx_dma)(struct uart_8250_port *p);
+
+    /* Filter function */
+    dma_filter_fn       fn;
+    /* Parameter to the filter function */
+    void            *rx_param;
+    void            *tx_param;
+
+    struct dma_slave_config rxconf;
+    struct dma_slave_config txconf;
+
+    struct dma_chan     *rxchan;
+    struct dma_chan     *txchan;
+
+    /* Device address base for DMA operations */
+    phys_addr_t     rx_dma_addr;
+    phys_addr_t     tx_dma_addr;
+
+    /* DMA address of the buffer in memory */
+    dma_addr_t      rx_addr;
+    dma_addr_t      tx_addr;
+
+    dma_cookie_t        rx_cookie;
+    dma_cookie_t        tx_cookie;
+
+    void            *rx_buf;
+
+    size_t          rx_size;
+    size_t          tx_size;
+
+    unsigned char       tx_running;
+    unsigned char       tx_err;
+    unsigned char       rx_running;
+};
 
 struct old_serial_port {
     unsigned int uart;
@@ -109,3 +146,36 @@ static inline void serial_dl_write(struct uart_8250_port *up, int value)
 {
     up->dl_write(up, value);
 }
+
+static inline bool serial8250_set_THRI(struct uart_8250_port *up)
+{
+    if (up->ier & UART_IER_THRI)
+        return false;
+    up->ier |= UART_IER_THRI;
+    serial_out(up, UART_IER, up->ier);
+    return true;
+}
+
+static inline bool serial8250_clear_THRI(struct uart_8250_port *up)
+{
+    if (!(up->ier & UART_IER_THRI))
+        return false;
+    up->ier &= ~UART_IER_THRI;
+    serial_out(up, UART_IER, up->ier);
+    return true;
+}
+
+static inline int serial8250_tx_dma(struct uart_8250_port *p)
+{
+    return -1;
+}
+static inline int serial8250_rx_dma(struct uart_8250_port *p)
+{
+    return -1;
+}
+static inline void serial8250_rx_dma_flush(struct uart_8250_port *p) { }
+static inline int serial8250_request_dma(struct uart_8250_port *p)
+{
+    return -1;
+}
+static inline void serial8250_release_dma(struct uart_8250_port *p) { }

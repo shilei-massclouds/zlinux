@@ -52,6 +52,32 @@ static void flush_to_ldisc(struct work_struct *work)
 }
 
 /**
+ * tty_flip_buffer_push     -   push terminal buffers
+ * @port: tty port to push
+ *
+ * Queue a push of the terminal flip buffers to the line discipline. Can be
+ * called from IRQ/atomic context.
+ *
+ * In the event of the queue being busy for flipping the work will be held off
+ * and retried later.
+ */
+void tty_flip_buffer_push(struct tty_port *port)
+{
+#if 0
+    struct tty_bufhead *buf = &port->buf;
+
+    /*
+     * Paired w/ acquire in flush_to_ldisc(); ensures flush_to_ldisc() sees
+     * buffer data.
+     */
+    smp_store_release(&buf->tail->commit, buf->tail->used);
+    queue_work(system_unbound_wq, &buf->work);
+#endif
+    panic("%s: END!\n", __func__);
+}
+EXPORT_SYMBOL(tty_flip_buffer_push);
+
+/**
  * tty_buffer_init      -   prepare a tty buffer structure
  * @port: tty port to initialise
  *

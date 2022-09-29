@@ -30,7 +30,12 @@ static int tty_port_default_receive_buf(struct tty_port *port,
 
 static void tty_port_default_wakeup(struct tty_port *port)
 {
-    panic("%s: END!\n", __func__);
+    struct tty_struct *tty = tty_port_tty_get(port);
+
+    if (tty) {
+        tty_wakeup(tty);
+        tty_kref_put(tty);
+    }
 }
 
 const struct tty_port_client_operations tty_port_default_client_ops = {
@@ -292,6 +297,16 @@ int tty_port_open(struct tty_port *port, struct tty_struct *tty,
     mutex_unlock(&port->mutex);
     return tty_port_block_til_ready(port, tty, filp);
 }
+
+/**
+ * tty_port_tty_wakeup - helper to wake up a tty
+ * @port: tty port
+ */
+void tty_port_tty_wakeup(struct tty_port *port)
+{
+    port->client_ops->write_wakeup(port);
+}
+EXPORT_SYMBOL_GPL(tty_port_tty_wakeup);
 
 /**
  * tty_port_init -- initialize tty_port

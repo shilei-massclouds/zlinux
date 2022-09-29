@@ -32,6 +32,7 @@ static inline int isdigit(int c)
 #define isxdigit(c) ((__ismask(c)&(_D|_X)) != 0)
 #define islower(c)  ((__ismask(c)&(_L)) != 0)
 #define isupper(c)  ((__ismask(c)&(_U)) != 0)
+#define iscntrl(c)  ((__ismask(c)&(_C)) != 0)
 
 /*
  * Fast implementation of tolower() for internal usage.

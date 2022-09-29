@@ -22,11 +22,11 @@
 #endif
 #include <linux/delay.h>
 #include <linux/platform_device.h>
-#if 0
 #include <linux/tty.h>
+#if 0
 #include <linux/ratelimit.h>
-#include <linux/tty_flip.h>
 #endif
+#include <linux/tty_flip.h>
 #include <linux/serial.h>
 #include <linux/serial_8250.h>
 #include <linux/nmi.h>
@@ -434,14 +434,179 @@ static unsigned int serial8250_get_mctrl(struct uart_port *port)
     panic("%s: END!\n", __func__);
 }
 
+void serial8250_rpm_put_tx(struct uart_8250_port *p)
+{
+    unsigned char rpm_active;
+
+    if (!(p->capabilities & UART_CAP_RPM))
+        return;
+
+    rpm_active = xchg(&p->rpm_tx_active, 0);
+    if (!rpm_active)
+        return;
+#if 0
+    pm_runtime_mark_last_busy(p->port.dev);
+    pm_runtime_put_autosuspend(p->port.dev);
+#endif
+}
+EXPORT_SYMBOL_GPL(serial8250_rpm_put_tx);
+
+static inline void __do_stop_tx(struct uart_8250_port *p)
+{
+    if (serial8250_clear_THRI(p))
+        serial8250_rpm_put_tx(p);
+}
+
+static inline void __stop_tx(struct uart_8250_port *p)
+{
+    __do_stop_tx(p);
+}
+
+/*
+ * For the 16C950
+ */
+static void serial_icr_write(struct uart_8250_port *up, int offset,
+                             int value)
+{
+    serial_out(up, UART_SCR, offset);
+    serial_out(up, UART_ICR, value);
+}
+
+void serial8250_rpm_get(struct uart_8250_port *p)
+{
+    if (!(p->capabilities & UART_CAP_RPM))
+        return;
+    //pm_runtime_get_sync(p->port.dev);
+}
+EXPORT_SYMBOL_GPL(serial8250_rpm_get);
+
+void serial8250_rpm_put(struct uart_8250_port *p)
+{
+    if (!(p->capabilities & UART_CAP_RPM))
+        return;
+#if 0
+    pm_runtime_mark_last_busy(p->port.dev);
+    pm_runtime_put_autosuspend(p->port.dev);
+#endif
+}
+EXPORT_SYMBOL_GPL(serial8250_rpm_put);
+
 static void serial8250_stop_tx(struct uart_port *port)
 {
-    panic("%s: END!\n", __func__);
+    struct uart_8250_port *up = up_to_u8250p(port);
+
+    serial8250_rpm_get(up);
+    __stop_tx(up);
+
+    /*
+     * We really want to stop the transmitter from sending.
+     */
+    if (port->type == PORT_16C950) {
+        up->acr |= UART_ACR_TXDIS;
+        serial_icr_write(up, UART_ACR, up->acr);
+    }
+    serial8250_rpm_put(up);
+}
+
+void serial8250_tx_chars(struct uart_8250_port *up)
+{
+    struct uart_port *port = &up->port;
+    struct circ_buf *xmit = &port->state->xmit;
+    int count;
+
+    if (port->x_char) {
+        uart_xchar_out(port, UART_TX);
+        return;
+    }
+    if (uart_tx_stopped(port)) {
+        serial8250_stop_tx(port);
+        return;
+    }
+    if (uart_circ_empty(xmit)) {
+        __stop_tx(up);
+        return;
+    }
+
+    count = up->tx_loadsz;
+    do {
+        serial_out(up, UART_TX, xmit->buf[xmit->tail]);
+        if (up->bugs & UART_BUG_TXRACE) {
+            /*
+             * The Aspeed BMC virtual UARTs have a bug where data
+             * may get stuck in the BMC's Tx FIFO from bursts of
+             * writes on the APB interface.
+             *
+             * Delay back-to-back writes by a read cycle to avoid
+             * stalling the VUART. Read a register that won't have
+             * side-effects and discard the result.
+             */
+            serial_in(up, UART_SCR);
+        }
+        xmit->tail = (xmit->tail + 1) & (UART_XMIT_SIZE - 1);
+        port->icount.tx++;
+        if (uart_circ_empty(xmit))
+            break;
+        if ((up->capabilities & UART_CAP_HFIFO) &&
+            (serial_in(up, UART_LSR) & BOTH_EMPTY) != BOTH_EMPTY)
+            break;
+        /* The BCM2835 MINI UART THRE bit is really a not-full bit. */
+        if ((up->capabilities & UART_CAP_MINI) &&
+            !(serial_in(up, UART_LSR) & UART_LSR_THRE))
+            break;
+    } while (--count > 0);
+
+    if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
+        uart_write_wakeup(port);
+
+    /*
+     * With RPM enabled, we have to wait until the FIFO is empty before the
+     * HW can go idle. So we get here once again with empty FIFO and disable
+     * the interrupt and RPM in __stop_tx()
+     */
+    if (uart_circ_empty(xmit) && !(up->capabilities & UART_CAP_RPM))
+        __stop_tx(up);
+}
+EXPORT_SYMBOL_GPL(serial8250_tx_chars);
+
+static inline void __start_tx(struct uart_port *port)
+{
+    struct uart_8250_port *up = up_to_u8250p(port);
+
+    if (up->dma && !up->dma->tx_dma(up))
+        return;
+
+    if (serial8250_set_THRI(up)) {
+        if (up->bugs & UART_BUG_TXEN) {
+            unsigned char lsr;
+
+            lsr = serial_in(up, UART_LSR);
+            up->lsr_saved_flags |= lsr & LSR_SAVE_FLAGS;
+            if (lsr & UART_LSR_THRE)
+                serial8250_tx_chars(up);
+        }
+    }
+
+    /*
+     * Re-enable the transmitter if we disabled it.
+     */
+    if (port->type == PORT_16C950 && up->acr & UART_ACR_TXDIS) {
+        up->acr &= ~UART_ACR_TXDIS;
+        serial_icr_write(up, UART_ACR, up->acr);
+    }
 }
 
 static void serial8250_start_tx(struct uart_port *port)
 {
-    panic("%s: END!\n", __func__);
+    struct uart_8250_port *up = up_to_u8250p(port);
+
+    if (!port->x_char && uart_circ_empty(&port->state->xmit))
+        return;
+
+#if 0
+    serial8250_rpm_get_tx(up);
+#endif
+
+    __start_tx(port);
 }
 
 static void serial8250_throttle(struct uart_port *port)
@@ -469,35 +634,6 @@ static void serial8250_break_ctl(struct uart_port *port,
 {
     panic("%s: END!\n", __func__);
 }
-
-/*
- * For the 16C950
- */
-static void serial_icr_write(struct uart_8250_port *up, int offset, int value)
-{
-    serial_out(up, UART_SCR, offset);
-    serial_out(up, UART_ICR, value);
-}
-
-void serial8250_rpm_get(struct uart_8250_port *p)
-{
-    if (!(p->capabilities & UART_CAP_RPM))
-        return;
-    //pm_runtime_get_sync(p->port.dev);
-}
-EXPORT_SYMBOL_GPL(serial8250_rpm_get);
-
-void serial8250_rpm_put(struct uart_8250_port *p)
-{
-    if (!(p->capabilities & UART_CAP_RPM))
-        return;
-#if 0
-    pm_runtime_mark_last_busy(p->port.dev);
-    pm_runtime_put_autosuspend(p->port.dev);
-#endif
-    panic("%s: END!\n", __func__);
-}
-EXPORT_SYMBOL_GPL(serial8250_rpm_put);
 
 /*
  * FIFO support.
@@ -1304,22 +1440,133 @@ static void mem_serial_out(struct uart_port *p, int offset, int value)
     writeb(value, p->membase + offset);
 }
 
+static bool handle_rx_dma(struct uart_8250_port *up, unsigned int iir)
+{
+    switch (iir & 0x3f) {
+    case UART_IIR_RX_TIMEOUT:
+        serial8250_rx_dma_flush(up);
+        fallthrough;
+    case UART_IIR_RLSI:
+        return true;
+    }
+    return up->dma->rx_dma(up);
+}
+
+void serial8250_read_char(struct uart_8250_port *up, unsigned char lsr)
+{
+    panic("%s: END!\n", __func__);
+}
+
+/*
+ * serial8250_rx_chars: processes according to the passed in LSR
+ * value, and returns the remaining LSR bits not handled
+ * by this Rx routine.
+ */
+unsigned char serial8250_rx_chars(struct uart_8250_port *up,
+                                  unsigned char lsr)
+{
+    struct uart_port *port = &up->port;
+    int max_count = 256;
+
+    do {
+        serial8250_read_char(up, lsr);
+        if (--max_count == 0)
+            break;
+        lsr = serial_in(up, UART_LSR);
+    } while (lsr & (UART_LSR_DR | UART_LSR_BI));
+
+    tty_flip_buffer_push(&port->state->port);
+    return lsr;
+}
+EXPORT_SYMBOL_GPL(serial8250_rx_chars);
+
+/* Caller holds uart port lock */
+unsigned int serial8250_modem_status(struct uart_8250_port *up)
+{
+    struct uart_port *port = &up->port;
+    unsigned int status = serial_in(up, UART_MSR);
+
+    status |= up->msr_saved_flags;
+    up->msr_saved_flags = 0;
+    if (status & UART_MSR_ANY_DELTA && up->ier & UART_IER_MSI &&
+        port->state != NULL) {
+        if (status & UART_MSR_TERI)
+            port->icount.rng++;
+        if (status & UART_MSR_DDSR)
+            port->icount.dsr++;
+        if (status & UART_MSR_DDCD) {
+            uart_handle_dcd_change(port, status & UART_MSR_DCD);
+        }
+        if (status & UART_MSR_DCTS) {
+            uart_handle_cts_change(port, status & UART_MSR_CTS);
+        }
+
+        wake_up_interruptible(&port->state->port.delta_msr_wait);
+    }
+
+    return status;
+}
+EXPORT_SYMBOL_GPL(serial8250_modem_status);
+
+/*
+ * This handles the interrupt from one port.
+ */
+int serial8250_handle_irq(struct uart_port *port, unsigned int iir)
+{
+    unsigned char status;
+    struct uart_8250_port *up = up_to_u8250p(port);
+    bool skip_rx = false;
+    unsigned long flags;
+
+    if (iir & UART_IIR_NO_INT)
+        return 0;
+
+    spin_lock_irqsave(&port->lock, flags);
+
+    status = serial_port_in(port, UART_LSR);
+
+    /*
+     * If port is stopped and there are no error conditions in the
+     * FIFO, then don't drain the FIFO, as this may lead to TTY buffer
+     * overflow. Not servicing, RX FIFO would trigger auto HW flow
+     * control when FIFO occupancy reaches preset threshold, thus
+     * halting RX. This only works when auto HW flow control is
+     * available.
+     */
+    if (!(status & (UART_LSR_FIFOE | UART_LSR_BRK_ERROR_BITS)) &&
+        (port->status & (UPSTAT_AUTOCTS | UPSTAT_AUTORTS)) &&
+        !(port->read_status_mask & UART_LSR_DR))
+        skip_rx = true;
+
+    if (status & (UART_LSR_DR | UART_LSR_BI) && !skip_rx) {
+        if (!up->dma || handle_rx_dma(up, iir))
+            status = serial8250_rx_chars(up, status);
+    }
+    serial8250_modem_status(up);
+    if ((!up->dma || up->dma->tx_err) && (status & UART_LSR_THRE) &&
+        (up->ier & UART_IER_THRI))
+        serial8250_tx_chars(up);
+
+    uart_unlock_and_check_sysrq_irqrestore(port, flags);
+
+    return 1;
+}
+
 static int serial8250_default_handle_irq(struct uart_port *port)
 {
-#if 0
     struct uart_8250_port *up = up_to_u8250p(port);
     unsigned int iir;
     int ret;
 
+#if 0
     serial8250_rpm_get(up);
+#endif
 
     iir = serial_port_in(port, UART_IIR);
     ret = serial8250_handle_irq(port, iir);
 
     serial8250_rpm_put(up);
     return ret;
-#endif
-    panic("%s: END!\n", __func__);
 }
 
 static void set_io_from_upio(struct uart_port *p)

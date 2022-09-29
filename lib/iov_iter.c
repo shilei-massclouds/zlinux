@@ -355,3 +355,43 @@ size_t _copy_from_iter(void *addr, size_t bytes, struct iov_iter *i)
     return bytes;
 }
 EXPORT_SYMBOL(_copy_from_iter);
+
+void iov_iter_revert(struct iov_iter *i, size_t unroll)
+{
+    if (!unroll)
+        return;
+    if (WARN_ON(unroll > MAX_RW_COUNT))
+        return;
+    i->count += unroll;
+    if (unlikely(iov_iter_is_pipe(i))) {
+#if 0
+        struct pipe_inode_info *pipe = i->pipe;
+        unsigned int p_mask = pipe->ring_size - 1;
+        unsigned int i_head = i->head;
+        size_t off = i->iov_offset;
+        while (1) {
+            struct pipe_buffer *b = &pipe->bufs[i_head & p_mask];
+            size_t n = off - b->offset;
+            if (unroll < n) {
+                off -= unroll;
+                break;
+            }
+            unroll -= n;
+            if (!unroll && i_head == i->start_head) {
+                off = 0;
+                break;
+            }
+            i_head--;
+            b = &pipe->bufs[i_head & p_mask];
+            off = b->offset + b->len;
+        }
+        i->iov_offset = off;
+        i->head = i_head;
+        pipe_truncate(i);
+        return;
+#endif
+        panic("%s: iov_iter_is_pipe!\n", __func__);
+    }
+
+    panic("%s: END!\n", __func__);
+}

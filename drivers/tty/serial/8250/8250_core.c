@@ -39,6 +39,8 @@
 
 #include "8250.h"
 
+#define PASS_LIMIT  512
+
 #define UART_NR CONFIG_SERIAL_8250_NR_UARTS
 
 static struct uart_driver serial8250_reg;
@@ -101,7 +103,39 @@ static void serial_do_unlink(struct irq_info *i,
  */
 static irqreturn_t serial8250_interrupt(int irq, void *dev_id)
 {
-    panic("%s: END!\n", __func__);
+    struct irq_info *i = dev_id;
+    struct list_head *l, *end = NULL;
+    int pass_counter = 0, handled = 0;
+
+    pr_debug("%s(%d): start\n", __func__, irq);
+
+    spin_lock(&i->lock);
+
+    l = i->head;
+    do {
+        struct uart_8250_port *up;
+        struct uart_port *port;
+
+        up = list_entry(l, struct uart_8250_port, list);
+        port = &up->port;
+
+        if (port->handle_irq(port)) {
+            handled = 1;
+            end = NULL;
+        } else if (end == NULL)
+            end = l;
+
+        l = l->next;
+
+        if (l == i->head && pass_counter++ > PASS_LIMIT)
+            break;
+    } while (l != end);
+
+    spin_unlock(&i->lock);
+
+    pr_debug("%s(%d): end\n", __func__, irq);
+
+    return IRQ_RETVAL(handled);
 }
 
 static int serial_link_irq_chain(struct uart_8250_port *up)

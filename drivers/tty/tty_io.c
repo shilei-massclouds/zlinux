@@ -77,6 +77,8 @@
 #include <linux/uio.h>
 #include "tty.h"
 
+#define tty_debug_hangup(tty, f, args...)  do { } while (0)
+
 static DEFINE_SPINLOCK(redirect_lock);
 static struct file *redirect;
 
@@ -337,6 +339,20 @@ static void tty_write_unlock(struct tty_struct *tty)
     wake_up_interruptible_poll(&tty->write_wait, EPOLLOUT);
 }
 
+static void tty_update_time(struct timespec64 *time)
+{
+    time64_t sec = ktime_get_real_seconds();
+
+    /*
+     * We only care if the two values differ in anything other than the
+     * lower three bits (i.e every 8 seconds).  If so, then we can update
+     * the time of the tty device, otherwise it could be construded as a
+     * security leak to let userspace know the exact timing of the tty.
+     */
+    if ((sec ^ time->tv_sec) & ~7)
+        time->tv_sec = sec;
+}
+
 /*
  * Split writes up in sane blocksizes to avoid
  * denial-of-service type attacks
@@ -408,11 +424,26 @@ ssize_t do_tty_write(ssize_t (*write)(struct tty_struct *,
         if (ret <= 0)
             break;
 
-        panic("%s: 0!\n", __func__);
+        written += ret;
+        if (ret > size)
+            break;
+
+        /* FIXME! Have Al check this! */
+        if (ret != size)
+            iov_iter_revert(from, size-ret);
+
+        count -= ret;
+        if (!count)
+            break;
+        ret = -ERESTARTSYS;
+        if (signal_pending(current))
+            break;
+        cond_resched();
     }
-
-    panic("%s: END!\n", __func__);
-
+    if (written) {
+        tty_update_time(&file_inode(file)->i_mtime);
+        ret = written;
+    }
  out:
     tty_write_unlock(tty);
     return ret;
@@ -1561,6 +1592,20 @@ void start_tty(struct tty_struct *tty)
     spin_unlock_irqrestore(&tty->flow.lock, flags);
 }
 EXPORT_SYMBOL(start_tty);
+
+/**
+ * tty_hangup       -   trigger a hangup event
+ * @tty: tty to hangup
+ *
+ * A carrier loss (virtual or otherwise) has occurred on @tty. Schedule a
+ * hangup sequence to run after this event.
+ */
+void tty_hangup(struct tty_struct *tty)
+{
+    tty_debug_hangup(tty, "hangup\n");
+    schedule_work(&tty->hangup_work);
+}
+EXPORT_SYMBOL(tty_hangup);
 
 static struct device *consdev;
 

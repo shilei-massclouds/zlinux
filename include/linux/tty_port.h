@@ -180,4 +180,6 @@ static inline void tty_port_set_active(struct tty_port *port, bool val)
     assign_bit(TTY_PORT_ACTIVE, &port->iflags, val);
 }
 
+void tty_port_tty_wakeup(struct tty_port *port);
+
 #endif /* _LINUX_TTY_PORT_H */

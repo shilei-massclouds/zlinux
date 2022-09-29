@@ -158,4 +158,6 @@ size_t copy_from_iter(void *addr, size_t bytes, struct iov_iter *i)
         return _copy_from_iter(addr, bytes, i);
 }
 
+void iov_iter_revert(struct iov_iter *i, size_t bytes);
+
 #endif /* __LINUX_UIO_H */
