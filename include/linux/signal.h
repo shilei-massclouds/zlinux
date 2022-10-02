@@ -149,4 +149,6 @@ static inline void siginitsetinv(sigset_t *set, unsigned long mask)
     }
 }
 
+extern void exit_signals(struct task_struct *tsk);
+
 #endif /* _LINUX_SIGNAL_H */

@@ -1161,6 +1161,31 @@ static inline void siginfo_buildtime_checks(void)
                  sizeof_field(struct siginfo, si_pid));
 }
 
+void exit_signals(struct task_struct *tsk)
+{
+    int group_stop = 0;
+    sigset_t unblocked;
+
+#if 0
+    /*
+     * @tsk is about to have PF_EXITING set - lock out users which
+     * expect stable threadgroup.
+     */
+    cgroup_threadgroup_change_begin(tsk);
+#endif
+
+    if (thread_group_empty(tsk) ||
+        (tsk->signal->flags & SIGNAL_GROUP_EXIT)) {
+        tsk->flags |= PF_EXITING;
+#if 0
+        cgroup_threadgroup_change_end(tsk);
+#endif
+        return;
+    }
+
+    panic("%s: END!\n", __func__);
+}
+
 void __init signals_init(void)
 {
     siginfo_buildtime_checks();

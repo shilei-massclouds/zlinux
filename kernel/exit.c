@@ -127,8 +127,56 @@ int rcuwait_wake_up(struct rcuwait *w)
 }
 EXPORT_SYMBOL_GPL(rcuwait_wake_up);
 
+static void coredump_task_exit(struct task_struct *tsk)
+{
+    struct core_state *core_state;
+
+    /*
+     * Serialize with any possible pending coredump.
+     * We must hold siglock around checking core_state
+     * and setting PF_POSTCOREDUMP.  The core-inducing thread
+     * will increment ->nr_threads for each thread in the
+     * group without PF_POSTCOREDUMP set.
+     */
+    spin_lock_irq(&tsk->sighand->siglock);
+    tsk->flags |= PF_POSTCOREDUMP;
+    core_state = tsk->signal->core_state;
+    spin_unlock_irq(&tsk->sighand->siglock);
+    if (core_state) {
+        panic("%s: unimplemented!\n", __func__);
+    }
+}
+
 void __noreturn do_exit(long code)
 {
+    struct task_struct *tsk = current;
+    int group_dead;
+
+    WARN_ON(tsk->plug);
+
+    coredump_task_exit(tsk);
+    //ptrace_event(PTRACE_EVENT_EXIT, code);
+
+    validate_creds_for_do_exit(tsk);
+
+    //io_uring_files_cancel();
+    exit_signals(tsk);  /* sets PF_EXITING */
+
+    /* sync mm's RSS info before statistics gathering */
+    if (tsk->mm)
+        sync_mm_rss(tsk->mm);
+    group_dead = atomic_dec_and_test(&tsk->signal->live);
+    if (group_dead) {
+        /*
+         * If the last thread of global init has exited, panic
+         * immediately to get a useable coredump.
+         */
+        if (unlikely(is_global_init(tsk)))
+            panic("Attempted to kill init! exitcode=0x%08x\n",
+                  tsk->signal->group_exit_code ?: (int)code);
+
+        panic("%s: group_dead\n", __func__);
+    }
     panic("%s: NOT-implemented code(%ld)!\n", __func__, code);
 }
 
